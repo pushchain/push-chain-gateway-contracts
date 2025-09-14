@@ -106,25 +106,4 @@ contract UpgradeGatewayNewImpl is Script {
         console.log("Upgrade verification: Implementation was set to:", newImplementationAddress);
 
     }
-    
-    // Alternative function to upgrade to a specific implementation address
-    // function upgradeToSpecificImplementation(address specificImplementation) external {
-    //     console.log("=== UPGRADING TO SPECIFIC IMPLEMENTATION ===");
-    //     console.log("Target implementation:", specificImplementation);
-        
-    //     vm.startBroadcast();
-        
-    //     ProxyAdmin proxyAdmin = ProxyAdmin(EXISTING_PROXY_ADMIN);
-    //     ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(EXISTING_PROXY);
-        
-    //     // Perform the upgrade using upgradeAndCall with empty data
-    //     proxyAdmin.upgradeAndCall(proxy, specificImplementation, "");
-        
-    //     console.log("Proxy upgraded to specific implementation!");
-        
-    //     vm.stopBroadcast();
-        
-    //     console.log("Upgrade to specific implementation completed!");
-    //     console.log("New implementation address:", specificImplementation);
-    // }
 }
