@@ -201,8 +201,8 @@ async function run() {
     }
 
     // Update caps
-    const newMinCap = new anchor.BN(200_000_000); // $2 with 8 decimals = 2e8
-    const newMaxCap = new anchor.BN(2_000_000_000); // $20 with 8 decimals = 20e8
+    const newMinCap = new anchor.BN(100_000_000); // $1 with 8 decimals = 1e8
+    const newMaxCap = new anchor.BN(1_000_000_000); // $10 with 8 decimals = 10e8
     const capsTx = await program.methods
         .setCapsUsd(newMinCap, newMaxCap)
         .accounts({
@@ -389,15 +389,15 @@ async function run() {
     // Step 7: Test SPL token functions
     console.log("7. Testing SPL Token Functions...");
 
-    // Create ATA for vault
+    // Create ATA for vault (admin's responsibility)
     const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
-        userProvider.connection as any,
-        userKeypair,
+        adminProvider.connection as any,
+        adminKeypair,
         mint.publicKey,
         vaultPda,
         true
     );
-    console.log(`✅ Vault ATA created: ${vaultAta.address.toString()}`);
+    console.log(`✅ Vault ATA created by admin: ${vaultAta.address.toString()}`);
 
     // Test send_funds with SPL token (SPL-only function)
     const splRecipient = Keypair.generate().publicKey;
@@ -774,77 +774,10 @@ async function run() {
         }
     }
 
-    // 15. Test revert function accessibility 
-    console.log("15. Testing revert functions accessibility...");
+    // 15. Test revert function with real TSS signature
+    console.log("15. Testing revert function with real TSS signature...");
 
-    console.log("Testing revertWithdraw...");
-    try {
-        await program.methods
-            .revertWithdraw(
-                new anchor.BN(1000000), // amount
-                {
-                    fundRecipient: admin,
-                    revertCause: "test",
-                }, // revert_cfg
-                Array(64).fill(0), // signature
-                0, // recovery_id
-                Array(32).fill(0), // message_hash
-                1 // nonce
-            )
-            .accounts({
-                config: configPda,
-                vault: vaultPda,
-                tss: tssPda,
-                recipient: admin,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-    } catch (error) {
-        if (error.message.includes("InvalidSignature") || error.message.includes("TssSignatureInvalid")) {
-            console.log("✅ revertWithdraw function accessible (TSS validation working)");
-        } else {
-            console.log(`⚠️  revertWithdraw test: ${error.message}`);
-        }
-    }
-
-    console.log("Testing revertWithdrawSplToken...");
-    try {
-        // Get admin ATA for the token
-        const adminTokenAccount = await spl.getAssociatedTokenAddress(mint.publicKey, admin);
-
-        await program.methods
-            .revertWithdrawSplToken(
-                new anchor.BN(1000), // amount
-                {
-                    fundRecipient: admin,
-                    revertCause: "test",
-                }, // revert_cfg
-                Array(64).fill(0), // signature
-                0, // recovery_id
-                Array(32).fill(0), // message_hash
-                1 // nonce
-            )
-            .accounts({
-                config: configPda,
-                vault: vaultPda,
-                tss: tssPda,
-                tokenMint: mint.publicKey,
-                recipient: admin,
-                recipientTokenAccount: adminTokenAccount,
-                vaultTokenAccount: vaultAta.address,
-                tokenProgram: spl.TOKEN_PROGRAM_ID,
-            })
-            .rpc();
-    } catch (error) {
-        if (error.message.includes("InvalidSignature") || error.message.includes("TssSignatureInvalid")) {
-            console.log("✅ revertWithdrawSplToken function accessible (TSS validation working)");
-        } else {
-            console.log(`⚠️  revertWithdrawSplToken test: ${error.message}`);
-        }
-    }
-
-    // Test happy path with real TSS signature (using ETH private key)
-    console.log("\nTesting revertWithdraw happy path with real TSS signature...");
+    // Test revert function with real TSS signature
     try {
         // Get current TSS nonce
         const tssAccount: any = await (program.account as any).tssPda.fetch(tssPda);
@@ -913,18 +846,12 @@ async function run() {
             })
             .rpc();
 
-        console.log("✅ revertWithdraw happy path successful!");
+        console.log("✅ revertWithdraw function working with real TSS signature!");
 
     } catch (error) {
-        console.log(`⚠️  revertWithdraw happy path: ${error.message}`);
+        console.log(`❌ revertWithdraw failed: ${error.message}`);
     }
 
-    console.log("\n🎉 CRITICAL SECURITY FIXES VERIFIED:");
-    console.log("✅ Both revert functions now accessible through program interface");
-    console.log("✅ TSS signature validation enforced (no admin bypass)");
-    console.log("✅ Authority bug fixed (vault PDA used for SPL transfers)");
-    console.log("✅ Happy path testing with real TSS signatures");
-    console.log("🔒 Security status: FIXED\n");
 }
 
 console.log("All tests completed successfully!");

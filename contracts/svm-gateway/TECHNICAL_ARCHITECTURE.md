@@ -84,9 +84,10 @@ This document provides comprehensive technical details about all Program Derived
 - **Owner**: Vault PDA (not user wallet)
 - **Mint**: SPL token mint address
 - **Creation**: 
-  - **When**: Created by client applications before making SPL deposits
+  - **When**: Created by admin before whitelisting tokens
   - **How**: Using `spl::get_or_create_associated_token_account` with vault PDA as owner
   - **Authority**: Vault PDA (for transfers out)
+  - **Responsibility**: Admin must create this ATA before users can deposit SPL tokens
   - **Note**: Program does NOT create this ATA - it must exist before calling deposit functions
 - **Usage**:
   - Destination for SPL token deposits
@@ -114,11 +115,12 @@ This document provides comprehensive technical details about all Program Derived
    - Required for users to receive SPL tokens
 
 2. **Vault Token ATA**:
-   - Created by client applications before making SPL deposits
+   - Created by admin before whitelisting tokens
    - NOT created by the gateway program
    - Must exist before calling `send_funds` or `send_tx_with_funds`
    - One per whitelisted SPL token
    - Created using vault PDA as owner
+   - Admin responsibility to create before users can deposit
 
 3. **Admin Token ATA**:
    - Created by client applications before making TSS withdrawals
@@ -236,22 +238,23 @@ Admin Wallet (highest authority)
 
 ## Best Practices
 
-1. **Create ATAs before calling program functions** - the program expects them to exist
-2. **Use proper authority** for each operation
-3. **Validate PDA derivations** in account constraints
-4. **Handle non-existent accounts** gracefully
-5. **Use deterministic seeds** for all PDAs
-6. **Store bump seeds** in accounts for verification
-7. **Client applications must create all required ATAs** before interacting with the program
+1. **Admin creates vault ATAs before whitelisting tokens** - required for SPL deposits
+2. **Users create their own ATAs** - for receiving SPL tokens
+3. **Use proper authority** for each operation
+4. **Validate PDA derivations** in account constraints
+5. **Handle non-existent accounts** gracefully
+6. **Use deterministic seeds** for all PDAs
+7. **Store bump seeds** in accounts for verification
+8. **All ATAs must exist before calling program functions** - the program expects them to exist
 
 ## Example Usage Patterns
 
-### Creating Vault ATA (Client-side)
+### Creating Vault ATA (Admin-side)
 ```typescript
-// Create vault ATA before calling deposit functions
+// Admin creates vault ATA before whitelisting tokens
 const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
     connection,
-    userKeypair,
+    adminKeypair,  // admin creates it
     tokenMint,
     vaultPda,  // vault PDA as owner
     true  // allowOwnerOffCurve
