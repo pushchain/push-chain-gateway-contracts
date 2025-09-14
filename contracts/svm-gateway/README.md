@@ -27,17 +27,26 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain. Mi
 
 ## Account Structure
 
-### PDAs
-- **Config:** `[b"config"]` - Gateway state, caps, authorities
-- **Vault:** `[b"vault"]` - Native SOL storage
-- **Whitelist:** `[b"whitelist"]` - SPL token registry
-- **Token Vaults:** Program ATAs for each whitelisted SPL token
- - **TSS:** `[b"tss"]` - TSS ETH address (20 bytes), chain id, nonce, authority
+### PDAs (Program Derived Addresses)
+- **Config:** `[b"config"]` - Gateway state, caps, authorities, Pyth config
+- **Vault:** `[b"vault"]` - Native SOL storage, authority for SPL token vault ATAs
+- **Whitelist:** `[b"whitelist"]` - SPL token registry (max 50 tokens)
+- **TSS:** `[b"tss"]` - TSS ETH address (20 bytes), chain id, nonce, authority
 
-### Required Accounts
-- Functions with USD caps require `priceUpdate` (Pyth price feed)
-- SPL functions require user/gateway token accounts and token program
-- Admin functions require `admin` or `pauser` authority; TSS functions require TSS ECDSA verification
+### ATAs (Associated Token Accounts)
+- **User Token ATA:** User's SPL token account (created by user)
+- **Vault Token ATA:** Gateway's SPL token account (created by admin, owned by vault PDA)
+- **Admin Token ATA:** Admin's SPL token account (created by admin for withdrawals)
+
+### System Accounts
+- **Pyth Price Feed:** `7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE` (SOL/USD)
+- **SPL Token Program:** `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`
+- **System Program:** `11111111111111111111111111111111`
+
+### Account Responsibilities
+- **Admin:** Creates vault ATAs, whitelists tokens, manages gateway
+- **Users:** Create their own ATAs, deposit funds to existing vault ATAs
+- **TSS:** Signs withdrawal requests with ECDSA secp256k1 signatures
 
 ## Events
 - **`TxWithGas`** - Gas deposits (maps to Ethereum event)
@@ -55,11 +64,20 @@ await program.methods
   .rpc();
 ```
 
-### 2. Whitelist SPL Token
+### 2. Create Vault ATA & Whitelist SPL Token
 ```typescript
+// Admin creates vault ATA first
+const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
+  connection, adminKeypair, tokenMint, vaultPda, true
+);
+
+// Then whitelist the token
 await program.methods
   .whitelistToken(tokenMint)
-  .accounts({ whitelist: whitelistPda, admin: adminPubkey })
+  .accounts({ 
+    config: configPda, whitelist: whitelistPda, admin: adminPubkey,
+    systemProgram: SystemProgram.programId 
+  })
   .rpc();
 ```
 
@@ -76,30 +94,62 @@ await program.methods
 
 ### 4. SPL Token Bridge
 ```typescript
+// User creates their own ATA first
+const userAta = await spl.getOrCreateAssociatedTokenAccount(
+  connection, userKeypair, tokenMint, userPubkey
+);
+
 await program.methods
   .sendFunds(recipient, tokenMint, amount, revertSettings)
   .accounts({
     config: configPda, vault: vaultPda, user: userPubkey,
-    tokenWhitelist: whitelistPda, userTokenAccount, gatewayTokenAccount,
-    bridgeToken: tokenMint, tokenProgram: TOKEN_PROGRAM_ID
+    tokenWhitelist: whitelistPda, 
+    userTokenAccount: userAta.address,
+    gatewayTokenAccount: vaultAta.address,
+    bridgeToken: tokenMint, 
+    tokenProgram: TOKEN_PROGRAM_ID,
+    systemProgram: SystemProgram.programId
   })
   .rpc();
 ```
 
 ### 5. TSS Configuration & Verified Withdrawals
 ```typescript
-// init TSS
+// Initialize TSS
+const ethAddress = "0xEbf0Cfc34E07ED03c05615394E2292b387B63F12";
+const ethAddressBytes = Buffer.from(ethAddress.slice(2), 'hex');
+
 await program.methods
-  .initTss(Array.from(Buffer.from("ebf0cfc34e07ed03c05615394e2292b387b63f12", "hex")), new anchor.BN(1))
-  .accounts({ tssPda, authority: admin, systemProgram: SystemProgram.programId })
+  .initTss(Array.from(ethAddressBytes), new anchor.BN(1))
+  .accounts({ 
+    tssPda, authority: admin, systemProgram: SystemProgram.programId 
+  })
   .rpc();
 
-// build message hash = keccak256(prefix|instruction_id|chain_id|nonce|amount|recipient)
-// sign with ECDSA (secp256k1) using ETH private key; normalize recovery id to 0/1
+// TSS Message Construction
+const messageData = Buffer.concat([
+  Buffer.from("PUSH_CHAIN_SVM"),
+  Buffer.from([1]), // instruction_id (1=SOL, 2=SPL, 3=revert)
+  Buffer.from(chainId.toArray("be", 8)),
+  Buffer.from(nonce.toArray("be", 8)),
+  Buffer.from(amount.toArray("be", 8)),
+  recipient.toBuffer()
+]);
+const messageHash = keccak_256(messageData);
 
+// Sign with ETH private key
+const sig = await secp.sign(messageHash, ethPrivateKey, { recovered: true, der: false });
+const signature = sig[0];
+const recoveryId = sig[1];
+
+// Withdraw
 await program.methods
-  .withdrawTss(new anchor.BN(amount), signature, recoveryId, messageHash, new anchor.BN(nonce))
-  .accounts({ config, vault, tssPda, recipient, systemProgram: SystemProgram.programId })
+  .withdrawTss(new anchor.BN(amount), Array.from(signature), recoveryId, 
+               Array.from(messageHash), new anchor.BN(nonce))
+  .accounts({ 
+    config: configPda, vault: vaultPda, tssPda, recipient, 
+    systemProgram: SystemProgram.programId 
+  })
   .rpc();
 ```
 
@@ -127,8 +177,22 @@ cd app && ts-node gateway-test.ts
 **Test:** Uses devnet SPL tokens and Pyth price feeds  
 **Current Deployment:** `CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS`
 
-For integration support, ensure your client:
-1. Handles both native SOL and SPL token account contexts
-2. Includes Pyth price update accounts for gas functions
-3. Manages token whitelisting before bridging operations
-4. Implements proper error handling for cap violations
+## Critical Integration Requirements
+
+### Must Do Before Deposits:
+1. **Admin creates vault ATAs** for all whitelisted SPL tokens
+2. **Users create their own ATAs** for receiving SPL tokens
+3. **Check token whitelist** before SPL deposits
+4. **Include Pyth price feed** for gas functions (USD caps)
+
+### Must Do Before Withdrawals:
+1. **Create recipient ATAs** for SPL token withdrawals
+2. **Generate valid TSS signatures** with correct nonce
+3. **Construct TSS messages** with proper instruction IDs
+
+### Common Errors:
+- **"Account not found"**: ATA doesn't exist (create it)
+- **"Token not whitelisted"**: Add token to whitelist first
+- **"Insufficient balance"**: User doesn't have enough tokens
+- **"Message hash mismatch"**: Wrong TSS message construction
+- **"Nonce mismatch"**: Use correct nonce from TSS PDA
