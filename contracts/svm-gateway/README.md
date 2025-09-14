@@ -5,6 +5,7 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain. Mi
 ## Program Details
 
 **Program ID:** `CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS`  
+**Token Mint:** `8bzuac9NTZtkUHz8L1wC2k8fiBbuDrPaiFRV949SS5CH`
 **Network:** Solana Devnet  
 **Pyth Oracle:** SOL/USD feed `7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`  
 **Legacy Locker:** `3zrWaMknHTRQpZSxY4BvQxw9TStSXiHcmcp3NMPTFkke` (compatible)
