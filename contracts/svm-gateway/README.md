@@ -16,7 +16,7 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain. Mi
 1. **`send_tx_with_gas`** - Native SOL gas deposits with USD caps ($1-$10)
 2. **`send_funds`** - SPL token bridging (whitelisted tokens only)
 3. **`send_funds_native`** - Native SOL bridging (high value, no caps)
-4. **`send_tx_with_funds`** - Combined SPL tokens + gas with payload execution
+4. **`send_tx_with_funds`** - Combined SPL tokens + gas with payload execution + signature data
 
 ### Admin & TSS Functions
 - **`initialize`** - Deploy gateway with admin/pauser/caps and set Pyth feed
@@ -51,7 +51,7 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain. Mi
 
 ## Events
 - **`TxWithGas`** - Gas deposits (maps to Ethereum event)
-- **`TxWithFunds`** - Token/native bridging (maps to Ethereum event)
+- **`TxWithFunds`** - Token/native bridging with signature data (maps to Ethereum event)
 - **`WithdrawFunds`** - TSS withdrawals
 - **`CapsUpdated`** - Admin cap changes
 
@@ -114,7 +114,49 @@ await program.methods
   .rpc();
 ```
 
-### 5. TSS Configuration & Verified Withdrawals
+### 5. Combined Funds + Payload with Signature Data
+```typescript
+// Create payload for execution on Push Chain
+const payload = {
+  to: targetAddress,
+  value: new anchor.BN(0),
+  data: Buffer.from("execution_data"),
+  gasLimit: new anchor.BN(21000),
+  maxFeePerGas: new anchor.BN(20000000000),
+  maxPriorityFeePerGas: new anchor.BN(2000000000),
+  nonce: new anchor.BN(0),
+  deadline: new anchor.BN(Date.now() + 3600000),
+  vType: { signedVerification: {} }
+};
+
+// Generate signature data for payload security
+const signatureData = Buffer.alloc(32);
+// In production, this would be computed from payload hash + private key
+signatureData.fill(0x42); // Example pattern for testing
+
+await program.methods
+  .sendTxWithFunds(
+    tokenMint, 
+    bridgeAmount, 
+    payload, 
+    revertSettings, 
+    gasAmount,
+    Array.from(signatureData)
+  )
+  .accounts({
+    config: configPda, vault: vaultPda, user: userPubkey,
+    tokenWhitelist: whitelistPda,
+    userTokenAccount: userAta.address,
+    gatewayTokenAccount: vaultAta.address,
+    priceUpdate: priceAccount,
+    bridgeToken: tokenMint,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    systemProgram: SystemProgram.programId
+  })
+  .rpc();
+```
+
+### 6. TSS Configuration & Verified Withdrawals
 ```typescript
 // Initialize TSS
 const ethAddress = "0xEbf0Cfc34E07ED03c05615394E2292b387B63F12";

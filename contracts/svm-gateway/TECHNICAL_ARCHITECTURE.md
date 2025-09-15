@@ -247,6 +247,55 @@ Admin Wallet (highest authority)
 7. **Store bump seeds** in accounts for verification
 8. **All ATAs must exist before calling program functions** - the program expects them to exist
 
+## Events and Data Structures
+
+### Event Types
+
+#### TxWithGas Event
+- **Purpose**: Emitted for gas-only deposits (instant route)
+- **Data Structure**:
+  - `sender`: User's public key
+  - `payload_hash`: Hash of payload for execution
+  - `native_token_deposited`: Amount of SOL deposited
+  - `revert_cfg`: Revert settings structure
+  - `tx_type`: Transaction type enum (Gas or GasAndPayload)
+
+#### TxWithFunds Event  
+- **Purpose**: Emitted for token/asset bridging deposits
+- **Data Structure**:
+  - `sender`: User's public key
+  - `recipient`: Destination address on Push Chain
+  - `bridge_amount`: Amount of tokens/SOL bridged
+  - `gas_amount`: Amount of gas provided (if any)
+  - `bridge_token`: Token mint address (Pubkey::default() for SOL)
+  - `data`: Payload bytes for execution
+  - `revert_cfg`: Revert settings structure
+  - `tx_type`: Transaction type enum (Funds or FundsAndPayload)
+  - `signature_data`: 32-byte signature data for payload security (new in v0.2)
+
+#### WithdrawFunds Event
+- **Purpose**: Emitted for TSS-verified withdrawals
+- **Data Structure**:
+  - `recipient`: Withdrawal recipient address
+  - `amount`: Amount withdrawn
+  - `token`: Token mint address (Pubkey::default() for SOL)
+
+### Key Data Structures
+
+#### UniversalPayload
+- Cross-chain execution payload (mirrors Ethereum structure)
+- Contains target address, value, execution data, gas settings, nonce, deadline
+
+#### RevertSettings  
+- Error handling configuration
+- Contains revert recipient and message
+
+#### TxType Enum
+- `Gas`: Gas-only instant route
+- `GasAndPayload`: Gas + payload instant route  
+- `Funds`: High-value funds bridge
+- `FundsAndPayload`: Funds + payload bridge
+
 ## Example Usage Patterns
 
 ### Creating Vault ATA (Admin-side)
