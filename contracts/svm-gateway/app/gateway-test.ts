@@ -12,6 +12,7 @@ import type { Pushsolanagateway } from "../target/types/pushsolanagateway";
 import * as spl from "@solana/spl-token";
 import { keccak_256 } from "js-sha3";
 import * as secp from "@noble/secp256k1";
+import { assert } from "chai";
 
 const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
 const CONFIG_SEED = "config";
@@ -42,6 +43,29 @@ anchor.setProvider(adminProvider);
 const idl = JSON.parse(fs.readFileSync("../target/idl/pushsolanagateway.json", "utf8"));
 const program = new Program(idl as Pushsolanagateway, adminProvider);
 const userProgram = new Program(idl as Pushsolanagateway, userProvider);
+
+// Helper: Get dynamic gas amount based on current SOL price
+async function getDynamicGasAmount(targetUsd: number, fallbackSol: number = 0.01): Promise<anchor.BN> {
+    try {
+        const solPriceResult = await program.methods
+            .getSolPrice()
+            .accounts({
+                priceUpdate: PRICE_ACCOUNT,
+            })
+            .view();
+
+        const solPriceUsd = solPriceResult.price / Math.pow(10, 8); // Pyth uses 8 decimals
+        const gasAmountSol = targetUsd / solPriceUsd;
+        const gasAmountLamports = Math.floor(gasAmountSol * LAMPORTS_PER_SOL);
+
+        console.log(`💰 SOL price: $${solPriceUsd.toFixed(2)} | ⛽ Gas: ${gasAmountSol.toFixed(4)} SOL (~$${targetUsd})`);
+
+        return new anchor.BN(gasAmountLamports);
+    } catch (error) {
+        console.log(`⚠️ Could not fetch SOL price, using fallback: ${fallbackSol} SOL`);
+        return new anchor.BN(fallbackSol * LAMPORTS_PER_SOL);
+    }
+}
 
 // Helper: parse and print program data logs (Anchor events) from a transaction
 async function parseAndPrintEvents(txSignature: string, label: string) {
@@ -315,7 +339,8 @@ async function run() {
     };
 
 
-    const gasAmount = new anchor.BN(0.01 * LAMPORTS_PER_SOL); // 0.01 SOL
+    // Get dynamic gas amount for USD cap compliance
+    const gasAmount = await getDynamicGasAmount(1.20, 0.01); // Target $1.20, fallback 0.01 SOL
 
     const gasTx = await userProgram.methods
         .sendTxWithGas(payload, revertSettings, gasAmount)
@@ -338,7 +363,8 @@ async function run() {
 
     // Step 5a: Legacy add_funds (locker-compatible)
     console.log("5a. Legacy add_funds (locker-compatible)...");
-    const legacyAmount = new anchor.BN(0.001 * LAMPORTS_PER_SOL); // 0.001 SOL
+    // Get dynamic amount for USD cap compliance
+    const legacyAmount = await getDynamicGasAmount(1.10, 0.001); // Target $1.10, fallback 0.001 SOL
     const txHashLegacy: number[] = Array(32).fill(1); // 32-byte transaction hash (dummy)
 
     const legacyTx = await userProgram.methods
@@ -443,9 +469,11 @@ async function run() {
     // Step 8: Test send_tx_with_funds (SPL + payload + gas)
     console.log("8. Testing send_tx_with_funds (SPL + payload + gas)...");
 
+    // Get dynamic gas amount for USD cap compliance
+    const txWithFundsGasAmount = await getDynamicGasAmount(1.50, 0.01); // Target $1.50, fallback 0.01 SOL
+
     const txWithFundsRecipient = Keypair.generate().publicKey;
     const txWithFundsSplAmount = new anchor.BN(500 * Math.pow(10, 6)); // 500 tokens
-    const txWithFundsGasAmount = new anchor.BN(0.015 * LAMPORTS_PER_SOL); // 0.015 SOL for gas (meets USD min cap)
 
     // Create payload for this transaction
     const txWithFundsPayload = {
@@ -516,6 +544,84 @@ async function run() {
     console.log(`🏦 Vault SOL balance AFTER: ${vaultBalanceAfterTxWithFunds / LAMPORTS_PER_SOL} SOL`);
     console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfterTx.toString()} tokens`);
     console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfterTx.toString()} tokens\n`);
+
+    // Step 9.5: Test send_tx_with_funds with native SOL as both bridge token and gas
+    console.log("9.5. Testing send_tx_with_funds with native SOL (bridge + gas)...");
+
+    // Get dynamic amounts for USD cap compliance
+    const nativeGasAmount = await getDynamicGasAmount(1.20, 0.008); // Target $1.20, fallback 0.008 SOL
+    const nativeBridgeAmount = await getDynamicGasAmount(2.00, 0.02); // Target $2.00, fallback 0.02 SOL
+    console.log(`🌉 Bridge amount: ${(nativeBridgeAmount.toNumber() / LAMPORTS_PER_SOL).toFixed(4)} SOL`);
+
+    const nativePayload = {
+        to: new PublicKey("11111111111111111111111111111112"), // System program as example
+        value: new anchor.BN(0),
+        data: Buffer.from("native_sol_payload_data"),
+        gasLimit: new anchor.BN(21000),
+        maxFeePerGas: new anchor.BN(20000000000),
+        maxPriorityFeePerGas: new anchor.BN(2000000000),
+        nonce: new anchor.BN(0),
+        deadline: new anchor.BN(Date.now() + 3600000),
+        vType: { signedVerification: {} }
+    };
+
+    const nativeRevertSettings = {
+        fundRecipient: user,
+        revertMsg: Buffer.from("Native SOL revert")
+    };
+
+    // Generate signature data for native SOL payload
+    const nativeSignatureData = Buffer.alloc(32);
+    nativeSignatureData.fill(0x43); // Different pattern for native SOL test
+
+    const userBalanceBeforeNative = await connection.getBalance(user);
+    const vaultBalanceBeforeNative = await connection.getBalance(vaultPda);
+
+    console.log(`💳 User SOL balance BEFORE native test: ${userBalanceBeforeNative / LAMPORTS_PER_SOL} SOL`);
+    console.log(`🏦 Vault SOL balance BEFORE native test: ${vaultBalanceBeforeNative / LAMPORTS_PER_SOL} SOL`);
+
+    const nativeTxWithFundsTx = await userProgram.methods
+        .sendTxWithFunds(
+            PublicKey.default, // Native SOL (Pubkey::default())
+            nativeBridgeAmount,
+            nativePayload,
+            nativeRevertSettings,
+            nativeGasAmount,
+            Array.from(nativeSignatureData)
+        )
+        .accounts({
+            config: configPda,
+            vault: vaultPda,
+            user: user,
+            tokenWhitelist: whitelistPda,
+            userTokenAccount: tokenAccount, // Not used for native SOL but required by struct
+            gatewayTokenAccount: vaultAta.address, // Not used for native SOL but required by struct
+            priceUpdate: PRICE_ACCOUNT,
+            bridgeToken: PublicKey.default, // Native SOL
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+    console.log(`✅ Native SOL + Gas transaction sent: ${nativeTxWithFundsTx}`);
+
+    // Parse events
+    await parseAndPrintEvents(nativeTxWithFundsTx, "native SOL send_tx_with_funds events");
+
+    const userBalanceAfterNative = await connection.getBalance(user);
+    const vaultBalanceAfterNative = await connection.getBalance(vaultPda);
+
+    console.log(`💳 User SOL balance AFTER native test: ${userBalanceAfterNative / LAMPORTS_PER_SOL} SOL`);
+    console.log(`🏦 Vault SOL balance AFTER native test: ${vaultBalanceAfterNative / LAMPORTS_PER_SOL} SOL`);
+
+    const totalDeducted = (userBalanceBeforeNative - userBalanceAfterNative) / LAMPORTS_PER_SOL;
+    const expectedDeduction = (nativeBridgeAmount.toNumber() + nativeGasAmount.toNumber()) / LAMPORTS_PER_SOL;
+    console.log(`💰 Total SOL deducted: ${totalDeducted.toFixed(6)} SOL (expected: ${expectedDeduction.toFixed(6)} SOL)`);
+
+    // Allow small tolerance for transaction fees
+    const tolerance = 0.001; // 0.001 SOL tolerance
+    assert.approximately(totalDeducted, expectedDeduction, tolerance, "Native SOL deduction should match expected amount within tolerance");
+    console.log(`✅ Native SOL test passed - correct amount deducted\n`);
 
     // Step 10: Test pause/unpause
     console.log("10. Testing pause/unpause...");
@@ -858,9 +964,9 @@ async function run() {
         console.log(`❌ revertWithdraw failed: ${error.message}`);
     }
 
+    console.log("All tests completed successfully!");
 }
 
-console.log("All tests completed successfully!");
 run().catch((e) => {
     console.error("Test failed:", e);
     process.exit(1);
