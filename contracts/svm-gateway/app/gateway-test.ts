@@ -474,13 +474,19 @@ async function run() {
     console.log(`📊 User SPL balance BEFORE: ${userTokenBalanceBeforeTx.toString()} tokens`);
     console.log(`📊 Vault SPL balance BEFORE: ${vaultTokenBalanceBeforeTx.toString()} tokens`);
 
+    // Generate signature data for payload security (32-byte hash)
+    const signatureData = Buffer.alloc(32);
+    // For testing, use a simple pattern. In production, this would be a secure signature.
+    signatureData.fill(0x42);
+
     const txWithFundsTx = await userProgram.methods
         .sendTxWithFunds(
             mint.publicKey,
             txWithFundsSplAmount,
             txWithFundsPayload,
             revertSettings,
-            txWithFundsGasAmount
+            txWithFundsGasAmount,
+            Array.from(signatureData)
         )
         .accounts({
             config: configPda,
