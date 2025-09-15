@@ -122,6 +122,7 @@ pub struct TxWithFunds {
     pub data: Vec<u8>,
     pub revert_cfg: RevertSettings,
     pub tx_type: TxType,
+    pub signature_data: [u8; 32],
 }
 
 /// Withdraw event (parity with EVM `WithdrawFunds`).

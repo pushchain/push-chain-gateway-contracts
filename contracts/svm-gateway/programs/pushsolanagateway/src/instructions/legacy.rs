@@ -41,25 +41,48 @@ pub struct AddFunds<'info> {
 /// Legacy add_funds (locker-compatible): accepts native SOL and emits USD value via Pyth.
 /// Amount is transferred to vault; emits `FundsAddedEvent`. No swaps.
 pub fn add_funds(ctx: Context<AddFunds>, amount: u64, transaction_hash: [u8; 32]) -> Result<()> {
+    process_add_funds(
+        &ctx.accounts.config,
+        &ctx.accounts.vault.to_account_info(),
+        &ctx.accounts.user,
+        &ctx.accounts.price_update,
+        &ctx.accounts.system_program,
+        amount,
+        transaction_hash,
+    )
+}
+
+/// Internal shared logic for add_funds functionality
+/// This can be called from other instructions without CPI
+pub fn process_add_funds<'info>(
+    config: &Account<'info, Config>,
+    vault: &AccountInfo<'info>,
+    user: &Signer<'info>,
+    price_update: &Account<'info, PriceUpdateV2>,
+    system_program: &Program<'info, System>,
+    amount: u64,
+    transaction_hash: [u8; 32],
+) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
+    require!(!config.paused, GatewayError::PausedError);
 
     // Fetch SOL price like locker
-    let price_data = calculate_sol_price(&ctx.accounts.price_update)?;
+    let price_data = calculate_sol_price(&price_update)?;
     let usd_equivalent = lamports_to_usd_amount_i128(amount, &price_data);
 
     // Transfer SOL to vault PDA
     invoke(
-        &system_instruction::transfer(ctx.accounts.user.key, &ctx.accounts.vault.key(), amount),
+        &system_instruction::transfer(user.key, &vault.key(), amount),
         &[
-            ctx.accounts.user.to_account_info(),
-            ctx.accounts.vault.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
+            user.to_account_info(),
+            vault.to_account_info(),
+            system_program.to_account_info(),
         ],
     )?;
 
     // Emit legacy-compatible event (same fields as locker)
     emit!(FundsAddedEvent {
-        user: ctx.accounts.user.key(),
+        user: user.key(),
         sol_amount: amount,
         usd_equivalent,
         usd_exponent: price_data.exponent,
@@ -67,4 +90,16 @@ pub fn add_funds(ctx: Context<AddFunds>, amount: u64, transaction_hash: [u8; 32]
     });
 
     Ok(())
+}
+
+/// View function for SOL price (locker-compatible)
+/// Anyone can fetch SOL price in USD
+pub fn get_sol_price(ctx: Context<GetSolPrice>) -> Result<PriceData> {
+    calculate_sol_price(&ctx.accounts.price_update)
+}
+
+/// Accounts for get_sol_price view function (locker-compatible)
+#[derive(Accounts)]
+pub struct GetSolPrice<'info> {
+    pub price_update: Account<'info, PriceUpdateV2>,
 }

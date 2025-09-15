@@ -1,4 +1,5 @@
 use crate::errors::GatewayError;
+use crate::instructions::legacy::process_add_funds;
 use crate::state::*;
 use crate::utils::*;
 use anchor_lang::prelude::*;
@@ -80,7 +81,7 @@ pub fn send_funds(
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let user = &ctx.accounts.user;
-    let vault = &ctx.accounts.vault;
+    let _vault = &ctx.accounts.vault;
 
     // Check if paused
     require!(!config.paused, GatewayError::Paused);
@@ -130,6 +131,7 @@ pub fn send_funds(
         data: vec![],
         revert_cfg,
         tx_type: TxType::Funds,
+        signature_data: [0u8; 32], // Empty for funds-only route
     });
 
     Ok(())
@@ -187,6 +189,7 @@ pub fn send_funds_native(
         data: vec![],
         revert_cfg,
         tx_type: TxType::Funds,
+        signature_data: [0u8; 32], // Empty for funds-only route
     });
 
     Ok(())
@@ -201,6 +204,7 @@ pub fn send_tx_with_funds(
     payload: UniversalPayload,
     revert_cfg: RevertSettings,
     gas_amount: u64,
+    signature_data: [u8; 32],
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let user = &ctx.accounts.user;
@@ -217,31 +221,23 @@ pub fn send_tx_with_funds(
     );
 
     require!(gas_amount > 0, GatewayError::InvalidAmount);
-
-    // Check USD caps for gas deposits using Pyth oracle
     check_usd_caps(config, gas_amount, &ctx.accounts.price_update)?;
 
-    // Handle gas deposit (native SOL)
-    let cpi_context = CpiContext::new(
-        ctx.accounts.system_program.to_account_info(),
-        system_program::Transfer {
-            from: user.to_account_info(),
-            to: vault.to_account_info(),
-        },
-    );
-    system_program::transfer(cpi_context, gas_amount)?;
 
-    // Emit TxWithGas event for gas funding
-    emit!(TxWithGas {
-        sender: user.key(),
-        payload_hash: [0u8; 32], // Empty payload hash for gas-only
-        native_token_deposited: gas_amount,
-        revert_cfg: RevertSettings {
-            fund_recipient: user.key(),
-            revert_msg: b"Gas funding".to_vec(),
-        },
-        tx_type: TxType::Gas,
-    });
+    // Use legacy add_funds logic for gas deposits (like ETH Gateway V0)
+    // This matches the ETH V0 pattern: _addFunds(bytes32(0), gasAmount)
+    let gas_transaction_hash = [0u8; 32];
+
+    // Instead of trying to build AddFunds struct, just call the logic directly
+    process_add_funds(
+        &ctx.accounts.config,
+        &ctx.accounts.vault.to_account_info(), // Convert SystemAccount to AccountInfo
+        &ctx.accounts.user,
+        &ctx.accounts.price_update,
+        &ctx.accounts.system_program,
+        gas_amount,
+        gas_transaction_hash,
+    )?;
 
     // Handle bridge deposit
     if bridge_token == Pubkey::default() {
@@ -298,6 +294,7 @@ pub fn send_tx_with_funds(
         data: payload_to_bytes(&payload),
         revert_cfg,
         tx_type: TxType::FundsAndPayload,
+        signature_data,
     });
 
     Ok(())

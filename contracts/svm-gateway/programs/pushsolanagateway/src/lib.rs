@@ -62,6 +62,7 @@ pub mod pushsolanagateway {
         payload: UniversalPayload,
         revert_cfg: RevertSettings,
         gas_amount: u64,
+        signature_data: [u8; 32],
     ) -> Result<()> {
         instructions::deposit::send_tx_with_funds(
             ctx,
@@ -70,6 +71,7 @@ pub mod pushsolanagateway {
             payload,
             revert_cfg,
             gas_amount,
+            signature_data,
         )
     }
 
@@ -255,14 +257,21 @@ pub mod pushsolanagateway {
     ) -> Result<()> {
         instructions::legacy::add_funds(ctx, amount, transaction_hash)
     }
+
+    /// @notice View function for SOL price (locker-compatible)
+    /// @dev    Anyone can fetch SOL price in USD
+    pub fn get_sol_price(ctx: Context<GetSolPrice>) -> Result<PriceData> {
+        instructions::legacy::get_sol_price(ctx)
+    }
 }
 
 // Re-export account structs and types
 pub use instructions::admin::{AdminAction, PauseAction, WhitelistAction};
 pub use instructions::deposit::{SendFunds, SendFundsNative, SendTxWithFunds, SendTxWithGas};
 pub use instructions::initialize::Initialize;
-pub use instructions::legacy::{AddFunds, FundsAddedEvent};
+pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
 pub use instructions::withdraw::{RevertWithdraw, RevertWithdrawSplToken};
+pub use utils::PriceData;
 
 pub use state::{
     // Events
