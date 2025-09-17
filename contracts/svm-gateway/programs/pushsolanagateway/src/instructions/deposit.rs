@@ -1,0 +1,462 @@
+use crate::errors::GatewayError;
+use crate::instructions::legacy::process_add_funds;
+use crate::state::*;
+use crate::utils::*;
+use anchor_lang::prelude::*;
+use anchor_lang::system_program;
+use anchor_spl::token::{self, spl_token, Mint, Token, TokenAccount, Transfer};
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
+
+// =========================
+//           DEPOSITS
+// =========================
+
+/// GAS route (Instant): fund UEA on Push Chain with native SOL; optional payload.
+/// Enforces USD caps via Pyth (8 decimals). Emits `TxWithGas`.
+pub fn send_tx_with_gas(
+    ctx: Context<SendTxWithGas>,
+    payload: UniversalPayload,
+    revert_cfg: RevertSettings,
+    amount: u64,
+) -> Result<()> {
+    let config = &ctx.accounts.config;
+    let user = &ctx.accounts.user;
+    let vault = &ctx.accounts.vault;
+
+    // Check if paused
+    require!(!config.paused, GatewayError::Paused);
+
+    // Validate inputs
+    require!(
+        revert_cfg.fund_recipient != Pubkey::default(),
+        GatewayError::InvalidRecipient
+    );
+
+    // Use the amount parameter (equivalent to msg.value in ETH)
+    let gas_amount = amount;
+    require!(gas_amount > 0, GatewayError::InvalidAmount);
+
+    // Check user has enough SOL
+    require!(
+        ctx.accounts.user.lamports() >= gas_amount,
+        GatewayError::InsufficientBalance
+    );
+
+    // Check USD caps for gas deposits using Pyth oracle
+    check_usd_caps(config, gas_amount, &ctx.accounts.price_update)?;
+
+    // Transfer SOL to vault (like _handleNativeDeposit in ETH)
+    let cpi_context = CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        system_program::Transfer {
+            from: user.to_account_info(),
+            to: vault.to_account_info(),
+        },
+    );
+    system_program::transfer(cpi_context, gas_amount)?;
+
+    // Calculate payload hash
+    let _payload_hash = payload_hash(&payload);
+
+    // Emit TxWithGas event (exactly like ETH contract)
+    emit!(TxWithGas {
+        sender: user.key(),
+        payload_hash: _payload_hash,
+        native_token_deposited: gas_amount,
+        revert_cfg,
+        tx_type: TxType::GasAndPayload,
+    });
+
+    Ok(())
+}
+
+/// FUNDS route (Universal): move funds to Push Chain (no payload).
+/// SPL-only here (native SOL has a dedicated function). Emits `TxWithFunds`.
+pub fn send_funds(
+    ctx: Context<SendFunds>,
+    recipient: Pubkey,
+    bridge_token: Pubkey,
+    bridge_amount: u64,
+    revert_cfg: RevertSettings,
+) -> Result<()> {
+    let config = &ctx.accounts.config;
+    let user = &ctx.accounts.user;
+    let _vault = &ctx.accounts.vault;
+
+    // Check if paused
+    require!(!config.paused, GatewayError::Paused);
+
+    // Validate inputs
+    require!(
+        recipient != Pubkey::default(),
+        GatewayError::InvalidRecipient
+    );
+    require!(
+        revert_cfg.fund_recipient != Pubkey::default(),
+        GatewayError::InvalidRecipient
+    );
+    require!(bridge_amount > 0, GatewayError::InvalidAmount);
+
+    // This function only handles SPL tokens, use send_funds_native for SOL
+    require!(
+        bridge_token != Pubkey::default(),
+        GatewayError::InvalidToken
+    );
+
+    // Check if token is whitelisted
+    let token_whitelist = &ctx.accounts.token_whitelist;
+    require!(
+        token_whitelist.tokens.contains(&bridge_token),
+        GatewayError::TokenNotWhitelisted
+    );
+
+    // Transfer SPL tokens to gateway vault
+    let cpi_context = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        Transfer {
+            from: ctx.accounts.user_token_account.to_account_info(),
+            to: ctx.accounts.gateway_token_account.to_account_info(),
+            authority: user.to_account_info(),
+        },
+    );
+    token::transfer(cpi_context, bridge_amount)?;
+
+    // Emit TxWithFunds event for SPL token
+    emit!(TxWithFunds {
+        sender: user.key(),
+        recipient,
+        bridge_amount,
+        gas_amount: 0,
+        bridge_token,
+        data: vec![],
+        revert_cfg,
+        tx_type: TxType::Funds,
+        signature_data: [0u8; 32], // Empty for funds-only route
+    });
+
+    Ok(())
+}
+
+/// FUNDS route (Universal): move native SOL to Push Chain (no payload).
+/// Emits `TxWithFunds` for native.
+pub fn send_funds_native(
+    ctx: Context<SendFundsNative>,
+    recipient: Pubkey,
+    bridge_amount: u64,
+    revert_cfg: RevertSettings,
+) -> Result<()> {
+    let config = &ctx.accounts.config;
+    let user = &ctx.accounts.user;
+    let vault = &ctx.accounts.vault;
+
+    // Check if paused
+    require!(!config.paused, GatewayError::Paused);
+
+    // Validate inputs
+    require!(
+        recipient != Pubkey::default(),
+        GatewayError::InvalidRecipient
+    );
+    require!(
+        revert_cfg.fund_recipient != Pubkey::default(),
+        GatewayError::InvalidRecipient
+    );
+    require!(bridge_amount > 0, GatewayError::InvalidAmount);
+
+    // Check user has enough SOL
+    require!(
+        user.lamports() >= bridge_amount,
+        GatewayError::InsufficientBalance
+    );
+
+    // Transfer SOL to vault
+    let cpi_context = CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        system_program::Transfer {
+            from: user.to_account_info(),
+            to: vault.to_account_info(),
+        },
+    );
+    system_program::transfer(cpi_context, bridge_amount)?;
+
+    // Emit TxWithFunds event for native SOL
+    emit!(TxWithFunds {
+        sender: user.key(),
+        recipient,
+        bridge_amount,
+        gas_amount: 0,
+        bridge_token: Pubkey::default(), // Native SOL
+        data: vec![],
+        revert_cfg,
+        tx_type: TxType::Funds,
+        signature_data: [0u8; 32], // Empty for funds-only route
+    });
+
+    Ok(())
+}
+
+/// FUNDS+PAYLOAD route (Universal): bridge SPL/native + execute payload.
+/// Gas amount uses USD caps; emits `TxWithGas` then `TxWithFunds`.
+pub fn send_tx_with_funds(
+    ctx: Context<SendTxWithFunds>,
+    bridge_token: Pubkey,
+    bridge_amount: u64,
+    payload: UniversalPayload,
+    revert_cfg: RevertSettings,
+    gas_amount: u64,
+    signature_data: [u8; 32],
+) -> Result<()> {
+    let config = &ctx.accounts.config;
+    let user = &ctx.accounts.user;
+    let vault = &ctx.accounts.vault;
+
+    // Check if paused
+    require!(!config.paused, GatewayError::Paused);
+
+    // Validate inputs
+    require!(bridge_amount > 0, GatewayError::InvalidAmount);
+    require!(
+        revert_cfg.fund_recipient != Pubkey::default(),
+        GatewayError::InvalidRecipient
+    );
+
+    require!(gas_amount > 0, GatewayError::InvalidAmount);
+    check_usd_caps(config, gas_amount, &ctx.accounts.price_update)?;
+
+    // For native SOL bridge, validate user has enough SOL for both gas and bridge upfront
+    if bridge_token == Pubkey::default() {
+        require!(
+            ctx.accounts.user.lamports() >= bridge_amount + gas_amount,
+            GatewayError::InsufficientBalance
+        );
+    }
+    // For SPL tokens, only need SOL for gas (validated in process_add_funds)
+
+    // Use legacy add_funds logic for gas deposits (like ETH Gateway V0)
+    // This matches the ETH V0 pattern: _addFunds(bytes32(0), gasAmount)
+    let gas_transaction_hash = [0u8; 32];
+
+    // Instead of trying to build AddFunds struct, just call the logic directly
+    process_add_funds(
+        &ctx.accounts.config,
+        &ctx.accounts.vault.to_account_info(), // Convert SystemAccount to AccountInfo
+        &ctx.accounts.user,
+        &ctx.accounts.price_update,
+        &ctx.accounts.system_program,
+        gas_amount,
+        gas_transaction_hash,
+    )?;
+
+    // Handle bridge deposit
+    if bridge_token == Pubkey::default() {
+        // Native SOL bridge - gas already deducted via process_add_funds() above
+        require!(
+            ctx.accounts.user.lamports() >= bridge_amount,
+            GatewayError::InsufficientBalance
+        );
+
+        let cpi_context = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: user.to_account_info(),
+                to: vault.to_account_info(),
+            },
+        );
+        system_program::transfer(cpi_context, bridge_amount)?;
+    } else {
+        // SPL token bridge - gas already deducted via process_add_funds() above
+        // No additional SOL balance check needed since only SPL tokens are being transferred
+
+        // Check if token is whitelisted
+        let token_whitelist = &ctx.accounts.token_whitelist;
+        require!(
+            token_whitelist.tokens.contains(&bridge_token),
+            GatewayError::TokenNotWhitelisted
+        );
+
+        // For SPL tokens, validate basic account ownership - detailed validation
+        // happens in the transfer CPI which will fail if accounts are invalid
+        let user_token_account_info = &ctx.accounts.user_token_account.to_account_info();
+        let gateway_token_account_info = &ctx.accounts.gateway_token_account.to_account_info();
+
+        // Basic validation: ensure accounts are owned by token program
+        require!(
+            user_token_account_info.owner == &spl_token::ID,
+            GatewayError::InvalidOwner
+        );
+        require!(
+            gateway_token_account_info.owner == &spl_token::ID,
+            GatewayError::InvalidOwner
+        );
+
+        // Additional validation will happen in the token::transfer CPI below
+        // which will fail if mint doesn't match or accounts are invalid
+
+        // Transfer SPL tokens to gateway vault
+        let cpi_context = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_token_account.to_account_info(),
+                to: ctx.accounts.gateway_token_account.to_account_info(),
+                authority: user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_context, bridge_amount)?;
+    }
+
+    // Calculate payload hash
+    let _payload_hash = payload_hash(&payload);
+
+    // Emit TxWithFunds event for bridge + payload
+    emit!(TxWithFunds {
+        sender: user.key(),
+        recipient: Pubkey::default(), // address(0) for moving funds + payload for execution
+        bridge_amount,
+        gas_amount,
+        bridge_token,
+        data: payload_to_bytes(&payload),
+        revert_cfg,
+        tx_type: TxType::FundsAndPayload,
+        signature_data,
+    });
+
+    Ok(())
+}
+
+// =========================
+//        ACCOUNT STRUCTS
+// =========================
+
+#[derive(Accounts)]
+pub struct SendTxWithGas<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault: SystemAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    // Pyth price update account for USD cap validation
+    pub price_update: Account<'info, PriceUpdateV2>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SendFundsNative<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault: SystemAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SendFunds<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault: SystemAccount<'info>,
+
+    #[account(
+        seeds = [WHITELIST_SEED],
+        bump,
+    )]
+    pub token_whitelist: Account<'info, TokenWhitelist>,
+
+    #[account(
+        mut,
+        constraint = user_token_account.owner == user.key() @ GatewayError::InvalidOwner,
+        constraint = user_token_account.mint == bridge_token.key() @ GatewayError::InvalidMint,
+    )]
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = gateway_token_account.owner == vault.key() @ GatewayError::InvalidOwner,
+        constraint = gateway_token_account.mint == bridge_token.key() @ GatewayError::InvalidMint,
+    )]
+    pub gateway_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    // Note: No price_update needed for SPL-only functions (no USD caps)
+    pub bridge_token: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SendTxWithFunds<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault: SystemAccount<'info>,
+
+    #[account(
+        seeds = [WHITELIST_SEED],
+        bump,
+    )]
+    pub token_whitelist: Account<'info, TokenWhitelist>,
+
+    /// CHECK: For native SOL, this can be any account. For SPL tokens, must be valid token account.
+    #[account(mut)]
+    pub user_token_account: UncheckedAccount<'info>,
+
+    /// CHECK: For native SOL, this can be any account. For SPL tokens, must be valid token account.
+    #[account(mut)]
+    pub gateway_token_account: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    // Pyth price update account for USD cap validation
+    pub price_update: Account<'info, PriceUpdateV2>,
+
+    /// CHECK: Can be either a token mint (for SPL) or Pubkey::default() (for native SOL)
+    pub bridge_token: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}

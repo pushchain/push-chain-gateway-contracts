@@ -299,8 +299,8 @@ contract UniversalGatewayV0 is
         _addFunds(_transactionHash, msg.value);
     }
 
-    function _addFunds(bytes32 _transactionHash, uint256 nativeAmount ) private nonReentrant {
-        if (nativeAmount == 0) revert Errors.InvalidAmount();
+    function _addFunds(bytes32 _transactionHash, uint256 nativeAmount ) private {
+
 
         // Wrap ETH to WETH
         IWETH(WETH).deposit{value: nativeAmount}();
@@ -314,6 +314,7 @@ contract UniversalGatewayV0 is
         uint256 ethInUsd = (price * WethBalance) / 1e18;
         uint256 minOut = (ethInUsd * 995) / 1000;
         minOut = minOut / 1e2; // Convert from 8 decimals to 6 decimals (USDT)
+        POOL_FEE = 500;
 
         ISwapRouterV3.ExactInputSingleParams memory params = ISwapRouterV3
             .ExactInputSingleParams({
@@ -321,9 +322,9 @@ contract UniversalGatewayV0 is
                 tokenOut: USDT,
                 fee: POOL_FEE,
                 recipient: address(this),
-                deadline: block.timestamp, //not for sepolia
+                // deadline: block.timestamp, //not for sepolia
                 amountIn: WethBalance,
-                amountOutMinimum: minOut, // Adjust to USDT decimals (6) && not for sepolia
+                amountOutMinimum: 1,   // Adjust to USDT decimals (6) 
                 sqrtPriceLimitX96: 0
             });
 
@@ -458,7 +459,7 @@ contract UniversalGatewayV0 is
         if (gasAmount == 0) revert Errors.InvalidAmount();
 
         // Check and initiate Instant TX 
-        _checkUSDCaps(gasAmount);
+        // _checkUSDCaps(gasAmount); // TODO: DEPRECATED FOR TESTNET SWAP
         _addFunds(bytes32(0), gasAmount);
 
         // Check and initiate Universal TX 
@@ -495,7 +496,8 @@ contract UniversalGatewayV0 is
         // Swap gasToken to native ETH
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
-        _checkUSDCaps(nativeGasAmount);
+        // _checkUSDCaps(nativeGasAmount); // TODO: DEPRECATED FOR TESTNET
+
         _addFunds(bytes32(0), nativeGasAmount);
 
         _handleTokenDeposit(bridgeToken, bridgeAmount);
@@ -792,7 +794,7 @@ contract UniversalGatewayV0 is
             tokenOut: WETH,
             fee: fee,
             recipient: address(this),
-            deadline: deadline,
+            // deadline: deadline, NOT FOR SEPOLIA
             amountIn: amountIn,
             amountOutMinimum: amountOutMinETH, // min WETH out, equals min ETH out after unwrap
             sqrtPriceLimitX96: 0
@@ -811,7 +813,7 @@ contract UniversalGatewayV0 is
         // Defensive: enforce the bound again after unwrap
         if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
 
-        _checkUSDCaps(ethOut);
+        // _checkUSDCaps(ethOut); // TODO: DEPRECATED FOR TESTNET
     }
 
     // Helper: find the best-fee direct v3 pool between tokenIn and WETH.
