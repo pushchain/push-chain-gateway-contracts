@@ -301,6 +301,7 @@ contract UniversalGatewayV0 is
 
     function _addFunds(bytes32 _transactionHash, uint256 nativeAmount ) private {
 
+
         // Wrap ETH to WETH
         IWETH(WETH).deposit{value: nativeAmount}();
         uint256 WethBalance = IERC20(WETH).balanceOf(address(this));
@@ -496,6 +497,7 @@ contract UniversalGatewayV0 is
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
         // _checkUSDCaps(nativeGasAmount); // TODO: DEPRECATED FOR TESTNET
+
         _addFunds(bytes32(0), nativeGasAmount);
 
         _handleTokenDeposit(bridgeToken, bridgeAmount);
@@ -657,6 +659,17 @@ contract UniversalGatewayV0 is
         }
 
         uint8 dec = chainlinkEthUsdDecimals;
+        
+        // This can happen if the feed wasn't properly initialized or returns 0 decimals
+        if (dec == 0) {
+            try ethUsdFeed.decimals() returns (uint8 feedDecimals) {
+                dec = feedDecimals;
+            } catch {
+                // If feed doesn't support decimals(), assume standard Chainlink ETH/USD format (8 decimals)
+                dec = 8;
+            }
+        }
+        
         // Scale priceInUSD (decimals = dec) to 1e18
         uint256 scale;
         unchecked {
