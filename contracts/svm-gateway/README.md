@@ -1,30 +1,27 @@
 # Solana Universal Gateway
 
-Production-ready Solana program for cross-chain asset bridging to Push Chain. Mirrors Ethereum Universal Gateway functionality with complete Pyth oracle integration.
+Production-ready Solana program for cross-chain asset bridging to Push Chain with complete Pyth oracle integration.
 
 ## Program Details
 
 **Program ID:** `CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS`  
-**Token Mint:** `8bzuac9NTZtkUHz8L1wC2k8fiBbuDrPaiFRV949SS5CH`
 **Network:** Solana Devnet  
-**Pyth Oracle:** SOL/USD feed `7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`  
-**Legacy Locker:** `3zrWaMknHTRQpZSxY4BvQxw9TStSXiHcmcp3NMPTFkke` (compatible)
+**Pyth Oracle:** SOL/USD feed `7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`
 
 ## Core Functions
 
 ### Deposit Functions
-1. **`send_tx_with_gas`** - Native SOL gas deposits with USD caps ($1-$10)
-2. **`send_funds`** - SPL token bridging (whitelisted tokens only)
-3. **`send_funds_native`** - Native SOL bridging (high value, no caps)
-4. **`send_tx_with_funds`** - Combined SPL tokens + gas with payload execution + signature data
+- **`send_tx_with_gas`** - Native SOL gas deposits with USD caps ($1-$10)
+- **`send_funds`** - SPL token bridging (whitelisted tokens only)
+- **`send_funds_native`** - Native SOL bridging (high value, no caps)
+- **`send_tx_with_funds`** - Combined SPL tokens + gas with payload execution
 
 ### Admin & TSS Functions
 - **`initialize`** - Deploy gateway with admin/pauser/caps and set Pyth feed
 - **`pause/unpause`** - Emergency controls
 - **`set_caps_usd`** - Update USD caps (8 decimal precision)
 - **`whitelist_token/remove_token`** - Manage supported SPL tokens
-- **`init_tss` / `update_tss` / `reset_nonce`** - Configure Ethereum TSS address, chain id, and nonce
-- **`withdraw_tss` / `withdraw_spl_token_tss`** - TSS-verified withdrawals (ECDSA secp256k1)
+- **`init_tss` / `withdraw_tss`** - TSS-verified withdrawals (ECDSA secp256k1)
 
 ## Account Structure
 
@@ -39,21 +36,71 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain. Mi
 - **Vault Token ATA:** Gateway's SPL token account (created by admin, owned by vault PDA)
 - **Admin Token ATA:** Admin's SPL token account (created by admin for withdrawals)
 
-### System Accounts
-- **Pyth Price Feed:** `7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE` (SOL/USD)
-- **SPL Token Program:** `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`
-- **System Program:** `11111111111111111111111111111111`
+## 🚀 Command Line Tools
 
-### Account Responsibilities
-- **Admin:** Creates vault ATAs, whitelists tokens, manages gateway
-- **Users:** Create their own ATAs, deposit funds to existing vault ATAs
-- **TSS:** Signs withdrawal requests with ECDSA secp256k1 signatures
+### Token Management Commands
 
-## Events
-- **`TxWithGas`** - Gas deposits (maps to Ethereum event)
-- **`TxWithFunds`** - Token/native bridging with signature data (maps to Ethereum event)
-- **`WithdrawFunds`** - TSS withdrawals
-- **`CapsUpdated`** - Admin cap changes
+#### Create New Tokens
+```bash
+# Create a USDC-like token
+npm run token:create -- -n "USD Coin" -s "USDC" -d "A fully-backed U.S. dollar stablecoin"
+
+# Create any custom token
+npm run token:create -- -n "My Token" -s "MTK" -d "My custom token" --decimals 8
+```
+
+#### Mint Tokens to Any Address
+```bash
+# Mint using token symbol
+npm run token:mint -- -m USDC -r 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM -a 1000
+
+# Mint using mint address
+npm run token:mint -- -m 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU -r ADDRESS -a 500
+```
+
+#### Whitelist Tokens
+```bash
+# Whitelist using token symbol
+npm run token:whitelist -- -m USDC
+
+# Whitelist using mint address
+npm run token:whitelist -- -m 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+```
+
+#### List All Tokens
+```bash
+npm run token:list
+```
+
+### Gateway Testing Commands
+
+#### Test Deposit Functionality
+```bash
+# Test deposit using token symbol
+npm run test:deposit -- -m USDC -a 1000
+
+# Test deposit using mint address
+npm run test:deposit -- -m 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU -a 500
+```
+
+#### Full Test (Whitelist + Deposit)
+```bash
+# Run complete test
+npm run test:full -- -m USDC -a 1000
+```
+
+## Complete Workflow Example
+
+```bash
+# 1. Create a new token
+npm run token:create -- -n "Test Token" -s "TEST" -d "A test token for gateway"
+
+# 2. Mint some tokens
+npm run token:mint -- -m TEST -r YOUR_ADDRESS -a 10000
+
+# 3. Test gateway integration
+npm run test:full -- -m TEST -a 1000
+```
 
 ## Integration Guide
 
@@ -82,18 +129,7 @@ await program.methods
   .rpc();
 ```
 
-### 3. Gas Deposit (with USD caps)
-```typescript
-await program.methods
-  .sendTxWithGas(payload, revertSettings, amount)
-  .accounts({
-    config: configPda, vault: vaultPda, user: userPubkey,
-    priceUpdate: pythPriceAccount, systemProgram: SystemProgram.programId
-  })
-  .rpc();
-```
-
-### 4. SPL Token Bridge
+### 3. SPL Token Bridge
 ```typescript
 // User creates their own ATA first
 const userAta = await spl.getOrCreateAssociatedTokenAccount(
@@ -114,49 +150,7 @@ await program.methods
   .rpc();
 ```
 
-### 5. Combined Funds + Payload with Signature Data
-```typescript
-// Create payload for execution on Push Chain
-const payload = {
-  to: targetAddress,
-  value: new anchor.BN(0),
-  data: Buffer.from("execution_data"),
-  gasLimit: new anchor.BN(21000),
-  maxFeePerGas: new anchor.BN(20000000000),
-  maxPriorityFeePerGas: new anchor.BN(2000000000),
-  nonce: new anchor.BN(0),
-  deadline: new anchor.BN(Date.now() + 3600000),
-  vType: { signedVerification: {} }
-};
-
-// Generate signature data for payload security
-const signatureData = Buffer.alloc(32);
-// In production, this would be computed from payload hash + private key
-signatureData.fill(0x42); // Example pattern for testing
-
-await program.methods
-  .sendTxWithFunds(
-    tokenMint, 
-    bridgeAmount, 
-    payload, 
-    revertSettings, 
-    gasAmount,
-    Array.from(signatureData)
-  )
-  .accounts({
-    config: configPda, vault: vaultPda, user: userPubkey,
-    tokenWhitelist: whitelistPda,
-    userTokenAccount: userAta.address,
-    gatewayTokenAccount: vaultAta.address,
-    priceUpdate: priceAccount,
-    bridgeToken: tokenMint,
-    tokenProgram: TOKEN_PROGRAM_ID,
-    systemProgram: SystemProgram.programId
-  })
-  .rpc();
-```
-
-### 6. TSS Configuration & Verified Withdrawals
+### 4. TSS Configuration & Verified Withdrawals
 ```typescript
 // Initialize TSS
 const ethAddress = "0xEbf0Cfc34E07ED03c05615394E2292b387B63F12";
@@ -206,20 +200,6 @@ await program.methods
 - **Balance validation** - Comprehensive user fund checks before operations
 - **PDA-based vaults** - Secure custody using program-derived addresses
 
-## Testing
-
-Run comprehensive test suite:
-```bash
-cd app && ts-node gateway-test.ts
-```
-
-## Development
-
-**Build:** `anchor build`  
-**Deploy:** `anchor deploy --program-name pushsolanagateway`  
-**Test:** Uses devnet SPL tokens and Pyth price feeds  
-**Current Deployment:** `CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS`
-
 ## Critical Integration Requirements
 
 ### Must Do Before Deposits:
@@ -239,3 +219,10 @@ cd app && ts-node gateway-test.ts
 - **"Insufficient balance"**: User doesn't have enough tokens
 - **"Message hash mismatch"**: Wrong TSS message construction
 - **"Nonce mismatch"**: Use correct nonce from TSS PDA
+
+## Development
+
+**Build:** `anchor build`  
+**Deploy:** `anchor deploy --program-name pushsolanagateway`  
+**Test:** Uses devnet SPL tokens and Pyth price feeds  
+**Current Deployment:** `CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS`
