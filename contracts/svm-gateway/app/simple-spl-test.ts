@@ -45,7 +45,7 @@ const userProgram = new Program(idl as Pushsolanagateway, userProvider);
 
 // Helper function to load token info from file
 function loadTokenInfo(tokenSymbol: string): any {
-    const filename = `../tokens/${tokenSymbol.toLowerCase()}-token.json`;
+    const filename = `./tokens/${tokenSymbol.toLowerCase()}-token.json`;
 
     if (!fs.existsSync(filename)) {
         throw new Error(`Token file not found: ${filename}. Please create the token first using 'npm run token:create'`);

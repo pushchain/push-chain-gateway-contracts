@@ -217,11 +217,11 @@ function saveTokenInfo(mint: Keypair, tokenName: string, tokenSymbol: string) {
         createdAt: new Date().toISOString()
     };
 
-    const filename = `../tokens/${tokenSymbol.toLowerCase()}-token.json`;
+    const filename = `./tokens/${tokenSymbol.toLowerCase()}-token.json`;
 
     // Create tokens directory if it doesn't exist
-    if (!fs.existsSync("../tokens")) {
-        fs.mkdirSync("../tokens");
+    if (!fs.existsSync("./tokens")) {
+        fs.mkdirSync("./tokens");
     }
 
     fs.writeFileSync(filename, JSON.stringify(tokenInfo, null, 2));
@@ -230,7 +230,7 @@ function saveTokenInfo(mint: Keypair, tokenName: string, tokenSymbol: string) {
 
 // Helper function to load token info from file
 function loadTokenInfo(tokenSymbol: string): any {
-    const filename = `../tokens/${tokenSymbol.toLowerCase()}-token.json`;
+    const filename = `./tokens/${tokenSymbol.toLowerCase()}-token.json`;
 
     if (!fs.existsSync(filename)) {
         throw new Error(`Token file not found: ${filename}`);
@@ -403,12 +403,12 @@ program_cli
         try {
             console.log("=== CREATED TOKENS ===\n");
 
-            if (!fs.existsSync("../tokens")) {
+            if (!fs.existsSync("./tokens")) {
                 console.log("No tokens created yet.");
                 return;
             }
 
-            const files = fs.readdirSync("../tokens");
+            const files = fs.readdirSync("./tokens");
             const tokenFiles = files.filter(file => file.endsWith('-token.json'));
 
             if (tokenFiles.length === 0) {
@@ -417,7 +417,7 @@ program_cli
             }
 
             tokenFiles.forEach(file => {
-                const tokenInfo = JSON.parse(fs.readFileSync(`../tokens/${file}`, "utf8"));
+                const tokenInfo = JSON.parse(fs.readFileSync(`./tokens/${file}`, "utf8"));
                 console.log(`📄 ${tokenInfo.symbol} (${tokenInfo.name})`);
                 console.log(`   Mint: ${tokenInfo.mint}`);
                 console.log(`   Created: ${tokenInfo.createdAt}`);
