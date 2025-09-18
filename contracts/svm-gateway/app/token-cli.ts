@@ -239,7 +239,7 @@ function loadTokenInfo(tokenSymbol: string): any {
     return JSON.parse(fs.readFileSync(filename, "utf8"));
 }
 
-// Helper function to whitelist a token
+// Helper function to whitelist a token and create vault ATA
 async function whitelistToken(mintAddress: string): Promise<void> {
     console.log(`🔒 Whitelisting token: ${mintAddress}...`);
 
@@ -250,6 +250,10 @@ async function whitelistToken(mintAddress: string): Promise<void> {
     );
     const [whitelistPda] = PublicKey.findProgramAddressSync(
         [Buffer.from(WHITELIST_SEED)],
+        PROGRAM_ID
+    );
+    const [vaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(VAULT_SEED)],
         PROGRAM_ID
     );
 
@@ -266,10 +270,29 @@ async function whitelistToken(mintAddress: string): Promise<void> {
                 systemProgram: SystemProgram.programId,
             })
             .rpc();
-        console.log(`✅ Token whitelisted successfully: ${whitelistTx}\n`);
+        console.log(`✅ Token whitelisted successfully: ${whitelistTx}`);
     } catch (error) {
         if (error.message.includes("TokenAlreadyWhitelisted")) {
-            console.log(`✅ Token already whitelisted (skipping)\n`);
+            console.log(`✅ Token already whitelisted (skipping)`);
+        } else {
+            throw error;
+        }
+    }
+
+    // Create vault ATA for the token
+    console.log(`🏦 Creating vault ATA for token...`);
+    try {
+        const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
+            adminProvider.connection as any,
+            adminKeypair,
+            mint,
+            vaultPda,
+            true
+        );
+        console.log(`✅ Vault ATA created: ${vaultAta.address.toString()}\n`);
+    } catch (error) {
+        if (error.message.includes("already exists")) {
+            console.log(`✅ Vault ATA already exists (skipping)\n`);
         } else {
             throw error;
         }

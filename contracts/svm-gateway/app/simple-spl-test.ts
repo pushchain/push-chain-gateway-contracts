@@ -121,16 +121,14 @@ async function testDeposit(mintAddress: string, amount: number): Promise<void> {
     console.log(`Vault PDA: ${vaultPda.toString()}`);
     console.log(`Whitelist PDA: ${whitelistPda.toString()}\n`);
 
-    // Step 1: Create ATA for vault
-    console.log("1. Creating ATA for vault...");
-    const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
-        adminProvider.connection as any,
-        adminKeypair,
+    // Step 1: Get vault ATA (should already exist from whitelisting)
+    console.log("1. Getting vault ATA...");
+    const vaultAta = await spl.getAssociatedTokenAddress(
         mint,
         vaultPda,
         true
     );
-    console.log(`✅ Vault ATA created: ${vaultAta.address.toString()}\n`);
+    console.log(`✅ Vault ATA: ${vaultAta.toString()}\n`);
 
     // Step 2: Get or create user token account
     console.log("2. Getting user token account...");
@@ -155,7 +153,7 @@ async function testDeposit(mintAddress: string, amount: number): Promise<void> {
 
     // Get balances before
     const userTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, userTokenAccount.address)).amount;
-    const vaultTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
+    const vaultTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta)).amount;
 
     console.log(`📊 User SPL balance BEFORE: ${userTokenBalanceBefore.toString()} tokens`);
     console.log(`📊 Vault SPL balance BEFORE: ${vaultTokenBalanceBefore.toString()} tokens`);
@@ -170,7 +168,7 @@ async function testDeposit(mintAddress: string, amount: number): Promise<void> {
             user: user,
             tokenWhitelist: whitelistPda,
             userTokenAccount: userTokenAccount.address,
-            gatewayTokenAccount: vaultAta.address,
+            gatewayTokenAccount: vaultAta,
             bridgeToken: mint,
             tokenProgram: spl.TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
@@ -181,7 +179,7 @@ async function testDeposit(mintAddress: string, amount: number): Promise<void> {
 
     // Get balances after
     const userTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, userTokenAccount.address)).amount;
-    const vaultTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
+    const vaultTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, vaultAta)).amount;
 
     console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfter.toString()} tokens`);
     console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfter.toString()} tokens`);
