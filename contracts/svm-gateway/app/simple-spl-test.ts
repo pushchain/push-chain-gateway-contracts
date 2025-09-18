@@ -92,7 +92,7 @@ async function whitelistToken(mintAddress: string): Promise<void> {
 }
 
 // Helper function to test SPL token deposit
-async function testDeposit(mintAddress: string, amount: number): Promise<void> {
+async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: string): Promise<void> {
     console.log(`🧪 Testing SPL token deposit...`);
 
     // Derive PDAs
@@ -143,7 +143,13 @@ async function testDeposit(mintAddress: string, amount: number): Promise<void> {
     // Step 3: Test SPL token deposit
     console.log("3. Testing SPL token deposit...");
 
-    const depositAmount = new anchor.BN(amount * Math.pow(10, 6)); // Convert to proper units (assuming 6 decimals)
+    // Get token decimals from token info (if tokenSymbol provided)
+    let decimals = 6; // default
+    if (tokenSymbol) {
+        const tokenInfo = loadTokenInfo(tokenSymbol);
+        decimals = tokenInfo.decimals || 6;
+    }
+    const depositAmount = new anchor.BN(amount * Math.pow(10, decimals)); // Convert to proper units
     const recipient = Keypair.generate().publicKey;
 
     const revertSettings = {
@@ -267,7 +273,7 @@ program_cli
 
             const amount = parseFloat(options.amount);
 
-            await testDeposit(mintAddress, amount);
+            await testDeposit(mintAddress, amount, options.mint.length === 44 ? undefined : options.mint);
 
             console.log("🎉 Deposit test completed successfully!");
 
@@ -308,7 +314,7 @@ program_cli
             // Step 2: Test deposit
             console.log("Step 2: Testing deposit...");
             const amount = parseFloat(options.amount);
-            await testDeposit(mintAddress, amount);
+            await testDeposit(mintAddress, amount, options.mint.length === 44 ? undefined : options.mint);
 
             console.log("🎉 Full test completed successfully!");
 

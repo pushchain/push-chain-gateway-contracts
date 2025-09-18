@@ -208,12 +208,13 @@ async function mintTokensToAddress(
 }
 
 // Helper function to save token info to file
-function saveTokenInfo(mint: Keypair, tokenName: string, tokenSymbol: string) {
+function saveTokenInfo(mint: Keypair, tokenName: string, tokenSymbol: string, decimals: number) {
     const tokenInfo = {
         mint: mint.publicKey.toString(),
         mintSecretKey: Array.from(mint.secretKey),
         name: tokenName,
         symbol: tokenSymbol,
+        decimals: decimals,
         createdAt: new Date().toISOString()
     };
 
@@ -330,7 +331,7 @@ program_cli
             );
 
             // Save token info
-            saveTokenInfo(mint, options.name, options.symbol);
+            saveTokenInfo(mint, options.name, options.symbol, decimals);
 
             console.log("🎉 Token creation completed successfully!");
 
@@ -364,7 +365,7 @@ program_cli
                 // It's a token symbol, load from file
                 const tokenInfo = loadTokenInfo(options.mint);
                 mintAddress = tokenInfo.mint;
-                decimals = 6; // Default, could be stored in token info
+                decimals = tokenInfo.decimals || 6; // Use stored decimals or default to 6
             }
 
             const amount = parseFloat(options.amount);

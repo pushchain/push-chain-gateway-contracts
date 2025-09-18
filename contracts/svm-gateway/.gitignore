@@ -13,4 +13,5 @@ test-ledger
 !anchor.toml
 !Cargo.toml
 !target/idl/*.json
+!tokens/*.json
 .env
