@@ -209,24 +209,40 @@ async function mintTokensToAddress(
 
 // Helper function to save token info to file
 function saveTokenInfo(mint: Keypair, tokenName: string, tokenSymbol: string, decimals: number) {
+    // Public token info (safe to commit)
     const tokenInfo = {
         mint: mint.publicKey.toString(),
-        mintSecretKey: Array.from(mint.secretKey),
         name: tokenName,
         symbol: tokenSymbol,
         decimals: decimals,
         createdAt: new Date().toISOString()
     };
 
-    const filename = `./tokens/${tokenSymbol.toLowerCase()}-token.json`;
+    // Secret key info (never commit)
+    const secretInfo = {
+        mint: mint.publicKey.toString(),
+        mintSecretKey: Array.from(mint.secretKey),
+        symbol: tokenSymbol,
+        createdAt: new Date().toISOString()
+    };
 
-    // Create tokens directory if it doesn't exist
+    // Create directories if they don't exist
     if (!fs.existsSync("./tokens")) {
         fs.mkdirSync("./tokens");
     }
+    if (!fs.existsSync("./secrets")) {
+        fs.mkdirSync("./secrets");
+    }
 
-    fs.writeFileSync(filename, JSON.stringify(tokenInfo, null, 2));
-    console.log(`💾 Token info saved to: ${filename}`);
+    // Save public info
+    const publicFilename = `./tokens/${tokenSymbol.toLowerCase()}-token.json`;
+    fs.writeFileSync(publicFilename, JSON.stringify(tokenInfo, null, 2));
+    console.log(`💾 Token info saved to: ${publicFilename}`);
+
+    // Save secret info
+    const secretFilename = `./secrets/${tokenSymbol.toLowerCase()}-secret.json`;
+    fs.writeFileSync(secretFilename, JSON.stringify(secretInfo, null, 2));
+    console.log(`🔐 Secret key saved to: ${secretFilename}`);
 }
 
 // Helper function to load token info from file
@@ -238,6 +254,18 @@ function loadTokenInfo(tokenSymbol: string): any {
     }
 
     return JSON.parse(fs.readFileSync(filename, "utf8"));
+}
+
+// Helper function to load secret key from file
+function loadSecretKey(tokenSymbol: string): Keypair {
+    const filename = `./secrets/${tokenSymbol.toLowerCase()}-secret.json`;
+
+    if (!fs.existsSync(filename)) {
+        throw new Error(`Secret file not found: ${filename}. Please create the token first.`);
+    }
+
+    const secretInfo = JSON.parse(fs.readFileSync(filename, "utf8"));
+    return Keypair.fromSecretKey(Uint8Array.from(secretInfo.mintSecretKey));
 }
 
 // Helper function to whitelist a token and create vault ATA
@@ -370,9 +398,19 @@ program_cli
 
             const amount = parseFloat(options.amount);
 
+            // Get the mint authority (secret key) for this token
+            let mintAuthority: Keypair;
+            if (options.mint.length === 44) {
+                // Using mint address directly, use user keypair as mint authority
+                mintAuthority = userKeypair;
+            } else {
+                // Using token symbol, load the secret key
+                mintAuthority = loadSecretKey(options.mint);
+            }
+
             await mintTokensToAddress(
                 userProvider,
-                userKeypair,
+                mintAuthority,
                 mintAddress,
                 options.recipient,
                 amount,

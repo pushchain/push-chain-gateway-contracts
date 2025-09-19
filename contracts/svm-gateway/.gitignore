@@ -15,3 +15,9 @@ test-ledger
 !target/idl/*.json
 !tokens/*.json
 .env
+
+# SECURITY: Never commit secret keys
+**/mintSecretKey*
+**/*secret*
+**/*private*
+secrets/
