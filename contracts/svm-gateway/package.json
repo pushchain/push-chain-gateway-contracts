@@ -7,6 +7,7 @@
     "token:create": " ts-node app/token-cli.ts create",
     "token:mint": " ts-node app/token-cli.ts mint",
     "token:whitelist": " ts-node app/token-cli.ts whitelist",
+    "token:remove-whitelist": " ts-node app/token-cli.ts remove-whitelist",
     "token:list": " ts-node app/token-cli.ts list",
     "test": " ts-node app/simple-spl-test.ts",
     "test:whitelist": " ts-node app/simple-spl-test.ts whitelist",

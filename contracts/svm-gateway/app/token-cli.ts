@@ -328,6 +328,43 @@ async function whitelistToken(mintAddress: string): Promise<void> {
     }
 }
 
+// Helper function to remove a token from whitelist
+async function removeWhitelistToken(mintAddress: string): Promise<void> {
+    console.log(`🗑️ Removing token from whitelist: ${mintAddress}...`);
+
+    // Derive PDAs
+    const [configPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(CONFIG_SEED)],
+        PROGRAM_ID
+    );
+    const [whitelistPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(WHITELIST_SEED)],
+        PROGRAM_ID
+    );
+
+    const admin = adminKeypair.publicKey;
+    const mint = new PublicKey(mintAddress);
+
+    try {
+        const removeTx = await program.methods
+            .removeWhitelistToken(mint)
+            .accounts({
+                config: configPda,
+                whitelist: whitelistPda,
+                admin: admin,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+        console.log(`✅ Token removed from whitelist successfully: ${removeTx}\n`);
+    } catch (error) {
+        if (error.message.includes("TokenNotWhitelisted")) {
+            console.log(`✅ Token was not whitelisted (nothing to remove)\n`);
+        } else {
+            throw error;
+        }
+    }
+}
+
 // Initialize the CLI
 const program_cli = new Command();
 
@@ -453,6 +490,38 @@ program_cli
 
         } catch (error) {
             console.error("❌ Error whitelisting token:", error.message);
+            process.exit(1);
+        }
+    });
+
+// Remove whitelist token command
+program_cli
+    .command('remove-whitelist')
+    .description('Remove a token from the gateway program whitelist')
+    .requiredOption('-m, --mint <mint>', 'Mint address or token symbol')
+    .action(async (options) => {
+        try {
+            console.log("=== REMOVING TOKEN FROM WHITELIST ===\n");
+
+            let mintAddress: string;
+
+            // Check if it's a token symbol or mint address
+            if (options.mint.length === 44) {
+                // It's a mint address
+                mintAddress = options.mint;
+            } else {
+                // It's a token symbol, load from file
+                const tokenInfo = loadTokenInfo(options.mint);
+                mintAddress = tokenInfo.mint;
+                console.log(`Found token: ${tokenInfo.name} (${tokenInfo.symbol})`);
+            }
+
+            await removeWhitelistToken(mintAddress);
+
+            console.log("🎉 Token removal from whitelist completed successfully!");
+
+        } catch (error) {
+            console.error("❌ Error removing token from whitelist:", error.message);
             process.exit(1);
         }
     });

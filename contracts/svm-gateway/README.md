@@ -20,7 +20,8 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain wit
 - **`initialize`** - Deploy gateway with admin/pauser/caps and set Pyth feed
 - **`pause/unpause`** - Emergency controls
 - **`set_caps_usd`** - Update USD caps (8 decimal precision)
-- **`whitelist_token/remove_token`** - Manage supported SPL tokens
+- **`whitelist_token`** - Add SPL tokens to whitelist
+- **`remove_whitelist_token`** - Remove SPL tokens from whitelist
 - **`init_tss` / `withdraw_tss`** - TSS-verified withdrawals (ECDSA secp256k1)
 
 ## Account Structure
@@ -65,6 +66,15 @@ npm run token:whitelist -- -m USDC
 
 # Whitelist using mint address
 npm run token:whitelist -- -m 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+```
+
+#### Remove Tokens from Whitelist
+```bash
+# Remove using token symbol
+npm run token:remove-whitelist -- -m USDC
+
+# Remove using mint address
+npm run token:remove-whitelist -- -m H3V3ooxU2sKyBZhmjBmanWhzTjXSHR1GP7XmR3ULtqEh
 ```
 
 #### List All Tokens
