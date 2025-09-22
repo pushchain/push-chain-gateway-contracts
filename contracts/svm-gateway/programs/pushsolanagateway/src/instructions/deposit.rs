@@ -131,7 +131,7 @@ pub fn send_funds(
         data: vec![],
         revert_cfg,
         tx_type: TxType::Funds,
-        signature_data: [0u8; 32], // Empty for funds-only route
+        signature_data: vec![], // Empty for funds-only route
     });
 
     Ok(())
@@ -189,7 +189,7 @@ pub fn send_funds_native(
         data: vec![],
         revert_cfg,
         tx_type: TxType::Funds,
-        signature_data: [0u8; 32], // Empty for funds-only route
+        signature_data: vec![], // Empty for funds-only route
     });
 
     Ok(())
@@ -204,7 +204,7 @@ pub fn send_tx_with_funds(
     payload: UniversalPayload,
     revert_cfg: RevertSettings,
     gas_amount: u64,
-    signature_data: [u8; 32],
+    signature_data: Vec<u8>,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let user = &ctx.accounts.user;

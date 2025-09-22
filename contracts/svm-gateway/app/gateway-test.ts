@@ -22,10 +22,10 @@ const PRICE_ACCOUNT = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLi
 
 // Load keypairs
 const adminKeypair = Keypair.fromSecretKey(
-    Uint8Array.from(JSON.parse(fs.readFileSync("../upgrade-keypair.json", "utf8")))
+    Uint8Array.from(JSON.parse(fs.readFileSync("./upgrade-keypair.json", "utf8")))
 );
 const userKeypair = Keypair.fromSecretKey(
-    Uint8Array.from(JSON.parse(fs.readFileSync("../clean-user-keypair.json", "utf8")))
+    Uint8Array.from(JSON.parse(fs.readFileSync("./clean-user-keypair.json", "utf8")))
 );
 
 // Set up connection and provider
@@ -40,7 +40,7 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 anchor.setProvider(adminProvider);
 
 // Load IDL
-const idl = JSON.parse(fs.readFileSync("../target/idl/pushsolanagateway.json", "utf8"));
+const idl = JSON.parse(fs.readFileSync("./target/idl/pushsolanagateway.json", "utf8"));
 const program = new Program(idl as Pushsolanagateway, adminProvider);
 const userProgram = new Program(idl as Pushsolanagateway, userProvider);
 
@@ -96,63 +96,15 @@ async function parseAndPrintEvents(txSignature: string, label: string) {
     }
 }
 
-// Helper function to create SPL token
-async function createSPLToken(
-    provider: anchor.AnchorProvider,
-    wallet: Keypair,
-    decimals: number = 6
-): Promise<{ mint: Keypair; tokenAccount: PublicKey }> {
-    const mint = Keypair.generate();
-    const mintRent = await spl.getMinimumBalanceForRentExemptMint(provider.connection as any);
+// Helper function to load token info from tokens folder
+function loadTokenInfo(tokenSymbol: string): any {
+    const filename = `./tokens/${tokenSymbol.toLowerCase()}-token.json`;
 
-    const tokenTransaction = new anchor.web3.Transaction();
-    tokenTransaction.add(
-        anchor.web3.SystemProgram.createAccount({
-            fromPubkey: wallet.publicKey,
-            newAccountPubkey: mint.publicKey,
-            lamports: mintRent,
-            space: spl.MINT_SIZE,
-            programId: spl.TOKEN_PROGRAM_ID,
-        }),
-        spl.createInitializeMintInstruction(
-            mint.publicKey,
-            decimals,
-            wallet.publicKey,
-            null
-        )
-    );
+    if (!fs.existsSync(filename)) {
+        throw new Error(`Token file not found: ${filename}. Please create the token first.`);
+    }
 
-    await anchor.web3.sendAndConfirmTransaction(
-        provider.connection as any,
-        tokenTransaction,
-        [wallet, mint]
-    );
-
-    // Create associated token account for the wallet
-    const tokenAccount = await spl.getOrCreateAssociatedTokenAccount(
-        provider.connection as any,
-        wallet,
-        mint.publicKey,
-        wallet.publicKey
-    );
-
-    // Mint some tokens to the account
-    const mintToTransaction = new anchor.web3.Transaction().add(
-        spl.createMintToInstruction(
-            mint.publicKey,
-            tokenAccount.address,
-            wallet.publicKey,
-            1_000_000 * Math.pow(10, decimals) // 1M tokens
-        )
-    );
-
-    await anchor.web3.sendAndConfirmTransaction(
-        provider.connection as any,
-        mintToTransaction,
-        [wallet]
-    );
-
-    return { mint, tokenAccount: tokenAccount.address };
+    return JSON.parse(fs.readFileSync(filename, "utf8"));
 }
 
 async function run() {
@@ -246,44 +198,49 @@ async function run() {
         console.log("📊 Could not fetch updated config data\n");
     }
 
-    // Step 3: Use existing SPL Token or deploy new one
+    // Step 3: Use existing SPL Token from tokens folder
     console.log("3. Setting up SPL Token...");
 
-    // Try to use an existing token first (you can replace this with your deployed token)
-    let mint: Keypair;
+    // Load existing token from tokens folder
+    let mint: PublicKey;
     let tokenAccount: PublicKey;
+    let tokenInfo: any;
 
-    // Check if we have a saved token mint file
-    const tokenMintPath = "../test-token-mint.json";
-    try {
-        const tokenMintData = JSON.parse(fs.readFileSync(tokenMintPath, "utf8"));
-        mint = Keypair.fromSecretKey(Uint8Array.from(tokenMintData));
+    // Try to load USDT token first, fallback to USDC if not available
+    const tokenFiles = ["usdt-token.json", "official-usdc-token.json", "dai-token.json", "pepe-token.json"];
+    let tokenLoaded = false;
 
-        // Get or create token account for this mint
-        const tokenAccountInfo = await spl.getOrCreateAssociatedTokenAccount(
-            userProvider.connection as any,
-            userKeypair,
-            mint.publicKey,
-            userKeypair.publicKey
-        );
-        tokenAccount = tokenAccountInfo.address;
+    for (const tokenFile of tokenFiles) {
+        try {
+            const tokenPath = `./tokens/${tokenFile}`;
+            tokenInfo = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
+            mint = new PublicKey(tokenInfo.mint);
 
-        console.log(`✅ Using existing SPL Token:`);
-        console.log(`   Mint: ${mint.publicKey.toString()}`);
-        console.log(`   Token Account: ${tokenAccount.toString()}\n`);
-    } catch (error) {
-        // Token doesn't exist, create a new one
-        console.log("No existing token found, deploying new SPL Token...");
-        const tokenInfo = await createSPLToken(userProvider, userKeypair, 6);
-        mint = tokenInfo.mint;
-        tokenAccount = tokenInfo.tokenAccount;
+            // Get or create token account for this mint
+            const tokenAccountInfo = await spl.getOrCreateAssociatedTokenAccount(
+                userProvider.connection as any,
+                userKeypair,
+                mint,
+                userKeypair.publicKey
+            );
+            tokenAccount = tokenAccountInfo.address;
 
-        // Save the mint keypair for future use
-        fs.writeFileSync(tokenMintPath, JSON.stringify(Array.from(mint.secretKey)));
+            console.log(`✅ Using existing SPL Token from tokens folder:`);
+            console.log(`   Name: ${tokenInfo.name}`);
+            console.log(`   Symbol: ${tokenInfo.symbol}`);
+            console.log(`   Mint: ${mint.toString()}`);
+            console.log(`   Decimals: ${tokenInfo.decimals}`);
+            console.log(`   Token Account: ${tokenAccount.toString()}\n`);
+            tokenLoaded = true;
+            break;
+        } catch (error) {
+            console.log(`Could not load ${tokenFile}, trying next...`);
+            continue;
+        }
+    }
 
-        console.log(`✅ SPL Token deployed:`);
-        console.log(`   Mint: ${mint.publicKey.toString()}`);
-        console.log(`   Token Account: ${tokenAccount.toString()}\n`);
+    if (!tokenLoaded) {
+        throw new Error("No valid tokens found in tokens folder. Please create tokens first using the token CLI.");
     }
 
     // Step 4: Whitelist SPL Token
@@ -295,7 +252,7 @@ async function run() {
 
     try {
         const whitelistTx = await program.methods
-            .whitelistToken(mint.publicKey)
+            .whitelistToken(mint)
             .accounts({
                 config: configPda,
                 whitelist: whitelistPda,
@@ -419,7 +376,7 @@ async function run() {
     const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
         adminProvider.connection as any,
         adminKeypair,
-        mint.publicKey,
+        mint,
         vaultPda,
         true
     );
@@ -440,7 +397,7 @@ async function run() {
     console.log(`📤 Sending ${splAmount.toNumber() / Math.pow(10, 6)} tokens to ${splRecipient.toString()}`);
 
     const splFundsTx = await userProgram.methods
-        .sendFunds(splRecipient, mint.publicKey, splAmount, revertSettings)
+        .sendFunds(splRecipient, mint, splAmount, revertSettings)
         .accounts({
             config: configPda,
             vault: vaultPda,
@@ -448,7 +405,7 @@ async function run() {
             tokenWhitelist: whitelistPda,
             userTokenAccount: tokenAccount,
             gatewayTokenAccount: vaultAta.address,
-            bridgeToken: mint.publicKey,
+            bridgeToken: mint,
             tokenProgram: spl.TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
         })
@@ -502,19 +459,18 @@ async function run() {
     console.log(`📊 User SPL balance BEFORE: ${userTokenBalanceBeforeTx.toString()} tokens`);
     console.log(`📊 Vault SPL balance BEFORE: ${vaultTokenBalanceBeforeTx.toString()} tokens`);
 
-    // Generate signature data for payload security (32-byte hash)
-    const signatureData = Buffer.alloc(32);
-    // For testing, use a simple pattern. In production, this would be a secure signature.
-    signatureData.fill(0x42);
+    // Generate signature data for payload security (dynamic bytes)
+    const signatureData = Buffer.from("test_signature_data_for_spl_payload", "utf8");
+    // For testing, use a simple string. In production, this would be a secure signature.
 
     const txWithFundsTx = await userProgram.methods
         .sendTxWithFunds(
-            mint.publicKey,
+            mint,
             txWithFundsSplAmount,
             txWithFundsPayload,
             revertSettings,
             txWithFundsGasAmount,
-            Array.from(signatureData)
+            signatureData
         )
         .accounts({
             config: configPda,
@@ -524,7 +480,7 @@ async function run() {
             userTokenAccount: tokenAccount,
             gatewayTokenAccount: vaultAta.address,
             priceUpdate: PRICE_ACCOUNT,
-            bridgeToken: mint.publicKey,
+            bridgeToken: mint,
             tokenProgram: spl.TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
         })
@@ -571,8 +527,8 @@ async function run() {
     };
 
     // Generate signature data for native SOL payload
-    const nativeSignatureData = Buffer.alloc(32);
-    nativeSignatureData.fill(0x43); // Different pattern for native SOL test
+    const nativeSignatureData = Buffer.from("test_signature_data_for_native_sol_payload", "utf8");
+    // Different signature for native SOL test
 
     const userBalanceBeforeNative = await connection.getBalance(user);
     const vaultBalanceBeforeNative = await connection.getBalance(vaultPda);
@@ -587,7 +543,7 @@ async function run() {
             nativePayload,
             nativeRevertSettings,
             nativeGasAmount,
-            Array.from(nativeSignatureData)
+            nativeSignatureData
         )
         .accounts({
             config: configPda,
@@ -797,7 +753,7 @@ async function run() {
         const adminAta = await spl.getOrCreateAssociatedTokenAccount(
             userProvider.connection as any,
             adminKeypair,
-            mint.publicKey,
+            mint,
             admin
         );
 
@@ -811,7 +767,7 @@ async function run() {
         const amountBE_SPL = Buffer.alloc(8);
         amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
         const recipientBytesSPL = admin.toBuffer();
-        const mintBytes = mint.publicKey.toBuffer(); // 32 bytes for mint address
+        const mintBytes = mint.toBuffer(); // 32 bytes for mint address
 
         const concatSPL = Buffer.concat([
             PREFIX_SPL,
@@ -843,7 +799,7 @@ async function run() {
                 whitelist: whitelistPda,
                 vault: vaultPda,
                 tokenVault: vaultAta.address,
-                tokenMint: mint.publicKey,
+                tokenMint: mint,
                 tssPda: tssPda,
                 recipientTokenAccount: adminAta.address,
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
@@ -869,7 +825,7 @@ async function run() {
     console.log("14. Testing remove whitelist...");
     try {
         const removeWhitelistTx = await program.methods
-            .removeWhitelistToken(mint.publicKey)
+            .removeWhitelistToken(mint)
             .accounts({
                 config: configPda,
                 whitelist: whitelistPda,

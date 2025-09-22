@@ -62,7 +62,7 @@ pub mod pushsolanagateway {
         payload: UniversalPayload,
         revert_cfg: RevertSettings,
         gas_amount: u64,
-        signature_data: [u8; 32],
+        signature_data: Vec<u8>,
     ) -> Result<()> {
         instructions::deposit::send_tx_with_funds(
             ctx,
