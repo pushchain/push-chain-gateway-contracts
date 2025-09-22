@@ -704,15 +704,6 @@ contract UniversalGatewayV0 is
     //       INTERNAL HELPERS
     // =========================
 
-
-    function getEthUsdPrice_old() public view returns (uint256, uint8) {
-        (, int256 price, , , ) = ethUsdFeed.latestRoundData();
-        uint8 decimals = ethUsdFeed.decimals();
-
-        require(price > 0, "Invalid price");
-        return (uint256(price), decimals); // 8 decimals
-    }
-
     /// @dev Check if the amount is within the USD cap range
     ///      Cap Ranges are defined in the constructor or can be updated by the admin.
     /// @param amount Amount to check
