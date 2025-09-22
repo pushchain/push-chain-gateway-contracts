@@ -657,6 +657,17 @@ contract UniversalGatewayV0 is
         }
 
         uint8 dec = chainlinkEthUsdDecimals;
+        
+        // This can happen if the feed wasn't properly initialized or returns 0 decimals
+        if (dec == 0) {
+            try ethUsdFeed.decimals() returns (uint8 feedDecimals) {
+                dec = feedDecimals;
+            } catch {
+                // If feed doesn't support decimals(), assume standard Chainlink ETH/USD format (8 decimals)
+                dec = 8;
+            }
+        }
+        
         // Scale priceInUSD (decimals = dec) to 1e18
         uint256 scale;
         unchecked {
@@ -667,6 +678,14 @@ contract UniversalGatewayV0 is
         return (uint256(priceInUSD) * scale, dec);
     }
 
+
+    function getEthUsdPrice_old() public view returns (uint256, uint8) {
+        (, int256 price, , , ) = ethUsdFeed.latestRoundData();
+        uint8 decimals = ethUsdFeed.decimals();
+
+        require(price > 0, "Invalid price");
+        return (uint256(price), decimals); // 8 decimals
+    }
 
     /// @notice Converts an ETH amount (in wei) to USD with 18 decimals via Chainlink price.
     /// @dev Uses getEthUsdPrice which returns USD(1e18) per ETH and computes:

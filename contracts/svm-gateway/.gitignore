@@ -13,3 +13,11 @@ test-ledger
 !anchor.toml
 !Cargo.toml
 !target/idl/*.json
+!tokens/*.json
+.env
+
+# SECURITY: Never commit secret keys
+**/mintSecretKey*
+**/*secret*
+**/*private*
+secrets/

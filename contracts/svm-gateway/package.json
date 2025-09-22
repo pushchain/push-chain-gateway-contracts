@@ -2,19 +2,32 @@
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "token": " ts-node app/token-cli.ts",
+    "token:create": " ts-node app/token-cli.ts create",
+    "token:mint": " ts-node app/token-cli.ts mint",
+    "token:whitelist": " ts-node app/token-cli.ts whitelist",
+    "token:remove-whitelist": " ts-node app/token-cli.ts remove-whitelist",
+    "token:list": " ts-node app/token-cli.ts list",
+    "test": " ts-node app/simple-spl-test.ts",
+    "test:whitelist": " ts-node app/simple-spl-test.ts whitelist",
+    "test:deposit": " ts-node app/simple-spl-test.ts test-deposit",
+    "test:full": " ts-node app/simple-spl-test.ts full-test"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
     "@jup-ag/api": "^6.0.41",
+    "@metaplex-foundation/mpl-token-metadata": "^2.1.4",
     "@pythnetwork/hermes-client": "^2.0.0",
     "@pythnetwork/pyth-solana-receiver": "^0.10.1",
-    "bs58": "^6.0.0"
+    "bs58": "^6.0.0",
+    "commander": "^11.1.0"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",
+    "@types/node": "^20.10.0",
     "chai": "^4.3.4",
     "mocha": "^9.0.3",
     "prettier": "^2.6.2",

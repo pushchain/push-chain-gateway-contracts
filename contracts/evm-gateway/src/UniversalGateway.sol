@@ -586,6 +586,15 @@ contract UniversalGateway is
         }
 
         uint8 dec = chainlinkEthUsdDecimals;
+        // This can happen if the feed wasn't properly initialized or returns 0 decimals
+        if (dec == 0) {
+            try ethUsdFeed.decimals() returns (uint8 feedDecimals) {
+                dec = feedDecimals;
+            } catch {
+                // If feed doesn't support decimals(), assume standard Chainlink ETH/USD format (8 decimals)
+                dec = 8;
+            }
+        }
         // Scale priceInUSD (decimals = dec) to 1e18
         uint256 scale;
         unchecked {
