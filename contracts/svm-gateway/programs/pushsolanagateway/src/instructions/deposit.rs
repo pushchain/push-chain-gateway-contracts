@@ -4,7 +4,7 @@ use crate::state::*;
 use crate::utils::*;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use anchor_spl::token::{self, spl_token, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, spl_token, Token, Transfer};
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 // =========================
@@ -71,77 +71,11 @@ pub fn send_tx_with_gas(
 }
 
 /// FUNDS route (Universal): move funds to Push Chain (no payload).
-/// SPL-only here (native SOL has a dedicated function). Emits `TxWithFunds`.
+/// Supports both native SOL and SPL tokens (like ETH Gateway). Emits `TxWithFunds`.
 pub fn send_funds(
     ctx: Context<SendFunds>,
     recipient: Pubkey,
     bridge_token: Pubkey,
-    bridge_amount: u64,
-    revert_cfg: RevertSettings,
-) -> Result<()> {
-    let config = &ctx.accounts.config;
-    let user = &ctx.accounts.user;
-    let _vault = &ctx.accounts.vault;
-
-    // Check if paused
-    require!(!config.paused, GatewayError::Paused);
-
-    // Validate inputs
-    require!(
-        recipient != Pubkey::default(),
-        GatewayError::InvalidRecipient
-    );
-    require!(
-        revert_cfg.fund_recipient != Pubkey::default(),
-        GatewayError::InvalidRecipient
-    );
-    require!(bridge_amount > 0, GatewayError::InvalidAmount);
-
-    // This function only handles SPL tokens, use send_funds_native for SOL
-    require!(
-        bridge_token != Pubkey::default(),
-        GatewayError::InvalidToken
-    );
-
-    // Check if token is whitelisted
-    let token_whitelist = &ctx.accounts.token_whitelist;
-    require!(
-        token_whitelist.tokens.contains(&bridge_token),
-        GatewayError::TokenNotWhitelisted
-    );
-
-    // Transfer SPL tokens to gateway vault
-    let cpi_context = CpiContext::new(
-        ctx.accounts.token_program.to_account_info(),
-        Transfer {
-            from: ctx.accounts.user_token_account.to_account_info(),
-            to: ctx.accounts.gateway_token_account.to_account_info(),
-            authority: user.to_account_info(),
-        },
-    );
-    token::transfer(cpi_context, bridge_amount)?;
-
-    // Emit TxWithFunds event for SPL token
-    emit!(TxWithFunds {
-        sender: user.key(),
-        recipient,
-        bridge_amount,
-        gas_amount: 0,
-        bridge_token,
-        data: vec![],
-        revert_cfg,
-        tx_type: TxType::Funds,
-        signature_data: vec![], // Empty for funds-only route
-    });
-
-    Ok(())
-}
-
-/// FUNDS route (Universal): move native SOL to Push Chain (no payload).
-/// Emits `TxWithFunds` for native.
-pub fn send_funds_native(
-    ctx: Context<SendFundsNative>,
-    recipient: Pubkey,
     bridge_amount: u64,
     revert_cfg: RevertSettings,
 ) -> Result<()> {
@@ -163,29 +97,65 @@ pub fn send_funds_native(
     );
     require!(bridge_amount > 0, GatewayError::InvalidAmount);
 
-    // Check user has enough SOL
-    require!(
-        user.lamports() >= bridge_amount,
-        GatewayError::InsufficientBalance
-    );
+    // Handle both native SOL and SPL tokens (like ETH Gateway pattern)
+    if bridge_token == Pubkey::default() {
+        // Native SOL transfer
+        require!(
+            user.lamports() >= bridge_amount,
+            GatewayError::InsufficientBalance
+        );
 
-    // Transfer SOL to vault
-    let cpi_context = CpiContext::new(
-        ctx.accounts.system_program.to_account_info(),
-        system_program::Transfer {
-            from: user.to_account_info(),
-            to: vault.to_account_info(),
-        },
-    );
-    system_program::transfer(cpi_context, bridge_amount)?;
+        let cpi_context = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: user.to_account_info(),
+                to: vault.to_account_info(),
+            },
+        );
+        system_program::transfer(cpi_context, bridge_amount)?;
+    } else {
+        // SPL token transfer - Use same pattern as send_tx_with_funds
+        let token_whitelist = &ctx.accounts.token_whitelist;
+        require!(
+            token_whitelist.tokens.contains(&bridge_token),
+            GatewayError::TokenNotWhitelisted
+        );
 
-    // Emit TxWithFunds event for native SOL
+        // For SPL tokens, ensure accounts are owned by token program
+        // (same pattern as send_tx_with_funds for consistency)
+        let user_token_account_info = &ctx.accounts.user_token_account.to_account_info();
+        let gateway_token_account_info = &ctx.accounts.gateway_token_account.to_account_info();
+
+        require!(
+            user_token_account_info.owner == &spl_token::ID,
+            GatewayError::InvalidOwner
+        );
+        require!(
+            gateway_token_account_info.owner == &spl_token::ID,
+            GatewayError::InvalidOwner
+        );
+
+        // Additional validation will happen in the token::transfer CPI below
+        // which will fail if mint doesn't match or accounts are invalid
+
+        let cpi_context = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_token_account.to_account_info(),
+                to: ctx.accounts.gateway_token_account.to_account_info(),
+                authority: user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_context, bridge_amount)?;
+    }
+
+    // Emit TxWithFunds event (same for both native SOL and SPL tokens)
     emit!(TxWithFunds {
         sender: user.key(),
         recipient,
         bridge_amount,
         gas_amount: 0,
-        bridge_token: Pubkey::default(), // Native SOL
+        bridge_token, // Pubkey::default() for native SOL, mint address for SPL
         data: vec![],
         revert_cfg,
         tx_type: TxType::Funds,
@@ -353,28 +323,6 @@ pub struct SendTxWithGas<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SendFundsNative<'info> {
-    #[account(
-        mut,
-        seeds = [CONFIG_SEED],
-        bump = config.bump,
-    )]
-    pub config: Account<'info, Config>,
-
-    #[account(
-        mut,
-        seeds = [VAULT_SEED],
-        bump = config.vault_bump,
-    )]
-    pub vault: SystemAccount<'info>,
-
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
 pub struct SendFunds<'info> {
     #[account(
         mut,
@@ -396,25 +344,19 @@ pub struct SendFunds<'info> {
     )]
     pub token_whitelist: Account<'info, TokenWhitelist>,
 
-    #[account(
-        mut,
-        constraint = user_token_account.owner == user.key() @ GatewayError::InvalidOwner,
-        constraint = user_token_account.mint == bridge_token.key() @ GatewayError::InvalidMint,
-    )]
-    pub user_token_account: Account<'info, TokenAccount>,
+    /// CHECK: For native SOL, this can be any account. For SPL tokens, must be valid token account.
+    #[account(mut)]
+    pub user_token_account: UncheckedAccount<'info>,
 
-    #[account(
-        mut,
-        constraint = gateway_token_account.owner == vault.key() @ GatewayError::InvalidOwner,
-        constraint = gateway_token_account.mint == bridge_token.key() @ GatewayError::InvalidMint,
-    )]
-    pub gateway_token_account: Account<'info, TokenAccount>,
+    /// CHECK: For native SOL, this can be any account. For SPL tokens, must be valid token account.
+    #[account(mut)]
+    pub gateway_token_account: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
 
-    // Note: No price_update needed for SPL-only functions (no USD caps)
-    pub bridge_token: Account<'info, Mint>,
+    /// CHECK: Can be either a token mint (for SPL) or Pubkey::default() (for native SOL)
+    pub bridge_token: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }

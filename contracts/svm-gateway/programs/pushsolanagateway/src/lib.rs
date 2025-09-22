@@ -30,7 +30,9 @@ pub mod pushsolanagateway {
     }
 
     /// @notice Allows initiating a TX for movement of funds from source chain to Push Chain.
-    /// @dev    Supports both native SOL and SPL token deposits.
+    /// @dev    Supports both native SOL and SPL token deposits (like ETH Gateway).
+    ///         For native SOL: pass Pubkey::default() as bridge_token
+    ///         For SPL tokens: pass token mint address as bridge_token
     ///         The route emits TxWithFunds event.
     pub fn send_funds(
         ctx: Context<SendFunds>,
@@ -40,16 +42,6 @@ pub mod pushsolanagateway {
         revert_cfg: RevertSettings,
     ) -> Result<()> {
         instructions::deposit::send_funds(ctx, recipient, bridge_token, bridge_amount, revert_cfg)
-    }
-
-    /// @notice Allows initiating a TX for movement of native SOL from source chain to Push Chain.
-    pub fn send_funds_native(
-        ctx: Context<SendFundsNative>,
-        recipient: Pubkey,
-        bridge_amount: u64,
-        revert_cfg: RevertSettings,
-    ) -> Result<()> {
-        instructions::deposit::send_funds_native(ctx, recipient, bridge_amount, revert_cfg)
     }
 
     /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
@@ -267,7 +259,7 @@ pub mod pushsolanagateway {
 
 // Re-export account structs and types
 pub use instructions::admin::{AdminAction, PauseAction, WhitelistAction};
-pub use instructions::deposit::{SendFunds, SendFundsNative, SendTxWithFunds, SendTxWithGas};
+pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas};
 pub use instructions::initialize::Initialize;
 pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
 pub use instructions::withdraw::{RevertWithdraw, RevertWithdrawSplToken};

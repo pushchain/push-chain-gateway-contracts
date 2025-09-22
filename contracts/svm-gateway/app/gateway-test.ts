@@ -338,23 +338,28 @@ async function run() {
     console.log(`✅ Legacy add_funds sent: ${legacyTx}`);
     await parseAndPrintEvents(legacyTx, "legacy add_funds events");
 
-    // Step 6: Test send_funds_native (Native SOL transfers)
-    console.log("6. Testing send_funds_native...");
+    // Step 6: Test send_funds with native SOL (unified function)
+    console.log("6. Testing send_funds (Native SOL)...");
     const recipient = Keypair.generate().publicKey;
     const fundAmount = new anchor.BN(0.005 * LAMPORTS_PER_SOL); // 0.005 SOL
 
     const userBalanceBeforeFunds = await connection.getBalance(user);
     const vaultBalanceBeforeFunds = await connection.getBalance(vaultPda);
 
-    console.log(`💳 User balance BEFORE send_funds_native: ${userBalanceBeforeFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault balance BEFORE send_funds_native: ${vaultBalanceBeforeFunds / LAMPORTS_PER_SOL} SOL`);
+    console.log(`💳 User balance BEFORE send_funds (native): ${userBalanceBeforeFunds / LAMPORTS_PER_SOL} SOL`);
+    console.log(`🏦 Vault balance BEFORE send_funds (native): ${vaultBalanceBeforeFunds / LAMPORTS_PER_SOL} SOL`);
 
     const nativeFundsTx = await userProgram.methods
-        .sendFundsNative(recipient, fundAmount, revertSettings)
+        .sendFunds(recipient, PublicKey.default, fundAmount, revertSettings) // PublicKey.default for native SOL
         .accounts({
             config: configPda,
             vault: vaultPda,
             user: user,
+            tokenWhitelist: whitelistPda,
+            userTokenAccount: user, // For native SOL, can be any account
+            gatewayTokenAccount: vaultPda, // For native SOL, can be any account
+            bridgeToken: PublicKey.default, // Native SOL
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
         })
         .rpc();
@@ -362,12 +367,12 @@ async function run() {
     console.log(`✅ Native SOL funds sent to ${recipient.toString()}: ${nativeFundsTx}`);
 
     // Parse events
-    await parseAndPrintEvents(nativeFundsTx, "send_funds_native events");
+    await parseAndPrintEvents(nativeFundsTx, "send_funds (native) events");
 
     const userBalanceAfterFunds = await connection.getBalance(user);
     const vaultBalanceAfterFunds = await connection.getBalance(vaultPda);
-    console.log(`💳 User balance AFTER send_funds_native: ${userBalanceAfterFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault balance AFTER send_funds_native: ${vaultBalanceAfterFunds / LAMPORTS_PER_SOL} SOL\n`);
+    console.log(`💳 User balance AFTER send_funds (native): ${userBalanceAfterFunds / LAMPORTS_PER_SOL} SOL`);
+    console.log(`🏦 Vault balance AFTER send_funds (native): ${vaultBalanceAfterFunds / LAMPORTS_PER_SOL} SOL\n`);
 
     // Step 7: Test SPL token functions
     console.log("7. Testing SPL Token Functions...");
