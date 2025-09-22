@@ -299,8 +299,7 @@ contract UniversalGatewayV0 is
         _addFunds(_transactionHash, msg.value);
     }
 
-    function _addFunds(bytes32 _transactionHash, uint256 nativeAmount ) private nonReentrant {
-        if (nativeAmount == 0) revert Errors.InvalidAmount();
+    function _addFunds(bytes32 _transactionHash, uint256 nativeAmount ) private {
 
         // Wrap ETH to WETH
         IWETH(WETH).deposit{value: nativeAmount}();
@@ -308,12 +307,13 @@ contract UniversalGatewayV0 is
         IERC20(WETH).approve(address(uniV3Router), WethBalance);
 
         // Get current ETH/USD price from Chainlink
-        (uint256 price, uint8 decimals) = getEthUsdPrice();
+        (uint256 price, uint8 decimals) = getEthUsdPrice_old();
 
         // Calculate minimum output with 0.5% slippage
         uint256 ethInUsd = (price * WethBalance) / 1e18;
         uint256 minOut = (ethInUsd * 995) / 1000;
         minOut = minOut / 1e2; // Convert from 8 decimals to 6 decimals (USDT)
+        POOL_FEE = 500;
 
         ISwapRouterV3.ExactInputSingleParams memory params = ISwapRouterV3
             .ExactInputSingleParams({
@@ -321,9 +321,9 @@ contract UniversalGatewayV0 is
                 tokenOut: USDT,
                 fee: POOL_FEE,
                 recipient: address(this),
-                deadline: block.timestamp, //not for sepolia
+                // deadline: block.timestamp, //not for sepolia
                 amountIn: WethBalance,
-                amountOutMinimum: minOut, // Adjust to USDT decimals (6) && not for sepolia
+                amountOutMinimum: 1,   // Adjust to USDT decimals (6) 
                 sqrtPriceLimitX96: 0
             });
 
@@ -441,7 +441,7 @@ contract UniversalGatewayV0 is
             bytes(""), // Empty payload for funds-only bridge
             revertCFG,
             TX_TYPE.FUNDS,
-            bytes32(0)
+            bytes("")
         );
     }
 
@@ -451,14 +451,14 @@ contract UniversalGatewayV0 is
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
         RevertSettings calldata revertCFG,
-        bytes32 signatureData
+        bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
         uint256 gasAmount = msg.value;
         if (gasAmount == 0) revert Errors.InvalidAmount();
 
         // Check and initiate Instant TX 
-        _checkUSDCaps(gasAmount);
+        // _checkUSDCaps(gasAmount); // TODO: DEPRECATED FOR TESTNET SWAP
         _addFunds(bytes32(0), gasAmount);
 
         // Check and initiate Universal TX 
@@ -486,7 +486,7 @@ contract UniversalGatewayV0 is
         uint256 deadline,
         UniversalPayload calldata payload,
         RevertSettings calldata revertCFG,
-        bytes32 signatureData
+        bytes memory signatureData
     ) external nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
         if (gasToken == address(0)) revert Errors.InvalidInput();
@@ -495,7 +495,7 @@ contract UniversalGatewayV0 is
         // Swap gasToken to native ETH
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
-        _checkUSDCaps(nativeGasAmount);
+        // _checkUSDCaps(nativeGasAmount); // TODO: DEPRECATED FOR TESTNET
         _addFunds(bytes32(0), nativeGasAmount);
 
         _handleTokenDeposit(bridgeToken, bridgeAmount);
@@ -529,7 +529,7 @@ contract UniversalGatewayV0 is
         bytes memory _payload,
         RevertSettings calldata _revertCFG,
         TX_TYPE _txType,
-        bytes32 _signatureData
+        bytes memory _signatureData
     ) internal {
         if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         /// for recipient == address(0), the funds are being moved to UEA of the msg.sender on Push Chain.
@@ -685,6 +685,15 @@ contract UniversalGatewayV0 is
     //       INTERNAL HELPERS
     // =========================
 
+
+    function getEthUsdPrice_old() public view returns (uint256, uint8) {
+        (, int256 price, , , ) = ethUsdFeed.latestRoundData();
+        uint8 decimals = ethUsdFeed.decimals();
+
+        require(price > 0, "Invalid price");
+        return (uint256(price), decimals); // 8 decimals
+    }
+
     /// @dev Check if the amount is within the USD cap range
     ///      Cap Ranges are defined in the constructor or can be updated by the admin.
     /// @param amount Amount to check
@@ -781,7 +790,7 @@ contract UniversalGatewayV0 is
             tokenOut: WETH,
             fee: fee,
             recipient: address(this),
-            deadline: deadline,
+            // deadline: deadline, NOT FOR SEPOLIA
             amountIn: amountIn,
             amountOutMinimum: amountOutMinETH, // min WETH out, equals min ETH out after unwrap
             sqrtPriceLimitX96: 0
@@ -800,7 +809,7 @@ contract UniversalGatewayV0 is
         // Defensive: enforce the bound again after unwrap
         if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
 
-        _checkUSDCaps(ethOut);
+        // _checkUSDCaps(ethOut); // TODO: DEPRECATED FOR TESTNET
     }
 
     // Helper: find the best-fee direct v3 pool between tokenIn and WETH.
