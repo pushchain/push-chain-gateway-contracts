@@ -21,7 +21,7 @@ interface IUniversalGatewayV0 {
         bytes payload,
         RevertSettings revertCFG,
         TX_TYPE txType,
-        bytes32 signatureData
+        bytes signatureData
     );
     event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);
     event TSSAddressUpdated(address oldTSS, address newTSS);
@@ -105,7 +105,7 @@ interface IUniversalGatewayV0 {
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
         RevertSettings calldata revertCFG,
-        bytes32 signatureData
+        bytes memory signatureData
     ) external payable;
 
     /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
@@ -138,7 +138,7 @@ interface IUniversalGatewayV0 {
         uint256 deadline,
         UniversalPayload calldata payload,
         RevertSettings calldata revertCFG,
-        bytes32 signatureData
+        bytes memory signatureData
     ) external;
 
     /// @notice Withdraw functions (TSS-only)

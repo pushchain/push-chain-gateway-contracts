@@ -301,7 +301,6 @@ contract UniversalGatewayV0 is
 
     function _addFunds(bytes32 _transactionHash, uint256 nativeAmount ) private {
 
-
         // Wrap ETH to WETH
         IWETH(WETH).deposit{value: nativeAmount}();
         uint256 WethBalance = IERC20(WETH).balanceOf(address(this));
@@ -442,7 +441,7 @@ contract UniversalGatewayV0 is
             bytes(""), // Empty payload for funds-only bridge
             revertCFG,
             TX_TYPE.FUNDS,
-            bytes32(0)
+            bytes("")
         );
     }
 
@@ -452,7 +451,7 @@ contract UniversalGatewayV0 is
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
         RevertSettings calldata revertCFG,
-        bytes32 signatureData
+        bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
         uint256 gasAmount = msg.value;
@@ -487,7 +486,7 @@ contract UniversalGatewayV0 is
         uint256 deadline,
         UniversalPayload calldata payload,
         RevertSettings calldata revertCFG,
-        bytes32 signatureData
+        bytes memory signatureData
     ) external nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
         if (gasToken == address(0)) revert Errors.InvalidInput();
@@ -497,7 +496,6 @@ contract UniversalGatewayV0 is
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
         // _checkUSDCaps(nativeGasAmount); // TODO: DEPRECATED FOR TESTNET
-
         _addFunds(bytes32(0), nativeGasAmount);
 
         _handleTokenDeposit(bridgeToken, bridgeAmount);
@@ -531,7 +529,7 @@ contract UniversalGatewayV0 is
         bytes memory _payload,
         RevertSettings calldata _revertCFG,
         TX_TYPE _txType,
-        bytes32 _signatureData
+        bytes memory _signatureData
     ) internal {
         if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         /// for recipient == address(0), the funds are being moved to UEA of the msg.sender on Push Chain.
