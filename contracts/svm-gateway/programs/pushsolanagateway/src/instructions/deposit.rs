@@ -74,7 +74,7 @@ pub fn send_tx_with_gas(
 /// Supports both native SOL and SPL tokens (like ETH Gateway). Emits `TxWithFunds`.
 pub fn send_funds(
     ctx: Context<SendFunds>,
-    recipient: Pubkey,
+    recipient: [u8; 20],
     bridge_token: Pubkey,
     bridge_amount: u64,
     revert_cfg: RevertSettings,
@@ -88,7 +88,7 @@ pub fn send_funds(
 
     // Validate inputs
     require!(
-        recipient != Pubkey::default(),
+        recipient != [0u8; 20], // Check for zero ETH address
         GatewayError::InvalidRecipient
     );
     require!(
@@ -280,7 +280,7 @@ pub fn send_tx_with_funds(
     // Emit TxWithFunds event for bridge + payload
     emit!(TxWithFunds {
         sender: user.key(),
-        recipient: Pubkey::default(), // address(0) for moving funds + payload for execution
+        recipient: [0u8; 20], // EVM zero address for payload execution
         bridge_amount,
         gas_amount,
         bridge_token,

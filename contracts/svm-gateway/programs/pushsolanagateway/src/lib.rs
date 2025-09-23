@@ -36,7 +36,7 @@ pub mod pushsolanagateway {
     ///         The route emits TxWithFunds event.
     pub fn send_funds(
         ctx: Context<SendFunds>,
-        recipient: Pubkey,
+        recipient: [u8; 20],
         bridge_token: Pubkey,
         bridge_amount: u64,
         revert_cfg: RevertSettings,

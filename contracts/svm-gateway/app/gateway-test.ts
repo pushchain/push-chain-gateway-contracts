@@ -340,7 +340,7 @@ async function run() {
 
     // Step 6: Test send_funds with native SOL (unified function)
     console.log("6. Testing send_funds (Native SOL)...");
-    const recipient = Keypair.generate().publicKey;
+    const recipient = Array.from(Buffer.from("1111111111111111111111111111111111111111", "hex").subarray(0, 20)); // EVM address (20 bytes)
     const fundAmount = new anchor.BN(0.005 * LAMPORTS_PER_SOL); // 0.005 SOL
 
     const userBalanceBeforeFunds = await connection.getBalance(user);
@@ -399,10 +399,13 @@ async function run() {
 
     console.log(`📊 User SPL balance BEFORE: ${userTokenBalanceBefore.toString()} tokens`);
     console.log(`📊 Vault SPL balance BEFORE: ${vaultTokenBalanceBefore.toString()} tokens`);
-    console.log(`📤 Sending ${splAmount.toNumber() / Math.pow(10, 6)} tokens to ${splRecipient.toString()}`);
+    // Convert SPL recipient to EVM address for the event
+    const splRecipientEvm = Array.from(Buffer.from("2222222222222222222222222222222222222222", "hex").subarray(0, 20)); // EVM address (20 bytes)
+
+    console.log(`📤 Sending ${splAmount.toNumber() / Math.pow(10, 6)} tokens to EVM address 0x2222222222222222222222222222222222222222`);
 
     const splFundsTx = await userProgram.methods
-        .sendFunds(splRecipient, mint, splAmount, revertSettings)
+        .sendFunds(splRecipientEvm, mint, splAmount, revertSettings)
         .accounts({
             config: configPda,
             vault: vaultPda,

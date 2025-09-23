@@ -115,7 +115,7 @@ pub struct TxWithGas {
 #[event]
 pub struct TxWithFunds {
     pub sender: Pubkey,
-    pub recipient: Pubkey,
+    pub recipient: [u8; 20], // Ethereum address (20 bytes)
     pub bridge_amount: u64,
     pub gas_amount: u64,
     pub bridge_token: Pubkey,
