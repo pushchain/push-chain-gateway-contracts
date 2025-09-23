@@ -279,7 +279,7 @@ async function run() {
 
     // Create payload and revert settings
     const payload = {
-        to: Keypair.generate().publicKey, // Target address on Push Chain
+        to: Array.from(Buffer.from("1234567890123456789012345678901234567890", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
         value: new anchor.BN(0), // Value to send
         data: Buffer.from("test payload data"),
         gas_limit: new anchor.BN(100000),
@@ -439,7 +439,7 @@ async function run() {
 
     // Create payload for this transaction
     const txWithFundsPayload = {
-        to: Keypair.generate().publicKey, // Target address on Push Chain
+        to: Array.from(Buffer.from("abcdefabcdefabcdefabcdefabcdefabcdefabcd", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
         value: new anchor.BN(0), // Value to send
         data: Buffer.from("test payload for funds+gas"),
         gas_limit: new anchor.BN(120000),
@@ -515,7 +515,7 @@ async function run() {
     console.log(`🌉 Bridge amount: ${(nativeBridgeAmount.toNumber() / LAMPORTS_PER_SOL).toFixed(4)} SOL`);
 
     const nativePayload = {
-        to: new PublicKey("11111111111111111111111111111112"), // System program as example
+        to: Array.from(Buffer.from("fedcbafedcbafedcbafedcbafedcbafedcbafedcba", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
         value: new anchor.BN(0),
         data: Buffer.from("native_sol_payload_data"),
         gasLimit: new anchor.BN(21000),
@@ -842,6 +842,27 @@ async function run() {
     } catch (error) {
         if (error.message.includes("TokenNotWhitelisted") || error.message.includes("not whitelisted")) {
             console.log("✅ Token not in whitelist (skipping removal)\n");
+        } else {
+            throw error;
+        }
+    }
+
+    // Re-whitelist the token after removal test
+    console.log("14b. Re-whitelisting token after removal test...");
+    try {
+        const reWhitelistTx = await program.methods
+            .whitelistToken(mint)
+            .accounts({
+                config: configPda,
+                whitelist: whitelistPda,
+                admin: admin,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+        console.log(`✅ Token re-whitelisted: ${reWhitelistTx}\n`);
+    } catch (error) {
+        if (error.message.includes("TokenAlreadyWhitelisted")) {
+            console.log(`✅ Token already whitelisted (skipping re-whitelist)\n`);
         } else {
             throw error;
         }

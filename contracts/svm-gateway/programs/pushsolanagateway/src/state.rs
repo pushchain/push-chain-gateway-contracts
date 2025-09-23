@@ -34,7 +34,7 @@ pub enum VerificationType {
 /// Serialized and hashed for event parity with EVM (payload bytes/hash).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct UniversalPayload {
-    pub to: Pubkey,
+    pub to: [u8; 20], // Ethereum address (20 bytes)
     pub value: u64,
     pub data: Vec<u8>,
     pub gas_limit: u64,
