@@ -1,0 +1,494 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - lcov.info - test/BaseTest.t.sol</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../index.html" title="Click to go to top-level">top level</a> - <a href="index.html" title="Click to go to directory test">test</a> - BaseTest.t.sol<span style="font-size: 80%;"> (source / <a href="BaseTest.t.sol.func-c.html" title="Click to go to function table">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">lcov.info</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryLo">62.8&nbsp;%</td>
+            <td class="headerCovTableEntry">148</td>
+            <td class="headerCovTableEntry">93</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">2025-09-26 16:00:22</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryLo">53.8&nbsp;%</td>
+            <td class="headerCovTableEntry">26</td>
+            <td class="headerCovTableEntry">14</td>
+          </tr>
+          <tr>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="headerItem">Branches:</td>
+            <td class="headerCovTableEntryLo">20.0&nbsp;%</td>
+            <td class="headerCovTableEntry">10</td>
+            <td class="headerCovTableEntry">2</td>
+          </tr>
+                  <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">             Branch data     Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>                 :             : // SPDX-License-Identifier: MIT</span>
+<span id="L2"><span class="lineNum">       2</span>                 :             : pragma solidity 0.8.26;</span>
+<span id="L3"><span class="lineNum">       3</span>                 :             : </span>
+<span id="L4"><span class="lineNum">       4</span>                 :             : import {Test, console} from &quot;forge-std/Test.sol&quot;;</span>
+<span id="L5"><span class="lineNum">       5</span>                 :             : import {Vm} from &quot;forge-std/Vm.sol&quot;;</span>
+<span id="L6"><span class="lineNum">       6</span>                 :             : import {IERC20} from &quot;@openzeppelin/contracts/token/ERC20/IERC20.sol&quot;;</span>
+<span id="L7"><span class="lineNum">       7</span>                 :             : import {ERC1967Proxy} from &quot;@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol&quot;;</span>
+<span id="L8"><span class="lineNum">       8</span>                 :             : import {ProxyAdmin} from &quot;@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol&quot;;</span>
+<span id="L9"><span class="lineNum">       9</span>                 :             : import {TransparentUpgradeableProxy} from &quot;@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol&quot;;</span>
+<span id="L10"><span class="lineNum">      10</span>                 :             : </span>
+<span id="L11"><span class="lineNum">      11</span>                 :             : import {UniversalGateway} from &quot;../src/UniversalGateway.sol&quot;;</span>
+<span id="L12"><span class="lineNum">      12</span>                 :             : import {IUniversalGateway} from &quot;../src/interfaces/IUniversalGateway.sol&quot;;</span>
+<span id="L13"><span class="lineNum">      13</span>                 :             : import {TX_TYPE, RevertSettings, UniversalPayload, VerificationType } from &quot;../src/libraries/Types.sol&quot;;</span>
+<span id="L14"><span class="lineNum">      14</span>                 :             : import {Errors} from &quot;../src/libraries/Errors.sol&quot;;</span>
+<span id="L15"><span class="lineNum">      15</span>                 :             : import {MockERC20} from &quot;./mocks/MockERC20.sol&quot;;</span>
+<span id="L16"><span class="lineNum">      16</span>                 :             : import {MockWETH} from &quot;./mocks/MockWETH.sol&quot;;</span>
+<span id="L17"><span class="lineNum">      17</span>                 :             : import {MockAggregatorV3} from &quot;./mocks/MockAggregatorV3.sol&quot;;</span>
+<span id="L18"><span class="lineNum">      18</span>                 :             : import {MockSequencerUptimeFeed} from &quot;./mocks/MockSequencerUptimeFeed.sol&quot;;</span>
+<span id="L19"><span class="lineNum">      19</span>                 :             : </span>
+<span id="L20"><span class="lineNum">      20</span>                 :             : /**</span>
+<span id="L21"><span class="lineNum">      21</span>                 :             :  * @title BaseTest</span>
+<span id="L22"><span class="lineNum">      22</span>                 :             :  * @notice Abstract base test contract for UniversalGateway</span>
+<span id="L23"><span class="lineNum">      23</span>                 :             :  * @dev Provides complete setup, mocks, and helper functions for all gateway tests</span>
+<span id="L24"><span class="lineNum">      24</span>                 :             :  *      Inherit from this contract to avoid redundant setup code </span>
+<span id="L25"><span class="lineNum">      25</span>                 :             :  */</span>
+<span id="L26"><span class="lineNum">      26</span>                 :             : abstract contract BaseTest is Test {</span>
+<span id="L27"><span class="lineNum">      27</span>                 :             : </span>
+<span id="L28"><span class="lineNum">      28</span>                 :             :     // =========================</span>
+<span id="L29"><span class="lineNum">      29</span>                 :             :     //           ACTORS</span>
+<span id="L30"><span class="lineNum">      30</span>                 :             :     // =========================</span>
+<span id="L31"><span class="lineNum">      31</span>                 :             :     address public governance;</span>
+<span id="L32"><span class="lineNum">      32</span>                 :             :     address public admin;</span>
+<span id="L33"><span class="lineNum">      33</span>                 :             :     address public pauser;</span>
+<span id="L34"><span class="lineNum">      34</span>                 :             :     address public tss;</span>
+<span id="L35"><span class="lineNum">      35</span>                 :             :     address public user1;</span>
+<span id="L36"><span class="lineNum">      36</span>                 :             :     address public user2;</span>
+<span id="L37"><span class="lineNum">      37</span>                 :             :     address public user3;</span>
+<span id="L38"><span class="lineNum">      38</span>                 :             :     address public user4;</span>
+<span id="L39"><span class="lineNum">      39</span>                 :             :     address public attacker;</span>
+<span id="L40"><span class="lineNum">      40</span>                 :             :     address public recipient;</span>
+<span id="L41"><span class="lineNum">      41</span>                 :             : </span>
+<span id="L42"><span class="lineNum">      42</span>                 :             :     // =========================</span>
+<span id="L43"><span class="lineNum">      43</span>                 :             :     //        CONTRACTS</span>
+<span id="L44"><span class="lineNum">      44</span>                 :             :     // =========================</span>
+<span id="L45"><span class="lineNum">      45</span>                 :             :     UniversalGateway public gateway;</span>
+<span id="L46"><span class="lineNum">      46</span>                 :             :     TransparentUpgradeableProxy public gatewayProxy;</span>
+<span id="L47"><span class="lineNum">      47</span>                 :             :     ProxyAdmin public proxyAdmin;</span>
+<span id="L48"><span class="lineNum">      48</span>                 :             : </span>
+<span id="L49"><span class="lineNum">      49</span>                 :             :     // =========================</span>
+<span id="L50"><span class="lineNum">      50</span>                 :             :     //          MOCKS</span>
+<span id="L51"><span class="lineNum">      51</span>                 :             :     // =========================</span>
+<span id="L52"><span class="lineNum">      52</span>                 :             :     MockERC20 public tokenA;</span>
+<span id="L53"><span class="lineNum">      53</span>                 :             :     MockERC20 public usdc;</span>
+<span id="L54"><span class="lineNum">      54</span>                 :             :     MockWETH public weth;</span>
+<span id="L55"><span class="lineNum">      55</span>                 :             :     // Chainlink mocks</span>
+<span id="L56"><span class="lineNum">      56</span>                 :             :     MockAggregatorV3 public ethUsdFeedMock;</span>
+<span id="L57"><span class="lineNum">      57</span>                 :             :     MockSequencerUptimeFeed public sequencerMock;</span>
+<span id="L58"><span class="lineNum">      58</span>                 :             : </span>
+<span id="L59"><span class="lineNum">      59</span>                 :             :     // =========================</span>
+<span id="L60"><span class="lineNum">      60</span>                 :             :     //      UNISWAP PLACEHOLDERS</span>
+<span id="L61"><span class="lineNum">      61</span>                 :             :     // =========================</span>
+<span id="L62"><span class="lineNum">      62</span>                 :             :     address public uniV3Factory;</span>
+<span id="L63"><span class="lineNum">      63</span>                 :             :     address public uniV3Router;</span>
+<span id="L64"><span class="lineNum">      64</span>                 :             : </span>
+<span id="L65"><span class="lineNum">      65</span>                 :             :     // =========================</span>
+<span id="L66"><span class="lineNum">      66</span>                 :             :     //      DEFAULT CONFIG and Constants</span>
+<span id="L67"><span class="lineNum">      67</span>                 :             :     // =========================</span>
+<span id="L68"><span class="lineNum">      68</span>                 :             :     uint256 public constant MIN_CAP_USD = 1e18;  // $1 (1e18 = $1)</span>
+<span id="L69"><span class="lineNum">      69</span>                 :             :     uint256 public constant MAX_CAP_USD = 10e18; // $10 (1e18 = $1)</span>
+<span id="L70"><span class="lineNum">      70</span>                 :             : </span>
+<span id="L71"><span class="lineNum">      71</span>                 :             :     // Chainlink defaults (matches gateway expectations)</span>
+<span id="L72"><span class="lineNum">      72</span>                 :             :     uint8 public constant CHAINLINK_DECIMALS = 8;</span>
+<span id="L73"><span class="lineNum">      73</span>                 :             :     int256 public constant DEFAULT_ETH_USD_1e8 = 2_000e8; // $2,000 with 8 decimals</span>
+<span id="L74"><span class="lineNum">      74</span>                 :             : </span>
+<span id="L75"><span class="lineNum">      75</span>                 :             :     // =========================</span>
+<span id="L76"><span class="lineNum">      76</span>                 :             :     //      TEST CONSTANTS</span>
+<span id="L77"><span class="lineNum">      77</span>                 :             :     // =========================</span>
+<span id="L78"><span class="lineNum">      78</span>                 :             :     uint256 public constant LARGE_AMOUNT = 1_000_000 * 1e18;</span>
+<span id="L79"><span class="lineNum">      79</span>                 :             :     uint256 public constant LARGE_AMOUNT_USDC = 1_000_000 * 1e6;</span>
+<span id="L80"><span class="lineNum">      80</span>                 :             :     uint256 public constant LARGE_AMOUNT_WETH = 1_000 ether;</span>
+<span id="L81"><span class="lineNum">      81</span>                 :             : </span>
+<span id="L82"><span class="lineNum">      82</span>                 :             :     // =========================</span>
+<span id="L83"><span class="lineNum">      83</span>                 :             :     //         SETUP</span>
+<span id="L84"><span class="lineNum">      84</span>                 :             :     // =========================</span>
+<span id="L85"><span class="lineNum">      85</span>                 :<span class="tlaGNC">          84 :     function setUp() public virtual {</span></span>
+<span id="L86"><span class="lineNum">      86</span>                 :<span class="tlaUNC">           0 :         _createActors();</span></span>
+<span id="L87"><span class="lineNum">      87</span>                 :<span class="tlaUNC">           0 :         _fundActors();</span></span>
+<span id="L88"><span class="lineNum">      88</span>                 :<span class="tlaUNC">           0 :         _deployMocks();</span></span>
+<span id="L89"><span class="lineNum">      89</span>                 :<span class="tlaUNC">           0 :         _deployUniswapPlaceholders();</span></span>
+<span id="L90"><span class="lineNum">      90</span>                 :<span class="tlaUNC">           0 :         _deployGateway();</span></span>
+<span id="L91"><span class="lineNum">      91</span>                 :<span class="tlaUNC">           0 :         _initializeGateway();</span></span>
+<span id="L92"><span class="lineNum">      92</span>                 :<span class="tlaUNC">           0 :         _deployOracles();</span></span>
+<span id="L93"><span class="lineNum">      93</span>                 :<span class="tlaUNC">           0 :         _wireOraclesToGateway();</span></span>
+<span id="L94"><span class="lineNum">      94</span>                 :<span class="tlaUNC">           0 :         _mintAndApproveTokens();</span></span>
+<span id="L95"><span class="lineNum">      95</span>                 :             :     }</span>
+<span id="L96"><span class="lineNum">      96</span>                 :             : </span>
+<span id="L97"><span class="lineNum">      97</span>                 :             :     // =========================</span>
+<span id="L98"><span class="lineNum">      98</span>                 :             :     //      ACTOR CREATION</span>
+<span id="L99"><span class="lineNum">      99</span>                 :             :     // =========================</span>
+<span id="L100"><span class="lineNum">     100</span>                 :<span class="tlaGNC">          84 :     function _createActors() internal {</span></span>
+<span id="L101"><span class="lineNum">     101</span>                 :<span class="tlaGNC">          84 :         governance = address(0x1);</span></span>
+<span id="L102"><span class="lineNum">     102</span>                 :<span class="tlaGNC">          84 :         admin = governance; // Same as governance for clarity</span></span>
+<span id="L103"><span class="lineNum">     103</span>                 :<span class="tlaGNC">          84 :         pauser = address(0x2);</span></span>
+<span id="L104"><span class="lineNum">     104</span>                 :<span class="tlaGNC">          84 :         tss = address(0x3);</span></span>
+<span id="L105"><span class="lineNum">     105</span>                 :<span class="tlaGNC">          84 :         user1 = address(0x4);</span></span>
+<span id="L106"><span class="lineNum">     106</span>                 :<span class="tlaGNC">          84 :         user2 = address(0x5);</span></span>
+<span id="L107"><span class="lineNum">     107</span>                 :<span class="tlaGNC">          84 :         user3 = address(0x6);</span></span>
+<span id="L108"><span class="lineNum">     108</span>                 :<span class="tlaGNC">          84 :         user4 = address(0x7);</span></span>
+<span id="L109"><span class="lineNum">     109</span>                 :<span class="tlaGNC">          84 :         attacker = address(0x8);</span></span>
+<span id="L110"><span class="lineNum">     110</span>                 :<span class="tlaGNC">          84 :         recipient = address(0x9);</span></span>
+<span id="L111"><span class="lineNum">     111</span>                 :             : </span>
+<span id="L112"><span class="lineNum">     112</span>                 :<span class="tlaGNC">          84 :         vm.label(governance, &quot;governance&quot;);</span></span>
+<span id="L113"><span class="lineNum">     113</span>                 :<span class="tlaGNC">          84 :         vm.label(admin, &quot;admin&quot;);</span></span>
+<span id="L114"><span class="lineNum">     114</span>                 :<span class="tlaGNC">          84 :         vm.label(pauser, &quot;pauser&quot;);</span></span>
+<span id="L115"><span class="lineNum">     115</span>                 :<span class="tlaGNC">          84 :         vm.label(tss, &quot;tss&quot;);</span></span>
+<span id="L116"><span class="lineNum">     116</span>                 :<span class="tlaGNC">          84 :         vm.label(user1, &quot;user1&quot;);</span></span>
+<span id="L117"><span class="lineNum">     117</span>                 :<span class="tlaGNC">          84 :         vm.label(user2, &quot;user2&quot;);</span></span>
+<span id="L118"><span class="lineNum">     118</span>                 :<span class="tlaGNC">          84 :         vm.label(user3, &quot;user3&quot;);</span></span>
+<span id="L119"><span class="lineNum">     119</span>                 :<span class="tlaGNC">          84 :         vm.label(user4, &quot;user4&quot;);</span></span>
+<span id="L120"><span class="lineNum">     120</span>                 :<span class="tlaGNC">          84 :         vm.label(attacker, &quot;attacker&quot;);</span></span>
+<span id="L121"><span class="lineNum">     121</span>                 :<span class="tlaGNC">          84 :         vm.label(recipient, &quot;recipient&quot;);</span></span>
+<span id="L122"><span class="lineNum">     122</span>                 :             :     }</span>
+<span id="L123"><span class="lineNum">     123</span>                 :             : </span>
+<span id="L124"><span class="lineNum">     124</span>                 :             : </span>
+<span id="L125"><span class="lineNum">     125</span>                 :<span class="tlaGNC">          84 :     function _fundActors() internal {</span></span>
+<span id="L126"><span class="lineNum">     126</span>                 :<span class="tlaGNC">          84 :         vm.deal(admin, 100 ether);</span></span>
+<span id="L127"><span class="lineNum">     127</span>                 :<span class="tlaGNC">          84 :         vm.deal(tss, 1 ether);</span></span>
+<span id="L128"><span class="lineNum">     128</span>                 :<span class="tlaGNC">          84 :         vm.deal(user1, 1000 ether);</span></span>
+<span id="L129"><span class="lineNum">     129</span>                 :<span class="tlaGNC">          84 :         vm.deal(user2, 1000 ether);</span></span>
+<span id="L130"><span class="lineNum">     130</span>                 :<span class="tlaGNC">          84 :         vm.deal(user3, 1000 ether);</span></span>
+<span id="L131"><span class="lineNum">     131</span>                 :<span class="tlaGNC">          84 :         vm.deal(user4, 1000 ether);</span></span>
+<span id="L132"><span class="lineNum">     132</span>                 :<span class="tlaGNC">          84 :         vm.deal(attacker, 1000 ether);</span></span>
+<span id="L133"><span class="lineNum">     133</span>                 :             :         // recipient intentionally has 0 ether</span>
+<span id="L134"><span class="lineNum">     134</span>                 :             :     }</span>
+<span id="L135"><span class="lineNum">     135</span>                 :             : </span>
+<span id="L136"><span class="lineNum">     136</span>                 :             :     // =========================</span>
+<span id="L137"><span class="lineNum">     137</span>                 :             :     //      MOCKS</span>
+<span id="L138"><span class="lineNum">     138</span>                 :             :     // =========================</span>
+<span id="L139"><span class="lineNum">     139</span>                 :<span class="tlaGNC">          84 :     function _deployMocks() internal {</span></span>
+<span id="L140"><span class="lineNum">     140</span>                 :<span class="tlaGNC">          84 :         weth = new MockWETH(&quot;Wrapped Ether&quot;, &quot;WETH&quot;);</span></span>
+<span id="L141"><span class="lineNum">     141</span>                 :<span class="tlaGNC">          84 :         usdc = new MockERC20(&quot;USD Coin&quot;, &quot;USDC&quot;, 6, 0);</span></span>
+<span id="L142"><span class="lineNum">     142</span>                 :<span class="tlaGNC">          84 :         tokenA = new MockERC20(&quot;TokenA&quot;, &quot;TKA&quot;, 18, 0);</span></span>
+<span id="L143"><span class="lineNum">     143</span>                 :             : </span>
+<span id="L144"><span class="lineNum">     144</span>                 :<span class="tlaGNC">          84 :         vm.label(address(weth), &quot;WETH&quot;);</span></span>
+<span id="L145"><span class="lineNum">     145</span>                 :<span class="tlaGNC">          84 :         vm.label(address(usdc), &quot;USDC&quot;);</span></span>
+<span id="L146"><span class="lineNum">     146</span>                 :<span class="tlaGNC">          84 :         vm.label(address(tokenA), &quot;TokenA&quot;);</span></span>
+<span id="L147"><span class="lineNum">     147</span>                 :             :     }</span>
+<span id="L148"><span class="lineNum">     148</span>                 :             : </span>
+<span id="L149"><span class="lineNum">     149</span>                 :             :     // =========================</span>
+<span id="L150"><span class="lineNum">     150</span>                 :             :     //      UNISWAP PLACEHOLDERS</span>
+<span id="L151"><span class="lineNum">     151</span>                 :             :     // =========================</span>
+<span id="L152"><span class="lineNum">     152</span>                 :<span class="tlaGNC">          84 :     function _deployUniswapPlaceholders() internal {</span></span>
+<span id="L153"><span class="lineNum">     153</span>                 :             :         // No Uniswap integration by default - pass zero addresses</span>
+<span id="L154"><span class="lineNum">     154</span>                 :             :         // Tests can override this if they need real Uniswap functionality</span>
+<span id="L155"><span class="lineNum">     155</span>                 :<span class="tlaGNC">          84 :         uniV3Factory = address(0);</span></span>
+<span id="L156"><span class="lineNum">     156</span>                 :<span class="tlaGNC">          84 :         uniV3Router = address(0);</span></span>
+<span id="L157"><span class="lineNum">     157</span>                 :             :     }</span>
+<span id="L158"><span class="lineNum">     158</span>                 :             : </span>
+<span id="L159"><span class="lineNum">     159</span>                 :             :     // =========================</span>
+<span id="L160"><span class="lineNum">     160</span>                 :             :     //      GATEWAY DEPLOYMENT</span>
+<span id="L161"><span class="lineNum">     161</span>                 :             :     // =========================</span>
+<span id="L162"><span class="lineNum">     162</span>                 :<span class="tlaGNC">          84 :     function _deployGateway() internal {</span></span>
+<span id="L163"><span class="lineNum">     163</span>                 :             :         // Deploy implementation</span>
+<span id="L164"><span class="lineNum">     164</span>                 :<span class="tlaGNC">          84 :         UniversalGateway implementation = new UniversalGateway();</span></span>
+<span id="L165"><span class="lineNum">     165</span>                 :             :         </span>
+<span id="L166"><span class="lineNum">     166</span>                 :             :         // Deploy proxy admin</span>
+<span id="L167"><span class="lineNum">     167</span>                 :<span class="tlaGNC">          84 :         proxyAdmin = new ProxyAdmin(admin);</span></span>
+<span id="L168"><span class="lineNum">     168</span>                 :             :         </span>
+<span id="L169"><span class="lineNum">     169</span>                 :             :         // Deploy transparent upgradeable proxy</span>
+<span id="L170"><span class="lineNum">     170</span>                 :<span class="tlaGNC">          84 :         bytes memory initData = abi.encodeWithSelector(</span></span>
+<span id="L171"><span class="lineNum">     171</span>                 :             :             UniversalGateway.initialize.selector,</span>
+<span id="L172"><span class="lineNum">     172</span>                 :             :             admin,</span>
+<span id="L173"><span class="lineNum">     173</span>                 :             :             pauser,</span>
+<span id="L174"><span class="lineNum">     174</span>                 :             :             tss,</span>
+<span id="L175"><span class="lineNum">     175</span>                 :             :             MIN_CAP_USD,</span>
+<span id="L176"><span class="lineNum">     176</span>                 :             :             MAX_CAP_USD,</span>
+<span id="L177"><span class="lineNum">     177</span>                 :             :             uniV3Factory,</span>
+<span id="L178"><span class="lineNum">     178</span>                 :             :             uniV3Router,</span>
+<span id="L179"><span class="lineNum">     179</span>                 :             :             address(weth)</span>
+<span id="L180"><span class="lineNum">     180</span>                 :             :         );</span>
+<span id="L181"><span class="lineNum">     181</span>                 :             : </span>
+<span id="L182"><span class="lineNum">     182</span>                 :<span class="tlaGNC">          84 :         gatewayProxy = new TransparentUpgradeableProxy(</span></span>
+<span id="L183"><span class="lineNum">     183</span>                 :             :             address(implementation),</span>
+<span id="L184"><span class="lineNum">     184</span>                 :             :             address(proxyAdmin),</span>
+<span id="L185"><span class="lineNum">     185</span>                 :             :             initData</span>
+<span id="L186"><span class="lineNum">     186</span>                 :             :         );</span>
+<span id="L187"><span class="lineNum">     187</span>                 :             : </span>
+<span id="L188"><span class="lineNum">     188</span>                 :             :         // Cast proxy to gateway interface</span>
+<span id="L189"><span class="lineNum">     189</span>                 :<span class="tlaGNC">          84 :         gateway = UniversalGateway(payable(address(gatewayProxy)));</span></span>
+<span id="L190"><span class="lineNum">     190</span>                 :             : </span>
+<span id="L191"><span class="lineNum">     191</span>                 :<span class="tlaGNC">          84 :         vm.label(address(gateway), &quot;UniversalGateway&quot;);</span></span>
+<span id="L192"><span class="lineNum">     192</span>                 :<span class="tlaGNC">          84 :         vm.label(address(gatewayProxy), &quot;GatewayProxy&quot;);</span></span>
+<span id="L193"><span class="lineNum">     193</span>                 :<span class="tlaGNC">          84 :         vm.label(address(proxyAdmin), &quot;ProxyAdmin&quot;);</span></span>
+<span id="L194"><span class="lineNum">     194</span>                 :             :     }</span>
+<span id="L195"><span class="lineNum">     195</span>                 :             : </span>
+<span id="L196"><span class="lineNum">     196</span>                 :<span class="tlaGNC">          84 :     function _initializeGateway() internal {</span></span>
+<span id="L197"><span class="lineNum">     197</span>                 :             :         // Gateway is already initialized via proxy constructor</span>
+<span id="L198"><span class="lineNum">     198</span>                 :             :         // Verify initialization</span>
+<span id="L199"><span class="lineNum">     199</span>                 :<span class="tlaGNC">          84 :         assertEq(gateway.tssAddress(), tss);</span></span>
+<span id="L200"><span class="lineNum">     200</span>                 :<span class="tlaGNC">          84 :         assertEq(gateway.MIN_CAP_UNIVERSAL_TX_USD(), MIN_CAP_USD);</span></span>
+<span id="L201"><span class="lineNum">     201</span>                 :<span class="tlaGNC">          84 :         assertEq(gateway.MAX_CAP_UNIVERSAL_TX_USD(), MAX_CAP_USD);</span></span>
+<span id="L202"><span class="lineNum">     202</span>                 :<span class="tlaGNC">          84 :         assertEq(gateway.WETH(), address(weth));</span></span>
+<span id="L203"><span class="lineNum">     203</span>                 :             :     }</span>
+<span id="L204"><span class="lineNum">     204</span>                 :             : </span>
+<span id="L205"><span class="lineNum">     205</span>                 :             :     // =========================</span>
+<span id="L206"><span class="lineNum">     206</span>                 :             :     //      ORACLE (CHAINLINK) MOCKS &amp; WIRING</span>
+<span id="L207"><span class="lineNum">     207</span>                 :             :     // =========================</span>
+<span id="L208"><span class="lineNum">     208</span>                 :<span class="tlaGNC">          84 :     function _deployOracles() internal {</span></span>
+<span id="L209"><span class="lineNum">     209</span>                 :<span class="tlaGNC">          84 :         ethUsdFeedMock = new MockAggregatorV3(CHAINLINK_DECIMALS);</span></span>
+<span id="L210"><span class="lineNum">     210</span>                 :             :         // seed with a sane, fresh price</span>
+<span id="L211"><span class="lineNum">     211</span>                 :<span class="tlaGNC">          84 :         ethUsdFeedMock.setAnswer(DEFAULT_ETH_USD_1e8, block.timestamp);</span></span>
+<span id="L212"><span class="lineNum">     212</span>                 :             : </span>
+<span id="L213"><span class="lineNum">     213</span>                 :             :         // Sequencer feed is optional; default to a deployed mock but not wired.</span>
+<span id="L214"><span class="lineNum">     214</span>                 :<span class="tlaGNC">          84 :         sequencerMock = new MockSequencerUptimeFeed();</span></span>
+<span id="L215"><span class="lineNum">     215</span>                 :             :         // default status: UP (0)</span>
+<span id="L216"><span class="lineNum">     216</span>                 :<span class="tlaGNC">          84 :         sequencerMock.setStatus(false, block.timestamp);</span></span>
+<span id="L217"><span class="lineNum">     217</span>                 :             :     }</span>
+<span id="L218"><span class="lineNum">     218</span>                 :             : </span>
+<span id="L219"><span class="lineNum">     219</span>                 :<span class="tlaGNC">          84 :     function _wireOraclesToGateway() internal {</span></span>
+<span id="L220"><span class="lineNum">     220</span>                 :             :         // Set ETH/USD feed on the gateway (required for any cap checks)</span>
+<span id="L221"><span class="lineNum">     221</span>                 :<span class="tlaGNC">          84 :         vm.prank(admin);</span></span>
+<span id="L222"><span class="lineNum">     222</span>                 :<span class="tlaGNC">          84 :         gateway.setEthUsdFeed(address(ethUsdFeedMock));</span></span>
+<span id="L223"><span class="lineNum">     223</span>                 :             :         // chainlinkStalePeriod already set by initialize(); leave as-is unless tests override</span>
+<span id="L224"><span class="lineNum">     224</span>                 :             :     }</span>
+<span id="L225"><span class="lineNum">     225</span>                 :             : </span>
+<span id="L226"><span class="lineNum">     226</span>                 :             :     // === Convenience setters for tests ===</span>
+<span id="L227"><span class="lineNum">     227</span>                 :<span class="tlaUNC">           0 :     function setEthUsdPrice1e8(int256 price1e8) internal {</span></span>
+<span id="L228"><span class="lineNum">     228</span>                 :<span class="tlaUNC">           0 :         ethUsdFeedMock.setAnswer(price1e8, block.timestamp);</span></span>
+<span id="L229"><span class="lineNum">     229</span>                 :             :     }</span>
+<span id="L230"><span class="lineNum">     230</span>                 :             : </span>
+<span id="L231"><span class="lineNum">     231</span>                 :<span class="tlaUNC">           0 :     function setChainlinkStalePeriod(uint256 staleSec) internal {</span></span>
+<span id="L232"><span class="lineNum">     232</span>                 :<span class="tlaUNC">           0 :         vm.prank(admin);</span></span>
+<span id="L233"><span class="lineNum">     233</span>                 :<span class="tlaUNC">           0 :         gateway.setChainlinkStalePeriod(staleSec);</span></span>
+<span id="L234"><span class="lineNum">     234</span>                 :             :     }</span>
+<span id="L235"><span class="lineNum">     235</span>                 :             : </span>
+<span id="L236"><span class="lineNum">     236</span>                 :<span class="tlaUNC">           0 :     function enableSequencerFeed(bool enable) internal {</span></span>
+<span id="L237"><span class="lineNum">     237</span>                 :<span class="tlaUNC">           0 :         vm.prank(admin);</span></span>
+<span id="L238"><span class="lineNum">     238</span>                 :<span class="tlaUNC">           0 :         gateway.setL2SequencerFeed(enable ? address(sequencerMock) : address(0));</span></span>
+<span id="L239"><span class="lineNum">     239</span>                 :             :     }</span>
+<span id="L240"><span class="lineNum">     240</span>                 :             : </span>
+<span id="L241"><span class="lineNum">     241</span>                 :<span class="tlaUNC">           0 :     function setSequencerStatusDown(bool isDown) internal {</span></span>
+<span id="L242"><span class="lineNum">     242</span>                 :<span class="tlaUNC">           0 :         sequencerMock.setStatus(isDown, block.timestamp);</span></span>
+<span id="L243"><span class="lineNum">     243</span>                 :             :     }</span>
+<span id="L244"><span class="lineNum">     244</span>                 :             : </span>
+<span id="L245"><span class="lineNum">     245</span>                 :<span class="tlaUNC">           0 :     function setSequencerGracePeriod(uint256 graceSec) internal {</span></span>
+<span id="L246"><span class="lineNum">     246</span>                 :<span class="tlaUNC">           0 :         vm.prank(admin);</span></span>
+<span id="L247"><span class="lineNum">     247</span>                 :<span class="tlaUNC">           0 :         gateway.setL2SequencerGracePeriod(graceSec);</span></span>
+<span id="L248"><span class="lineNum">     248</span>                 :             :     }</span>
+<span id="L249"><span class="lineNum">     249</span>                 :             : </span>
+<span id="L250"><span class="lineNum">     250</span>                 :             :     // =========================</span>
+<span id="L251"><span class="lineNum">     251</span>                 :             :     //      TOKEN MINTING &amp; APPROVALS</span>
+<span id="L252"><span class="lineNum">     252</span>                 :             :     // =========================</span>
+<span id="L253"><span class="lineNum">     253</span>                 :<span class="tlaGNC">          84 :     function _mintAndApproveTokens() internal {</span></span>
+<span id="L254"><span class="lineNum">     254</span>                 :<span class="tlaGNC">          84 :         address[] memory users = new address[](5);</span></span>
+<span id="L255"><span class="lineNum">     255</span>                 :<span class="tlaGNC">          84 :         users[0] = user1;</span></span>
+<span id="L256"><span class="lineNum">     256</span>                 :<span class="tlaGNC">          84 :         users[1] = user2;</span></span>
+<span id="L257"><span class="lineNum">     257</span>                 :<span class="tlaGNC">          84 :         users[2] = user3;</span></span>
+<span id="L258"><span class="lineNum">     258</span>                 :<span class="tlaGNC">          84 :         users[3] = user4;</span></span>
+<span id="L259"><span class="lineNum">     259</span>                 :<span class="tlaGNC">          84 :         users[4] = attacker;</span></span>
+<span id="L260"><span class="lineNum">     260</span>                 :             : </span>
+<span id="L261"><span class="lineNum">     261</span>                 :             :         // Mint and approve tokenA</span>
+<span id="L262"><span class="lineNum">     262</span>                 :<span class="tlaGNC">          84 :         for (uint256 i = 0; i &lt; users.length; i++) {</span></span>
+<span id="L263"><span class="lineNum">     263</span>                 :<span class="tlaGNC">         420 :             mintAndApprove(IERC20(address(tokenA)), users[i], address(gateway), LARGE_AMOUNT);</span></span>
+<span id="L264"><span class="lineNum">     264</span>                 :             :         }</span>
+<span id="L265"><span class="lineNum">     265</span>                 :             : </span>
+<span id="L266"><span class="lineNum">     266</span>                 :             :         // Mint and approve USDC</span>
+<span id="L267"><span class="lineNum">     267</span>                 :<span class="tlaGNC">          84 :         for (uint256 i = 0; i &lt; users.length; i++) {</span></span>
+<span id="L268"><span class="lineNum">     268</span>                 :<span class="tlaGNC">         420 :             mintAndApprove(IERC20(address(usdc)), users[i], address(gateway), LARGE_AMOUNT_USDC);</span></span>
+<span id="L269"><span class="lineNum">     269</span>                 :             :         }</span>
+<span id="L270"><span class="lineNum">     270</span>                 :             : </span>
+<span id="L271"><span class="lineNum">     271</span>                 :             :         // Mint and approve WETH</span>
+<span id="L272"><span class="lineNum">     272</span>                 :<span class="tlaGNC">          84 :         for (uint256 i = 0; i &lt; users.length; i++) {</span></span>
+<span id="L273"><span class="lineNum">     273</span>                 :<span class="tlaGNC">         420 :             mintWETH(users[i], LARGE_AMOUNT_WETH);</span></span>
+<span id="L274"><span class="lineNum">     274</span>                 :<span class="tlaGNC">         420 :             vm.prank(users[i]);</span></span>
+<span id="L275"><span class="lineNum">     275</span>                 :<span class="tlaGNC">         420 :             weth.approve(address(gateway), type(uint256).max);</span></span>
+<span id="L276"><span class="lineNum">     276</span>                 :             :         }</span>
+<span id="L277"><span class="lineNum">     277</span>                 :             :     }</span>
+<span id="L278"><span class="lineNum">     278</span>                 :             : </span>
+<span id="L279"><span class="lineNum">     279</span>                 :             :     // =========================</span>
+<span id="L280"><span class="lineNum">     280</span>                 :             :     //      PAYLOAD and REVERT BUILDERS Helpers</span>
+<span id="L281"><span class="lineNum">     281</span>                 :             :     // =========================</span>
+<span id="L282"><span class="lineNum">     282</span>                 :<span class="tlaUNC">           0 :     function buildMinimalPayload(address to, bytes memory data) </span></span>
+<span id="L283"><span class="lineNum">     283</span>                 :             :         internal </span>
+<span id="L284"><span class="lineNum">     284</span>                 :             :         view </span>
+<span id="L285"><span class="lineNum">     285</span>                 :             :         returns (UniversalPayload memory p, bytes32 h) </span>
+<span id="L286"><span class="lineNum">     286</span>                 :             :     {</span>
+<span id="L287"><span class="lineNum">     287</span>                 :<span class="tlaUNC">           0 :         p = UniversalPayload({</span></span>
+<span id="L288"><span class="lineNum">     288</span>                 :             :             to: to,</span>
+<span id="L289"><span class="lineNum">     289</span>                 :             :             value: 0,</span>
+<span id="L290"><span class="lineNum">     290</span>                 :             :             data: data,</span>
+<span id="L291"><span class="lineNum">     291</span>                 :             :             gasLimit: 500_000,</span>
+<span id="L292"><span class="lineNum">     292</span>                 :             :             maxFeePerGas: 0,</span>
+<span id="L293"><span class="lineNum">     293</span>                 :             :             maxPriorityFeePerGas: 0,</span>
+<span id="L294"><span class="lineNum">     294</span>                 :             :             nonce: block.number,</span>
+<span id="L295"><span class="lineNum">     295</span>                 :             :             deadline: block.timestamp + 1 days,</span>
+<span id="L296"><span class="lineNum">     296</span>                 :             :             vType: VerificationType.signedVerification</span>
+<span id="L297"><span class="lineNum">     297</span>                 :             :         });</span>
+<span id="L298"><span class="lineNum">     298</span>                 :<span class="tlaUNC">           0 :         h = keccak256(abi.encode(p));</span></span>
+<span id="L299"><span class="lineNum">     299</span>                 :             :     }</span>
+<span id="L300"><span class="lineNum">     300</span>                 :             : </span>
+<span id="L301"><span class="lineNum">     301</span>                 :<span class="tlaGNC">          14 :     function buildValuePayload(address to, bytes memory data, uint256 value) </span></span>
+<span id="L302"><span class="lineNum">     302</span>                 :             :         internal </span>
+<span id="L303"><span class="lineNum">     303</span>                 :             :         view </span>
+<span id="L304"><span class="lineNum">     304</span>                 :             :         returns (UniversalPayload memory p, bytes32 h) </span>
+<span id="L305"><span class="lineNum">     305</span>                 :             :     {</span>
+<span id="L306"><span class="lineNum">     306</span>                 :<span class="tlaGNC">          14 :         p = UniversalPayload({</span></span>
+<span id="L307"><span class="lineNum">     307</span>                 :             :             to: to,</span>
+<span id="L308"><span class="lineNum">     308</span>                 :             :             value: value,</span>
+<span id="L309"><span class="lineNum">     309</span>                 :             :             data: data,</span>
+<span id="L310"><span class="lineNum">     310</span>                 :             :             gasLimit: 500_000,</span>
+<span id="L311"><span class="lineNum">     311</span>                 :             :             maxFeePerGas: 0,</span>
+<span id="L312"><span class="lineNum">     312</span>                 :             :             maxPriorityFeePerGas: 0,</span>
+<span id="L313"><span class="lineNum">     313</span>                 :             :             nonce: block.number,</span>
+<span id="L314"><span class="lineNum">     314</span>                 :             :             deadline: block.timestamp + 1 days,</span>
+<span id="L315"><span class="lineNum">     315</span>                 :             :             vType: VerificationType.signedVerification</span>
+<span id="L316"><span class="lineNum">     316</span>                 :             :         });</span>
+<span id="L317"><span class="lineNum">     317</span>                 :<span class="tlaGNC">          14 :         h = keccak256(abi.encode(p));</span></span>
+<span id="L318"><span class="lineNum">     318</span>                 :             :     }</span>
+<span id="L319"><span class="lineNum">     319</span>                 :             : </span>
+<span id="L320"><span class="lineNum">     320</span>                 :<span class="tlaGNC">          22 :     function revertCfg(address fundRecipient_) internal pure returns (RevertSettings memory) {</span></span>
+<span id="L321"><span class="lineNum">     321</span>                 :<span class="tlaGNC">          22 :         return RevertSettings({</span></span>
+<span id="L322"><span class="lineNum">     322</span>                 :             :             fundRecipient: fundRecipient_,</span>
+<span id="L323"><span class="lineNum">     323</span>                 :             :             revertMsg: &quot;&quot;</span>
+<span id="L324"><span class="lineNum">     324</span>                 :             :         });</span>
+<span id="L325"><span class="lineNum">     325</span>                 :             :     }</span>
+<span id="L326"><span class="lineNum">     326</span>                 :             : </span>
+<span id="L327"><span class="lineNum">     327</span>                 :             :     // =========================</span>
+<span id="L328"><span class="lineNum">     328</span>                 :             :     //      MINT &amp; APPROVE HELPERS</span>
+<span id="L329"><span class="lineNum">     329</span>                 :             :     // =========================</span>
+<span id="L330"><span class="lineNum">     330</span>                 :<span class="tlaGNC">         840 :     function mintAndApprove(IERC20 token, address owner, address spender, uint256 amt) internal {</span></span>
+<span id="L331"><span class="lineNum">     331</span>                 :             :         // Mint tokens to owner</span>
+<span id="L332"><span class="lineNum">     332</span>         [<span class="tlaGBC" title="Branch 0 was taken 420 times"> + </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         840 :         if (address(token) == address(tokenA)) {</span></span>
+<span id="L333"><span class="lineNum">     333</span>                 :<span class="tlaGNC">         420 :             tokenA.mint(owner, amt);</span></span>
+<span id="L334"><span class="lineNum">     334</span>         [<span class="tlaGBC" title="Branch 0 was taken 420 times"> + </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         420 :         } else if (address(token) == address(usdc)) {</span></span>
+<span id="L335"><span class="lineNum">     335</span>                 :<span class="tlaGNC">         420 :             usdc.mint(owner, amt);</span></span>
+<span id="L336"><span class="lineNum">     336</span>                 :             :         } else {</span>
+<span id="L337"><span class="lineNum">     337</span>                 :<span class="tlaUNC">           0 :             revert(&quot;Unsupported token&quot;);</span></span>
+<span id="L338"><span class="lineNum">     338</span>                 :             :         }</span>
+<span id="L339"><span class="lineNum">     339</span>                 :             : </span>
+<span id="L340"><span class="lineNum">     340</span>                 :             :         // Approve spender</span>
+<span id="L341"><span class="lineNum">     341</span>                 :<span class="tlaGNC">         840 :         vm.prank(owner);</span></span>
+<span id="L342"><span class="lineNum">     342</span>                 :<span class="tlaGNC">         840 :         token.approve(spender, amt);</span></span>
+<span id="L343"><span class="lineNum">     343</span>                 :             :     }</span>
+<span id="L344"><span class="lineNum">     344</span>                 :             : </span>
+<span id="L345"><span class="lineNum">     345</span>                 :<span class="tlaGNC">         420 :     function mintWETH(address to, uint256 amtWei) internal {</span></span>
+<span id="L346"><span class="lineNum">     346</span>                 :<span class="tlaGNC">         420 :         vm.deal(address(this), amtWei);</span></span>
+<span id="L347"><span class="lineNum">     347</span>                 :<span class="tlaGNC">         420 :         weth.deposit{value: amtWei}();</span></span>
+<span id="L348"><span class="lineNum">     348</span>                 :<span class="tlaGNC">         420 :         weth.transfer(to, amtWei);</span></span>
+<span id="L349"><span class="lineNum">     349</span>                 :             :     }</span>
+<span id="L350"><span class="lineNum">     350</span>                 :             : </span>
+<span id="L351"><span class="lineNum">     351</span>                 :             :     // =========================</span>
+<span id="L352"><span class="lineNum">     352</span>                 :             :     //      ADMIN CONFIG SETTERS (Gateway)</span>
+<span id="L353"><span class="lineNum">     353</span>                 :             :     // =========================</span>
+<span id="L354"><span class="lineNum">     354</span>                 :             : </span>
+<span id="L355"><span class="lineNum">     355</span>                 :<span class="tlaUNC">           0 :     function setV3FeeOrder(uint24 a, uint24 b, uint24 c) internal {</span></span>
+<span id="L356"><span class="lineNum">     356</span>                 :<span class="tlaUNC">           0 :         vm.prank(admin);</span></span>
+<span id="L357"><span class="lineNum">     357</span>                 :<span class="tlaUNC">           0 :         gateway.setV3FeeOrder(a, b, c);</span></span>
+<span id="L358"><span class="lineNum">     358</span>                 :             :     }</span>
+<span id="L359"><span class="lineNum">     359</span>                 :             : </span>
+<span id="L360"><span class="lineNum">     360</span>                 :<span class="tlaUNC">           0 :     function setRouters(address factory, address router) internal {</span></span>
+<span id="L361"><span class="lineNum">     361</span>                 :<span class="tlaUNC">           0 :         vm.prank(admin);</span></span>
+<span id="L362"><span class="lineNum">     362</span>                 :<span class="tlaUNC">           0 :         gateway.setRouters(factory, router);</span></span>
+<span id="L363"><span class="lineNum">     363</span>                 :             :     }</span>
+<span id="L364"><span class="lineNum">     364</span>                 :             : </span>
+<span id="L365"><span class="lineNum">     365</span>                 :<span class="tlaUNC">           0 :     function setCaps(uint256 minUsd1e18, uint256 maxUsd1e18) internal {</span></span>
+<span id="L366"><span class="lineNum">     366</span>                 :<span class="tlaUNC">           0 :         vm.prank(admin);</span></span>
+<span id="L367"><span class="lineNum">     367</span>                 :<span class="tlaUNC">           0 :         gateway.setCapsUSD(minUsd1e18, maxUsd1e18);</span></span>
+<span id="L368"><span class="lineNum">     368</span>                 :             :     }</span>
+<span id="L369"><span class="lineNum">     369</span>                 :             : </span>
+<span id="L370"><span class="lineNum">     370</span>                 :<span class="tlaUNC">           0 :     function toggleSupport(address token, bool supported) internal {</span></span>
+<span id="L371"><span class="lineNum">     371</span>                 :<span class="tlaUNC">           0 :         address[] memory tokens = new address[](1);</span></span>
+<span id="L372"><span class="lineNum">     372</span>                 :<span class="tlaUNC">           0 :         bool[] memory supportFlags = new bool[](1);</span></span>
+<span id="L373"><span class="lineNum">     373</span>                 :<span class="tlaUNC">           0 :         tokens[0] = token;</span></span>
+<span id="L374"><span class="lineNum">     374</span>                 :<span class="tlaUNC">           0 :         supportFlags[0] = supported;</span></span>
+<span id="L375"><span class="lineNum">     375</span>                 :             : </span>
+<span id="L376"><span class="lineNum">     376</span>                 :<span class="tlaUNC">           0 :         vm.prank(admin);</span></span>
+<span id="L377"><span class="lineNum">     377</span>                 :<span class="tlaUNC">           0 :         gateway.modifySupportForToken(tokens, supportFlags);</span></span>
+<span id="L378"><span class="lineNum">     378</span>                 :             :     }</span>
+<span id="L379"><span class="lineNum">     379</span>                 :             : </span>
+<span id="L380"><span class="lineNum">     380</span>                 :             :     // =========================</span>
+<span id="L381"><span class="lineNum">     381</span>                 :             :     //      EVENT ORDERING UTILITIES</span>
+<span id="L382"><span class="lineNum">     382</span>                 :             :     // =========================</span>
+<span id="L383"><span class="lineNum">     383</span>                 :<span class="tlaUNC">           0 :     function recordAndGetLogs() internal returns (Vm.Log[] memory) {</span></span>
+<span id="L384"><span class="lineNum">     384</span>                 :<span class="tlaUNC">           0 :         vm.recordLogs();</span></span>
+<span id="L385"><span class="lineNum">     385</span>                 :<span class="tlaUNC">           0 :         return vm.getRecordedLogs();</span></span>
+<span id="L386"><span class="lineNum">     386</span>                 :             :     }</span>
+<span id="L387"><span class="lineNum">     387</span>                 :             : </span>
+<span id="L388"><span class="lineNum">     388</span>                 :<span class="tlaUNC">           0 :     function assertDualEmitOrder(bytes32 firstTopic0, bytes32 secondTopic0, Vm.Log[] memory logs) internal {</span></span>
+<span id="L389"><span class="lineNum">     389</span>                 :<span class="tlaUNC">           0 :         bool firstFound = false;</span></span>
+<span id="L390"><span class="lineNum">     390</span>                 :<span class="tlaUNC">           0 :         bool secondFound = false;</span></span>
+<span id="L391"><span class="lineNum">     391</span>                 :             :         </span>
+<span id="L392"><span class="lineNum">     392</span>                 :<span class="tlaUNC">           0 :         for (uint256 i = 0; i &lt; logs.length; i++) {</span></span>
+<span id="L393"><span class="lineNum">     393</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :             if (logs[i].topics[0] == firstTopic0) {</span></span>
+<span id="L394"><span class="lineNum">     394</span>                 :<span class="tlaUNC">           0 :                 firstFound = true;</span></span>
+<span id="L395"><span class="lineNum">     395</span>                 :             :             }</span>
+<span id="L396"><span class="lineNum">     396</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :             if (logs[i].topics[0] == secondTopic0) {</span></span>
+<span id="L397"><span class="lineNum">     397</span>                 :<span class="tlaUNC">           0 :                 secondFound = true;</span></span>
+<span id="L398"><span class="lineNum">     398</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaUNC">           0 :                 require(firstFound, &quot;First event not found before second event&quot;);</span></span>
+<span id="L399"><span class="lineNum">     399</span>                 :             :             }</span>
+<span id="L400"><span class="lineNum">     400</span>                 :             :         }</span>
+<span id="L401"><span class="lineNum">     401</span>                 :             :         </span>
+<span id="L402"><span class="lineNum">     402</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaUNC">           0 :         require(firstFound &amp;&amp; secondFound, &quot;Both events not found&quot;);</span></span>
+<span id="L403"><span class="lineNum">     403</span>                 :             :     }</span>
+<span id="L404"><span class="lineNum">     404</span>                 :             : </span>
+<span id="L405"><span class="lineNum">     405</span>                 :             :     // =========================</span>
+<span id="L406"><span class="lineNum">     406</span>                 :             :     //      RECEIVE FALLBACK</span>
+<span id="L407"><span class="lineNum">     407</span>                 :             :     // =========================</span>
+<span id="L408"><span class="lineNum">     408</span>                 :             :     receive() external payable {}</span>
+<span id="L409"><span class="lineNum">     409</span>                 :             : }</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com//linux-test-project/lcov" target="_parent">LCOV version 2.3.2-1</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>
