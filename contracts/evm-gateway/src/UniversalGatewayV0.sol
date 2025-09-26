@@ -39,7 +39,7 @@ import {RevertSettings, UniversalPayload, TX_TYPE} from "./libraries/Types.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import {ISwapRouter as ISwapRouterV3} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import {ISwapRouterSepolia as ISwapRouterSepolia} from "./interfaces/ISwapRouterSepolia.sol";
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
 
@@ -74,7 +74,7 @@ contract UniversalGatewayV0 is
 
     /// @notice Uniswap V3 factory & router (chain-specific)
     IUniswapV3Factory public uniV3Factory;
-    ISwapRouterV3     public uniV3Router;
+    ISwapRouterSepolia     public uniV3Router;
     address           public WETH;
     uint24[3] public v3FeeOrder = [uint24(500), uint24(3000), uint24(10000)]; 
 
@@ -144,7 +144,7 @@ contract UniversalGatewayV0 is
         WETH = _wethAddress;
         if (factory != address(0) && router != address(0)) {
             uniV3Factory = IUniswapV3Factory(factory);
-            uniV3Router  = ISwapRouterV3(router);
+            uniV3Router  = ISwapRouterSepolia(router);
 
         }
         // Default swap deadline window (industry common ~10 minutes)
@@ -220,7 +220,7 @@ contract UniversalGatewayV0 is
     function setRouters(address factory, address router) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         if (factory == address(0) || router == address(0)) revert Errors.ZeroAddress();
         uniV3Factory = IUniswapV3Factory(factory);
-        uniV3Router  = ISwapRouterV3(router);
+        uniV3Router  = ISwapRouterSepolia(router);
     }
 
     /// @notice Allows the admin to add support for a given token or remove support for a given token
@@ -315,13 +315,11 @@ contract UniversalGatewayV0 is
         minOut = minOut / 1e2; // Convert from 8 decimals to 6 decimals (USDT)
         POOL_FEE = 500;
 
-        ISwapRouterV3.ExactInputSingleParams memory params = ISwapRouterV3
-            .ExactInputSingleParams({
+        ISwapRouterSepolia.ExactInputSingleParams memory params = ISwapRouterSepolia.ExactInputSingleParams({
                 tokenIn: WETH,
                 tokenOut: USDT,
                 fee: POOL_FEE,
                 recipient: address(this),
-                // deadline: block.timestamp, //not for sepolia
                 amountIn: WethBalance,
                 amountOutMinimum: 1,   // Adjust to USDT decimals (6) 
                 sqrtPriceLimitX96: 0
@@ -795,7 +793,7 @@ contract UniversalGatewayV0 is
         IERC20(tokenIn).safeIncreaseAllowance(address(uniV3Router), amountIn);
 
         // Swap tokenIn -> WETH with exactInputSingle and slippage check
-        ISwapRouterV3.ExactInputSingleParams memory params = ISwapRouterV3.ExactInputSingleParams({
+        ISwapRouterSepolia.ExactInputSingleParams memory params = ISwapRouterSepolia.ExactInputSingleParams({
             tokenIn: tokenIn,
             tokenOut: WETH,
             fee: fee,

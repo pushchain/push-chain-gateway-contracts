@@ -719,7 +719,7 @@ contract UniversalGateway is
             tokenOut: WETH,
             fee: fee,
             recipient: address(this),
-            // deadline: deadline, NOT FOR SEPOLIA
+            deadline: deadline,
             amountIn: amountIn,
             amountOutMinimum: amountOutMinETH, // min WETH out, equals min ETH out after unwrap
             sqrtPriceLimitX96: 0
