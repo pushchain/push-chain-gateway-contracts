@@ -31,27 +31,27 @@
             <td class="headerValue">lcov.info</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryMed">75.2&nbsp;%</td>
+            <td class="headerCovTableEntryMed">85.1&nbsp;%</td>
             <td class="headerCovTableEntry">222</td>
-            <td class="headerCovTableEntry">167</td>
+            <td class="headerCovTableEntry">189</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2025-09-26 16:00:22</td>
+            <td class="headerValue">2025-09-30 18:14:15</td>
             <td></td>
             <td class="headerItem">Functions:</td>
-            <td class="headerCovTableEntryMed">82.4&nbsp;%</td>
+            <td class="headerCovTableEntryHi">97.1&nbsp;%</td>
             <td class="headerCovTableEntry">34</td>
-            <td class="headerCovTableEntry">28</td>
+            <td class="headerCovTableEntry">33</td>
           </tr>
           <tr>
             <td></td>
             <td></td>
             <td></td>
             <td class="headerItem">Branches:</td>
-            <td class="headerCovTableEntryLo">41.5&nbsp;%</td>
+            <td class="headerCovTableEntryLo">58.5&nbsp;%</td>
             <td class="headerCovTableEntry">65</td>
-            <td class="headerCovTableEntry">27</td>
+            <td class="headerCovTableEntry">38</td>
           </tr>
                   <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
                 </table>
@@ -176,7 +176,7 @@
 <span id="L105"><span class="lineNum">     105</span>                 :             :      * @param factory          UniswapV2 factory </span>
 <span id="L106"><span class="lineNum">     106</span>                 :             :      * @param router           UniswapV2 router</span>
 <span id="L107"><span class="lineNum">     107</span>                 :             :      */</span>
-<span id="L108"><span class="lineNum">     108</span>                 :<span class="tlaGNC">         101 :     function initialize(</span></span>
+<span id="L108"><span class="lineNum">     108</span>                 :<span class="tlaGNC">         119 :     function initialize(</span></span>
 <span id="L109"><span class="lineNum">     109</span>                 :             :         address admin,</span>
 <span id="L110"><span class="lineNum">     110</span>                 :             :         address pauser,</span>
 <span id="L111"><span class="lineNum">     111</span>                 :             :         address tss,</span>
@@ -186,48 +186,48 @@
 <span id="L115"><span class="lineNum">     115</span>                 :             :         address router,</span>
 <span id="L116"><span class="lineNum">     116</span>                 :             :         address _wethAddress</span>
 <span id="L117"><span class="lineNum">     117</span>                 :             :     ) external initializer {</span>
-<span id="L118"><span class="lineNum">     118</span>                 :<span class="tlaGNC">         101 :         if (admin == address(0) || </span></span>
-<span id="L119"><span class="lineNum">     119</span>                 :<span class="tlaGNC">         101 :             pauser == address(0) || </span></span>
-<span id="L120"><span class="lineNum">     120</span>                 :<span class="tlaGNC">         101 :             tss == address(0) ||</span></span>
-<span id="L121"><span class="lineNum">     121</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaGNC">         101 :             _wethAddress == address(0)) revert Errors.ZeroAddress();</span></span>
+<span id="L118"><span class="lineNum">     118</span>                 :<span class="tlaGNC">         119 :         if (admin == address(0) || </span></span>
+<span id="L119"><span class="lineNum">     119</span>                 :<span class="tlaGNC">         119 :             pauser == address(0) || </span></span>
+<span id="L120"><span class="lineNum">     120</span>                 :<span class="tlaGNC">         119 :             tss == address(0) ||</span></span>
+<span id="L121"><span class="lineNum">     121</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaGNC">         119 :             _wethAddress == address(0)) revert Errors.ZeroAddress();</span></span>
 <span id="L122"><span class="lineNum">     122</span>                 :             : </span>
 <span id="L123"><span class="lineNum">     123</span>                 :<span class="tlaUNC">           0 :         __Context_init();</span></span>
 <span id="L124"><span class="lineNum">     124</span>                 :<span class="tlaUNC">           0 :         __Pausable_init();</span></span>
 <span id="L125"><span class="lineNum">     125</span>                 :<span class="tlaUNC">           0 :         __ReentrancyGuard_init();</span></span>
 <span id="L126"><span class="lineNum">     126</span>                 :<span class="tlaUNC">           0 :         __AccessControl_init();</span></span>
 <span id="L127"><span class="lineNum">     127</span>                 :             : </span>
-<span id="L128"><span class="lineNum">     128</span>                 :<span class="tlaGNC">         101 :         _grantRole(DEFAULT_ADMIN_ROLE, admin);</span></span>
-<span id="L129"><span class="lineNum">     129</span>                 :<span class="tlaGNC">         101 :         _grantRole(PAUSER_ROLE,          pauser);</span></span>
-<span id="L130"><span class="lineNum">     130</span>                 :<span class="tlaGNC">         101 :         _grantRole(TSS_ROLE,             tss);</span></span>
+<span id="L128"><span class="lineNum">     128</span>                 :<span class="tlaGNC">         119 :         _grantRole(DEFAULT_ADMIN_ROLE, admin);</span></span>
+<span id="L129"><span class="lineNum">     129</span>                 :<span class="tlaGNC">         119 :         _grantRole(PAUSER_ROLE,          pauser);</span></span>
+<span id="L130"><span class="lineNum">     130</span>                 :<span class="tlaGNC">         119 :         _grantRole(TSS_ROLE,             tss);</span></span>
 <span id="L131"><span class="lineNum">     131</span>                 :             : </span>
-<span id="L132"><span class="lineNum">     132</span>                 :<span class="tlaGNC">         101 :         tssAddress = tss;</span></span>
-<span id="L133"><span class="lineNum">     133</span>                 :<span class="tlaGNC">         101 :         MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;</span></span>
-<span id="L134"><span class="lineNum">     134</span>                 :<span class="tlaGNC">         101 :         MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;</span></span>
+<span id="L132"><span class="lineNum">     132</span>                 :<span class="tlaGNC">         119 :         tssAddress = tss;</span></span>
+<span id="L133"><span class="lineNum">     133</span>                 :<span class="tlaGNC">         119 :         MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;</span></span>
+<span id="L134"><span class="lineNum">     134</span>                 :<span class="tlaGNC">         119 :         MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;</span></span>
 <span id="L135"><span class="lineNum">     135</span>                 :             :         </span>
-<span id="L136"><span class="lineNum">     136</span>                 :<span class="tlaGNC">         101 :         WETH = _wethAddress;</span></span>
-<span id="L137"><span class="lineNum">     137</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaGNC">         101 :         if (factory != address(0) &amp;&amp; router != address(0)) {</span></span>
+<span id="L136"><span class="lineNum">     136</span>                 :<span class="tlaGNC">         119 :         WETH = _wethAddress;</span></span>
+<span id="L137"><span class="lineNum">     137</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaGNC">         119 :         if (factory != address(0) &amp;&amp; router != address(0)) {</span></span>
 <span id="L138"><span class="lineNum">     138</span>                 :<span class="tlaUNC">           0 :             uniV3Factory = IUniswapV3Factory(factory);</span></span>
 <span id="L139"><span class="lineNum">     139</span>                 :<span class="tlaUNC">           0 :             uniV3Router  = ISwapRouterV3(router);</span></span>
 <span id="L140"><span class="lineNum">     140</span>                 :             : </span>
 <span id="L141"><span class="lineNum">     141</span>                 :             :         }</span>
 <span id="L142"><span class="lineNum">     142</span>                 :             :         // Default swap deadline window (industry common ~10 minutes)</span>
-<span id="L143"><span class="lineNum">     143</span>                 :<span class="tlaGNC">         101 :         defaultSwapDeadlineSec = 10 minutes;</span></span>
+<span id="L143"><span class="lineNum">     143</span>                 :<span class="tlaGNC">         119 :         defaultSwapDeadlineSec = 10 minutes;</span></span>
 <span id="L144"><span class="lineNum">     144</span>                 :             : </span>
 <span id="L145"><span class="lineNum">     145</span>                 :             :         // Set a sane default for Chainlink staleness (can be tuned by admin)</span>
-<span id="L146"><span class="lineNum">     146</span>                 :<span class="tlaGNC">         101 :         chainlinkStalePeriod = 1 hours;</span></span>
-<span id="L147"><span class="lineNum">     147</span>                 :<span class="tlaGNC">         101 :         emit ChainlinkStalePeriodUpdated(chainlinkStalePeriod);</span></span>
+<span id="L146"><span class="lineNum">     146</span>                 :<span class="tlaGNC">         119 :         chainlinkStalePeriod = 1 hours;</span></span>
+<span id="L147"><span class="lineNum">     147</span>                 :<span class="tlaGNC">         119 :         emit ChainlinkStalePeriodUpdated(chainlinkStalePeriod);</span></span>
 <span id="L148"><span class="lineNum">     148</span>                 :             :     }</span>
 <span id="L149"><span class="lineNum">     149</span>                 :             : </span>
 <span id="L150"><span class="lineNum">     150</span>                 :             :     /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.</span>
-<span id="L151"><span class="lineNum">     151</span>                 :<span class="tlaUNC">           0 :     modifier onlyTSS() {</span></span>
-<span id="L152"><span class="lineNum">     152</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (!hasRole(TSS_ROLE, _msgSender())) revert Errors.WithdrawFailed();</span></span>
+<span id="L151"><span class="lineNum">     151</span>                 :<span class="tlaGNC">          12 :     modifier onlyTSS() {</span></span>
+<span id="L152"><span class="lineNum">     152</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">          12 :         if (!hasRole(TSS_ROLE, _msgSender())) revert Errors.WithdrawFailed();</span></span>
 <span id="L153"><span class="lineNum">     153</span>                 :             :         _;</span>
 <span id="L154"><span class="lineNum">     154</span>                 :             :     }</span>
 <span id="L155"><span class="lineNum">     155</span>                 :             : </span>
 <span id="L156"><span class="lineNum">     156</span>                 :             :     // =========================</span>
 <span id="L157"><span class="lineNum">     157</span>                 :             :     //           ADMIN ACTIONS</span>
 <span id="L158"><span class="lineNum">     158</span>                 :             :     // =========================</span>
-<span id="L159"><span class="lineNum">     159</span>                 :<span class="tlaGNC">          18 :     function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {</span></span>
+<span id="L159"><span class="lineNum">     159</span>                 :<span class="tlaGNC">          20 :     function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {</span></span>
 <span id="L160"><span class="lineNum">     160</span>                 :<span class="tlaUNC">           0 :         _pause();</span></span>
 <span id="L161"><span class="lineNum">     161</span>                 :             :     }</span>
 <span id="L162"><span class="lineNum">     162</span>                 :             : </span>
@@ -301,14 +301,14 @@
 <span id="L230"><span class="lineNum">     230</span>                 :             :     }</span>
 <span id="L231"><span class="lineNum">     231</span>                 :             : </span>
 <span id="L232"><span class="lineNum">     232</span>                 :             :     /// @notice Set the Chainlink ETH/USD feed (and cache its decimals)</span>
-<span id="L233"><span class="lineNum">     233</span>                 :<span class="tlaGNC">         109 :     function setEthUsdFeed(address feed) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {</span></span>
-<span id="L234"><span class="lineNum">     234</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">         107 :         if (feed == address(0)) revert Errors.ZeroAddress();</span></span>
-<span id="L235"><span class="lineNum">     235</span>                 :<span class="tlaGNC">         106 :         AggregatorV3Interface f = AggregatorV3Interface(feed);</span></span>
+<span id="L233"><span class="lineNum">     233</span>                 :<span class="tlaGNC">         127 :     function setEthUsdFeed(address feed) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {</span></span>
+<span id="L234"><span class="lineNum">     234</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">         125 :         if (feed == address(0)) revert Errors.ZeroAddress();</span></span>
+<span id="L235"><span class="lineNum">     235</span>                 :<span class="tlaGNC">         124 :         AggregatorV3Interface f = AggregatorV3Interface(feed);</span></span>
 <span id="L236"><span class="lineNum">     236</span>                 :             :         // Will revert if not a contract or not a valid aggregator when decimals() is called by non-aggregator contracts.</span>
-<span id="L237"><span class="lineNum">     237</span>                 :<span class="tlaGNC">         106 :         uint8 dec = f.decimals();</span></span>
-<span id="L238"><span class="lineNum">     238</span>                 :<span class="tlaGNC">         106 :         ethUsdFeed = f;</span></span>
-<span id="L239"><span class="lineNum">     239</span>                 :<span class="tlaGNC">         106 :         chainlinkEthUsdDecimals = dec;</span></span>
-<span id="L240"><span class="lineNum">     240</span>                 :<span class="tlaGNC">         106 :         emit ChainlinkEthUsdFeedUpdated(feed, dec);</span></span>
+<span id="L237"><span class="lineNum">     237</span>                 :<span class="tlaGNC">         124 :         uint8 dec = f.decimals();</span></span>
+<span id="L238"><span class="lineNum">     238</span>                 :<span class="tlaGNC">         124 :         ethUsdFeed = f;</span></span>
+<span id="L239"><span class="lineNum">     239</span>                 :<span class="tlaGNC">         124 :         chainlinkEthUsdDecimals = dec;</span></span>
+<span id="L240"><span class="lineNum">     240</span>                 :<span class="tlaGNC">         124 :         emit ChainlinkEthUsdFeedUpdated(feed, dec);</span></span>
 <span id="L241"><span class="lineNum">     241</span>                 :             :     }</span>
 <span id="L242"><span class="lineNum">     242</span>                 :             : </span>
 <span id="L243"><span class="lineNum">     243</span>                 :             :     /// @notice Configure the maximum allowed data staleness for Chainlink reads</span>
@@ -559,39 +559,39 @@
 <span id="L488"><span class="lineNum">     488</span>                 :             :     // =========================</span>
 <span id="L489"><span class="lineNum">     489</span>                 :             : </span>
 <span id="L490"><span class="lineNum">     490</span>                 :             :     /// @inheritdoc IUniversalGateway</span>
-<span id="L491"><span class="lineNum">     491</span>                 :<span class="tlaUNC">           0 :     function withdrawFunds(</span></span>
+<span id="L491"><span class="lineNum">     491</span>                 :<span class="tlaGNC">          11 :     function withdrawFunds(</span></span>
 <span id="L492"><span class="lineNum">     492</span>                 :             :         address recipient,</span>
 <span id="L493"><span class="lineNum">     493</span>                 :             :         address token,</span>
 <span id="L494"><span class="lineNum">     494</span>                 :             :         uint256 amount</span>
 <span id="L495"><span class="lineNum">     495</span>                 :             :     ) external nonReentrant whenNotPaused onlyTSS {</span>
-<span id="L496"><span class="lineNum">     496</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (recipient == address(0)) revert Errors.InvalidRecipient();</span></span>
-<span id="L497"><span class="lineNum">     497</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (amount == 0) revert Errors.InvalidAmount();</span></span>
+<span id="L496"><span class="lineNum">     496</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">          11 :         if (recipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L497"><span class="lineNum">     497</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">          10 :         if (amount == 0) revert Errors.InvalidAmount();</span></span>
 <span id="L498"><span class="lineNum">     498</span>                 :             : </span>
-<span id="L499"><span class="lineNum">     499</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (token == address(0)) {</span></span>
-<span id="L500"><span class="lineNum">     500</span>                 :<span class="tlaUNC">           0 :             _handleNativeWithdraw(recipient, amount);</span></span>
+<span id="L499"><span class="lineNum">     499</span>         [<span class="tlaGBC" title="Branch 0 was taken 5 times"> + </span><span class="tlaGBC" title="Branch 1 was taken 4 times"> + </span>]:<span class="tlaGNC">           9 :         if (token == address(0)) {</span></span>
+<span id="L500"><span class="lineNum">     500</span>                 :<span class="tlaGNC">           5 :             _handleNativeWithdraw(recipient, amount);</span></span>
 <span id="L501"><span class="lineNum">     501</span>                 :             :         } else {</span>
-<span id="L502"><span class="lineNum">     502</span>                 :<span class="tlaUNC">           0 :             _handleTokenWithdraw(token, recipient, amount);</span></span>
+<span id="L502"><span class="lineNum">     502</span>                 :<span class="tlaGNC">           4 :             _handleTokenWithdraw(token, recipient, amount);</span></span>
 <span id="L503"><span class="lineNum">     503</span>                 :             :         }</span>
 <span id="L504"><span class="lineNum">     504</span>                 :             : </span>
-<span id="L505"><span class="lineNum">     505</span>                 :<span class="tlaUNC">           0 :         emit WithdrawFunds(recipient, amount, token);</span></span>
+<span id="L505"><span class="lineNum">     505</span>                 :<span class="tlaGNC">           9 :         emit WithdrawFunds(recipient, amount, token);</span></span>
 <span id="L506"><span class="lineNum">     506</span>                 :             :     }</span>
 <span id="L507"><span class="lineNum">     507</span>                 :             : </span>
 <span id="L508"><span class="lineNum">     508</span>                 :             :     /// @inheritdoc IUniversalGateway</span>
-<span id="L509"><span class="lineNum">     509</span>                 :<span class="tlaUNC">           0 :     function revertWithdrawFunds(</span></span>
+<span id="L509"><span class="lineNum">     509</span>                 :<span class="tlaGNC">           7 :     function revertWithdrawFunds(</span></span>
 <span id="L510"><span class="lineNum">     510</span>                 :             :         address token,</span>
 <span id="L511"><span class="lineNum">     511</span>                 :             :         uint256 amount,</span>
 <span id="L512"><span class="lineNum">     512</span>                 :             :         RevertSettings calldata revertCFG</span>
 <span id="L513"><span class="lineNum">     513</span>                 :             :     ) external nonReentrant whenNotPaused onlyTSS {</span>
-<span id="L514"><span class="lineNum">     514</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
-<span id="L515"><span class="lineNum">     515</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (amount == 0) revert Errors.InvalidAmount();</span></span>
+<span id="L514"><span class="lineNum">     514</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">           7 :         if (revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L515"><span class="lineNum">     515</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">           6 :         if (amount == 0) revert Errors.InvalidAmount();</span></span>
 <span id="L516"><span class="lineNum">     516</span>                 :             : </span>
-<span id="L517"><span class="lineNum">     517</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (token == address(0)) {</span></span>
-<span id="L518"><span class="lineNum">     518</span>                 :<span class="tlaUNC">           0 :             _handleNativeWithdraw(revertCFG.fundRecipient, amount);</span></span>
+<span id="L517"><span class="lineNum">     517</span>         [<span class="tlaGBC" title="Branch 0 was taken 3 times"> + </span><span class="tlaGBC" title="Branch 1 was taken 2 times"> + </span>]:<span class="tlaGNC">           5 :         if (token == address(0)) {</span></span>
+<span id="L518"><span class="lineNum">     518</span>                 :<span class="tlaGNC">           3 :             _handleNativeWithdraw(revertCFG.fundRecipient, amount);</span></span>
 <span id="L519"><span class="lineNum">     519</span>                 :             :         } else {</span>
-<span id="L520"><span class="lineNum">     520</span>                 :<span class="tlaUNC">           0 :             _handleTokenWithdraw(token, revertCFG.fundRecipient, amount);</span></span>
+<span id="L520"><span class="lineNum">     520</span>                 :<span class="tlaGNC">           2 :             _handleTokenWithdraw(token, revertCFG.fundRecipient, amount);</span></span>
 <span id="L521"><span class="lineNum">     521</span>                 :             :         }</span>
 <span id="L522"><span class="lineNum">     522</span>                 :             : </span>
-<span id="L523"><span class="lineNum">     523</span>                 :<span class="tlaUNC">           0 :         emit WithdrawFunds(revertCFG.fundRecipient, amount, token);</span></span>
+<span id="L523"><span class="lineNum">     523</span>                 :<span class="tlaGNC">           5 :         emit WithdrawFunds(revertCFG.fundRecipient, amount, token);</span></span>
 <span id="L524"><span class="lineNum">     524</span>                 :             :     }</span>
 <span id="L525"><span class="lineNum">     525</span>                 :             : </span>
 <span id="L526"><span class="lineNum">     526</span>                 :             :     // =========================</span>
@@ -720,9 +720,9 @@
 <span id="L649"><span class="lineNum">     649</span>                 :             :     }</span>
 <span id="L650"><span class="lineNum">     650</span>                 :             : </span>
 <span id="L651"><span class="lineNum">     651</span>                 :             :     /// @dev Native withdraw by TSS</span>
-<span id="L652"><span class="lineNum">     652</span>                 :<span class="tlaUNC">           0 :     function _handleNativeWithdraw(address recipient, uint256 amount) internal {</span></span>
-<span id="L653"><span class="lineNum">     653</span>                 :<span class="tlaUNC">           0 :         (bool ok, ) = payable(recipient).call{value: amount}(&quot;&quot;);</span></span>
-<span id="L654"><span class="lineNum">     654</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (!ok) revert Errors.WithdrawFailed();</span></span>
+<span id="L652"><span class="lineNum">     652</span>                 :<span class="tlaGNC">           8 :     function _handleNativeWithdraw(address recipient, uint256 amount) internal {</span></span>
+<span id="L653"><span class="lineNum">     653</span>                 :<span class="tlaGNC">           8 :         (bool ok, ) = payable(recipient).call{value: amount}(&quot;&quot;);</span></span>
+<span id="L654"><span class="lineNum">     654</span>            [<span class="tlaGBC" title="Branch 0 was taken 2 times"> + </span>]:<span class="tlaGNC">           8 :         if (!ok) revert Errors.WithdrawFailed();</span></span>
 <span id="L655"><span class="lineNum">     655</span>                 :             :     }</span>
 <span id="L656"><span class="lineNum">     656</span>                 :             : </span>
 <span id="L657"><span class="lineNum">     657</span>                 :             :     /// @dev ERC20 withdraw by TSS (token must be isSupported for bridging)</span>
@@ -730,12 +730,12 @@
 <span id="L659"><span class="lineNum">     659</span>                 :             :     /// @param token Token address to withdraw</span>
 <span id="L660"><span class="lineNum">     660</span>                 :             :     /// @param recipient Recipient address</span>
 <span id="L661"><span class="lineNum">     661</span>                 :             :     /// @param amount Amount of token to withdraw</span>
-<span id="L662"><span class="lineNum">     662</span>                 :<span class="tlaUNC">           0 :     function _handleTokenWithdraw(address token, address recipient, uint256 amount) internal {</span></span>
+<span id="L662"><span class="lineNum">     662</span>                 :<span class="tlaGNC">           6 :     function _handleTokenWithdraw(address token, address recipient, uint256 amount) internal {</span></span>
 <span id="L663"><span class="lineNum">     663</span>                 :             :         // Note: Removing isSupportedToken[token] for now to avoid a rare case scenario</span>
 <span id="L664"><span class="lineNum">     664</span>                 :             :         //       If a token was supported before and user bridged &gt; but was removed from support list later, funds get stuck.</span>
 <span id="L665"><span class="lineNum">     665</span>                 :             :         // if (!isSupportedToken[token]) revert Errors.NotSupported();</span>
-<span id="L666"><span class="lineNum">     666</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (IERC20(token).balanceOf(address(this)) &lt; amount) revert Errors.InvalidAmount();</span></span>
-<span id="L667"><span class="lineNum">     667</span>                 :<span class="tlaUNC">           0 :         IERC20(token).safeTransfer(recipient, amount);</span></span>
+<span id="L666"><span class="lineNum">     666</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">           6 :         if (IERC20(token).balanceOf(address(this)) &lt; amount) revert Errors.InvalidAmount();</span></span>
+<span id="L667"><span class="lineNum">     667</span>                 :<span class="tlaGNC">           5 :         IERC20(token).safeTransfer(recipient, amount);</span></span>
 <span id="L668"><span class="lineNum">     668</span>                 :             :     }</span>
 <span id="L669"><span class="lineNum">     669</span>                 :             : </span>
 <span id="L670"><span class="lineNum">     670</span>                 :             :     /// @dev Swap any ERC20 to the chain's native token via a direct Uniswap v3 pool to WETH.</span>
