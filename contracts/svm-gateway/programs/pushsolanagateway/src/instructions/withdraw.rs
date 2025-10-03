@@ -209,7 +209,7 @@ pub struct RevertWithdraw<'info> {
 pub fn revert_withdraw(
     ctx: Context<RevertWithdraw>,
     amount: u64,
-    revert_cfg: RevertSettings,
+    revert_instruction: RevertInstructions,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -217,13 +217,13 @@ pub fn revert_withdraw(
 ) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
-        revert_cfg.fund_recipient != Pubkey::default(),
+        revert_instruction.fund_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
 
     // instruction_id = 3 for SOL revert withdraw (different from regular withdraw)
     let instruction_id: u8 = 3;
-    let recipient_bytes = revert_cfg.fund_recipient.to_bytes();
+    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
     let additional: [&[u8]; 1] = [&recipient_bytes[..]];
     validate_message(
         &mut ctx.accounts.tss_pda,
@@ -241,7 +241,7 @@ pub fn revert_withdraw(
     invoke_signed(
         &system_instruction::transfer(
             &ctx.accounts.vault.key(),
-            &revert_cfg.fund_recipient,
+            &revert_instruction.fund_recipient,
             amount,
         ),
         &[
@@ -254,7 +254,7 @@ pub fn revert_withdraw(
 
     // Emit withdraw event (ETH parity)
     emit!(crate::state::WithdrawFunds {
-        recipient: revert_cfg.fund_recipient,
+        recipient: revert_instruction.fund_recipient,
         amount,
         token: Pubkey::default(),
     });
@@ -304,7 +304,7 @@ pub struct RevertWithdrawSplToken<'info> {
 pub fn revert_withdraw_spl_token(
     ctx: Context<RevertWithdrawSplToken>,
     amount: u64,
-    revert_cfg: RevertSettings,
+    revert_instruction: RevertInstructions,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -312,7 +312,7 @@ pub fn revert_withdraw_spl_token(
 ) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
-        revert_cfg.fund_recipient != Pubkey::default(),
+        revert_instruction.fund_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
 
@@ -349,7 +349,7 @@ pub fn revert_withdraw_spl_token(
 
     // Emit withdraw event (ETH parity)
     emit!(crate::state::WithdrawFunds {
-        recipient: revert_cfg.fund_recipient,
+        recipient: revert_instruction.fund_recipient,
         amount,
         token: ctx.accounts.token_mint.key(),
     });

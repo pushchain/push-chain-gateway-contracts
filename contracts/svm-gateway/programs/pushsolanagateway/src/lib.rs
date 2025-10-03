@@ -19,40 +19,40 @@ pub mod pushsolanagateway {
 
     /// @notice Allows initiating a TX for funding UEA with gas deposits from source chain.
     /// @dev    Supports only native SOL deposits for gas funding.
-    ///         The route emits TxWithGas event - important for Instant TX Route.
+    ///         The route emits UniversalTx event - important for Instant TX Route.
     pub fn send_tx_with_gas(
         ctx: Context<SendTxWithGas>,
         payload: UniversalPayload,
-        revert_cfg: RevertSettings,
+        revert_instruction: RevertInstructions,
         amount: u64,
     ) -> Result<()> {
-        instructions::deposit::send_tx_with_gas(ctx, payload, revert_cfg, amount)
+        instructions::deposit::send_tx_with_gas(ctx, payload, revert_instruction, amount)
     }
 
     /// @notice Allows initiating a TX for movement of funds from source chain to Push Chain.
     /// @dev    Supports both native SOL and SPL token deposits (like ETH Gateway).
     ///         For native SOL: pass Pubkey::default() as bridge_token
     ///         For SPL tokens: pass token mint address as bridge_token
-    ///         The route emits TxWithFunds event.
+    ///         The route emits UniversalTx event.
     pub fn send_funds(
         ctx: Context<SendFunds>,
         recipient: [u8; 20],
         bridge_token: Pubkey,
         bridge_amount: u64,
-        revert_cfg: RevertSettings,
+        revert_instruction: RevertInstructions,
     ) -> Result<()> {
-        instructions::deposit::send_funds(ctx, recipient, bridge_token, bridge_amount, revert_cfg)
+        instructions::deposit::send_funds(ctx, recipient, bridge_token, bridge_amount, revert_instruction)
     }
 
     /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
     /// @dev    Supports both native SOL and SPL token deposits with payload execution.
-    ///         The route emits both TxWithGas and TxWithFunds events.
+    ///         The route emits UniversalTx event.
     pub fn send_tx_with_funds(
         ctx: Context<SendTxWithFunds>,
         bridge_token: Pubkey,
         bridge_amount: u64,
         payload: UniversalPayload,
-        revert_cfg: RevertSettings,
+        revert_instruction: RevertInstructions,
         gas_amount: u64,
         signature_data: Vec<u8>,
     ) -> Result<()> {
@@ -61,7 +61,7 @@ pub mod pushsolanagateway {
             bridge_token,
             bridge_amount,
             payload,
-            revert_cfg,
+            revert_instruction,
             gas_amount,
             signature_data,
         )
@@ -200,7 +200,7 @@ pub mod pushsolanagateway {
     pub fn revert_withdraw(
         ctx: Context<RevertWithdraw>,
         amount: u64,
-        revert_cfg: RevertSettings,
+        revert_instruction: RevertInstructions,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -209,7 +209,7 @@ pub mod pushsolanagateway {
         instructions::withdraw::revert_withdraw(
             ctx,
             amount,
-            revert_cfg,
+            revert_instruction,
             signature,
             recovery_id,
             message_hash,
@@ -221,7 +221,7 @@ pub mod pushsolanagateway {
     pub fn revert_withdraw_spl_token(
         ctx: Context<RevertWithdrawSplToken>,
         amount: u64,
-        revert_cfg: RevertSettings,
+        revert_instruction: RevertInstructions,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -230,7 +230,7 @@ pub mod pushsolanagateway {
         instructions::withdraw::revert_withdraw_spl_token(
             ctx,
             amount,
-            revert_cfg,
+            revert_instruction,
             signature,
             recovery_id,
             message_hash,
@@ -269,15 +269,14 @@ pub use state::{
     // Events
     CapsUpdated,
     Config,
-    RevertSettings,
+    RevertInstructions,
     TSSAddressUpdated,
     TokenRemovedFromWhitelist,
     TokenWhitelist,
     TokenWhitelisted,
     TxType,
-    TxWithFunds,
-    TxWithGas,
     UniversalPayload,
+    UniversalTx,
     VerificationType,
     WithdrawFunds,
     CONFIG_SEED,

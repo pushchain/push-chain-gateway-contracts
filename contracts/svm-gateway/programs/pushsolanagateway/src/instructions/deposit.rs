@@ -16,7 +16,7 @@ use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 pub fn send_tx_with_gas(
     ctx: Context<SendTxWithGas>,
     payload: UniversalPayload,
-    revert_cfg: RevertSettings,
+    revert_instruction: RevertInstructions,
     amount: u64,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
@@ -28,7 +28,7 @@ pub fn send_tx_with_gas(
 
     // Validate inputs
     require!(
-        revert_cfg.fund_recipient != Pubkey::default(),
+        revert_instruction.fund_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
 
@@ -58,13 +58,16 @@ pub fn send_tx_with_gas(
     // Calculate payload hash
     let _payload_hash = payload_hash(&payload);
 
-    // Emit TxWithGas event (exactly like ETH contract)
-    emit!(TxWithGas {
+    // Emit UniversalTx event (parity with EVM V0)
+    emit!(UniversalTx {
         sender: user.key(),
-        payload_hash: _payload_hash,
-        native_token_deposited: gas_amount,
-        revert_cfg,
+        recipient: [0u8; 20],     // Zero address for gas funding
+        token: Pubkey::default(), // Native SOL
+        amount: gas_amount,
+        payload: payload_to_bytes(&payload),
+        revert_instruction,
         tx_type: TxType::GasAndPayload,
+        signature_data: vec![], // Empty for gas-only route
     });
 
     Ok(())
@@ -77,7 +80,7 @@ pub fn send_funds(
     recipient: [u8; 20],
     bridge_token: Pubkey,
     bridge_amount: u64,
-    revert_cfg: RevertSettings,
+    revert_instruction: RevertInstructions,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let user = &ctx.accounts.user;
@@ -92,7 +95,7 @@ pub fn send_funds(
         GatewayError::InvalidRecipient
     );
     require!(
-        revert_cfg.fund_recipient != Pubkey::default(),
+        revert_instruction.fund_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
     require!(bridge_amount > 0, GatewayError::InvalidAmount);
@@ -149,15 +152,14 @@ pub fn send_funds(
         token::transfer(cpi_context, bridge_amount)?;
     }
 
-    // Emit TxWithFunds event (same for both native SOL and SPL tokens)
-    emit!(TxWithFunds {
+    // Emit UniversalTx event (parity with EVM V0)
+    emit!(UniversalTx {
         sender: user.key(),
         recipient,
-        bridge_amount,
-        gas_amount: 0,
-        bridge_token, // Pubkey::default() for native SOL, mint address for SPL
-        data: vec![],
-        revert_cfg,
+        token: bridge_token, // Pubkey::default() for native SOL, mint address for SPL
+        amount: bridge_amount,
+        payload: vec![], // Empty for funds-only route
+        revert_instruction,
         tx_type: TxType::Funds,
         signature_data: vec![], // Empty for funds-only route
     });
@@ -172,7 +174,7 @@ pub fn send_tx_with_funds(
     bridge_token: Pubkey,
     bridge_amount: u64,
     payload: UniversalPayload,
-    revert_cfg: RevertSettings,
+    revert_instruction: RevertInstructions,
     gas_amount: u64,
     signature_data: Vec<u8>,
 ) -> Result<()> {
@@ -186,7 +188,7 @@ pub fn send_tx_with_funds(
     // Validate inputs
     require!(bridge_amount > 0, GatewayError::InvalidAmount);
     require!(
-        revert_cfg.fund_recipient != Pubkey::default(),
+        revert_instruction.fund_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
 
@@ -277,17 +279,16 @@ pub fn send_tx_with_funds(
     // Calculate payload hash
     let _payload_hash = payload_hash(&payload);
 
-    // Emit TxWithFunds event for bridge + payload
-    emit!(TxWithFunds {
+    // Emit UniversalTx event for bridge + payload (parity with EVM V0)
+    emit!(UniversalTx {
         sender: user.key(),
         recipient: [0u8; 20], // EVM zero address for payload execution
-        bridge_amount,
-        gas_amount,
-        bridge_token,
-        data: payload_to_bytes(&payload),
-        revert_cfg,
+        token: bridge_token,
+        amount: bridge_amount,
+        payload: payload_to_bytes(&payload),
+        revert_instruction,
         tx_type: TxType::FundsAndPayload,
-        signature_data,
+        signature_data, // Use the provided signature data
     });
 
     Ok(())

@@ -45,9 +45,9 @@ pub struct UniversalPayload {
     pub v_type: VerificationType,
 }
 
-/// Revert settings for failed transactions (parity with EVM `RevertSettings`).
+/// Revert instructions for failed transactions (parity with EVM `RevertInstructions`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct RevertSettings {
+pub struct RevertInstructions {
     pub fund_recipient: Pubkey,
     pub revert_msg: Vec<u8>,
 }
@@ -101,26 +101,16 @@ impl TssPda {
     pub const LEN: usize = 8 + 20 + 8 + 8 + 32 + 1;
 }
 
-/// GAS deposit event (parity with EVM `TxWithGas`). Emitted for gas funding on both GAS and GAS+PAYLOAD routes.
+/// Universal transaction event (parity with EVM V0 `UniversalTx`).
+/// Single event for both gas funding and funds movement.
 #[event]
-pub struct TxWithGas {
-    pub sender: Pubkey,
-    pub payload_hash: [u8; 32],
-    pub native_token_deposited: u64,
-    pub revert_cfg: RevertSettings,
-    pub tx_type: TxType,
-}
-
-/// FUNDS deposit event (parity with EVM `TxWithFunds`). Emitted for FUNDS-only and FUNDS+PAYLOAD routes.
-#[event]
-pub struct TxWithFunds {
+pub struct UniversalTx {
     pub sender: Pubkey,
     pub recipient: [u8; 20], // Ethereum address (20 bytes)
-    pub bridge_amount: u64,
-    pub gas_amount: u64,
-    pub bridge_token: Pubkey,
-    pub data: Vec<u8>,
-    pub revert_cfg: RevertSettings,
+    pub token: Pubkey,       // Bridge token (Pubkey::default() for native SOL)
+    pub amount: u64,         // Bridge amount (not gas amount)
+    pub payload: Vec<u8>,    // Payload data
+    pub revert_instruction: RevertInstructions,
     pub tx_type: TxType,
     pub signature_data: Vec<u8>,
 }

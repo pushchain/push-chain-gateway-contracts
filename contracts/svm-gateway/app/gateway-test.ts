@@ -290,7 +290,7 @@ async function run() {
         v_type: { signedVerification: {} }, // VerificationType enum
     };
 
-    const revertSettings = {
+    const revertInstructions = {
         fundRecipient: user, // Use user as recipient for simplicity  
         revertMsg: Buffer.from("revert message"),
     };
@@ -300,7 +300,7 @@ async function run() {
     const gasAmount = await getDynamicGasAmount(1.20, 0.01); // Target $1.20, fallback 0.01 SOL
 
     const gasTx = await userProgram.methods
-        .sendTxWithGas(payload, revertSettings, gasAmount)
+        .sendTxWithGas(payload, revertInstructions, gasAmount)
         .accounts({
             config: configPda,
             vault: vaultPda,
@@ -350,7 +350,7 @@ async function run() {
     console.log(`🏦 Vault balance BEFORE send_funds (native): ${vaultBalanceBeforeFunds / LAMPORTS_PER_SOL} SOL`);
 
     const nativeFundsTx = await userProgram.methods
-        .sendFunds(recipient, PublicKey.default, fundAmount, revertSettings) // PublicKey.default for native SOL
+        .sendFunds(recipient, PublicKey.default, fundAmount, revertInstructions) // PublicKey.default for native SOL
         .accounts({
             config: configPda,
             vault: vaultPda,
@@ -405,7 +405,7 @@ async function run() {
     console.log(`📤 Sending ${splAmount.toNumber() / Math.pow(10, 6)} tokens to EVM address 0x2222222222222222222222222222222222222222`);
 
     const splFundsTx = await userProgram.methods
-        .sendFunds(splRecipientEvm, mint, splAmount, revertSettings)
+        .sendFunds(splRecipientEvm, mint, splAmount, revertInstructions)
         .accounts({
             config: configPda,
             vault: vaultPda,
@@ -476,7 +476,7 @@ async function run() {
             mint,
             txWithFundsSplAmount,
             txWithFundsPayload,
-            revertSettings,
+            revertInstructions,
             txWithFundsGasAmount,
             signatureData
         )
@@ -529,7 +529,7 @@ async function run() {
         vType: { signedVerification: {} }
     };
 
-    const nativeRevertSettings = {
+    const nativeRevertInstructions = {
         fundRecipient: user,
         revertMsg: Buffer.from("Native SOL revert")
     };
@@ -549,7 +549,7 @@ async function run() {
             PublicKey.default, // Native SOL (Pubkey::default())
             nativeBridgeAmount,
             nativePayload,
-            nativeRevertSettings,
+            nativeRevertInstructions,
             nativeGasAmount,
             nativeSignatureData
         )
@@ -610,7 +610,7 @@ async function run() {
     // Try to send funds while paused (should fail)
     try {
         await userProgram.methods
-            .sendTxWithGas(payload, revertSettings, gasAmount)
+            .sendTxWithGas(payload, revertInstructions, gasAmount)
             .accounts({
                 config: configPda,
                 vault: vaultPda,
