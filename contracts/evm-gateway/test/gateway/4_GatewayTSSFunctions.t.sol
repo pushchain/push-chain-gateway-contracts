@@ -5,7 +5,7 @@ import {Test, console2} from "forge-std/Test.sol";
 import {BaseTest} from "../BaseTest.t.sol";
 import {Errors} from "../../src/libraries/Errors.sol";
 import {IUniversalGateway} from "../../src/interfaces/IUniversalGateway.sol";
-import {RevertSettings, UniversalPayload, TX_TYPE} from "../../src/libraries/Types.sol";
+import {RevertInstructions, UniversalPayload, TX_TYPE} from "../../src/libraries/Types.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
@@ -137,7 +137,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 initialGatewayBalance = address(gateway).balance;
         uint256 initialRecipientBalance = user1.balance;
 
-        RevertSettings memory revertCfg = revertCfg(user1);
+        RevertInstructions memory revertCfg = revertCfg(user1);
 
         // Expect WithdrawFunds event
         vm.expectEmit(true, true, true, true);
@@ -159,7 +159,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 initialGatewayBalance = usdc.balanceOf(address(gateway));
         uint256 initialRecipientBalance = usdc.balanceOf(user1);
 
-        RevertSettings memory revertCfg = revertCfg(user1);
+        RevertInstructions memory revertCfg = revertCfg(user1);
 
         // Expect WithdrawFunds event
         vm.expectEmit(true, true, true, true);
@@ -184,7 +184,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_InvalidRecipient_Revert() public {
-        RevertSettings memory revertCfg = revertCfg(address(0)); // Invalid user1
+        RevertInstructions memory revertCfg = revertCfg(address(0)); // Invalid user1
 
         vm.prank(tss);
         vm.expectRevert(
@@ -194,7 +194,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_InvalidAmount_Revert() public {
-        RevertSettings memory revertCfg = revertCfg(user1);
+        RevertInstructions memory revertCfg = revertCfg(user1);
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
@@ -203,7 +203,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testRevertWithdrawFunds_InsufficientBalance_Revert() public {
         uint256 excessiveAmount = address(gateway).balance + 1 ether;
-        RevertSettings memory revertCfg = revertCfg(user1);
+        RevertInstructions memory revertCfg = revertCfg(user1);
 
         vm.prank(tss);
         vm.expectRevert();
@@ -229,7 +229,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.prank(pauser);
         gateway.pause();
 
-        RevertSettings memory revertCfg = revertCfg(user1);
+        RevertInstructions memory revertCfg = revertCfg(user1);
 
         vm.prank(tss);
         vm.expectRevert();
@@ -273,7 +273,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_MultipleTokens() public {
-        RevertSettings memory revertCfg = revertCfg(user1);
+        RevertInstructions memory revertCfg = revertCfg(user1);
 
         // Test reverting different token types
         uint256 usdcAmount = 25e6;

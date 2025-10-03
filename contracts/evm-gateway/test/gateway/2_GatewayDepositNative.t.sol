@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 import { Test, console2 } from "forge-std/Test.sol";
 import { BaseTest } from "../BaseTest.t.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
-import { TX_TYPE, RevertSettings, UniversalPayload, VerificationType } from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions, UniversalPayload, VerificationType } from "../../src/libraries/Types.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
@@ -30,7 +30,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testSendTxWithGas_NativeETH_HappyPath() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Calculate valid ETH amount (within USD caps)
         // ETH price is $2000, so for $5 (middle of $1-$10 range): 5e18 / 2000e18 = 0.0025 ETH
@@ -43,10 +43,10 @@ contract GatewayDepositNativeTest is BaseTest {
         uint256 initialTSSBalance = tss.balance;
         uint256 initialUserBalance = user1.balance;
 
-        // Expect TxWithGas event emission
+        // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithGas(
-            user1, abi.encode(payload), validEthAmount, revertCfg_, TX_TYPE.GAS_AND_PAYLOAD
+        emit IUniversalGateway.UniversalTx(
+            user1, address(0), address(0), validEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD
         );
 
         // Execute the transaction
@@ -61,7 +61,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendFunds (native ETH + funds) with valid parameters
     function testSendFunds_NativeETH_HappyPath() public {
         // Setup: Use native ETH as bridge token (address(0)) and create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 bridgeAmount = 1e18; // 1 ETH
 
         // Fund user1 with ETH for the transaction
@@ -72,9 +72,9 @@ contract GatewayDepositNativeTest is BaseTest {
         uint256 initialUserBalance = user1.balance;
         uint256 initialGatewayBalance = address(gateway).balance;
 
-        // Expect TxWithFunds event emission
+        // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithFunds(
+        emit IUniversalGateway.UniversalTx(
             user1,
             recipient,
             address(0), // address(0) for native ETH bridging
@@ -107,7 +107,7 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Setup payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Fund user1 with minimum ETH
         vm.deal(user1, minEthAmount * 3); // Enough for all 3 functions
@@ -117,9 +117,9 @@ contract GatewayDepositNativeTest is BaseTest {
         // Test 1: sendTxWithGas with minimum amount
         uint256 initialTSSBalance = tss.balance;
 
-        // Expect TxWithGas event emission
+        // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithGas(user1, abi.encode(payload), minEthAmount, revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), minEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
 
         vm.prank(user1);
         gateway.sendTxWithGas{ value: minEthAmount }(payload, revertCfg_);
@@ -128,9 +128,9 @@ contract GatewayDepositNativeTest is BaseTest {
         // Test 2: sendFunds with minimum amounts (native ETH bridging)
         initialTSSBalance = tss.balance;
 
-        // Expect TxWithFunds event emission
+        // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithFunds(
+        emit IUniversalGateway.UniversalTx(
             user1,
             recipient,
             address(0), // address(0) for native ETH bridging
@@ -157,7 +157,7 @@ contract GatewayDepositNativeTest is BaseTest {
         uint256 maxEthAmount = 4995e12; // 0.004995 ETH = $9.99
         // Setup payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Fund user1 with maximum ETH
         vm.deal(user1, maxEthAmount * 3); // Enough for all 3 functions
@@ -167,9 +167,9 @@ contract GatewayDepositNativeTest is BaseTest {
         // Test 1: sendTxWithGas with maximum amount
         uint256 initialTSSBalance = tss.balance;
 
-        // Expect TxWithGas event emission
+        // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithGas(user1, abi.encode(payload), maxEthAmount, revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), maxEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
 
         vm.prank(user1);
         gateway.sendTxWithGas{ value: maxEthAmount }(payload, revertCfg_);
@@ -177,9 +177,9 @@ contract GatewayDepositNativeTest is BaseTest {
         // Test 2: sendFunds with maximum amounts (native ETH bridging)
         initialTSSBalance = tss.balance;
 
-        // Expect TxWithFunds event emission
+        // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithFunds(
+        emit IUniversalGateway.UniversalTx(
             user1,
             recipient,
             address(0), // address(0) for native ETH bridging
@@ -207,7 +207,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testSendTxWithGas_NativeETH_BelowMinCap_Reverts() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Calculate ETH amount below minimum USD cap
         // ETH price is $2000, so for $0.99 (below $1 min): 0.99e18 / 2000e18 = 0.000495 ETH
@@ -226,7 +226,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testSendTxWithGas_NativeETH_AboveMaxCap_Reverts() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Calculate ETH amount above maximum USD cap
         // ETH price is $2000, so for $10.01 (above $10 max): 10.01e18 / 2000e18 = 0.005005 ETH
@@ -245,7 +245,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testSendTxWithGas_NativeETH_ZeroAmount_Reverts() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Fund user1 with some ETH (but we'll send 0)
         vm.deal(user1, 1e18);
@@ -263,7 +263,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendFunds with zero bridge amount
     function testSendFunds_ZeroBridgeAmount_Reverts() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 ethAmount = 1e18; // 1 ETH
 
         // Fund user1 with ETH
@@ -292,7 +292,7 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 validEthAmount = 25e14; // 0.0025 ETH = $5
         vm.deal(user1, validEthAmount);
 
@@ -309,7 +309,7 @@ contract GatewayDepositNativeTest is BaseTest {
         gateway.pause();
 
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 bridgeAmount = 1e18; // 1 ETH
         vm.deal(user1, bridgeAmount);
 
@@ -328,7 +328,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testSendTxWithGas_NativeETH_ReentrancyProtection_Success() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 validEthAmount = 25e14; // 0.0025 ETH = $5
         vm.deal(user1, validEthAmount);
 
@@ -343,7 +343,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendFunds reentrancy protection via nonReentrant modifier
     function testSendFunds_ReentrancyProtection_Success() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 bridgeAmount = 1e18; // 1 ETH
         vm.deal(user1, bridgeAmount);
 
@@ -368,7 +368,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testSendTxWithGas_NativeETH_OracleFailures_Reverts() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 validEthAmount = 25e14; // 0.0025 ETH = $5
         vm.deal(user1, validEthAmount);
 
@@ -413,7 +413,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendFunds with zero recipient
     function testSendFunds_ZeroRecipient_Reverts() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 bridgeAmount = 1e18; // 1 ETH
         uint256 ethAmount = 1e18; // 1 ETH
         vm.deal(user1, ethAmount);
@@ -437,7 +437,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testSendTxWithGas_TSSReceivesETH_Success() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 validEthAmount = 25e14; // 0.0025 ETH = $5
 
         // Fund user1 with ETH
@@ -460,7 +460,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test that TSS actually receives ETH from sendFunds
     function testSendFunds_TSSReceivesETH_Success() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 bridgeAmount = 1e18; // 1 ETH
 
         // Fund user1 with ETH
@@ -496,7 +496,7 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Test minimum amount (should pass)
         vm.deal(user1, minEthAmount);
@@ -527,7 +527,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testDifferentETH_Prices_Success() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
 
         // Test with very high ETH price ($10,000)
         ethUsdFeedMock.setAnswer(10000e8, block.timestamp); // $10,000 ETH
@@ -556,7 +556,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testMultipleDeposits_Sequence_Success() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 validEthAmount = 25e14; // 0.0025 ETH = $5
 
         // Fund user1 with enough ETH for multiple deposits
@@ -578,7 +578,7 @@ contract GatewayDepositNativeTest is BaseTest {
     function testDeposits_DifferentUsers_Success() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload,) = buildValuePayload(recipient, abi.encodeWithSignature("receive()"), 0);
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 validEthAmount = 25e14; // 0.0025 ETH = $5
 
         // Fund multiple users
@@ -605,7 +605,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendFunds with mismatched msg.value and bridgeAmount
     function testSendFunds_MismatchedAmounts_Reverts() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 bridgeAmount = 1e18; // 1 ETH
         uint256 msgValue = 2e18; // 2 ETH (different from bridgeAmount)
 
@@ -625,7 +625,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendFunds with non-zero msg.value when using ERC20 token
     function testSendFunds_NonZeroMsgValueWithERC20_Reverts() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = revertCfg(recipient);
+        RevertInstructions memory revertCfg_ = revertCfg(recipient);
         uint256 bridgeAmount = 1e18; // 1 ETH worth of tokens
         uint256 msgValue = 1e18; // 1 ETH (should be 0 for ERC20)
 

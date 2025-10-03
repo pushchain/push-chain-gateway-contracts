@@ -11,7 +11,7 @@ import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { UniversalPayload } from "../../src/libraries/Types.sol";
-import { RevertSettings } from "../../src/libraries/Types.sol";
+import { RevertInstructions } from "../../src/libraries/Types.sol";
 import { MockAggregatorV3 } from "../mocks/MockAggregatorV3.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
@@ -458,7 +458,7 @@ contract OracleTest is BaseTest {
         uint256 testAmount = minEth + 1000; // Add 1000 wei buffer
         vm.deal(user1, testAmount);
 
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Should not revert
@@ -473,7 +473,7 @@ contract OracleTest is BaseTest {
         // Use exact maximum amount
         vm.deal(user1, maxEth);
 
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Should not revert
@@ -488,7 +488,7 @@ contract OracleTest is BaseTest {
 
         vm.deal(user1, belowMin);
 
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
@@ -503,7 +503,7 @@ contract OracleTest is BaseTest {
 
         vm.deal(user1, aboveMax);
 
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));

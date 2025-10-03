@@ -22,7 +22,7 @@ enum TX_TYPE {
     FUNDS_AND_PAYLOAD
 }
 
-struct RevertSettings {
+struct RevertInstructions {
     /// @dev where funds go in revert / refund cases
     address fundRecipient; 
     /// @dev arbitrary message for relayers/UEA

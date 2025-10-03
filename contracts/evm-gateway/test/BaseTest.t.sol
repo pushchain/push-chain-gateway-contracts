@@ -10,7 +10,7 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 
 import {UniversalGateway} from "../src/UniversalGateway.sol";
 import {IUniversalGateway} from "../src/interfaces/IUniversalGateway.sol";
-import {TX_TYPE, RevertSettings, UniversalPayload, VerificationType } from "../src/libraries/Types.sol";
+import {TX_TYPE, RevertInstructions, UniversalPayload, VerificationType } from "../src/libraries/Types.sol";
 import {Errors} from "../src/libraries/Errors.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockWETH} from "./mocks/MockWETH.sol";
@@ -324,8 +324,8 @@ abstract contract BaseTest is Test {
         h = keccak256(abi.encode(p));
     }
 
-    function revertCfg(address fundRecipient_) internal pure returns (RevertSettings memory) {
-        return RevertSettings({
+    function revertCfg(address fundRecipient_) internal pure returns (RevertInstructions memory) {
+        return RevertInstructions({
             fundRecipient: fundRecipient_,
             revertMsg: ""
         });
@@ -423,12 +423,12 @@ abstract contract BaseTest is Test {
     /// @param data Calldata
     /// @param value ETH value
     /// @return payload UniversalPayload struct
-    /// @return revertCfg RevertSettings struct
+    /// @return revertCfg RevertInstructions struct
     function buildERC20Payload(
         address to,
         bytes memory data,
         uint256 value
-    ) internal virtual pure returns (UniversalPayload memory, RevertSettings memory) {
+    ) internal virtual pure returns (UniversalPayload memory, RevertInstructions memory) {
         UniversalPayload memory payload = UniversalPayload({
             to: to,
             value: value,
@@ -441,7 +441,7 @@ abstract contract BaseTest is Test {
             vType: VerificationType(0)
         });
 
-        RevertSettings memory revertCfg_ = RevertSettings({
+        RevertInstructions memory revertCfg_ = RevertInstructions({
             fundRecipient: to,
             revertMsg: ""
         });

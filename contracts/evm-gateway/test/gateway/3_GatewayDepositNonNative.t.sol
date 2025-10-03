@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 import { Test, console2 } from "forge-std/Test.sol";
 import { BaseTest } from "../BaseTest.t.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
-import { TX_TYPE, RevertSettings, UniversalPayload, VerificationType } from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions, UniversalPayload, VerificationType } from "../../src/libraries/Types.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
@@ -183,7 +183,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendTxWithGas (ERC20) with valid parameters
     function testSendTxWithGas_ERC20_HappyPath() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         // Use WETH for gas funding (fast path - no swap needed)
@@ -202,7 +202,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         uint256 initialGatewayWETHBalance = mainnetWETH.balanceOf(address(gateway));
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithGas(user1, abi.encode(payload), wethAmount, revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), wethAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
 
         // Execute the transaction
         vm.prank(user1);
@@ -225,7 +225,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendFunds (ERC20) with valid parameters
     function testSendFunds_ERC20_HappyPath() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = RevertSettings({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         // Use USDC for bridging
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -240,7 +240,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         uint256 initialGatewayTokenBalance = mainnetUSDC.balanceOf(address(gateway));
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithFunds(
+        emit IUniversalGateway.UniversalTx(
             user1, recipient, MAINNET_USDC, bridgeAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS
         );
 
@@ -267,7 +267,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendTxWithFunds (ERC20 gas + ERC20 bridging) with valid parameters
     function testSendTxWithFunds_ERC20_HappyPath() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         // Use WETH for gas funding and USDC for bridging
@@ -294,10 +294,10 @@ contract GatewayDepositNonNativeTest is BaseTest {
         uint256 initialGatewayTokenBalance = mainnetUSDC.balanceOf(address(gateway));
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithGas(user1, bytes(""), gasAmount, revertCfg_, TX_TYPE.GAS);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), gasAmount, bytes(""), revertCfg_, TX_TYPE.GAS);
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithFunds(
+        emit IUniversalGateway.UniversalTx(
             user1, address(0), MAINNET_USDC, bridgeAmount, abi.encode(payload), revertCfg_, TX_TYPE.FUNDS_AND_PAYLOAD
         );
 
@@ -337,7 +337,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test all ERC20 functions with minimum valid amounts
     function testAllERC20Functions_MinimumAmounts_Success() public {
         // Test sendFunds with minimum amount (no Uniswap dependency)
-        RevertSettings memory revertCfg_ = RevertSettings({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         uint256 minAmount = 1; // Minimum amount
 
@@ -349,7 +349,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         uint256 initialGatewayBalance = IERC20(MAINNET_USDC).balanceOf(address(gateway));
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithFunds(
+        emit IUniversalGateway.UniversalTx(
             user2, recipient, MAINNET_USDC, minAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS
         );
 
@@ -367,7 +367,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test all ERC20 functions with maximum valid amounts
     function testAllERC20Functions_MaximumAmounts_Success() public {
         // Test sendFunds with maximum amount (no Uniswap dependency)
-        RevertSettings memory revertCfg_ = RevertSettings({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         // Test sendFunds with maximum amount
         uint256 maxTokenAmount = 1000000e6; // Large token amount
@@ -378,7 +378,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         uint256 initialGatewayBalance = IERC20(MAINNET_USDC).balanceOf(address(gateway));
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.TxWithFunds(
+        emit IUniversalGateway.UniversalTx(
             user2, recipient, MAINNET_USDC, maxTokenAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS
         );
 
@@ -393,7 +393,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendTxWithGas (ERC20) with zero token address
     function testSendTxWithGas_ERC20_WrongValues_Reverts() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 amountIn = 1e18;
@@ -487,7 +487,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendFunds (ERC20) with zero bridge amount
     function testSendFunds_ERC20_ZeroBridgeAmount_Reverts() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = RevertSettings({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         // Note: ERC20 sendFunds doesn't explicitly check for zero amount
         // The _handleTokenDeposit function just calls safeTransferFrom with zero amount
@@ -513,7 +513,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test all ERC20 functions with unsupported tokens
     function testERC20Functions_UnsupportedTokens_Reverts() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 amount = 1000e6; // 1000 USDC (6 decimals)
@@ -571,7 +571,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test all ERC20 functions when contract is paused
     function testERC20Functions_WhenPaused_Reverts() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 amount = 1000e6; // 1000 USDC (6 decimals)
@@ -611,7 +611,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendTxWithFunds (ERC20) with gas amount below minimum USD cap
     function testSendTxWithFunds_ERC20_GasAmountBelowMinCap_Reverts() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -633,7 +633,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendTxWithFunds (ERC20) with gas amount above maximum USD cap
     function testSendTxWithFunds_ERC20_GasAmountAboveMaxCap_Reverts() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -657,7 +657,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test that ERC20 bridge tokens are actually transferred to gateway
     function testSendFunds_ERC20_TokenTransferToGateway_Success() public {
         // Setup: Create revert config
-        RevertSettings memory revertCfg_ = RevertSettings({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         uint256 tokenAmount = 1000e6; // 1000 USDC (6 decimals)
 
@@ -691,7 +691,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test that ERC20 gas tokens are actually transferred to gateway
     function testSendTxWithFunds_ERC20_GasTokenTransferToGateway_Success() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -749,7 +749,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test comprehensive edge cases for ERC20 functions
     function testERC20Functions_EdgeCases_Success() public {
         // Setup: Create payload and revert config
-        RevertSettings memory revertCfg_ = RevertSettings({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         uint256 amount = 1000e6; // 1000 USDC (6 decimals)
 
@@ -815,7 +815,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test ERC20 deposits with insufficient token balance
     function testERC20Deposits_InsufficientBalance_Reverts() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 tokenAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -841,7 +841,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test ERC20 deposits with insufficient token allowance
     function testERC20Deposits_InsufficientAllowance_Reverts() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         uint256 tokenAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -870,7 +870,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test with non-existent Uniswap pool
     function testSendTxWithGas_ERC20_NonExistentPool_Reverts() public {
         // Setup: Create payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg_) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         // Use a token that doesn't have a WETH pair on Uniswap
@@ -896,7 +896,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         internal
         pure
         override
-        returns (UniversalPayload memory, RevertSettings memory)
+        returns (UniversalPayload memory, RevertInstructions memory)
     {
         UniversalPayload memory payload = UniversalPayload({
             to: to,
@@ -910,7 +910,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             vType: VerificationType.signedVerification
         });
 
-        RevertSettings memory revertCfg = RevertSettings({ fundRecipient: to, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg = RevertInstructions({ fundRecipient: to, revertMsg: bytes("") });
 
         return (payload, revertCfg);
     }
@@ -937,7 +937,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testTransactionTypeValidations_AddressZeroWithInvalidTxType_Reverts() public {
         // Test with address(0) recipient and invalid transaction type
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(address(0), abi.encodeWithSignature("receive()"), 0);
 
         // Fund user with tokens - use amount within USD caps
@@ -960,7 +960,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testTransactionTypeValidations_AddressZeroWithValidTxType_Success() public {
         // Test with address(0) recipient and valid transaction type
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(address(1), abi.encodeWithSignature("receive()"), 0);
 
         // Fund user with tokens - use amount within USD caps
@@ -978,7 +978,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testTransactionTypeValidations_NonZeroAddressWithAnyTxType_Success() public {
         // Test with non-zero recipient and any transaction type
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Fund user with tokens - use amount within USD caps
@@ -1018,7 +1018,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
             // Test swapToNative (this is an internal function, so we test it indirectly)
             // by calling sendTxWithGas which uses swapToNative internally
-            (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
                 buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
             vm.prank(user1);
@@ -1043,7 +1043,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.prank(user1);
         newNonSupportedToken.approve(address(gateway), 1e18);
 
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Get the actual USD caps from the contract and use the max amount
@@ -1061,7 +1061,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testSendTxWithFunds_4Params_ERC20_HappyPath() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Fund user with tokens - use amount within USD caps
@@ -1082,7 +1082,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testSendTxWithFunds_4Params_ERC20_ErrorConditions() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         uint256 bridgeAmount = 9e6;
@@ -1120,7 +1120,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testSendTxWithFunds_4Params_ERC20_USDCapValidations() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Get USD caps
@@ -1152,7 +1152,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testSendTxWithFunds_4Params_ERC20_UnsupportedTokens() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Test with unsupported gas token
@@ -1172,7 +1172,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testSendTxWithFunds_4Params_ERC20_WhenPaused() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         uint256 bridgeAmount = 9e6;
@@ -1194,7 +1194,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
     function testSendTxWithFunds_4Params_ERC20_EdgeCases() public {
         // Setup: Create a valid payload and revert config
-        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         uint256 bridgeAmount = 9e6;
