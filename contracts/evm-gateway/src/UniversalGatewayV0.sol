@@ -407,7 +407,8 @@ contract UniversalGatewayV0 is
             amount: _nativeTokenAmount,
             payload: _payload,
             revertInstruction: _revertInstruction,
-            txType: _txType
+            txType: _txType,
+            signatureData: bytes("")
         });
     }
    
@@ -549,7 +550,8 @@ contract UniversalGatewayV0 is
             amount: _bridgeAmount,
             payload: _payload,
             revertInstruction: _revertInstruction,
-            txType: _txType
+            txType: _txType,
+            signatureData: _signatureData
         });
     }
 

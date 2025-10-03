@@ -16,7 +16,8 @@ interface IUniversalGatewayV0 {
         uint256 amount,
         bytes payload,
         RevertInstructions revertInstruction,
-        TX_TYPE txType
+        TX_TYPE txType,
+        bytes signatureData
     );
     
     event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);
