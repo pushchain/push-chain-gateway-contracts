@@ -34,7 +34,7 @@ pub enum VerificationType {
 /// Serialized and hashed for event parity with EVM (payload bytes/hash).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct UniversalPayload {
-    pub to: Pubkey,
+    pub to: [u8; 20], // Ethereum address (20 bytes)
     pub value: u64,
     pub data: Vec<u8>,
     pub gas_limit: u64,
@@ -115,14 +115,14 @@ pub struct TxWithGas {
 #[event]
 pub struct TxWithFunds {
     pub sender: Pubkey,
-    pub recipient: Pubkey,
+    pub recipient: [u8; 20], // Ethereum address (20 bytes)
     pub bridge_amount: u64,
     pub gas_amount: u64,
     pub bridge_token: Pubkey,
     pub data: Vec<u8>,
     pub revert_cfg: RevertSettings,
     pub tx_type: TxType,
-    pub signature_data: [u8; 32],
+    pub signature_data: Vec<u8>,
 }
 
 /// Withdraw event (parity with EVM `WithdrawFunds`).
