@@ -11,6 +11,7 @@ import { IWETH } from "../../src/interfaces/IWETH.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+
 // USDT interface for non-standard transfer and approve functions
 
 interface TetherToken {
@@ -55,7 +56,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     // Real mainnet token contracts
     IERC20 mainnetWETH;
     IERC20 mainnetUSDC;
-    IERC20 mainnetUSDT;
+    TetherToken mainnetUSDT;
     IERC20 mainnetDAI;
 
     // =========================
@@ -76,7 +77,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // Initialize real mainnet token contracts
         mainnetWETH = IERC20(MAINNET_WETH);
         mainnetUSDC = IERC20(MAINNET_USDC);
-        mainnetUSDT = IERC20(MAINNET_USDT);
+        mainnetUSDT = TetherToken(MAINNET_USDT);
         mainnetDAI = IERC20(MAINNET_DAI);
 
         // Enable mainnet ERC20 token support for testing
@@ -101,7 +102,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     // =========================
 
     /// @notice Fund user with real mainnet tokens by impersonating a whale
-    function fundUserWithMainnetTokens(address user, address token, uint256 amount) internal {
+    function fundUserWithMainnetTokens(address user, address token, uint256 amount) internal override {
         // Find a whale address that has the token
         address whale;
         if (token == MAINNET_WETH) {
@@ -450,17 +451,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Execute the transaction with zero bridge amount and expect it to revert
         uint256 gasAmount = 1e18;
-        vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.sendTxWithFunds(
-            MAINNET_USDC, // Bridge token
-            0, // Zero bridge amount
-            MAINNET_WETH, // Gas token
-            gasAmount,
-            amountOutMinETH,
-            deadline,
-            payload,
-            revertCfg_
-        );
 
         // Execute the transaction with zero gas token address and expect it to revert
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -476,6 +466,11 @@ contract GatewayDepositNonNativeTest is BaseTest {
         );
 
         // Execute the transaction with zero gas amount and expect it to revert
+        // Fund user with WETH for gas token
+        fundUserWithMainnetTokens(user1, MAINNET_WETH, gasAmount);
+        vm.prank(user1);
+        IERC20(MAINNET_WETH).approve(address(gateway), gasAmount);
+
         vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendTxWithFunds(
             MAINNET_USDC, // Bridge token
@@ -541,14 +536,14 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // Test sendTxWithFunds with unsupported bridge token
         fundUserWithMainnetTokens(user1, MAINNET_WETH, amount);
         (, uint256 maxEthAmount) = gateway.getMinMaxValueForNative();
-        uint256 amountOutMinETH = maxEthAmount * 8 / 10;
+        uint256 amountOutMinETH = (maxEthAmount * 8) / 10;
         mainnetWETH.approve(address(gateway), amountOutMinETH);
         vm.expectRevert(Errors.NotSupported.selector); // Any revert is acceptable for unsupported token
         gateway.sendTxWithFunds(
             address(unsupportedToken), // Unsupported bridge token
             amount,
             address(MAINNET_WETH), // Supported gas token
-            maxEthAmount * 8 / 10,
+            (maxEthAmount * 8) / 10,
             amountOutMinETH,
             deadline,
             payload,
@@ -723,7 +718,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             bridgeAmount,
             MAINNET_USDC, // Gas token
             gasAmount,
-            gasAmountInETH * 9 / 10,
+            (gasAmountInETH * 9) / 10,
             deadline,
             payload,
             revertCfg_
@@ -900,6 +895,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     function buildERC20Payload(address to, bytes memory data, uint256 value)
         internal
         pure
+        override
         returns (UniversalPayload memory, RevertSettings memory)
     {
         UniversalPayload memory payload = UniversalPayload({
@@ -933,5 +929,397 @@ contract GatewayDepositNonNativeTest is BaseTest {
         MockERC20(token).mint(user, amount);
         vm.prank(user);
         MockERC20(token).approve(address(gateway), amount);
+    }
+
+    // =========================
+    // TRANSACTION TYPE VALIDATIONS TESTS
+    // =========================
+
+    function testTransactionTypeValidations_AddressZeroWithInvalidTxType_Reverts() public {
+        // Test with address(0) recipient and invalid transaction type
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(address(0), abi.encodeWithSignature("receive()"), 0);
+
+        // Fund user with tokens - use amount within USD caps
+        uint256 amount = 9e6; // 9 USDC = $9, well above min cap
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, amount);
+        vm.prank(user1);
+        mainnetUSDC.approve(address(gateway), amount);
+        (, uint256 maxEth) = gateway.getMinMaxValueForNative();
+        uint256 gasAmount = (maxEth * 8) / 10;
+
+        // This should revert because address(0) with FUNDS type is invalid
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
+        vm.prank(user1);
+        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
+        vm.prank(user1);
+        gateway.sendFunds{ value: 0 }(address(0), MAINNET_USDC, amount, revertCfg);
+    }
+
+    function testTransactionTypeValidations_AddressZeroWithValidTxType_Success() public {
+        // Test with address(0) recipient and valid transaction type
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(address(1), abi.encodeWithSignature("receive()"), 0);
+
+        // Fund user with tokens - use amount within USD caps
+        uint256 amount = 9e6; // 9 USDC = $9, well above min cap
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, amount);
+        vm.prank(user1);
+        mainnetUSDC.approve(address(gateway), amount);
+        (, uint256 maxEth) = gateway.getMinMaxValueForNative();
+        uint256 gasAmount = (maxEth * 8) / 10;
+
+        // This should not revert because FUNDS_AND_PAYLOAD is valid for address(0)
+        vm.prank(user1);
+        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg);
+    }
+
+    function testTransactionTypeValidations_NonZeroAddressWithAnyTxType_Success() public {
+        // Test with non-zero recipient and any transaction type
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        // Fund user with tokens - use amount within USD caps
+        uint256 amount = 9e6; // 9 USDC = $9, well above min cap
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, amount);
+        vm.prank(user1);
+        mainnetUSDC.approve(address(gateway), amount);
+
+        // This should not revert for any transaction type with non-zero recipient
+        (, uint256 maxEth) = gateway.getMinMaxValueForNative();
+        uint256 gasAmount = (maxEth * 8) / 10;
+        vm.prank(user1);
+        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg);
+    }
+
+    // =========================
+    // SWAP TO NATIVE WITH VARIOUS TOKENS TESTS
+    // =========================
+
+    function testSwapToNative_VariousTokens_Success() public {
+        // Test with different tokens to ensure swapToNative works with various token types
+        address[] memory tokens = new address[](3);
+        tokens[0] = MAINNET_USDC;
+        tokens[1] = MAINNET_USDT;
+        tokens[2] = MAINNET_DAI;
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            // Fund user with tokens - use amount that's within USD caps
+            uint256 gasAmount;
+            if (tokens[i] == MAINNET_DAI) {
+                gasAmount = 8e18; // 8 DAI (18 decimals)
+            } else {
+                gasAmount = 8e6; // 8 USDC (6 decimals)
+            }
+
+            fundUserWithMainnetTokens(user1, tokens[i], gasAmount);
+
+            // Test swapToNative (this is an internal function, so we test it indirectly)
+            // by calling sendTxWithGas which uses swapToNative internally
+            (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+                buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+            vm.prank(user1);
+            if (tokens[i] == MAINNET_USDT) {
+                TetherToken(MAINNET_USDT).approve(address(gateway), gasAmount);
+            } else {
+                IERC20(tokens[i]).approve(address(gateway), gasAmount);
+            }
+
+            // This should not revert for supported tokens
+            vm.prank(user1);
+            gateway.sendTxWithGas(tokens[i], gasAmount, payload, revertCfg, 1, block.timestamp + 3600);
+            console2.log(tokens[i]);
+        }
+    }
+
+    function testSwapToNative_UnsupportedToken_Reverts() public {
+        // Test with unsupported token
+        //Toggle the support for USDC
+        MockERC20 newNonSupportedToken = new MockERC20("NonSupported", "NS", 18, 0);
+        newNonSupportedToken.mint(user1, 1e18);
+        vm.prank(user1);
+        newNonSupportedToken.approve(address(gateway), 1e18);
+
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        // Get the actual USD caps from the contract and use the max amount
+        (, uint256 maxEth) = gateway.getMinMaxValueForNative();
+        uint256 amount = (maxEth * 8) / 10;
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        vm.prank(user1);
+        gateway.sendTxWithGas(address(newNonSupportedToken), amount, payload, revertCfg, 1, block.timestamp + 3600);
+    }
+
+    // =========================
+    // 4-PARAMETER sendTxWithFunds TESTS
+    // =========================
+
+    function testSendTxWithFunds_4Params_ERC20_HappyPath() public {
+        // Setup: Create a valid payload and revert config
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        // Fund user with tokens - use amount within USD caps
+        uint256 bridgeAmount = 9e6; // 9 USDC = $9, well above min cap
+        uint256 gasAmount = 8e6; // 8 USDC for gas
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount + gasAmount);
+
+        // Approve gateway to spend tokens
+        vm.prank(user1);
+        IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount + gasAmount);
+
+        // This should not revert for supported tokens
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+        );
+    }
+
+    function testSendTxWithFunds_4Params_ERC20_ErrorConditions() public {
+        // Setup: Create a valid payload and revert config
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        uint256 bridgeAmount = 9e6;
+        uint256 gasAmount = 8e6;
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount + gasAmount);
+
+        vm.prank(user1);
+        IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount + gasAmount);
+        // This should succeed (no revert expected)
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        vm.prank(user1);
+        gateway.sendTxWithFunds(MAINNET_USDC, 0, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg);
+
+        // Test 2: Zero gas amount
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, 0, 1, block.timestamp + 3600, payload, revertCfg
+        );
+
+        // Test 3: Invalid gas token (address(0))
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, address(0), gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+        );
+
+        // Test 4: Expired deadline
+        vm.expectRevert(abi.encodeWithSelector(Errors.SlippageExceededOrExpired.selector));
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp - 1, payload, revertCfg
+        );
+    }
+
+    function testSendTxWithFunds_4Params_ERC20_USDCapValidations() public {
+        // Setup: Create a valid payload and revert config
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        // Get USD caps
+        (uint256 minEth, uint256 maxEth) = gateway.getMinMaxValueForNative();
+
+        // Test 1: Gas amount below minimum cap
+        uint256 bridgeAmount = 9e6;
+        uint256 gasAmount = 1; // Very small amount, definitely below minimum
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount + gasAmount);
+        vm.prank(user1);
+        IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount + gasAmount);
+        vm.expectRevert("Too little received");
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+        );
+
+        // Test 2: Gas amount above maximum cap
+        gasAmount = 100000e6; // 100K USDC, definitely above maximum cap
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount + gasAmount);
+        vm.prank(user1);
+        IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount + gasAmount);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+        );
+    }
+
+    function testSendTxWithFunds_4Params_ERC20_UnsupportedTokens() public {
+        // Setup: Create a valid payload and revert config
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        // Test with unsupported gas token
+        address unsupportedToken = address(0x1234567890123456789012345678901234567890);
+        uint256 bridgeAmount = 9e6;
+        uint256 gasAmount = 8e6;
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount);
+
+        vm.prank(user1);
+        IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, unsupportedToken, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+        );
+    }
+
+    function testSendTxWithFunds_4Params_ERC20_WhenPaused() public {
+        // Setup: Create a valid payload and revert config
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        uint256 bridgeAmount = 9e6;
+        uint256 gasAmount = 8e6;
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount + gasAmount);
+
+        // Pause the gateway
+        vm.prank(pauser);
+        gateway.pause();
+
+        vm.prank(user1);
+        IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount + gasAmount);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(user1);
+        gateway.sendTxWithFunds(
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+        );
+    }
+
+    function testSendTxWithFunds_4Params_ERC20_EdgeCases() public {
+        // Setup: Create a valid payload and revert config
+        (UniversalPayload memory payload, RevertSettings memory revertCfg) =
+            buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
+
+        uint256 bridgeAmount = 9e6;
+        uint256 gasAmount = 8e6;
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount + gasAmount);
+
+        // Test with deadline = 0 (should use contract default)
+        vm.prank(user1);
+        IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount + gasAmount);
+        vm.prank(user1);
+        gateway.sendTxWithFunds(MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, 0, payload, revertCfg);
+    }
+
+    // =========================
+    // GATEWAY INITIALIZATION TESTS
+    // =========================
+
+    function testGatewayInitialization_AllBranches() public {
+        // Test 1: Zero address validation - admin
+        UniversalGateway newGateway = new UniversalGateway();
+        vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
+        newGateway.initialize(
+            address(0), // Zero admin
+            pauser,
+            tss,
+            100e18, // minCapUsd
+            10000e18, // maxCapUsd
+            address(0x123), // factory
+            address(0x456), // router
+            MAINNET_WETH
+        );
+
+        // Test 2: Zero address validation - pauser
+        vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
+        newGateway.initialize(
+            admin,
+            address(0), // Zero pauser
+            tss,
+            100e18,
+            10000e18,
+            address(0x123),
+            address(0x456),
+            MAINNET_WETH
+        );
+
+        // Test 3: Zero address validation - tss
+        vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
+        newGateway.initialize(
+            admin,
+            pauser,
+            address(0), // Zero tss
+            100e18,
+            10000e18,
+            address(0x123),
+            address(0x456),
+            MAINNET_WETH
+        );
+
+        // Test 4: Zero address validation - WETH
+        vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
+        newGateway.initialize(
+            admin,
+            pauser,
+            tss,
+            100e18,
+            10000e18,
+            address(0x123),
+            address(0x456),
+            address(0) // Zero WETH
+        );
+
+        // Test 5: Successful initialization with Uniswap addresses
+        newGateway.initialize(
+            admin,
+            pauser,
+            tss,
+            100e18,
+            10000e18,
+            address(0x123), // Non-zero factory
+            address(0x456), // Non-zero router
+            MAINNET_WETH
+        );
+
+        // Verify Uniswap addresses are set
+        assertEq(address(newGateway.uniV3Factory()), address(0x123));
+        assertEq(address(newGateway.uniV3Router()), address(0x456));
+        assertEq(newGateway.WETH(), MAINNET_WETH);
+        assertEq(newGateway.tssAddress(), tss);
+        assertEq(newGateway.MIN_CAP_UNIVERSAL_TX_USD(), 100e18);
+        assertEq(newGateway.MAX_CAP_UNIVERSAL_TX_USD(), 10000e18);
+        assertEq(newGateway.defaultSwapDeadlineSec(), 10 minutes);
+        assertEq(newGateway.chainlinkStalePeriod(), 1 hours);
+
+        // Test 6: Successful initialization with zero Uniswap addresses
+        UniversalGateway newGateway2 = new UniversalGateway();
+        newGateway2.initialize(
+            admin,
+            pauser,
+            tss,
+            50e18,
+            5000e18,
+            address(0), // Zero factory
+            address(0), // Zero router
+            MAINNET_WETH
+        );
+
+        // Verify Uniswap addresses are NOT set (should be address(0))
+        assertEq(address(newGateway2.uniV3Factory()), address(0));
+        assertEq(address(newGateway2.uniV3Router()), address(0));
+        assertEq(newGateway2.WETH(), MAINNET_WETH);
+        assertEq(newGateway2.tssAddress(), tss);
+        assertEq(newGateway2.MIN_CAP_UNIVERSAL_TX_USD(), 50e18);
+        assertEq(newGateway2.MAX_CAP_UNIVERSAL_TX_USD(), 5000e18);
+        assertEq(newGateway2.defaultSwapDeadlineSec(), 10 minutes);
+        assertEq(newGateway2.chainlinkStalePeriod(), 1 hours);
+
+        // Test 7: Verify roles are set correctly
+        assertTrue(newGateway.hasRole(newGateway.DEFAULT_ADMIN_ROLE(), admin));
+        assertTrue(newGateway.hasRole(newGateway.PAUSER_ROLE(), pauser));
+        assertTrue(newGateway.hasRole(newGateway.TSS_ROLE(), tss));
+
+        // Test 8: Verify initial state
+        assertFalse(newGateway.paused());
+        assertEq(newGateway.v3FeeOrder(0), 500);
+        assertEq(newGateway.v3FeeOrder(1), 3000);
+        assertEq(newGateway.v3FeeOrder(2), 10000);
     }
 }

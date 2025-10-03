@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2025-09-30 18:14:15</td>
+            <td class="headerValue">2025-10-03 15:49:46</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryLo">7.1&nbsp;%</td>
@@ -119,13 +119,13 @@
 <span id="L48"><span class="lineNum">      48</span>                 :             :     /**</span>
 <span id="L49"><span class="lineNum">      49</span>                 :             :      * @dev Deposit ETH and mint WETH tokens</span>
 <span id="L50"><span class="lineNum">      50</span>                 :             :      */</span>
-<span id="L51"><span class="lineNum">      51</span>                 :<span class="tlaGNC">         510 :     function deposit() external payable {</span></span>
-<span id="L52"><span class="lineNum">      52</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         510 :         require(!depositPaused, &quot;MockWETH: deposits are paused&quot;);</span></span>
-<span id="L53"><span class="lineNum">      53</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         510 :         require(!blacklisted[msg.sender], &quot;MockWETH: account is blacklisted&quot;);</span></span>
-<span id="L54"><span class="lineNum">      54</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         510 :         require(msg.value &gt; 0, &quot;MockWETH: deposit amount must be greater than 0&quot;);</span></span>
+<span id="L51"><span class="lineNum">      51</span>                 :<span class="tlaGNC">         650 :     function deposit() external payable {</span></span>
+<span id="L52"><span class="lineNum">      52</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         650 :         require(!depositPaused, &quot;MockWETH: deposits are paused&quot;);</span></span>
+<span id="L53"><span class="lineNum">      53</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         650 :         require(!blacklisted[msg.sender], &quot;MockWETH: account is blacklisted&quot;);</span></span>
+<span id="L54"><span class="lineNum">      54</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         650 :         require(msg.value &gt; 0, &quot;MockWETH: deposit amount must be greater than 0&quot;);</span></span>
 <span id="L55"><span class="lineNum">      55</span>                 :             :         </span>
-<span id="L56"><span class="lineNum">      56</span>                 :<span class="tlaGNC">         510 :         _mint(msg.sender, msg.value);</span></span>
-<span id="L57"><span class="lineNum">      57</span>                 :<span class="tlaGNC">         510 :         emit MockDeposit(msg.sender, msg.value);</span></span>
+<span id="L56"><span class="lineNum">      56</span>                 :<span class="tlaGNC">         650 :         _mint(msg.sender, msg.value);</span></span>
+<span id="L57"><span class="lineNum">      57</span>                 :<span class="tlaGNC">         650 :         emit MockDeposit(msg.sender, msg.value);</span></span>
 <span id="L58"><span class="lineNum">      58</span>                 :             :     }</span>
 <span id="L59"><span class="lineNum">      59</span>                 :             : </span>
 <span id="L60"><span class="lineNum">      60</span>                 :             :     /**</span>
@@ -151,11 +151,11 @@
 <span id="L80"><span class="lineNum">      80</span>                 :             :     /**</span>
 <span id="L81"><span class="lineNum">      81</span>                 :             :      * @dev Override transfer to add blacklist and pause checks</span>
 <span id="L82"><span class="lineNum">      82</span>                 :             :      */</span>
-<span id="L83"><span class="lineNum">      83</span>                 :<span class="tlaGNC">         510 :     function transfer(address to, uint256 amount) public virtual override returns (bool) {</span></span>
-<span id="L84"><span class="lineNum">      84</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         510 :         require(!transferPaused, &quot;MockWETH: transfers are paused&quot;);</span></span>
-<span id="L85"><span class="lineNum">      85</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         510 :         require(!blacklisted[msg.sender], &quot;MockWETH: sender is blacklisted&quot;);</span></span>
-<span id="L86"><span class="lineNum">      86</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         510 :         require(!blacklisted[to], &quot;MockWETH: recipient is blacklisted&quot;);</span></span>
-<span id="L87"><span class="lineNum">      87</span>                 :<span class="tlaGNC">         510 :         return super.transfer(to, amount);</span></span>
+<span id="L83"><span class="lineNum">      83</span>                 :<span class="tlaGNC">         650 :     function transfer(address to, uint256 amount) public virtual override returns (bool) {</span></span>
+<span id="L84"><span class="lineNum">      84</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         650 :         require(!transferPaused, &quot;MockWETH: transfers are paused&quot;);</span></span>
+<span id="L85"><span class="lineNum">      85</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         650 :         require(!blacklisted[msg.sender], &quot;MockWETH: sender is blacklisted&quot;);</span></span>
+<span id="L86"><span class="lineNum">      86</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaGNC">         650 :         require(!blacklisted[to], &quot;MockWETH: recipient is blacklisted&quot;);</span></span>
+<span id="L87"><span class="lineNum">      87</span>                 :<span class="tlaGNC">         650 :         return super.transfer(to, amount);</span></span>
 <span id="L88"><span class="lineNum">      88</span>                 :             :     }</span>
 <span id="L89"><span class="lineNum">      89</span>                 :             : </span>
 <span id="L90"><span class="lineNum">      90</span>                 :             :     /**</span>

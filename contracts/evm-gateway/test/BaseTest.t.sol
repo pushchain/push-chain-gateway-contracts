@@ -17,6 +17,13 @@ import {MockWETH} from "./mocks/MockWETH.sol";
 import {MockAggregatorV3} from "./mocks/MockAggregatorV3.sol";
 import {MockSequencerUptimeFeed} from "./mocks/MockSequencerUptimeFeed.sol";
 
+// TetherToken interface for USDT
+interface TetherToken {
+    function transfer(address to, uint256 amount) external;
+
+    function approve(address spender, uint256 amount) external;
+}
+
 /**
  * @title BaseTest
  * @notice Abstract base test contract for UniversalGateway
@@ -406,4 +413,87 @@ abstract contract BaseTest is Test {
     //      RECEIVE FALLBACK
     // =========================
     receive() external payable {}
+
+    // =========================
+    //      HELPER FUNCTIONS
+    // =========================
+
+    /// @notice Build a UniversalPayload for testing
+    /// @param to Target address
+    /// @param data Calldata
+    /// @param value ETH value
+    /// @return payload UniversalPayload struct
+    /// @return revertCfg RevertSettings struct
+    function buildERC20Payload(
+        address to,
+        bytes memory data,
+        uint256 value
+    ) internal virtual pure returns (UniversalPayload memory, RevertSettings memory) {
+        UniversalPayload memory payload = UniversalPayload({
+            to: to,
+            value: value,
+            data: data,
+            gasLimit: 0,
+            maxFeePerGas: 0,
+            maxPriorityFeePerGas: 0,
+            nonce: 0,
+            deadline: 0,
+            vType: VerificationType(0)
+        });
+
+        RevertSettings memory revertCfg_ = RevertSettings({
+            fundRecipient: to,
+            revertMsg: ""
+        });
+
+        return (payload, revertCfg_);
+    }
+
+    /// @notice Fund user with mainnet tokens by impersonating whales
+    /// @param user User address to fund
+    /// @param token Token address to transfer
+    /// @param amount Amount to transfer
+    function fundUserWithMainnetTokens(
+        address user,
+        address token,
+        uint256 amount
+    ) internal virtual {
+        // Find a whale address that has the token
+        address whale;
+        if (token == 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) {
+            // WETH
+            whale = 0x28C6c06298d514Db089934071355E5743bf21d60; // Binance 14
+        } else if (token == 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48) {
+            // USDC
+            whale = 0x37305B1cD40574E4C5Ce33f8e8306Be057fD7341; // SKY
+        } else if (token == 0xdAC17F958D2ee523a2206206994597C13D831ec7) {
+            // USDT
+            whale = 0xF977814e90dA44bFA03b6295A0616a897441aceC; // Binance 20
+        } else if (token == 0x6B175474E89094C44Da98b954EedeAC495271d0F) {
+            // DAI
+            whale = 0x28C6c06298d514Db089934071355E5743bf21d60; // Binance 14
+        } else if (token == 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599) {
+            // WBTC
+            whale = 0x28C6c06298d514Db089934071355E5743bf21d60; // Binance 14
+        } else if (token == 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984) {
+            // UNI
+            whale = 0x28C6c06298d514Db089934071355E5743bf21d60; // Binance 14
+        } else {
+            revert("Unknown token");
+        }
+
+        // Check if whale has enough tokens
+        uint256 whaleBalance = IERC20(token).balanceOf(whale);
+        require(whaleBalance >= amount, "Whale doesn't have enough tokens");
+
+        // Impersonate whale and transfer tokens
+        vm.startPrank(whale);
+        if (token == 0xdAC17F958D2ee523a2206206994597C13D831ec7) {
+            // USDT transfer returns void, not bool
+            TetherToken(token).transfer(user, amount);
+        } else {
+            IERC20(token).transfer(user, amount);
+        }
+        vm.stopPrank();
+    }
 }

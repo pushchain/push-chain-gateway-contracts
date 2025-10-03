@@ -34,6 +34,9 @@ interface IUniversalGateway {
     event L2SequencerGracePeriodUpdated(uint256 gracePeriodSec);
     // Swap Configuration Events
     event DefaultSwapDeadlineUpdated(uint256 deadlineSec);
+    /// @notice Emitted when V3 fee order is updated
+
+    event V3FeeOrderUpdated(uint24[3] oldFeeOrder, uint24[3] newFeeOrder);
 
     // =========================
     //         FUNCTIONS
