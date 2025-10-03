@@ -227,6 +227,7 @@ contract UniversalGateway is
     {
         uint24[3] memory old = v3FeeOrder;
         v3FeeOrder = [a, b, c];
+        emit IUniversalGateway.V3FeeOrderUpdated(old, v3FeeOrder);
     }
 
     /// @notice Set the Chainlink ETH/USD feed (and cache its decimals)
@@ -728,7 +729,7 @@ contract UniversalGateway is
         uint256 wethOut = uniV3Router.exactInputSingle(params);
 
         // Approval hygiene
-        IERC20(tokenIn).approve(address(uniV3Router), 0);
+        IERC20(tokenIn).forceApprove(address(uniV3Router), 0);
 
         // Unwrap WETH -> native and compute exact ETH out
         uint256 balBefore = address(this).balance;
