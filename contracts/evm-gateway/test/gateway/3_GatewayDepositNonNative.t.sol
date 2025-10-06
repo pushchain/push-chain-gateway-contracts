@@ -187,8 +187,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
 
         // Use WETH for gas funding (fast path - no swap needed)
-        uint256 wethAmount = 1e18; // 1 WETH
-        uint256 amountOutMinETH = 0.01e18; // Allow 99% slippage for testing
+        // Using a smaller amount to stay within USD caps
+        uint256 wethAmount = 0.002e18; // 0.002 WETH (well within USD caps)
+        uint256 amountOutMinETH = 0.0001e18; // Allow 95% slippage for testing
         uint256 deadline = block.timestamp + 3600; // 1 hour deadline
 
         // Fund user with mainnet WETH and approve gateway

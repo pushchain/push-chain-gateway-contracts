@@ -281,10 +281,7 @@ contract UniversalGateway is
         RevertInstructions calldata revertInstruction,
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
-
-        _checkUSDCaps(msg.value);
-        _checkBlockUSDCap(msg.value);
-        _handleNativeDeposit(msg.value);
+        // Directly call _sendTxWithGas which now handles validation and deposit internally
         _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData);  
     }
 
@@ -306,11 +303,8 @@ contract UniversalGateway is
 
         // Swap token to native ETH
         uint256 ethOut = swapToNative(tokenIn, amountIn, amountOutMinETH, deadline);
-        _checkUSDCaps(ethOut);
-        _checkBlockUSDCap(ethOut);
-
-        // Forward ETH to TSS and emit deposit event
-        _handleNativeDeposit(ethOut);
+        
+        // Forward ETH to TSS and emit deposit event (validation now handled in _sendTxWithGas)
         _sendTxWithGas(
             _msgSender(),
             abi.encode(payload),
@@ -337,6 +331,11 @@ contract UniversalGateway is
         bytes memory _signatureData
     ) internal {
         if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+
+        // Perform validations and handle deposit
+        _checkUSDCaps(_nativeTokenAmount);
+        _checkBlockUSDCap(_nativeTokenAmount);
+        _handleNativeDeposit(_nativeTokenAmount);
 
         emit UniversalTx({
             sender: _caller,
@@ -398,10 +397,7 @@ contract UniversalGateway is
         uint256 gasAmount = msg.value;
         if (gasAmount == 0) revert Errors.InvalidAmount();
 
-        // Check and initiate Instant TX 
-        _checkUSDCaps(gasAmount);
-        _checkBlockUSDCap(gasAmount);
-        _handleNativeDeposit(gasAmount);
+        // Initiate Instant TX (validation and deposit now handled in _sendTxWithGas)
         _sendTxWithGas(
             _msgSender(),
             bytes(""),
@@ -444,10 +440,7 @@ contract UniversalGateway is
         // Swap gasToken to native ETH
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
-        _checkUSDCaps(nativeGasAmount);
-        _checkBlockUSDCap(nativeGasAmount);
-        _handleNativeDeposit(nativeGasAmount);
-
+        // Initiate Instant TX (validation and deposit now handled in _sendTxWithGas)
         _sendTxWithGas(
             _msgSender(),
             bytes(""),
