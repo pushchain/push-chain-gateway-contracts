@@ -227,7 +227,7 @@ contract UniversalGateway is
     {
         uint24[3] memory old = v3FeeOrder;
         v3FeeOrder = [a, b, c];
-        emit IUniversalGateway.V3FeeOrderUpdated(old, v3FeeOrder);
+        emit V3FeeOrderUpdated(old, v3FeeOrder);
     }
 
     /// @notice Set the Chainlink ETH/USD feed (and cache its decimals)
