@@ -33,7 +33,9 @@ pub mod pushsolanagateway {
     /// @dev    Supports both native SOL and SPL token deposits (like ETH Gateway).
     ///         For native SOL: pass Pubkey::default() as bridge_token
     ///         For SPL tokens: pass token mint address as bridge_token
+
     ///         The route emits UniversalTx event.
+
     pub fn send_funds(
         ctx: Context<SendFunds>,
         recipient: [u8; 20],
@@ -42,6 +44,7 @@ pub mod pushsolanagateway {
         revert_instruction: RevertInstructions,
     ) -> Result<()> {
         instructions::deposit::send_funds(ctx, recipient, bridge_token, bridge_amount, revert_instruction)
+
     }
 
     /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
