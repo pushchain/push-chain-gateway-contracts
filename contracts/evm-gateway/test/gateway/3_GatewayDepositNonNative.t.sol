@@ -1010,9 +1010,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
     // =========================
 
     function testSwapToNative_VariousTokens_Success() public {
-        // Test with USDC only to verify swapToNative functionality
-        address token = MAINNET_USDC;
-        uint256 gasAmount = 8e6; // 8 USDC (6 decimals)
+        // Test with USDT to verify swapToNative functionality
+        address token = MAINNET_USDT;
+        uint256 gasAmount = 8e6; // 8 USDT (6 decimals)
         
         // Fund user with tokens - use amount that's within USD caps
         fundUserWithMainnetTokens(user1, token, gasAmount);
@@ -1052,13 +1052,14 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // by calling sendTxWithGas which uses swapToNative internally
         (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
-
+console2.log("token", token);
         vm.prank(user1);
-        IERC20(token).approve(address(gateway), gasAmount);
+        // USDT approve returns void, not bool
+        TetherToken(token).approve(address(gateway), gasAmount);
 
         // Record initial balances
         uint256 initialTSSBalance = tss.balance;
-        uint256 initialUserBalance = IERC20(token).balanceOf(user1);
+        uint256 initialUserBalance = TetherToken(token).balanceOf(user1);
 
         // This should not revert for supported tokens
         vm.prank(user1);
@@ -1066,7 +1067,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         
         // Verify the user's token balance decreased
         assertEq(
-            IERC20(token).balanceOf(user1), 
+            TetherToken(token).balanceOf(user1), 
             initialUserBalance - gasAmount, 
             "User token balance should decrease"
         );
@@ -1078,13 +1079,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
             "TSS should receive ETH from token swap"
         );
         
-        console2.log(token);
-        
-        // Test with USDT
-        console2.log(MAINNET_USDT);
-        
-        // Test with DAI
-        console2.log(MAINNET_DAI);
     }
 
     function testSwapToNative_UnsupportedToken_Reverts() public {
