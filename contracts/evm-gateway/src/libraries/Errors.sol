@@ -14,6 +14,7 @@ library Errors {
     // =========================
     //           ERRORS for UniversalGateway
     // =========================
+    
     error DepositFailed();
     error WithdrawFailed();
     error NotSupported();
@@ -21,6 +22,7 @@ library Errors {
     error InvalidRecipient();
     error StalePrice();
     error InvalidToken();
+    error BlockCapLimitExceeded();
     error SlippageExceededOrExpired();
 
     // =========================

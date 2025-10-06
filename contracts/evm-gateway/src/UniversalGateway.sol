@@ -68,6 +68,8 @@ contract UniversalGateway is
     /// @notice USD caps for universal tx deposits (1e18 = $1)
     uint256 public MIN_CAP_UNIVERSAL_TX_USD; // inclusive lower bound = 1USD = 1e18
     uint256 public MAX_CAP_UNIVERSAL_TX_USD; // inclusive upper bound = 10USD = 10e18
+    /// @notice Per-block cap for total USD value spend on GAS routes (1e18 = $1). 0 disables.
+    uint256 public BLOCK_USD_CAP;
 
     /// @notice Token whitelist for BRIDGING (assets locked in this contract)
     mapping(address => bool) public isSupportedToken;
@@ -91,7 +93,9 @@ contract UniversalGateway is
     /// @notice Default additional time window used when callers pass deadline = 0 (Uniswap v3 swaps)
     uint256 public defaultSwapDeadlineSec; 
 
-
+    /// @dev Two-scalar accounting for block-based USD cap checks
+    uint256 private _lastBlockNumber;
+    uint256 private _consumedUSDinBlock;
 
     uint256[43] private __gap;
 
@@ -190,6 +194,11 @@ contract UniversalGateway is
         emit CapsUpdated(minCapUsd, maxCapUsd);
     }
 
+    /// @notice Set the per-block USD cap for GAS routes (1e18 = $1). Set to 0 to disable.
+    function setBlockUsdCap(uint256 cap1e18) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        BLOCK_USD_CAP = cap1e18;
+    }
+
     /// @notice Set the default swap deadline window (used when a caller passes deadline = 0)
     /// @param deadlineSec Number of seconds to add to block.timestamp when defaulting the deadline
     function setDefaultSwapDeadline(uint256 deadlineSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
@@ -273,8 +282,8 @@ contract UniversalGateway is
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
 
-
         _checkUSDCaps(msg.value);
+        _checkBlockUSDCap(msg.value);
         _handleNativeDeposit(msg.value);
         _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData);  
     }
@@ -297,6 +306,8 @@ contract UniversalGateway is
 
         // Swap token to native ETH
         uint256 ethOut = swapToNative(tokenIn, amountIn, amountOutMinETH, deadline);
+        _checkUSDCaps(ethOut);
+        _checkBlockUSDCap(ethOut);
 
         // Forward ETH to TSS and emit deposit event
         _handleNativeDeposit(ethOut);
@@ -389,6 +400,7 @@ contract UniversalGateway is
 
         // Check and initiate Instant TX 
         _checkUSDCaps(gasAmount);
+        _checkBlockUSDCap(gasAmount);
         _handleNativeDeposit(gasAmount);
         _sendTxWithGas(
             _msgSender(),
@@ -433,6 +445,7 @@ contract UniversalGateway is
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
         _checkUSDCaps(nativeGasAmount);
+        _checkBlockUSDCap(nativeGasAmount);
         _handleNativeDeposit(nativeGasAmount);
 
         _sendTxWithGas(
@@ -649,6 +662,32 @@ contract UniversalGateway is
         if (usdValue > MAX_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
     }
 
+    /// @dev Enforce per-block USD budget for GAS routes using two-scalar accounting.
+    ///      - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.
+    ///      - Resets the window when a new block is observed.
+    /// @param amountWei The native amount (in wei) to be accounted against the current block's USD budget.
+    function _checkBlockUSDCap(uint256 amountWei) private {
+        uint256 cap = BLOCK_USD_CAP;
+        if (cap == 0) return; // disabled
+
+        // Reset on new block
+        if (block.number != _lastBlockNumber) {
+            _lastBlockNumber = block.number;
+            _consumedUSDinBlock = 0;
+        }
+
+        uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
+
+        // Single-call sanity: no call may exceed the whole block cap
+        if (usd1e18 > cap) revert Errors.BlockCapLimitExceeded();
+
+        unchecked {
+            uint256 newUsed = _consumedUSDinBlock + usd1e18;
+            if (newUsed > cap) revert Errors.BlockCapLimitExceeded();
+            _consumedUSDinBlock = newUsed;
+        }
+    }
+
     /// @dev Forward native ETH to TSS; returns amount forwarded (= msg.value or computed after swap).
     function _handleNativeDeposit(uint256 amount) internal returns (uint256) {
         (bool ok, ) = payable(tssAddress).call{value: amount}("");
@@ -755,7 +794,6 @@ contract UniversalGateway is
         // Defensive: enforce the bound again after unwrap
         if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
 
-        _checkUSDCaps(ethOut);
     }
 
     // Helper: find the best-fee direct v3 pool between tokenIn and WETH.
