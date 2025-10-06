@@ -345,13 +345,14 @@ contract UniversalGatewayV0 is
     /// @inheritdoc IUniversalGatewayV0
      function sendTxWithGas(
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertInstruction
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
 
 
         _checkUSDCaps(msg.value);
         _handleNativeDeposit(msg.value);
-        _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD);  
+        _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData);  
     }
 
   
@@ -362,7 +363,8 @@ contract UniversalGatewayV0 is
         UniversalPayload calldata payload,
         RevertInstructions calldata revertInstruction,
         uint256 amountOutMinETH,
-        uint256 deadline
+        uint256 deadline,
+        bytes memory signatureData
     ) external nonReentrant whenNotPaused {
         if (tokenIn == address(0)) revert Errors.InvalidInput();
         if (amountIn == 0) revert Errors.InvalidAmount();
@@ -380,7 +382,8 @@ contract UniversalGatewayV0 is
             abi.encode(payload),
             ethOut,
             revertInstruction,
-            TX_TYPE.GAS_AND_PAYLOAD
+            TX_TYPE.GAS_AND_PAYLOAD,
+            signatureData
         );
     }
 
@@ -396,7 +399,8 @@ contract UniversalGatewayV0 is
         bytes memory _payload, 
         uint256 _nativeTokenAmount, 
         RevertInstructions calldata _revertInstruction,
-        TX_TYPE _txType
+        TX_TYPE _txType,
+        bytes memory _signatureData
     ) internal {
         if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
 
@@ -408,7 +412,7 @@ contract UniversalGatewayV0 is
             payload: _payload,
             revertInstruction: _revertInstruction,
             txType: _txType,
-            signatureData: bytes("")
+            signatureData: _signatureData
         });
     }
    

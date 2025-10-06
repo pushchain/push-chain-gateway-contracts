@@ -463,7 +463,7 @@ contract OracleTest is BaseTest {
 
         // Should not revert
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: testAmount }(payload, revertCfg);
+        gateway.sendTxWithGas{ value: testAmount }(payload, revertCfg, bytes(""));
     }
 
     function testUSDCapBoundaries_ExactMaxCap_Success() public {
@@ -478,7 +478,7 @@ contract OracleTest is BaseTest {
 
         // Should not revert
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: maxEth }(payload, revertCfg);
+        gateway.sendTxWithGas{ value: maxEth }(payload, revertCfg, bytes(""));
     }
 
     function testUSDCapBoundaries_JustBelowMinCap_Reverts() public {
@@ -493,7 +493,7 @@ contract OracleTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: belowMin }(payload, revertCfg);
+        gateway.sendTxWithGas{ value: belowMin }(payload, revertCfg, bytes(""));
     }
 
     function testUSDCapBoundaries_JustAboveMaxCap_Reverts() public {
@@ -508,6 +508,6 @@ contract OracleTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: aboveMax }(payload, revertCfg);
+        gateway.sendTxWithGas{ value: aboveMax }(payload, revertCfg, bytes(""));
     }
 }

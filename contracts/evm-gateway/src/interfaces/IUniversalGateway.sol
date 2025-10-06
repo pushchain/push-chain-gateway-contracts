@@ -15,7 +15,8 @@ interface IUniversalGateway {
         uint256 amount,
         bytes payload,
         RevertInstructions revertInstruction,
-        TX_TYPE txType
+        TX_TYPE txType,
+        bytes signatureData
     );
 
     event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);
@@ -49,7 +50,7 @@ interface IUniversalGateway {
     ///         Gas for this transaction must be paid in the NATIVE token of the source chain.
     /// @param payload Universal payload to execute on Push Chain
     /// @param revertCFG Revert settings
-    function sendTxWithGas(UniversalPayload calldata payload, RevertInstructions calldata revertCFG) external payable;
+    function sendTxWithGas(UniversalPayload calldata payload, RevertInstructions calldata revertCFG, bytes memory signatureData) external payable;
 
     /// @notice Allows initiating a TX for funding UEAs or quick executions of payloads on Push Chain with any supported Token.
     /// @dev    Allows users to use any token to fund or execute a payload on Push Chain.
@@ -72,7 +73,8 @@ interface IUniversalGateway {
         UniversalPayload calldata payload,
         RevertInstructions calldata revertCFG,
         uint256 amountOutMinETH,
-        uint256 deadline
+        uint256 deadline,
+        bytes memory signatureData
     ) external;
 
     /// @notice Allows initiating a TX for movement of high value funds from source chain to Push Chain.
@@ -102,7 +104,8 @@ interface IUniversalGateway {
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG
+        RevertInstructions calldata revertCFG,
+        bytes memory signatureData
     ) external payable;
 
     /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
@@ -134,7 +137,8 @@ interface IUniversalGateway {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG
+        RevertInstructions calldata revertCFG,
+        bytes memory signatureData
     ) external;
 
     /// @notice Withdraw functions (TSS-only)

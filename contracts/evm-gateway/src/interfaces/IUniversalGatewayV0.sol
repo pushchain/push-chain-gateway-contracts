@@ -48,7 +48,7 @@ interface IUniversalGatewayV0 {
     ///         Gas for this transaction must be paid in the NATIVE token of the source chain.
     /// @param payload Universal payload to execute on Push Chain
     /// @param revertCFG Revert settings
-    function sendTxWithGas(UniversalPayload calldata payload, RevertInstructions calldata revertCFG) external payable;
+    function sendTxWithGas(UniversalPayload calldata payload, RevertInstructions calldata revertCFG, bytes memory signatureData) external payable;
 
     /// @notice Allows initiating a TX for funding UEAs or quick executions of payloads on Push Chain with any supported Token.
     /// @dev    Allows users to use any token to fund or execute a payload on Push Chain.
@@ -71,7 +71,8 @@ interface IUniversalGatewayV0 {
         UniversalPayload calldata payload,
         RevertInstructions calldata revertCFG,
         uint256 amountOutMinETH,
-        uint256 deadline
+        uint256 deadline,
+        bytes memory signatureData
     ) external;
 
     /// @notice Allows initiating a TX for movement of high value funds from source chain to Push Chain.

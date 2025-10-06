@@ -46,12 +46,12 @@ contract GatewayDepositNativeTest is BaseTest {
         // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.UniversalTx(
-            user1, address(0), address(0), validEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD
+            user1, address(0), address(0), validEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD, bytes("")
         );
 
         // Execute the transaction
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         // Verify TSS received the ETH
         assertEq(tss.balance, initialTSSBalance + validEthAmount, "TSS should receive ETH");
@@ -81,7 +81,8 @@ contract GatewayDepositNativeTest is BaseTest {
             bridgeAmount,
             bytes(""), // Empty payload for funds-only bridge
             revertCfg_,
-            TX_TYPE.FUNDS
+            TX_TYPE.FUNDS,
+            bytes("")
         );
 
         // Execute the transaction - native ETH bridging
@@ -119,10 +120,10 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), minEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), minEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD, bytes(""));
 
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: minEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: minEthAmount }(payload, revertCfg_, bytes(""));
         assertEq(tss.balance, initialTSSBalance + minEthAmount, "TSS should receive min ETH for sendTxWithGas");
 
         // Test 2: sendFunds with minimum amounts (native ETH bridging)
@@ -137,7 +138,8 @@ contract GatewayDepositNativeTest is BaseTest {
             minEthAmount, // bridge amount = ETH amount for native bridging
             bytes(""), // Empty payload for funds-only bridge
             revertCfg_,
-            TX_TYPE.FUNDS
+            TX_TYPE.FUNDS,
+            bytes("")
         );
 
         vm.prank(user1);
@@ -169,10 +171,10 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), maxEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), maxEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD, bytes(""));
 
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: maxEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: maxEthAmount }(payload, revertCfg_, bytes(""));
         assertEq(tss.balance, initialTSSBalance + maxEthAmount, "TSS should receive max ETH for sendTxWithGas");
         // Test 2: sendFunds with maximum amounts (native ETH bridging)
         initialTSSBalance = tss.balance;
@@ -186,7 +188,8 @@ contract GatewayDepositNativeTest is BaseTest {
             maxEthAmount, // bridge amount = ETH amount for native bridging
             bytes(""), // Empty payload for funds-only bridge
             revertCfg_,
-            TX_TYPE.FUNDS
+            TX_TYPE.FUNDS,
+            bytes("")
         );
 
         vm.prank(user1);
@@ -219,7 +222,7 @@ contract GatewayDepositNativeTest is BaseTest {
         // Execute the transaction and expect it to revert
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector); // Should revert due to USD cap check
-        gateway.sendTxWithGas{ value: belowMinEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: belowMinEthAmount }(payload, revertCfg_, bytes(""));
     }
 
     /// @notice Test sendTxWithGas (native) above maximum USD cap
@@ -238,7 +241,7 @@ contract GatewayDepositNativeTest is BaseTest {
         // Execute the transaction and expect it to revert
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector); // Should revert due to USD cap check
-        gateway.sendTxWithGas{ value: aboveMaxEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: aboveMaxEthAmount }(payload, revertCfg_, bytes(""));
     }
 
     /// @notice Test sendTxWithGas (native) with zero amount
@@ -253,7 +256,7 @@ contract GatewayDepositNativeTest is BaseTest {
         // Execute the transaction with zero value and expect it to revert
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector); // Should revert due to zero amount
-        gateway.sendTxWithGas{ value: 0 }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: 0 }(payload, revertCfg_, bytes(""));
     }
 
     // =========================
@@ -299,7 +302,7 @@ contract GatewayDepositNativeTest is BaseTest {
         // Execute the transaction and expect it to revert due to pause
         vm.prank(user1);
         vm.expectRevert(); // Should revert due to whenNotPaused modifier
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
     }
 
     /// @notice Test sendFunds when contract is paused
@@ -334,7 +337,7 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Test that the function works normally (reentrancy protection is built into the modifier)
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         // Verify the transaction succeeded and TSS received the ETH
         assertTrue(true, "Reentrancy protection is handled by nonReentrant modifier");
@@ -376,7 +379,7 @@ contract GatewayDepositNativeTest is BaseTest {
         vm.warp(block.timestamp + 3601); // Move time beyond stale period (3600s default)
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidData.selector);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         // Reset time
         vm.warp(block.timestamp - 3601);
@@ -385,20 +388,20 @@ contract GatewayDepositNativeTest is BaseTest {
         ethUsdFeedMock.setAnswer(0, block.timestamp); // price = 0
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidData.selector);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         // Test 3: Negative price from oracle
         ethUsdFeedMock.setAnswer(-1000, block.timestamp); // price = -1000
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidData.selector);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         // Test 4: Sequencer down (if L2 sequencer feed is configured)
         if (address(sequencerMock) != address(0)) {
             sequencerMock.setStatus(true, block.timestamp); // status = 1 (DOWN)
             vm.prank(user1);
             vm.expectRevert(Errors.InvalidData.selector);
-            gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+            gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
         }
     }
 
@@ -448,7 +451,7 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Execute the transaction
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         // Verify TSS received the exact amount
         assertEq(tss.balance, initialTSSBalance + validEthAmount, "TSS should receive exact ETH amount");
@@ -501,26 +504,26 @@ contract GatewayDepositNativeTest is BaseTest {
         // Test minimum amount (should pass)
         vm.deal(user1, minEthAmount);
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: minEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: minEthAmount }(payload, revertCfg_, bytes(""));
 
         // Test maximum amount (should pass)
         vm.deal(user1, maxEthAmount);
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: maxEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: maxEthAmount }(payload, revertCfg_, bytes(""));
 
         // Test just below minimum (should fail)
         uint256 belowMin = minEthAmount - 1;
         vm.deal(user1, belowMin);
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.sendTxWithGas{ value: belowMin }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: belowMin }(payload, revertCfg_, bytes(""));
 
         // Test just above maximum (should fail)
         uint256 aboveMax = maxEthAmount + 1;
         vm.deal(user1, aboveMax);
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.sendTxWithGas{ value: aboveMax }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: aboveMax }(payload, revertCfg_, bytes(""));
     }
 
     /// @notice Test with different ETH prices to verify USD cap calculations
@@ -538,7 +541,7 @@ contract GatewayDepositNativeTest is BaseTest {
 
         vm.deal(user1, maxAmount);
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: maxAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: maxAmount }(payload, revertCfg_, bytes(""));
 
         // Test with very low ETH price ($100)
         ethUsdFeedMock.setAnswer(100e8, block.timestamp); // $100 ETH
@@ -549,7 +552,7 @@ contract GatewayDepositNativeTest is BaseTest {
 
         vm.deal(user1, maxAmount);
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: maxAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: maxAmount }(payload, revertCfg_, bytes(""));
     }
 
     /// @notice Test multiple deposits in sequence
@@ -567,7 +570,7 @@ contract GatewayDepositNativeTest is BaseTest {
         // Make 5 deposits in sequence
         for (uint256 i = 0; i < 5; i++) {
             vm.prank(user1);
-            gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+            gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
         }
 
         // Verify TSS received all deposits
@@ -590,13 +593,13 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Each user makes a deposit
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         vm.prank(user2);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         vm.prank(user3);
-        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_);
+        gateway.sendTxWithGas{ value: validEthAmount }(payload, revertCfg_, bytes(""));
 
         // Verify TSS received all deposits
         assertEq(tss.balance, initialTSSBalance + (validEthAmount * 3), "TSS should receive deposits from all users");

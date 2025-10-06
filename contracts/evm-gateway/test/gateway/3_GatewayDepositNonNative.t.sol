@@ -202,11 +202,11 @@ contract GatewayDepositNonNativeTest is BaseTest {
         uint256 initialGatewayWETHBalance = mainnetWETH.balanceOf(address(gateway));
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), wethAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), wethAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD, bytes(""));
 
         // Execute the transaction
         vm.prank(user1);
-        gateway.sendTxWithGas(MAINNET_WETH, wethAmount, payload, revertCfg_, amountOutMinETH, deadline);
+        gateway.sendTxWithGas(MAINNET_WETH, wethAmount, payload, revertCfg_, amountOutMinETH, deadline, bytes(""));
 
         // Verify TSS received the ETH (WETH was unwrapped to ETH)
         assertEq(tss.balance, initialTSSBalance + wethAmount, "TSS should receive ETH from WETH unwrapping");
@@ -241,7 +241,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.UniversalTx(
-            user1, recipient, MAINNET_USDC, bridgeAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS
+            user1, recipient, MAINNET_USDC, bridgeAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS, bytes("")
         );
 
         // Execute the transaction - ERC20 bridging (msg.value must be 0)
@@ -294,11 +294,11 @@ contract GatewayDepositNonNativeTest is BaseTest {
         uint256 initialGatewayTokenBalance = mainnetUSDC.balanceOf(address(gateway));
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), gasAmount, bytes(""), revertCfg_, TX_TYPE.GAS);
+        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), gasAmount, bytes(""), revertCfg_, TX_TYPE.GAS, bytes(""));
 
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.UniversalTx(
-            user1, address(0), MAINNET_USDC, bridgeAmount, abi.encode(payload), revertCfg_, TX_TYPE.FUNDS_AND_PAYLOAD
+            user1, address(0), MAINNET_USDC, bridgeAmount, abi.encode(payload), revertCfg_, TX_TYPE.FUNDS_AND_PAYLOAD, bytes("")
         );
 
         // Execute the transaction
@@ -312,7 +312,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             amountOutMinETH,
             deadline,
             payload,
-            revertCfg_
+            revertCfg_,
+            bytes("")
         );
 
         // Verify TSS received the ETH (from WETH unwrapping)
@@ -350,7 +351,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.UniversalTx(
-            user2, recipient, MAINNET_USDC, minAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS
+            user2, recipient, MAINNET_USDC, minAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS, bytes("")
         );
 
         vm.prank(user2);
@@ -379,7 +380,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.UniversalTx(
-            user2, recipient, MAINNET_USDC, maxTokenAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS
+            user2, recipient, MAINNET_USDC, maxTokenAmount, bytes(""), revertCfg_, TX_TYPE.FUNDS, bytes("")
         );
 
         vm.prank(user2);
@@ -409,7 +410,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             payload,
             revertCfg_,
             amountOutMinETH,
-            deadline
+            deadline,
+            bytes("")
         );
 
         // Execute the transaction with zero amount and expect it to revert
@@ -420,7 +422,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             payload,
             revertCfg_,
             amountOutMinETH,
-            deadline
+            deadline,
+            bytes("")
         );
 
         // Execute the transaction with zero amountOutMinETH and expect it to revert
@@ -431,13 +434,14 @@ contract GatewayDepositNonNativeTest is BaseTest {
             payload,
             revertCfg_,
             0, // Zero amountOutMinETH
-            deadline
+            deadline,
+            bytes("")
         );
 
         // Execute the transaction with expired deadline and expect it to revert
         uint256 expiredDeadline = block.timestamp - 1; // Expired deadline
         vm.expectRevert(Errors.SlippageExceededOrExpired.selector);
-        gateway.sendTxWithGas(MAINNET_WETH, amountIn, payload, revertCfg_, amountOutMinETH, expiredDeadline);
+        gateway.sendTxWithGas(MAINNET_WETH, amountIn, payload, revertCfg_, amountOutMinETH, expiredDeadline, bytes(""));
 
         // Execute the transaction with non-zero msg.value and expect it to revert
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -462,7 +466,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             amountOutMinETH,
             deadline,
             payload,
-            revertCfg_
+            revertCfg_,
+            bytes("")
         );
 
         // Execute the transaction with zero gas amount and expect it to revert
@@ -480,7 +485,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             amountOutMinETH,
             deadline,
             payload,
-            revertCfg_
+            revertCfg_,
+            bytes("")
         );
     }
 
@@ -527,7 +533,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Test sendTxWithGas with unsupported token
         vm.expectRevert(Errors.InvalidInput.selector); // Any revert is acceptable for unsupported token
-        gateway.sendTxWithGas(address(unsupportedToken), amount, payload, revertCfg_, 0.5e18, deadline);
+        gateway.sendTxWithGas(address(unsupportedToken), amount, payload, revertCfg_, 0.5e18, deadline, bytes(""));
 
         // Test sendFunds with unsupported token
         vm.expectRevert(Errors.NotSupported.selector); // Any revert is acceptable for unsupported token
@@ -547,7 +553,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             amountOutMinETH,
             deadline,
             payload,
-            revertCfg_
+            revertCfg_,
+            bytes("")
         );
 
         // Test sendTxWithFunds with unsupported gas token
@@ -560,7 +567,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             0.5e18,
             deadline,
             payload,
-            revertCfg_
+            revertCfg_,
+            bytes("")
         );
     }
 
@@ -592,7 +600,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.startPrank(user1);
         // Test sendTxWithGas when paused
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector); // Any revert is acceptable for paused state
-        gateway.sendTxWithGas(MAINNET_WETH, amount, payload, revertCfg_, 0.5e18, deadline);
+        gateway.sendTxWithGas(MAINNET_WETH, amount, payload, revertCfg_, 0.5e18, deadline, bytes(""));
 
         // Test sendFunds when paused
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector); // Any revert is acceptable for paused state
@@ -600,7 +608,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Test sendTxWithFunds when paused
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector); // Any revert is acceptable for paused state
-        gateway.sendTxWithFunds(MAINNET_USDC, amount, MAINNET_WETH, amount, 0.5e18, deadline, payload, revertCfg_);
+        gateway.sendTxWithFunds(MAINNET_USDC, amount, MAINNET_WETH, amount, 0.5e18, deadline, payload, revertCfg_, bytes(""));
         vm.stopPrank();
     }
 
@@ -625,7 +633,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount + gasAmount, MAINNET_USDC, gasAmount, 1, deadline, payload, revertCfg_
+            MAINNET_USDC, bridgeAmount + gasAmount, MAINNET_USDC, gasAmount, 1, deadline, payload, revertCfg_, bytes("")
         );
         vm.stopPrank();
     }
@@ -646,7 +654,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         mainnetUSDC.approve(address(gateway), bridgeAmount + gasAmount);
 
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.sendTxWithFunds(MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, deadline, payload, revertCfg_);
+        gateway.sendTxWithFunds(MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, deadline, payload, revertCfg_, bytes(""));
         vm.stopPrank();
     }
 
@@ -721,7 +729,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             (gasAmountInETH * 9) / 10,
             deadline,
             payload,
-            revertCfg_
+            revertCfg_,
+            bytes("")
         );
         vm.stopPrank();
         // Verify gas token transfer
@@ -834,7 +843,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             payload,
             revertCfg_,
             0.5e18, // 50% slippage tolerance
-            deadline
+            deadline,
+            bytes("")
         );
     }
 
@@ -859,7 +869,8 @@ contract GatewayDepositNonNativeTest is BaseTest {
             payload,
             revertCfg_,
             0.5e18, // 50% slippage tolerance
-            deadline
+            deadline,
+            bytes("")
         );
     }
 
@@ -884,7 +895,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // This should revert because there's no WETH/FAKE pool
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector); // Any revert is acceptable for non-existent pool
-        gateway.sendTxWithGas(address(fakeToken), 1e18, payload, revertCfg_, 0.01e18, block.timestamp + 3600);
+        gateway.sendTxWithGas(address(fakeToken), 1e18, payload, revertCfg_, 0.01e18, block.timestamp + 3600, bytes(""));
     }
 
     // =========================
@@ -951,7 +962,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // This should revert because address(0) with FUNDS type is invalid
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
         vm.prank(user1);
-        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg);
+        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg, bytes(""));
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
         vm.prank(user1);
@@ -973,7 +984,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // This should not revert because FUNDS_AND_PAYLOAD is valid for address(0)
         vm.prank(user1);
-        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg);
+        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg, bytes(""));
     }
 
     function testTransactionTypeValidations_NonZeroAddressWithAnyTxType_Success() public {
@@ -991,7 +1002,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         (, uint256 maxEth) = gateway.getMinMaxValueForNative();
         uint256 gasAmount = (maxEth * 8) / 10;
         vm.prank(user1);
-        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg);
+        gateway.sendTxWithFunds{ value: gasAmount }(MAINNET_USDC, amount, payload, revertCfg, bytes(""));
     }
 
     // =========================
@@ -1030,7 +1041,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
             // This should not revert for supported tokens
             vm.prank(user1);
-            gateway.sendTxWithGas(tokens[i], gasAmount, payload, revertCfg, 1, block.timestamp + 3600);
+            gateway.sendTxWithGas(tokens[i], gasAmount, payload, revertCfg, 1, block.timestamp + 3600, bytes(""));
             console2.log(tokens[i]);
         }
     }
@@ -1052,7 +1063,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
         vm.prank(user1);
-        gateway.sendTxWithGas(address(newNonSupportedToken), amount, payload, revertCfg, 1, block.timestamp + 3600);
+        gateway.sendTxWithGas(address(newNonSupportedToken), amount, payload, revertCfg, 1, block.timestamp + 3600, bytes(""));
     }
 
     // =========================
@@ -1076,7 +1087,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // This should not revert for supported tokens
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg, bytes("")
         );
     }
 
@@ -1094,27 +1105,27 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // This should succeed (no revert expected)
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
-        gateway.sendTxWithFunds(MAINNET_USDC, 0, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg);
+        gateway.sendTxWithFunds(MAINNET_USDC, 0, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg, bytes(""));
 
         // Test 2: Zero gas amount
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, MAINNET_USDC, 0, 1, block.timestamp + 3600, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, 0, 1, block.timestamp + 3600, payload, revertCfg, bytes("")
         );
 
         // Test 3: Invalid gas token (address(0))
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, address(0), gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, address(0), gasAmount, 1, block.timestamp + 3600, payload, revertCfg, bytes("")
         );
 
         // Test 4: Expired deadline
         vm.expectRevert(abi.encodeWithSelector(Errors.SlippageExceededOrExpired.selector));
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp - 1, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp - 1, payload, revertCfg, bytes("")
         );
     }
 
@@ -1135,7 +1146,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.expectRevert("Too little received");
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg, bytes("")
         );
 
         // Test 2: Gas amount above maximum cap
@@ -1146,7 +1157,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg, bytes("")
         );
     }
 
@@ -1166,7 +1177,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, unsupportedToken, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, unsupportedToken, gasAmount, 1, block.timestamp + 3600, payload, revertCfg, bytes("")
         );
     }
 
@@ -1188,7 +1199,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
         vm.prank(user1);
         gateway.sendTxWithFunds(
-            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg
+            MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, block.timestamp + 3600, payload, revertCfg, bytes("")
         );
     }
 
@@ -1205,7 +1216,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.prank(user1);
         IERC20(MAINNET_USDC).approve(address(gateway), bridgeAmount + gasAmount);
         vm.prank(user1);
-        gateway.sendTxWithFunds(MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, 0, payload, revertCfg);
+        gateway.sendTxWithFunds(MAINNET_USDC, bridgeAmount, MAINNET_USDC, gasAmount, 1, 0, payload, revertCfg, bytes(""));
     }
 
     // =========================
