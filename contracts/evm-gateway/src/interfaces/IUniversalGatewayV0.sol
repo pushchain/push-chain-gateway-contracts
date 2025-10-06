@@ -1,28 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertSettings, UniversalPayload, TX_TYPE } from "../libraries/Types.sol";
+import { RevertInstructions, UniversalPayload, TX_TYPE } from "../libraries/Types.sol";
 
 interface IUniversalGatewayV0 {
     // =========================
     //           EVENTS
     // =========================
 
-    /// @dev Universal tx deposit (gas funding). Revert settings flattened for indexers.
-    event TxWithGas(
-        address indexed sender, bytes payload, uint256 nativeTokenDeposited, RevertSettings revertCFG, TX_TYPE txType
-    );
-    /// @dev Asset bridge deposit (lock on gateway). Revert settings flattened for indexers.
-    event TxWithFunds( // address(0) for moving funds + payload for execution.
+    /// @dev Universal tx deposit (gas funding). Emits for both gas refil and funds+payload movement.
+    event UniversalTx(
         address indexed sender,
         address indexed recipient,
-        address bridgeToken,
-        uint256 bridgeAmount,
+        address token,
+        uint256 amount,
         bytes payload,
-        RevertSettings revertCFG,
+        RevertInstructions revertInstruction,
         TX_TYPE txType,
         bytes signatureData
     );
+    
     event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);
     event TSSAddressUpdated(address oldTSS, address newTSS);
     event TokenSupportModified(address tokenAddress, bool whitelistStatus);
@@ -51,7 +48,7 @@ interface IUniversalGatewayV0 {
     ///         Gas for this transaction must be paid in the NATIVE token of the source chain.
     /// @param payload Universal payload to execute on Push Chain
     /// @param revertCFG Revert settings
-    function sendTxWithGas(UniversalPayload calldata payload, RevertSettings calldata revertCFG) external payable;
+    function sendTxWithGas(UniversalPayload calldata payload, RevertInstructions calldata revertCFG, bytes memory signatureData) external payable;
 
     /// @notice Allows initiating a TX for funding UEAs or quick executions of payloads on Push Chain with any supported Token.
     /// @dev    Allows users to use any token to fund or execute a payload on Push Chain.
@@ -72,9 +69,10 @@ interface IUniversalGatewayV0 {
         address tokenIn,
         uint256 amountIn,
         UniversalPayload calldata payload,
-        RevertSettings calldata revertCFG,
+        RevertInstructions calldata revertCFG,
         uint256 amountOutMinETH,
-        uint256 deadline
+        uint256 deadline,
+        bytes memory signatureData
     ) external;
 
     /// @notice Allows initiating a TX for movement of high value funds from source chain to Push Chain.
@@ -86,7 +84,7 @@ interface IUniversalGatewayV0 {
     /// @param bridgeToken Token address to bridge
     /// @param bridgeAmount Amount of token to bridge
     /// @param revertCFG Revert settings
-    function sendFunds(address recipient, address bridgeToken, uint256 bridgeAmount, RevertSettings calldata revertCFG)
+    function sendFunds(address recipient, address bridgeToken, uint256 bridgeAmount, RevertInstructions calldata revertCFG)
         external
         payable;
 
@@ -104,7 +102,7 @@ interface IUniversalGatewayV0 {
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        RevertSettings calldata revertCFG,
+        RevertInstructions calldata revertCFG,
         bytes memory signatureData
     ) external payable;
 
@@ -137,7 +135,7 @@ interface IUniversalGatewayV0 {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        RevertSettings calldata revertCFG,
+        RevertInstructions calldata revertCFG,
         bytes memory signatureData
     ) external;
 
@@ -154,5 +152,5 @@ interface IUniversalGatewayV0 {
     /// @param token       address(0) for native; ERC20 otherwise
     /// @param amount      amount to refund
     /// @param revertCFG   (fundRecipient, revertMsg)
-    function revertWithdrawFunds(address token, uint256 amount, RevertSettings calldata revertCFG) external;
+    function revertWithdrawFunds(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
 }

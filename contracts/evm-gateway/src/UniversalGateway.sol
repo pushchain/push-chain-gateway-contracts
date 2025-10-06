@@ -35,7 +35,7 @@ import {SafeERC20}                  from "@openzeppelin/contracts/token/ERC20/ut
 import {Errors}                     from "./libraries/Errors.sol";
 import {IUniversalGateway}          from "./interfaces/IUniversalGateway.sol";
 
-import {RevertSettings, UniversalPayload, TX_TYPE} from "./libraries/Types.sol";
+import {RevertInstructions, UniversalPayload, TX_TYPE} from "./libraries/Types.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -227,6 +227,7 @@ contract UniversalGateway is
     {
         uint24[3] memory old = v3FeeOrder;
         v3FeeOrder = [a, b, c];
+        emit V3FeeOrderUpdated(old, v3FeeOrder);
     }
 
     /// @notice Set the Chainlink ETH/USD feed (and cache its decimals)
@@ -268,13 +269,14 @@ contract UniversalGateway is
     /// @inheritdoc IUniversalGateway
      function sendTxWithGas(
         UniversalPayload calldata payload,
-        RevertSettings calldata revertCFG
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
 
 
         _checkUSDCaps(msg.value);
         _handleNativeDeposit(msg.value);
-        _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertCFG, TX_TYPE.GAS_AND_PAYLOAD);  
+        _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData);  
     }
 
     /// @inheritdoc IUniversalGateway
@@ -282,9 +284,10 @@ contract UniversalGateway is
         address tokenIn,
         uint256 amountIn,
         UniversalPayload calldata payload,
-        RevertSettings calldata revertCFG,
+        RevertInstructions calldata revertInstruction,
         uint256 amountOutMinETH,
-        uint256 deadline
+        uint256 deadline,
+        bytes memory signatureData
     ) external nonReentrant whenNotPaused {
         if (tokenIn == address(0)) revert Errors.InvalidInput();
         if (amountIn == 0) revert Errors.InvalidAmount();
@@ -301,8 +304,9 @@ contract UniversalGateway is
             _msgSender(),
             abi.encode(payload),
             ethOut,
-            revertCFG,
-            TX_TYPE.GAS_AND_PAYLOAD
+            revertInstruction,
+            TX_TYPE.GAS_AND_PAYLOAD,
+            signatureData
         );
     }
 
@@ -311,23 +315,27 @@ contract UniversalGateway is
     /// @param _caller Sender address
     /// @param _payload Payload
     /// @param _nativeTokenAmount Amount of native token deposited
-    /// @param _revertCFG Revert settings
+    /// @param _revertInstruction Revert settings
     /// @param _txType Transaction type
     function _sendTxWithGas(
         address _caller, 
         bytes memory _payload, 
         uint256 _nativeTokenAmount, 
-        RevertSettings calldata _revertCFG,
-        TX_TYPE _txType
+        RevertInstructions calldata _revertInstruction,
+        TX_TYPE _txType,
+        bytes memory _signatureData
     ) internal {
-        if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
 
-        emit TxWithGas({
+        emit UniversalTx({
             sender: _caller,
+            recipient: address(0),
+            token: address(0),
+            amount: _nativeTokenAmount,
             payload: _payload,
-            nativeTokenDeposited: _nativeTokenAmount,
-            revertCFG: _revertCFG,
-            txType: _txType
+            revertInstruction: _revertInstruction,
+            txType: _txType,
+            signatureData: _signatureData
         });
     }
 
@@ -342,7 +350,7 @@ contract UniversalGateway is
         address recipient,
         address bridgeToken,
         uint256 bridgeAmount,
-        RevertSettings calldata revertCFG
+        RevertInstructions calldata revertInstruction
     ) external payable nonReentrant whenNotPaused {
         if (recipient == address(0)) revert Errors.InvalidRecipient();
 
@@ -361,8 +369,9 @@ contract UniversalGateway is
             bridgeToken,
             bridgeAmount,
             bytes(""), // Empty payload for funds-only bridge
-            revertCFG,
-            TX_TYPE.FUNDS
+            revertInstruction,
+            TX_TYPE.FUNDS,
+            bytes("")
         );
     }
 
@@ -371,7 +380,8 @@ contract UniversalGateway is
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        RevertSettings calldata revertCFG
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
         uint256 gasAmount = msg.value;
@@ -384,8 +394,9 @@ contract UniversalGateway is
             _msgSender(),
             bytes(""),
             gasAmount,
-            revertCFG,
-            TX_TYPE.GAS
+            revertInstruction,
+            TX_TYPE.GAS,
+            signatureData
         );
 
         // Check and initiate Universal TX 
@@ -396,8 +407,9 @@ contract UniversalGateway is
             bridgeToken,
             bridgeAmount,
             abi.encode(payload),
-            revertCFG,
-            TX_TYPE.FUNDS_AND_PAYLOAD
+            revertInstruction,
+            TX_TYPE.FUNDS_AND_PAYLOAD,
+            signatureData
         );
     }
 
@@ -410,7 +422,8 @@ contract UniversalGateway is
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        RevertSettings calldata revertCFG
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
     ) external nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
         if (gasToken == address(0)) revert Errors.InvalidInput();
@@ -426,8 +439,9 @@ contract UniversalGateway is
             _msgSender(),
             bytes(""),
             nativeGasAmount,
-            revertCFG,
-            TX_TYPE.GAS
+            revertInstruction,
+            TX_TYPE.GAS,
+            signatureData
         );
 
         _handleTokenDeposit(bridgeToken, bridgeAmount);
@@ -437,8 +451,9 @@ contract UniversalGateway is
             bridgeToken,
             bridgeAmount,
             abi.encode(payload),
-            revertCFG,
-            TX_TYPE.FUNDS_AND_PAYLOAD
+            revertInstruction,
+            TX_TYPE.FUNDS_AND_PAYLOAD,
+            signatureData
         );
 
     }
@@ -450,7 +465,7 @@ contract UniversalGateway is
     /// @param _bridgeToken Token address to bridge
     /// @param _bridgeAmount Amount of token to bridge
     /// @param _payload Payload
-    /// @param _revertCFG Revert settings
+    /// @param _revertInstruction Revert settings
     /// @param _txType Transaction type
     function _sendTxWithFunds(
         address _caller,
@@ -458,10 +473,11 @@ contract UniversalGateway is
         address _bridgeToken,
         uint256 _bridgeAmount,
         bytes memory _payload,
-        RevertSettings calldata _revertCFG,
-        TX_TYPE _txType
+        RevertInstructions calldata _revertInstruction,
+        TX_TYPE _txType,
+        bytes memory _signatureData
     ) internal {
-        if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         /// for recipient == address(0), the funds are being moved to UEA of the msg.sender on Push Chain.
         if (_recipient == address(0)){
             if (
@@ -472,14 +488,15 @@ contract UniversalGateway is
             }
         }
 
-        emit TxWithFunds({
+        emit UniversalTx({
             sender: _caller,
             recipient: _recipient,
-            bridgeAmount: _bridgeAmount,
-            bridgeToken: _bridgeToken,
+            token: _bridgeToken,
+            amount: _bridgeAmount,
             payload: _payload,
-            revertCFG: _revertCFG,
-            txType: _txType
+            revertInstruction: _revertInstruction,
+            txType: _txType,
+            signatureData: _signatureData
         });
     }
 
@@ -509,18 +526,18 @@ contract UniversalGateway is
     function revertWithdrawFunds(
         address token,
         uint256 amount,
-        RevertSettings calldata revertCFG
+        RevertInstructions calldata revertInstruction
     ) external nonReentrant whenNotPaused onlyTSS {
-        if (revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
 
         if (token == address(0)) {
-            _handleNativeWithdraw(revertCFG.fundRecipient, amount);
+            _handleNativeWithdraw(revertInstruction.fundRecipient, amount);
         } else {
-            _handleTokenWithdraw(token, revertCFG.fundRecipient, amount);
+            _handleTokenWithdraw(token, revertInstruction.fundRecipient, amount);
         }
 
-        emit WithdrawFunds(revertCFG.fundRecipient, amount, token);
+        emit WithdrawFunds(revertInstruction.fundRecipient, amount, token);
     }
 
     // =========================
@@ -719,7 +736,7 @@ contract UniversalGateway is
             tokenOut: WETH,
             fee: fee,
             recipient: address(this),
-            // deadline: deadline, // TODO: To Be changed  for mainnet
+            deadline: deadline,
             amountIn: amountIn,
             amountOutMinimum: amountOutMinETH, // min WETH out, equals min ETH out after unwrap
             sqrtPriceLimitX96: 0

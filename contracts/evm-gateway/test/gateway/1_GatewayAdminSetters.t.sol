@@ -5,7 +5,7 @@ import {Test, console2} from "forge-std/Test.sol";
 import {BaseTest} from "../BaseTest.t.sol";
 import {Errors} from "../../src/libraries/Errors.sol";
 import {IUniversalGateway} from "../../src/interfaces/IUniversalGateway.sol";
-import {RevertSettings, UniversalPayload, TX_TYPE, VerificationType} from "../../src/libraries/Types.sol";
+import {RevertInstructions, UniversalPayload, TX_TYPE, VerificationType} from "../../src/libraries/Types.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
@@ -309,6 +309,12 @@ contract GatewayAdminSettersTest is BaseTest {
     //      V3 FEE ORDER TESTS
     // =========================
     function testSetV3FeeOrder() public {
+        // Get the old fee order
+        uint24[3] memory oldFeeOrder = [gateway.v3FeeOrder(0), gateway.v3FeeOrder(1), gateway.v3FeeOrder(2)];
+        
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGateway.V3FeeOrderUpdated(oldFeeOrder, [uint24(10000), uint24(3000), uint24(500)]);
+        
         vm.prank(admin);
         gateway.setV3FeeOrder(10000, 3000, 500);
         assertEq(gateway.v3FeeOrder(0), 10000);
