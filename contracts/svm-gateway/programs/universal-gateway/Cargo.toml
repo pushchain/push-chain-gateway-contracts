@@ -1,12 +1,12 @@
 [package]
-name = "pushsolanagateway"
+name = "universal-gateway"
 version = "0.1.0"
-description = "Push Solana Gateway - Universal Gateway for Solana"
+description = "Universal Gateway for Solana - Cross-chain bridge and transaction router"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "pushsolanagateway"
+name = "universal_gateway"
 
 [features]
 default = ["idl-build"]

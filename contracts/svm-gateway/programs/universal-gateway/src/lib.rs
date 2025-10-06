@@ -10,7 +10,7 @@ use instructions::*;
 declare_id!("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
 
 #[program]
-pub mod pushsolanagateway {
+pub mod universal_gateway {
     use super::*;
 
     // =========================

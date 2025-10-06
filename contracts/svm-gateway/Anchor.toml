@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-pushsolanagateway = "CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS"
+UniversalGateway = "CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS"
 
 [registry]
 url = "https://api.apr.dev"
