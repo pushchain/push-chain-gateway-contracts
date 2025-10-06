@@ -41,7 +41,13 @@ pub mod pushsolanagateway {
         bridge_amount: u64,
         revert_instruction: RevertInstructions,
     ) -> Result<()> {
-        instructions::deposit::send_funds(ctx, recipient, bridge_token, bridge_amount, revert_instruction)
+        instructions::deposit::send_funds(
+            ctx,
+            recipient,
+            bridge_token,
+            bridge_amount,
+            revert_instruction,
+        )
     }
 
     /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
