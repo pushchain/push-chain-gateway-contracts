@@ -33,7 +33,9 @@ pub mod universal_gateway {
     /// @dev    Supports both native SOL and SPL token deposits (like ETH Gateway).
     ///         For native SOL: pass Pubkey::default() as bridge_token
     ///         For SPL tokens: pass token mint address as bridge_token
+
     ///         The route emits UniversalTx event.
+
     pub fn send_funds(
         ctx: Context<SendFunds>,
         recipient: [u8; 20],

@@ -26,3 +26,10 @@ forge script script/1_DeployGatewayWithProxy.sol:DeployGatewayWithProxy --rpc-ur
 ```
 forge script script/3_UpgradeGatewayNewImpl.sol:UpgradeGatewayNewImpl --rpc-url $SEPOLIA_RPC_URL --private-key $KEY --broadcast
 ```
+
+---
+
+Deployed Contracts:
+  Implementation: 0x0b9fC64DD358D9A7b5B1Af93cfdA69E743b31392
+  Proxy (Gateway): 0x05bD7a3D18324c1F7e216f7fBF2b15985aE5281A
+  Proxy Admin: 0x756C0bEa91F5692384AEe147C10409BB062Bf39b
