@@ -661,7 +661,7 @@ contract UniversalGateway is
     /// @param amountWei The native amount (in wei) to be accounted against the current block's USD budget.
     function _checkBlockUSDCap(uint256 amountWei) private {
         uint256 cap = BLOCK_USD_CAP;
-        if (cap == 0) return; // disabled
+        if (cap == 0) return; // disabled //@audit-info - CHECK If this should RETURN or REVERT?
 
         // Reset on new block
         if (block.number != _lastBlockNumber) {
