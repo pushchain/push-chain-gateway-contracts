@@ -385,7 +385,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Set TSS to reverting contract
         address originalTSS = gateway.TSS_ADDRESS();
         vm.prank(admin);
-        gateway.setTSS(revertingTSS);    
+        gateway.setTSS(revertingTSS);
 
         // Try to send tx - should revert due to TSS rejecting ETH
         vm.prank(user1);

@@ -30,6 +30,12 @@ struct RevertInstructions {
     bytes revertMsg;
 }
 
+/// @notice Packed per-token usage for the current epoch only (no on-chain history kept).
+struct EpochUsage {
+    uint64 epoch; // epoch index = block.timestamp / epochDurationSec
+    uint192 used; // amount consumed in this epoch (token's natural units)
+}
+
 // Signature verification types
 enum VerificationType {
     signedVerification,

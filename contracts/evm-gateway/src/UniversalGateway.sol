@@ -34,7 +34,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Errors } from "./libraries/Errors.sol";
 import { IUniversalGateway } from "./interfaces/IUniversalGateway.sol";
 
-import { RevertInstructions, UniversalPayload, TX_TYPE } from "./libraries/Types.sol";
+import { RevertInstructions, UniversalPayload, TX_TYPE, EpochUsage } from "./libraries/Types.sol";
 import { IWETH } from "./interfaces/IWETH.sol";
 import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import { IUniswapV3Factory } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -50,9 +50,6 @@ contract UniversalGateway is
     IUniversalGateway
 {
     using SafeERC20 for IERC20;
-    // =========================
-    //           ROLES
-    // =========================
 
     bytes32 public constant TSS_ROLE = keccak256("TSS_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -60,46 +57,31 @@ contract UniversalGateway is
     /// @notice The current TSS address (receives native from universal-tx deposits)
     address public TSS_ADDRESS;
 
+    // @notice Rate-Limiting CAPS and States for Universal & Fee Abstraction Routes
     uint256 public BLOCK_USD_CAP;
     uint256 public MIN_CAP_UNIVERSAL_TX_USD; // inclusive lower bound = 1USD = 1e18
     uint256 public MAX_CAP_UNIVERSAL_TX_USD; // inclusive upper bound = 10USD = 10e18
-
-
+    uint256 public epochDurationSec; //Epoch duration in seconds. Default set in initialize().
+    uint256 private _lastBlockNumber; //Last block number for block-based USD cap checks
+    uint256 private _consumedUSDinBlock; //Consumed USD in block
     /// @notice Per-token epoch limit thresholds (in token's natural units). 0 == unsupported.
     mapping(address => uint256) public tokenToLimitThreshold;
-    /// @notice Packed per-token usage for the *current* epoch only (no on-chain history kept).
-    ///         Saves storage/gas by avoiding a mapping keyed by (token, epoch).
-    struct EpochUsage {
-        uint64 epoch;   // epoch index = block.timestamp / epochDurationSec
-        uint192 used;   // amount consumed in this epoch (token's natural units)
-    }
-
     /// @notice Current-epoch usage per token (address(0) represents native).
     mapping(address => EpochUsage) private _usage;
-    /// @notice Epoch duration in seconds. Default set in initialize().
-    uint256 public epochDurationSec;
 
     /// @notice Uniswap V3 factory & router (chain-specific)
-    IUniswapV3Factory public uniV3Factory;
-    ISwapRouterV3 public uniV3Router;
     address public WETH;
+    ISwapRouterV3 public uniV3Router;
+    IUniswapV3Factory public uniV3Factory;
+    uint256 public defaultSwapDeadlineSec;
     uint24[3] public v3FeeOrder = [uint24(500), uint24(3000), uint24(10000)];
 
-    /// @notice Chainlink ETH/USD oracle config
+    // @notice Chainlink Oracle Configs
     AggregatorV3Interface public ethUsdFeed;
     uint8 public chainlinkEthUsdDecimals;
     uint256 public chainlinkStalePeriod;
-
-    /// @notice (Optional) Chainlink L2 Sequencer uptime feed & grace period for rollups
-    AggregatorV3Interface public l2SequencerFeed; // if set, enforce sequencer up + grace
+    AggregatorV3Interface public l2SequencerFeed; // L2 Sequencer uptime feed & grace period for rollups// if set, enforce sequencer up + grace
     uint256 public l2SequencerGracePeriodSec; // e.g., 300 seconds
-
-    /// @notice Default additional time window used when callers pass deadline = 0 (Uniswap v3 swaps)
-    uint256 public defaultSwapDeadlineSec;
-
-    /// @dev Two-scalar accounting for block-based USD cap checks
-    uint256 private _lastBlockNumber;
-    uint256 private _consumedUSDinBlock;
 
     uint256[43] private __gap;
 
