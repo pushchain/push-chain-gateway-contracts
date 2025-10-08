@@ -347,9 +347,6 @@ contract UniversalGatewayV0 is
         RevertInstructions calldata revertInstruction,
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
-        _checkUSDCaps(msg.value);
-        _checkBlockUSDCap(msg.value);
-        _handleNativeDeposit(msg.value);
         _sendTxWithGas(
             _msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData
         );
@@ -374,11 +371,8 @@ contract UniversalGatewayV0 is
         // Swap token to native ETH
         uint256 ethOut = swapToNative(tokenIn, amountIn, amountOutMinETH, deadline);
 
-        //_checkUSDCaps(ethOut); // TODO: DEPRECATED FOR TESTNET SWAP
         // _checkBlockUSDCap(ethOut);
 
-        // Forward ETH to TSS and emit deposit event
-        _handleNativeDeposit(ethOut);
         _sendTxWithGas(
             _msgSender(), abi.encode(payload), ethOut, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData
         );
@@ -400,6 +394,9 @@ contract UniversalGatewayV0 is
         bytes memory _signatureData
     ) internal {
         if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+
+        _checkUSDCaps(_nativeTokenAmount);
+        _handleNativeDeposit(_nativeTokenAmount);
 
         emit UniversalTx({
             sender: _caller,
