@@ -1,11 +1,10 @@
 pragma solidity ^0.8.20;
 
 library Errors {
-
     // =========================
     //           Common ERRORS
     // =========================
-    error InvalidInput();   
+    error InvalidInput();
     error InvalidAmount();
     error ZeroAddress();
     error InvalidCapRange();
@@ -14,7 +13,7 @@ library Errors {
     // =========================
     //           ERRORS for UniversalGateway
     // =========================
-    
+
     error DepositFailed();
     error WithdrawFailed();
     error NotSupported();
@@ -24,6 +23,7 @@ library Errors {
     error InvalidToken();
     error BlockCapLimitExceeded();
     error SlippageExceededOrExpired();
+    error RateLimitExceeded();
 
     // =========================
     //      Price Oracle & AMM Errors

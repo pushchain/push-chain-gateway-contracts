@@ -46,7 +46,14 @@ contract GatewayDepositNativeTest is BaseTest {
         // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.UniversalTx(
-            user1, address(0), address(0), validEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD, bytes("")
+            user1,
+            address(0),
+            address(0),
+            validEthAmount,
+            abi.encode(payload),
+            revertCfg_,
+            TX_TYPE.GAS_AND_PAYLOAD,
+            bytes("")
         );
 
         // Execute the transaction
@@ -120,7 +127,16 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), minEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD, bytes(""));
+        emit IUniversalGateway.UniversalTx(
+            user1,
+            address(0),
+            address(0),
+            minEthAmount,
+            abi.encode(payload),
+            revertCfg_,
+            TX_TYPE.GAS_AND_PAYLOAD,
+            bytes("")
+        );
 
         vm.prank(user1);
         gateway.sendTxWithGas{ value: minEthAmount }(payload, revertCfg_, bytes(""));
@@ -171,7 +187,16 @@ contract GatewayDepositNativeTest is BaseTest {
 
         // Expect UniversalTx event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTx(user1, address(0), address(0), maxEthAmount, abi.encode(payload), revertCfg_, TX_TYPE.GAS_AND_PAYLOAD, bytes(""));
+        emit IUniversalGateway.UniversalTx(
+            user1,
+            address(0),
+            address(0),
+            maxEthAmount,
+            abi.encode(payload),
+            revertCfg_,
+            TX_TYPE.GAS_AND_PAYLOAD,
+            bytes("")
+        );
 
         vm.prank(user1);
         gateway.sendTxWithGas{ value: maxEthAmount }(payload, revertCfg_, bytes(""));

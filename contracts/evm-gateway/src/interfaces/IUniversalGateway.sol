@@ -35,6 +35,10 @@ interface IUniversalGateway {
 
     event V3FeeOrderUpdated(uint24[3] oldFeeOrder, uint24[3] newFeeOrder);
 
+    // Rate-limit / config events
+    event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
+    event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
+
     // =========================
     //         FUNCTIONS
     // =========================
@@ -50,7 +54,11 @@ interface IUniversalGateway {
     ///         Gas for this transaction must be paid in the NATIVE token of the source chain.
     /// @param payload Universal payload to execute on Push Chain
     /// @param revertCFG Revert settings
-    function sendTxWithGas(UniversalPayload calldata payload, RevertInstructions calldata revertCFG, bytes memory signatureData) external payable;
+    function sendTxWithGas(
+        UniversalPayload calldata payload,
+        RevertInstructions calldata revertCFG,
+        bytes memory signatureData
+    ) external payable;
 
     /// @notice Allows initiating a TX for funding UEAs or quick executions of payloads on Push Chain with any supported Token.
     /// @dev    Allows users to use any token to fund or execute a payload on Push Chain.
@@ -86,9 +94,12 @@ interface IUniversalGateway {
     /// @param bridgeToken Token address to bridge
     /// @param bridgeAmount Amount of token to bridge
     /// @param revertCFG Revert settings
-    function sendFunds(address recipient, address bridgeToken, uint256 bridgeAmount, RevertInstructions calldata revertCFG)
-        external
-        payable;
+    function sendFunds(
+        address recipient,
+        address bridgeToken,
+        uint256 bridgeAmount,
+        RevertInstructions calldata revertCFG
+    ) external payable;
 
     /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
     /// @dev    Supports arbitrary execution payload via UEAs.

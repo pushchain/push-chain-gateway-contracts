@@ -1,32 +1,33 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
-import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
-    // =========================
-    //        STRUCTS / TYPES
-    // =========================
+import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+
+// =========================
+//        STRUCTS / TYPES
+// =========================
 
 // Transaction Types in Universal Gateway
 enum TX_TYPE {
-    /// @dev only for funding the UEA on Push Chain with GAS 
+    /// @dev only for funding the UEA on Push Chain with GAS
     ///      doesn't support movement of high value funds or payload for execution.
     GAS,
-    /// @dev for funding UEA and execute a payload instantly via UEA on Push Chain. versal transaction route. 
+    /// @dev for funding UEA and execute a payload instantly via UEA on Push Chain. versal transaction route.
     ///      allows movement of funds between CAP_RANGES ( low fund size ) & requires lower block confirmations.
     GAS_AND_PAYLOAD,
     /// @dev for bridging of large funds only from external chain to Push Chain.
     ///      doesn't support arbitrary payload movement and requires longer block confirmations.
     FUNDS,
-    /// @dev for bridging both funds and payload to Push Chain for execution. 
+    /// @dev for bridging both funds and payload to Push Chain for execution.
     /// @dev no strict cap ranges for fund amount and requires longer block confirmations.
     FUNDS_AND_PAYLOAD
 }
 
 struct RevertInstructions {
     /// @dev where funds go in revert / refund cases
-    address fundRecipient; 
+    address fundRecipient;
     /// @dev arbitrary message for relayers/UEA
-    bytes   revertMsg;     
+    bytes revertMsg;
 }
 
 // Signature verification types

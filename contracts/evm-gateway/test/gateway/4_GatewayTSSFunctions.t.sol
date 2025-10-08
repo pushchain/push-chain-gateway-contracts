@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test, console2} from "forge-std/Test.sol";
-import {BaseTest} from "../BaseTest.t.sol";
-import {Errors} from "../../src/libraries/Errors.sol";
-import {IUniversalGateway} from "../../src/interfaces/IUniversalGateway.sol";
-import {RevertInstructions, UniversalPayload, TX_TYPE} from "../../src/libraries/Types.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {MockERC20} from "../mocks/MockERC20.sol";
+import { Test, console2 } from "forge-std/Test.sol";
+import { BaseTest } from "../BaseTest.t.sol";
+import { Errors } from "../../src/libraries/Errors.sol";
+import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
+import { RevertInstructions, UniversalPayload, TX_TYPE } from "../../src/libraries/Types.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { MockERC20 } from "../mocks/MockERC20.sol";
 
 /// @notice Test suite for missing TSS functions and sendTxWithFunds 4-parameter version
 /// @dev Tests withdrawFunds, revertWithdrawFunds, onlyTSS modifier, and sendTxWithFunds overload
@@ -64,10 +64,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         gateway.withdrawFunds(user1, address(0), withdrawAmount);
 
         // Check balances
-        assertEq(
-            address(gateway).balance,
-            initialGatewayBalance - withdrawAmount
-        );
+        assertEq(address(gateway).balance, initialGatewayBalance - withdrawAmount);
         assertEq(user1.balance, initialRecipientBalance + withdrawAmount);
     }
 
@@ -78,31 +75,19 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Expect WithdrawFunds event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawFunds(
-            user1,
-            withdrawAmount,
-            address(usdc)
-        );
+        emit IUniversalGateway.WithdrawFunds(user1, withdrawAmount, address(usdc));
 
         vm.prank(tss);
         gateway.withdrawFunds(user1, address(usdc), withdrawAmount);
 
         // Check balances
-        assertEq(
-            usdc.balanceOf(address(gateway)),
-            initialGatewayBalance - withdrawAmount
-        );
-        assertEq(
-            usdc.balanceOf(user1),
-            initialRecipientBalance + withdrawAmount
-        );
+        assertEq(usdc.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
+        assertEq(usdc.balanceOf(user1), initialRecipientBalance + withdrawAmount);
     }
 
     function testWithdrawFunds_InvalidRecipient_Revert() public {
         vm.prank(tss);
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.InvalidRecipient.selector)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
         gateway.withdrawFunds(address(0), address(0), 1 ether);
     }
 
@@ -147,10 +132,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         gateway.revertWithdrawFunds(address(0), withdrawAmount, revertCfg);
 
         // Check balances
-        assertEq(
-            address(gateway).balance,
-            initialGatewayBalance - withdrawAmount
-        );
+        assertEq(address(gateway).balance, initialGatewayBalance - withdrawAmount);
         assertEq(user1.balance, initialRecipientBalance + withdrawAmount);
     }
 
@@ -163,33 +145,21 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Expect WithdrawFunds event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawFunds(
-            user1,
-            withdrawAmount,
-            address(usdc)
-        );
+        emit IUniversalGateway.WithdrawFunds(user1, withdrawAmount, address(usdc));
 
         vm.prank(tss);
         gateway.revertWithdrawFunds(address(usdc), withdrawAmount, revertCfg);
 
         // Check balances
-        assertEq(
-            usdc.balanceOf(address(gateway)),
-            initialGatewayBalance - withdrawAmount
-        );
-        assertEq(
-            usdc.balanceOf(user1),
-            initialRecipientBalance + withdrawAmount
-        );
+        assertEq(usdc.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
+        assertEq(usdc.balanceOf(user1), initialRecipientBalance + withdrawAmount);
     }
 
     function testRevertWithdrawFunds_InvalidRecipient_Revert() public {
         RevertInstructions memory revertCfg = revertCfg(address(0)); // Invalid user1
 
         vm.prank(tss);
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.InvalidRecipient.selector)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
         gateway.revertWithdrawFunds(address(0), 1 ether, revertCfg);
     }
 

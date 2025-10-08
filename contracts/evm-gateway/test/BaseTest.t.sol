@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test, console} from "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import { Test, console } from "forge-std/Test.sol";
+import { Vm } from "forge-std/Vm.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
-import {UniversalGateway} from "../src/UniversalGateway.sol";
-import {IUniversalGateway} from "../src/interfaces/IUniversalGateway.sol";
-import {TX_TYPE, RevertInstructions, UniversalPayload, VerificationType } from "../src/libraries/Types.sol";
-import {Errors} from "../src/libraries/Errors.sol";
-import {MockERC20} from "./mocks/MockERC20.sol";
-import {MockWETH} from "./mocks/MockWETH.sol";
-import {MockAggregatorV3} from "./mocks/MockAggregatorV3.sol";
-import {MockSequencerUptimeFeed} from "./mocks/MockSequencerUptimeFeed.sol";
+import { UniversalGateway } from "../src/UniversalGateway.sol";
+import { IUniversalGateway } from "../src/interfaces/IUniversalGateway.sol";
+import { TX_TYPE, RevertInstructions, UniversalPayload, VerificationType } from "../src/libraries/Types.sol";
+import { Errors } from "../src/libraries/Errors.sol";
+import { MockERC20 } from "./mocks/MockERC20.sol";
+import { MockWETH } from "./mocks/MockWETH.sol";
+import { MockAggregatorV3 } from "./mocks/MockAggregatorV3.sol";
+import { MockSequencerUptimeFeed } from "./mocks/MockSequencerUptimeFeed.sol";
 
 // TetherToken interface for USDT
 interface TetherToken {
@@ -28,10 +28,9 @@ interface TetherToken {
  * @title BaseTest
  * @notice Abstract base test contract for UniversalGateway
  * @dev Provides complete setup, mocks, and helper functions for all gateway tests
- *      Inherit from this contract to avoid redundant setup code 
+ *      Inherit from this contract to avoid redundant setup code
  */
 abstract contract BaseTest is Test {
-
     // =========================
     //           ACTORS
     // =========================
@@ -72,7 +71,7 @@ abstract contract BaseTest is Test {
     // =========================
     //      DEFAULT CONFIG and Constants
     // =========================
-    uint256 public constant MIN_CAP_USD = 1e18;  // $1 (1e18 = $1)
+    uint256 public constant MIN_CAP_USD = 1e18; // $1 (1e18 = $1)
     uint256 public constant MAX_CAP_USD = 10e18; // $10 (1e18 = $1)
 
     // Chainlink defaults (matches gateway expectations)
@@ -98,6 +97,7 @@ abstract contract BaseTest is Test {
         _initializeGateway();
         _deployOracles();
         _wireOraclesToGateway();
+        _setupNativeTokenSupport();
         _mintAndApproveTokens();
     }
 
@@ -127,7 +127,6 @@ abstract contract BaseTest is Test {
         vm.label(attacker, "attacker");
         vm.label(recipient, "recipient");
     }
-
 
     function _fundActors() internal {
         vm.deal(admin, 100 ether);
@@ -169,10 +168,10 @@ abstract contract BaseTest is Test {
     function _deployGateway() internal {
         // Deploy implementation
         UniversalGateway implementation = new UniversalGateway();
-        
+
         // Deploy proxy admin
         proxyAdmin = new ProxyAdmin(admin);
-        
+
         // Deploy transparent upgradeable proxy
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
@@ -186,11 +185,7 @@ abstract contract BaseTest is Test {
             address(weth)
         );
 
-        gatewayProxy = new TransparentUpgradeableProxy(
-            address(implementation),
-            address(proxyAdmin),
-            initData
-        );
+        gatewayProxy = new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
 
         // Cast proxy to gateway interface
         gateway = UniversalGateway(payable(address(gatewayProxy)));
@@ -228,6 +223,17 @@ abstract contract BaseTest is Test {
         vm.prank(admin);
         gateway.setEthUsdFeed(address(ethUsdFeedMock));
         // chainlinkStalePeriod already set by initialize(); leave as-is unless tests override
+    }
+
+    function _setupNativeTokenSupport() internal {
+        // Set up native token (address(0)) support for sendFunds
+        address[] memory tokens = new address[](1);
+        uint256[] memory thresholds = new uint256[](1);
+        tokens[0] = address(0); // Native token
+        thresholds[0] = 1000000 ether; // Large threshold for native token
+
+        vm.prank(admin);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
     }
 
     // === Convenience setters for tests ===
@@ -286,10 +292,10 @@ abstract contract BaseTest is Test {
     // =========================
     //      PAYLOAD and REVERT BUILDERS Helpers
     // =========================
-    function buildMinimalPayload(address to, bytes memory data) 
-        internal 
-        view 
-        returns (UniversalPayload memory p, bytes32 h) 
+    function buildMinimalPayload(address to, bytes memory data)
+        internal
+        view
+        returns (UniversalPayload memory p, bytes32 h)
     {
         p = UniversalPayload({
             to: to,
@@ -305,10 +311,10 @@ abstract contract BaseTest is Test {
         h = keccak256(abi.encode(p));
     }
 
-    function buildValuePayload(address to, bytes memory data, uint256 value) 
-        internal 
-        view 
-        returns (UniversalPayload memory p, bytes32 h) 
+    function buildValuePayload(address to, bytes memory data, uint256 value)
+        internal
+        view
+        returns (UniversalPayload memory p, bytes32 h)
     {
         p = UniversalPayload({
             to: to,
@@ -325,10 +331,7 @@ abstract contract BaseTest is Test {
     }
 
     function revertCfg(address fundRecipient_) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({
-            fundRecipient: fundRecipient_,
-            revertMsg: ""
-        });
+        return RevertInstructions({ fundRecipient: fundRecipient_, revertMsg: "" });
     }
 
     // =========================
@@ -351,7 +354,7 @@ abstract contract BaseTest is Test {
 
     function mintWETH(address to, uint256 amtWei) internal {
         vm.deal(address(this), amtWei);
-        weth.deposit{value: amtWei}();
+        weth.deposit{ value: amtWei }();
         weth.transfer(to, amtWei);
     }
 
@@ -381,7 +384,10 @@ abstract contract BaseTest is Test {
         supportFlags[0] = supported;
 
         vm.prank(admin);
-        gateway.modifySupportForToken(tokens, supportFlags);
+        // Set threshold to a large value to enable support (0 means unsupported)
+        uint256[] memory thresholds = new uint256[](1);
+        thresholds[0] = supported ? 1000000 ether : 0;
+        gateway.setTokenLimitThresholds(tokens, thresholds);
     }
 
     // =========================
@@ -395,7 +401,7 @@ abstract contract BaseTest is Test {
     function assertDualEmitOrder(bytes32 firstTopic0, bytes32 secondTopic0, Vm.Log[] memory logs) internal {
         bool firstFound = false;
         bool secondFound = false;
-        
+
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == firstTopic0) {
                 firstFound = true;
@@ -405,14 +411,14 @@ abstract contract BaseTest is Test {
                 require(firstFound, "First event not found before second event");
             }
         }
-        
+
         require(firstFound && secondFound, "Both events not found");
     }
 
     // =========================
     //      RECEIVE FALLBACK
     // =========================
-    receive() external payable {}
+    receive() external payable { }
 
     // =========================
     //      HELPER FUNCTIONS
@@ -424,11 +430,12 @@ abstract contract BaseTest is Test {
     /// @param value ETH value
     /// @return payload UniversalPayload struct
     /// @return revertCfg RevertInstructions struct
-    function buildERC20Payload(
-        address to,
-        bytes memory data,
-        uint256 value
-    ) internal virtual pure returns (UniversalPayload memory, RevertInstructions memory) {
+    function buildERC20Payload(address to, bytes memory data, uint256 value)
+        internal
+        pure
+        virtual
+        returns (UniversalPayload memory, RevertInstructions memory)
+    {
         UniversalPayload memory payload = UniversalPayload({
             to: to,
             value: value,
@@ -441,10 +448,7 @@ abstract contract BaseTest is Test {
             vType: VerificationType(0)
         });
 
-        RevertInstructions memory revertCfg_ = RevertInstructions({
-            fundRecipient: to,
-            revertMsg: ""
-        });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: to, revertMsg: "" });
 
         return (payload, revertCfg_);
     }
@@ -453,11 +457,7 @@ abstract contract BaseTest is Test {
     /// @param user User address to fund
     /// @param token Token address to transfer
     /// @param amount Amount to transfer
-    function fundUserWithMainnetTokens(
-        address user,
-        address token,
-        uint256 amount
-    ) internal virtual {
+    function fundUserWithMainnetTokens(address user, address token, uint256 amount) internal virtual {
         // Find a whale address that has the token
         address whale;
         if (token == 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) {
