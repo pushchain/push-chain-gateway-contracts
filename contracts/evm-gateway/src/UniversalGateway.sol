@@ -67,8 +67,15 @@ contract UniversalGateway is
 
     /// @notice Per-token epoch limit thresholds (in token's natural units). 0 == unsupported.
     mapping(address => uint256) public tokenToLimitThreshold;
-    /// @notice Per-token usage within an epoch: amount moved so far (natural units)
-    mapping(address => mapping(uint256 => uint256)) private _tokenToEpochUsed;
+    /// @notice Packed per-token usage for the *current* epoch only (no on-chain history kept).
+    ///         Saves storage/gas by avoiding a mapping keyed by (token, epoch).
+    struct EpochUsage {
+        uint64 epoch;   // epoch index = block.timestamp / epochDurationSec
+        uint192 used;   // amount consumed in this epoch (token's natural units)
+    }
+
+    /// @notice Current-epoch usage per token (address(0) represents native).
+    mapping(address => EpochUsage) private _usage;
     /// @notice Epoch duration in seconds. Default set in initialize().
     uint256 public epochDurationSec;
 
@@ -651,7 +658,6 @@ contract UniversalGateway is
         uint256 cap = BLOCK_USD_CAP;
         if (cap == 0) return; // disabled //@audit-info - CHECK If this should RETURN or REVERT?
 
-        // Reset on new block
         if (block.number != _lastBlockNumber) {
             _lastBlockNumber = block.number;
             _consumedUSDinBlock = 0;
@@ -659,7 +665,6 @@ contract UniversalGateway is
 
         uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
 
-        // Single-call sanity: no call may exceed the whole block cap
         if (usd1e18 > cap) revert Errors.BlockCapLimitExceeded();
 
         unchecked {
@@ -704,18 +709,27 @@ contract UniversalGateway is
     }
 
     /// @dev Enforce and consume the per-token epoch rate limit. 0 threshold = unsupported.
+    ///      Uses a packed struct to track only the current epoch's usage per token (no historical growth).
     function _consumeRateLimit(address token, uint256 amount) internal {
         uint256 threshold = tokenToLimitThreshold[token];
         if (threshold == 0) revert Errors.NotSupported();
+
         uint256 _epochDuration = epochDurationSec;
-        // allow 0 (disable rate limiting) only if threshold == 0, but PRD requires finite non-zero when supported
         if (_epochDuration == 0) revert Errors.InvalidData();
-        uint256 epoch = block.timestamp / _epochDuration;
-        uint256 used = _tokenToEpochUsed[token][epoch];
+
+        uint64 current = uint64(block.timestamp / _epochDuration);
+        EpochUsage storage e = _usage[token];
+
+        // Hard reset when a new epoch starts (no rollover)
+        if (e.epoch != current) {
+            e.epoch = current;
+            e.used = 0;
+        }
+
         unchecked {
-            uint256 newUsed = used + amount; // relying on natural units
+            uint256 newUsed = uint256(e.used) + amount; // natural units
             if (newUsed > threshold) revert Errors.RateLimitExceeded();
-            _tokenToEpochUsed[token][epoch] = newUsed;
+            e.used = uint192(newUsed);
         }
     }
 
@@ -724,16 +738,18 @@ contract UniversalGateway is
     /// @return used Amount already consumed in the current epoch (in token's natural units)
     /// @return remaining Amount still available to send in this epoch (0 if exceeded or unsupported)
     function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining) {
-        uint256 _epochDuration = epochDurationSec;
-        if (_epochDuration == 0) return (0, 0);
-
         uint256 thr = tokenToLimitThreshold[token];
         if (thr == 0) return (0, 0);
 
-        uint256 epoch = block.timestamp / _epochDuration;
-        used = _tokenToEpochUsed[token][epoch];
+        uint256 _epochDuration = epochDurationSec;
+        if (_epochDuration == 0) return (0, 0);
 
-        remaining = used >= thr ? 0 : (thr - used);
+        uint64 current = uint64(block.timestamp / _epochDuration);
+        EpochUsage storage e = _usage[token];
+        uint256 u = (e.epoch == current) ? uint256(e.used) : 0;
+
+        used = u;
+        remaining = u >= thr ? 0 : (thr - u);
     }
 
     /// @dev Swap any ERC20 to the chain's native token via a direct Uniswap v3 pool to WETH.

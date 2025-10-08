@@ -334,6 +334,28 @@ abstract contract BaseTest is Test {
         return RevertInstructions({ fundRecipient: fundRecipient_, revertMsg: "" });
     }
 
+    /// @notice Build a default payload for testing (commonly used across test files)
+    /// @dev Returns a simple payload with default values
+    function buildDefaultPayload() internal view returns (UniversalPayload memory) {
+        return UniversalPayload({
+            to: address(0x123),
+            value: 0,
+            data: bytes(""),
+            gasLimit: 100000,
+            maxFeePerGas: 0,
+            maxPriorityFeePerGas: 0,
+            nonce: 0,
+            deadline: 0,
+            vType: VerificationType.signedVerification
+        });
+    }
+
+    /// @notice Build default revert instructions for testing (commonly used across test files)
+    /// @dev Returns revert instructions with a default recipient
+    function buildDefaultRevertInstructions() internal pure returns (RevertInstructions memory) {
+        return RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") });
+    }
+
     // =========================
     //      MINT & APPROVE HELPERS
     // =========================
