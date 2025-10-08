@@ -188,7 +188,6 @@ contract UniversalGateway is
     function setDefaultSwapDeadline(uint256 deadlineSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         if (deadlineSec == 0) revert Errors.InvalidAmount();
         defaultSwapDeadlineSec = deadlineSec;
-        emit DefaultSwapDeadlineUpdated(deadlineSec);
     }
 
     /// @notice Allows the admin to set the Uniswap V3 factory and router
@@ -236,9 +235,7 @@ contract UniversalGateway is
     /// @param b The new fee order
     /// @param c The new fee order
     function setV3FeeOrder(uint24 a, uint24 b, uint24 c) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
-        uint24[3] memory old = v3FeeOrder;
         v3FeeOrder = [a, b, c];
-        emit V3FeeOrderUpdated(old, v3FeeOrder);
     }
 
     /// @notice Set the Chainlink ETH/USD feed (and cache its decimals)
@@ -249,28 +246,24 @@ contract UniversalGateway is
         uint8 dec = f.decimals();
         ethUsdFeed = f;
         chainlinkEthUsdDecimals = dec;
-        emit ChainlinkEthUsdFeedUpdated(feed, dec);
     }
 
     /// @notice Configure the maximum allowed data staleness for Chainlink reads
     /// @param stalePeriodSec If > 0, latestRoundData().updatedAt must be within this many seconds
     function setChainlinkStalePeriod(uint256 stalePeriodSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         chainlinkStalePeriod = stalePeriodSec;
-        emit ChainlinkStalePeriodUpdated(stalePeriodSec);
     }
 
     /// @notice Set (or clear) the Chainlink L2 sequencer uptime feed for rollups
     /// @dev    Set to address(0) on L1s / chains without a sequencer feed.
     function setL2SequencerFeed(address feed) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         l2SequencerFeed = AggregatorV3Interface(feed);
-        emit L2SequencerFeedUpdated(feed);
     }
 
     /// @notice Configure the grace window after sequencer comes back up
     /// @param gracePeriodSec If > 0, require `block.timestamp - sequencer.updatedAt > gracePeriodSec`
     function setL2SequencerGracePeriod(uint256 gracePeriodSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         l2SequencerGracePeriodSec = gracePeriodSec;
-        emit L2SequencerGracePeriodUpdated(gracePeriodSec);
     }
 
     // =========================

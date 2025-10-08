@@ -7,7 +7,8 @@ interface IUniversalGateway {
     // =========================
     //           EVENTS
     // =========================
-    /// @dev Universal tx deposit (gas funding). Emits for both gas refil and funds+payload movement.
+
+    /// @notice         Universal tx deposit (gas funding). Emits for both gas refil and funds+payload movement.
     event UniversalTx(
         address indexed sender,
         address indexed recipient,
@@ -18,22 +19,11 @@ interface IUniversalGateway {
         TX_TYPE txType,
         bytes signatureData
     );
-
-    event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);
-    event TokenSupportModified(address tokenAddress, bool whitelistStatus);
+    /// @notice         Withdraw funds event
+    event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);   
+    /// @notice         Caps updated event
     event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
-    // Chainlink Oracle Events
-    event ChainlinkEthUsdFeedUpdated(address indexed feed, uint8 decimals);
-    event ChainlinkStalePeriodUpdated(uint256 stalePeriodSec);
-    // L2 Sequencer Events
-    event L2SequencerFeedUpdated(address indexed feed);
-    event L2SequencerGracePeriodUpdated(uint256 gracePeriodSec);
-    // Swap Configuration Events
-    event DefaultSwapDeadlineUpdated(uint256 deadlineSec);
-    /// @notice Emitted when V3 fee order is updated
-
-    event V3FeeOrderUpdated(uint24[3] oldFeeOrder, uint24[3] newFeeOrder);
-
+    
     // Rate-limit / config events
     event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
     event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
