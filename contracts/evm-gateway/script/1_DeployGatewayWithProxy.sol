@@ -183,7 +183,7 @@ contract DeployGatewayWithProxy is Script {
         UniversalGatewayV0 gateway = UniversalGatewayV0(payable(proxyAddress));
 
         // Basic checks
-        require(gateway.tssAddress() == tss, "TSS address mismatch");
+        require(gateway.TSS_ADDRESS() == tss, "TSS address mismatch");
         require(gateway.MIN_CAP_UNIVERSAL_TX_USD() == MIN_CAP_USD, "Min cap mismatch");
         require(gateway.MAX_CAP_UNIVERSAL_TX_USD() == MAX_CAP_USD, "Max cap mismatch");
         require(gateway.WETH() == SEPOLIA_WETH, "WETH address mismatch");

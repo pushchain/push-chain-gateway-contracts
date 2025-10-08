@@ -62,7 +62,7 @@ contract UniversalGatewayV0 is
     // =========================
 
     /// @notice The current TSS address (receives native from universal-tx deposits)
-    address public tssAddress;
+    address public TSS_ADDRESS;
 
     /// @notice USD caps for universal tx deposits (1e18 = $1)
     uint256 public MIN_CAP_UNIVERSAL_TX_USD; // inclusive lower bound = 1USD = 1e18
@@ -140,7 +140,7 @@ contract UniversalGatewayV0 is
         _grantRole(PAUSER_ROLE, pauser);
         _grantRole(TSS_ROLE, tss);
 
-        tssAddress = tss;
+        TSS_ADDRESS = tss;
         MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
         MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
 
@@ -187,14 +187,13 @@ contract UniversalGatewayV0 is
     /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.
     function setTSSAddress(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         if (newTSS == address(0)) revert Errors.ZeroAddress();
-        address old = tssAddress;
+        address old = TSS_ADDRESS;
 
         // transfer role
         if (hasRole(TSS_ROLE, old)) _revokeRole(TSS_ROLE, old);
         _grantRole(TSS_ROLE, newTSS);
 
-        tssAddress = newTSS;
-        emit TSSAddressUpdated(old, newTSS);
+        TSS_ADDRESS = newTSS;
     }
 
     /// @notice Allows the admin to set the USD cap ranges
@@ -737,7 +736,7 @@ contract UniversalGatewayV0 is
 
     /// @dev Forward native ETH to TSS; returns amount forwarded (= msg.value or computed after swap).
     function _handleNativeDeposit(uint256 amount) internal returns (uint256) {
-        (bool ok,) = payable(tssAddress).call{ value: amount }("");
+        (bool ok,) = payable(TSS_ADDRESS).call{ value: amount }("");
         if (!ok) revert Errors.DepositFailed();
         return amount;
     }

@@ -198,7 +198,7 @@ abstract contract BaseTest is Test {
     function _initializeGateway() internal {
         // Gateway is already initialized via proxy constructor
         // Verify initialization
-        assertEq(gateway.tssAddress(), tss);
+        assertEq(gateway.TSS_ADDRESS(), tss);
         assertEq(gateway.MIN_CAP_UNIVERSAL_TX_USD(), MIN_CAP_USD);
         assertEq(gateway.MAX_CAP_UNIVERSAL_TX_USD(), MAX_CAP_USD);
         assertEq(gateway.WETH(), address(weth));

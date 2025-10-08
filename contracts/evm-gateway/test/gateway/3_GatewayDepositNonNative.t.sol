@@ -1400,7 +1400,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         assertEq(address(newGateway.uniV3Factory()), address(0x123));
         assertEq(address(newGateway.uniV3Router()), address(0x456));
         assertEq(newGateway.WETH(), MAINNET_WETH);
-        assertEq(newGateway.tssAddress(), tss);
+        assertEq(newGateway.TSS_ADDRESS(), tss);
         assertEq(newGateway.MIN_CAP_UNIVERSAL_TX_USD(), 100e18);
         assertEq(newGateway.MAX_CAP_UNIVERSAL_TX_USD(), 10000e18);
         assertEq(newGateway.defaultSwapDeadlineSec(), 10 minutes);
@@ -1423,7 +1423,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         assertEq(address(newGateway2.uniV3Factory()), address(0));
         assertEq(address(newGateway2.uniV3Router()), address(0));
         assertEq(newGateway2.WETH(), MAINNET_WETH);
-        assertEq(newGateway2.tssAddress(), tss);
+        assertEq(newGateway2.TSS_ADDRESS(), tss);
         assertEq(newGateway2.MIN_CAP_UNIVERSAL_TX_USD(), 50e18);
         assertEq(newGateway2.MAX_CAP_UNIVERSAL_TX_USD(), 5000e18);
         assertEq(newGateway2.defaultSwapDeadlineSec(), 10 minutes);

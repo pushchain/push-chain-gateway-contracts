@@ -76,9 +76,9 @@ contract GatewayAdminSettersTest is BaseTest {
         address newTSS = address(0x123);
 
         vm.prank(admin);
-        gateway.setTSSAddress(newTSS);
+        gateway.setTSS(newTSS);
 
-        assertEq(gateway.tssAddress(), newTSS);
+        assertEq(gateway.TSS_ADDRESS(), newTSS);
         assertTrue(gateway.hasRole(gateway.TSS_ROLE(), newTSS));
         assertFalse(gateway.hasRole(gateway.TSS_ROLE(), tss));
     }
@@ -89,18 +89,18 @@ contract GatewayAdminSettersTest is BaseTest {
         // Non-admin should not be able to set TSS
         vm.prank(user1);
         vm.expectRevert();
-        gateway.setTSSAddress(newTSS);
+        gateway.setTSS(newTSS);
 
         // Admin should be able to set TSS
         vm.prank(admin);
-        gateway.setTSSAddress(newTSS);
-        assertEq(gateway.tssAddress(), newTSS);
+        gateway.setTSS(newTSS);
+        assertEq(gateway.TSS_ADDRESS(), newTSS);
     }
 
     function testSetTSSAddressZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.setTSSAddress(address(0));
+        gateway.setTSS(address(0));
     }
 
     function testSetTSSAddressWhenPaused() public {
@@ -111,7 +111,7 @@ contract GatewayAdminSettersTest is BaseTest {
         // Should not be able to set TSS when paused
         vm.prank(admin);
         vm.expectRevert();
-        gateway.setTSSAddress(address(0x123));
+        gateway.setTSS(address(0x123));
     }
 
     function testSetCapsUSD() public {

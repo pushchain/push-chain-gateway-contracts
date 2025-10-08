@@ -20,7 +20,6 @@ interface IUniversalGateway {
     );
 
     event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);
-    event TSSAddressUpdated(address oldTSS, address newTSS);
     event TokenSupportModified(address tokenAddress, bool whitelistStatus);
     event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
     // Chainlink Oracle Events
