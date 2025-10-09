@@ -42,6 +42,11 @@ import { RevertInstructions,
                 TX_TYPE, 
                     EpochUsage } from "./libraries/Types.sol";
 
+import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import { IUniswapV3Factory } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import { ISwapRouter as ISwapRouterV3 } from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -49,11 +54,6 @@ import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/Co
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-
-import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import { IUniswapV3Factory } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import { ISwapRouter as ISwapRouterV3 } from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
-import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
 contract UniversalGateway is
     Initializable,
@@ -92,11 +92,12 @@ contract UniversalGateway is
                  uint24(10000)];                               
 
     /// @notice Chainlink Oracle Configs
-    uint8 public chainlinkEthUsdDecimals;                       // Chainlink ETH/USD decimals.
     uint256 public chainlinkStalePeriod;                        // Chainlink stale period.
+    uint8 public chainlinkEthUsdDecimals;                       // Chainlink ETH/USD decimals.
     AggregatorV3Interface public ethUsdFeed;                    // Chainlink ETH/USD feed.
-    AggregatorV3Interface public l2SequencerFeed;               // L2 Sequencer uptime feed & grace period for rollups (if set, enforce sequencer up + grace)
     uint256 public l2SequencerGracePeriodSec;                   // L2 Sequencer grace period. (e.g., 300 seconds)  
+    AggregatorV3Interface public l2SequencerFeed;               // L2 Sequencer uptime feed & grace period for rollups (if set, enforce sequencer up + grace)
+    
 
 
     /// @notice Gap for future upgrades.
@@ -328,11 +329,6 @@ contract UniversalGateway is
 
     /// @notice                     Internal helper function to deposit for Instant TX.
     /// @dev                        Handles rate-limit checks for Fee Abstraction Tx Route
-    /// @param _caller              Sender address
-    /// @param _payload             Payload
-    /// @param _nativeTokenAmount   Amount of native token deposited
-    /// @param _revertInstruction   Revert settings
-    /// @param _txType              Transaction type
     function _sendTxWithGas(
         address _caller,
         bytes memory _payload,
@@ -463,13 +459,6 @@ contract UniversalGateway is
 
     /// @notice                     Internal helper function to deposit for Universal TX.
     /// @dev                        Handles rate-limit checks for Universal Transaction Route
-    /// @param _caller              Sender address
-    /// @param _recipient           Recipient address
-    /// @param _bridgeToken         Token address to bridge
-    /// @param _bridgeAmount        Amount of token to bridge
-    /// @param _payload             Payload for execution 
-    /// @param _revertInstruction   Revert settings
-    /// @param _txType              Transaction type
     function _sendTxWithFunds(
         address _caller,
         address _recipient,
@@ -499,10 +488,6 @@ contract UniversalGateway is
             signatureData: _signatureData
         });
     }
-
-    // =========================
-    //          WITHDRAW
-    // =========================
 
     /// @inheritdoc IUniversalGateway
     function withdrawFunds(address recipient, address token, uint256 amount)
@@ -628,9 +613,9 @@ contract UniversalGateway is
     //       INTERNAL HELPERS
     // =========================
 
-    /// @dev            Check if the amount is within the USD cap range
-    ///                 Cap Ranges are defined in the constructor or can be updated by the admin.
-    /// @param amount   Amount to check
+    /// @dev                Check if the amount is within the USD cap range
+    ///                     Cap Ranges are defined in the constructor or can be updated by the admin.
+    /// @param amount       Amount to check
     function _checkUSDCaps(uint256 amount) public view {
         uint256 usdValue = quoteEthAmountInUsd1e18(amount);
         if (usdValue < MIN_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
@@ -749,11 +734,11 @@ contract UniversalGateway is
     ///                             - Else: require a direct tokenIn/WETH v3 pool, swap via exactInputSingle, unwrap, return ETH out.
     ///                             - No price/cap logic here; slippage and deadline are enforced; caps are enforced elsewhere.
     ///                             - If `deadline == 0`, it is replaced with `block.timestamp + defaultSwapDeadlineSec`.
-    /// @param tokenIn           ERC-20 being paid as "gas token"
-    /// @param amountIn          amount of tokenIn to pull and swap
-    /// @param amountOutMinETH   min acceptable native (ETH) out (slippage bound)
-    /// @param deadline          swap deadline
-    /// @return ethOut           native ETH received
+    /// @param tokenIn              ERC-20 being paid as "gas token"
+    /// @param amountIn             amount of tokenIn to pull and swap
+    /// @param amountOutMinETH      min acceptable native (ETH) out (slippage bound)
+    /// @param deadline             swap deadline
+    /// @return ethOut              native ETH received
     function swapToNative(address tokenIn, uint256 amountIn, uint256 amountOutMinETH, uint256 deadline)
         internal
         returns (uint256 ethOut)
@@ -779,16 +764,11 @@ contract UniversalGateway is
             if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
             return ethOut;
         }
-
-        // Find a direct tokenIn/WETH pool; revert if none
         (IUniswapV3Pool pool, uint24 fee) = _findV3PoolWithNative(tokenIn);
-        // 'pool' is only used as existence proof; swap goes via router using 'fee'
 
-        // Pull tokens and grant router allowance
         IERC20(tokenIn).safeTransferFrom(_msgSender(), address(this), amountIn);
         IERC20(tokenIn).safeIncreaseAllowance(address(uniV3Router), amountIn);
 
-        // Swap tokenIn -> WETH with exactInputSingle and slippage check
         ISwapRouterV3.ExactInputSingleParams memory params = ISwapRouterV3.ExactInputSingleParams({
             tokenIn: tokenIn,
             tokenOut: WETH,
@@ -796,16 +776,14 @@ contract UniversalGateway is
             recipient: address(this),
             deadline: deadline,
             amountIn: amountIn,
-            amountOutMinimum: amountOutMinETH, // min WETH out, equals min ETH out after unwrap
+            amountOutMinimum: amountOutMinETH, 
             sqrtPriceLimitX96: 0
         });
 
         uint256 wethOut = uniV3Router.exactInputSingle(params);
 
-        // Approval hygiene
         IERC20(tokenIn).forceApprove(address(uniV3Router), 0);
 
-        // Unwrap WETH -> native and compute exact ETH out
         uint256 balBefore = address(this).balance;
         IWETH(WETH).withdraw(wethOut);
         ethOut = address(this).balance - balBefore;
@@ -814,7 +792,6 @@ contract UniversalGateway is
         if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
     }
 
-    /// @dev                Find the best-fee direct v3 pool between tokenIn and WETH.
     function _findV3PoolWithNative(address tokenIn) internal view returns (IUniswapV3Pool pool, uint24 fee) {
         if (tokenIn == address(0) || WETH == address(0)) revert Errors.ZeroAddress();
         if (tokenIn == WETH) {
@@ -830,9 +807,6 @@ contract UniversalGateway is
                 return (IUniswapV3Pool(p), tier);
             }
         }
-
-        // No direct pool found
-
         revert Errors.InvalidInput();
     }
 
