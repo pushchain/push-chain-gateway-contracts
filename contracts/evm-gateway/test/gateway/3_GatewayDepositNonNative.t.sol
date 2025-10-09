@@ -326,7 +326,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
         );
 
         // Execute the transaction
-        console2.log(deadline, block.timestamp);
         vm.prank(user1);
         gateway.sendTxWithFunds(
             MAINNET_USDC, // Bridge token
@@ -414,6 +413,69 @@ contract GatewayDepositNonNativeTest is BaseTest {
     // =========================
     //      PARAMETER VALIDATION TESTS
     // =========================
+
+
+
+    function testUSDCapValidation() public {
+        // Setup: Create a valid payload and revert config
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
+            buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
+            
+        uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
+        (uint256 minEth, uint256 maxEth) = gateway.getMinMaxValueForNative();
+        uint256 aboveMaxEth = maxEth + 1000000; // Above max USD cap
+        
+        vm.deal(user1, aboveMaxEth); // Give user enough ETH for the transaction
+
+        fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount);
+        vm.startPrank(user1);
+        mainnetUSDC.approve(address(gateway), bridgeAmount);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        gateway.sendTxWithFunds{ value: aboveMaxEth }(
+            MAINNET_USDC, // ERC20 token for bridging
+            bridgeAmount,
+            payload,
+            revertCfg_,
+            bytes("")
+        );
+
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        gateway.sendTxWithFunds{ value: minEth - 1 }(
+            MAINNET_USDC, // ERC20 token for bridging
+            bridgeAmount,
+            payload,
+            revertCfg_,
+            bytes("")
+        );
+
+        uint256 amountOutMinETH = 1; // Place holder - this logic won't be reached
+        uint256 deadline = block.timestamp + 3600;
+        uint256 amountIn = 1e5; // Below min cap
+
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        gateway.sendTxWithGas(
+            MAINNET_USDC, // ERC20 token for bridging
+            amountIn,
+            payload,
+            revertCfg_,
+            amountOutMinETH,    
+            deadline,
+            bytes("")
+        );
+        amountIn = 11e6; // Above max cap
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        gateway.sendTxWithGas(
+            MAINNET_USDC, // ERC20 token for bridging
+            amountIn,
+            payload,
+            revertCfg_,
+            amountOutMinETH,
+            deadline,
+            bytes("")
+        );
+
+        vm.stopPrank();
+    }
 
     /// @notice Test sendTxWithGas (ERC20) with zero token address
     function testSendTxWithGas_ERC20_WrongValues_Reverts() public {
@@ -1085,7 +1147,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // by calling sendTxWithGas which uses swapToNative internally
         (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
-        console2.log("token", token);
         vm.prank(user1);
         // USDT approve returns void, not bool
         TetherToken(token).approve(address(gateway), gasAmount);
