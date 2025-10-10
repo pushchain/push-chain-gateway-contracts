@@ -67,4 +67,14 @@ pub enum GatewayError {
 
     #[msg("Invalid token")]
     InvalidToken,
+
+    // Rate limiting errors
+    #[msg("Block USD cap exceeded")]
+    BlockUsdCapExceeded,
+
+    #[msg("Rate limit exceeded")]
+    RateLimitExceeded,
+
+    #[msg("Invalid account")]
+    InvalidAccount,
 }
