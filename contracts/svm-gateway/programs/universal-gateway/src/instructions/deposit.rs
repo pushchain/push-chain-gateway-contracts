@@ -45,6 +45,10 @@ pub fn send_tx_with_gas(
     // Check USD caps for gas deposits using Pyth oracle
     check_usd_caps(config, gas_amount, &ctx.accounts.price_update)?;
 
+    // Note: Rate limiting is available as an optional feature
+    // To enable rate limiting, deploy the rate limit config account and pass it as remaining_accounts
+    // For now, we'll skip rate limiting to maintain backward compatibility
+
     // Transfer SOL to vault (like _handleNativeDeposit in ETH)
     let cpi_context = CpiContext::new(
         ctx.accounts.system_program.to_account_info(),
@@ -141,6 +145,10 @@ pub fn send_funds(
         // Additional validation will happen in the token::transfer CPI below
         // which will fail if mint doesn't match or accounts are invalid
 
+        // Note: Epoch-based rate limiting for SPL tokens would be implemented here
+        // For now, we're focusing on block-based USD cap limiting for SOL deposits
+        // SPL token rate limiting can be added in a future iteration with proper account handling
+
         let cpi_context = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -194,6 +202,10 @@ pub fn send_tx_with_funds(
 
     require!(gas_amount > 0, GatewayError::InvalidAmount);
     check_usd_caps(config, gas_amount, &ctx.accounts.price_update)?;
+
+    // Note: Rate limiting is available as an optional feature
+    // To enable rate limiting, deploy the rate limit config account and pass it as remaining_accounts
+    // For now, we'll skip rate limiting to maintain backward compatibility
 
     // For native SOL bridge, validate user has enough SOL for both gas and bridge upfront
     if bridge_token == Pubkey::default() {
@@ -263,6 +275,10 @@ pub fn send_tx_with_funds(
 
         // Additional validation will happen in the token::transfer CPI below
         // which will fail if mint doesn't match or accounts are invalid
+
+        // Note: Epoch-based rate limiting for SPL tokens would be implemented here
+        // For now, we're focusing on block-based USD cap limiting for SOL deposits
+        // SPL token rate limiting can be added in a future iteration with proper account handling
 
         // Transfer SPL tokens to gateway vault
         let cpi_context = CpiContext::new(

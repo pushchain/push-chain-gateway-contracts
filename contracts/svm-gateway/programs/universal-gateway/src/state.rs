@@ -5,6 +5,8 @@ pub const CONFIG_SEED: &[u8] = b"config";
 pub const VAULT_SEED: &[u8] = b"vault";
 pub const WHITELIST_SEED: &[u8] = b"whitelist";
 pub const TSS_SEED: &[u8] = b"tss";
+pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
+pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
 pub const FEED_ID: &str = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
@@ -21,6 +23,13 @@ pub enum TxType {
     Funds,
     /// FUNDS + PAYLOAD bridge. Requires longer finality. No strict caps for funds (gas caps still apply).
     FundsAndPayload,
+}
+
+/// Epoch usage tracking for rate limiting (matching EVM EpochUsage struct)
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct EpochUsage {
+    pub epoch: u64, // epoch index = block.timestamp / epochDurationSec
+    pub used: u128, // amount consumed in this epoch (token's natural units)
 }
 
 /// Verification types for payload execution (parity with EVM).
@@ -71,6 +80,7 @@ pub struct Config {
 
 impl Config {
     // discriminator + fields + padding
+    // 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100
     pub const LEN: usize = 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100;
 }
 
@@ -84,6 +94,35 @@ pub struct TokenWhitelist {
 
 impl TokenWhitelist {
     pub const LEN: usize = 8 + 4 + (32 * 50) + 1 + 100; // discriminator + vec length + 50 tokens max + bump + padding
+}
+
+/// Rate limiting configuration (separate account for backward compatibility)
+/// PDA: `[b"rate_limit_config"]`. Stores global rate limiting settings.
+#[account]
+pub struct RateLimitConfig {
+    pub block_usd_cap: u128,     // Per-block USD cap (8 decimals). 0 disables.
+    pub epoch_duration_sec: u64, // Epoch duration in seconds for rate limiting
+    pub last_slot: u64,          // Last slot for block-based cap tracking
+    pub consumed_usd_in_block: u128, // USD consumed in current block
+    pub bump: u8,
+}
+
+impl RateLimitConfig {
+    pub const LEN: usize = 8 + 16 + 8 + 8 + 16 + 1 + 100; // discriminator + fields + bump + padding
+}
+
+/// Token-specific rate limiting state (matching EVM implementation)
+/// PDA: `[b"rate_limit", token_mint]`. Tracks epoch-based usage per token.
+#[account]
+pub struct TokenRateLimit {
+    pub token_mint: Pubkey,      // The SPL token mint
+    pub limit_threshold: u128,   // Max amount per epoch (token's natural units)
+    pub epoch_usage: EpochUsage, // Current epoch usage tracking
+    pub bump: u8,
+}
+
+impl TokenRateLimit {
+    pub const LEN: usize = 8 + 32 + 16 + 8 + 16 + 1 + 100; // discriminator + token_mint + limit_threshold + epoch + used + bump + padding
 }
 
 /// TSS state PDA for ECDSA verification (Ethereum-style secp256k1).
@@ -143,6 +182,23 @@ pub struct TokenRemovedFromWhitelist {
 pub struct CapsUpdated {
     pub min_cap_usd: u128,
     pub max_cap_usd: u128,
+}
+
+// Rate limiting events
+#[event]
+pub struct BlockUsdCapUpdated {
+    pub block_usd_cap: u128,
+}
+
+#[event]
+pub struct EpochDurationUpdated {
+    pub epoch_duration_sec: u64,
+}
+
+#[event]
+pub struct TokenRateLimitUpdated {
+    pub token_mint: Pubkey,
+    pub limit_threshold: u128,
 }
 
 // Keep legacy if referenced; prefer TxWithGas above

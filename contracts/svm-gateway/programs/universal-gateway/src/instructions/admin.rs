@@ -137,3 +137,106 @@ pub fn set_pyth_confidence_threshold(ctx: Context<AdminAction>, threshold: u64) 
     ctx.accounts.config.pyth_confidence_threshold = threshold;
     Ok(())
 }
+
+// =========================
+// RATE LIMITING ADMIN FUNCTIONS
+// =========================
+
+/// Set block-based USD cap for rate limiting (matching EVM setBlockUsdCap)
+#[derive(Accounts)]
+pub struct RateLimitConfigAction<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = config.admin == admin.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init_if_needed,
+        payer = admin,
+        space = RateLimitConfig::LEN,
+        seeds = [RATE_LIMIT_CONFIG_SEED],
+        bump
+    )]
+    pub rate_limit_config: Account<'info, RateLimitConfig>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn set_block_usd_cap(ctx: Context<RateLimitConfigAction>, block_usd_cap: u128) -> Result<()> {
+    let rate_limit_config = &mut ctx.accounts.rate_limit_config;
+    rate_limit_config.block_usd_cap = block_usd_cap;
+    rate_limit_config.bump = ctx.bumps.rate_limit_config;
+
+    // Emit event
+    emit!(BlockUsdCapUpdated { block_usd_cap });
+
+    Ok(())
+}
+
+/// Update epoch duration for rate limiting (matching EVM updateEpochDuration)
+pub fn update_epoch_duration(ctx: Context<RateLimitConfigAction>, epoch_duration_sec: u64) -> Result<()> {
+    require!(epoch_duration_sec > 0, GatewayError::InvalidAmount);
+    let rate_limit_config = &mut ctx.accounts.rate_limit_config;
+    rate_limit_config.epoch_duration_sec = epoch_duration_sec;
+    rate_limit_config.bump = ctx.bumps.rate_limit_config;
+
+    // Emit event
+    emit!(EpochDurationUpdated { epoch_duration_sec });
+
+    Ok(())
+}
+
+/// Set token-specific rate limit threshold (matching EVM setTokenToLimitThreshold)
+#[derive(Accounts)]
+pub struct TokenRateLimitAction<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = config.admin == admin.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init_if_needed,
+        payer = admin,
+        space = TokenRateLimit::LEN,
+        seeds = [RATE_LIMIT_SEED, token_mint.key().as_ref()],
+        bump
+    )]
+    pub token_rate_limit: Account<'info, TokenRateLimit>,
+
+    /// CHECK: Token mint address
+    pub token_mint: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn set_token_rate_limit(
+    ctx: Context<TokenRateLimitAction>,
+    limit_threshold: u128,
+) -> Result<()> {
+    require!(limit_threshold > 0, GatewayError::InvalidAmount);
+
+    let token_rate_limit = &mut ctx.accounts.token_rate_limit;
+    token_rate_limit.token_mint = ctx.accounts.token_mint.key();
+    token_rate_limit.limit_threshold = limit_threshold;
+    token_rate_limit.epoch_usage = EpochUsage { epoch: 0, used: 0 };
+
+    // Emit event
+    emit!(TokenRateLimitUpdated {
+        token_mint: ctx.accounts.token_mint.key(),
+        limit_threshold,
+    });
+
+    Ok(())
+}

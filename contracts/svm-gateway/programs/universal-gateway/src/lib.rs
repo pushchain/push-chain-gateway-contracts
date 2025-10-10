@@ -145,6 +145,28 @@ pub mod universal_gateway {
     }
 
     // =========================
+    //        RATE LIMITING
+    // =========================
+
+    /// @notice Set block-based USD cap for rate limiting
+    pub fn set_block_usd_cap(ctx: Context<RateLimitConfigAction>, block_usd_cap: u128) -> Result<()> {
+        instructions::admin::set_block_usd_cap(ctx, block_usd_cap)
+    }
+
+    /// @notice Update epoch duration for rate limiting
+    pub fn update_epoch_duration(ctx: Context<RateLimitConfigAction>, epoch_duration_sec: u64) -> Result<()> {
+        instructions::admin::update_epoch_duration(ctx, epoch_duration_sec)
+    }
+
+    /// @notice Set token-specific rate limit threshold
+    pub fn set_token_rate_limit(
+        ctx: Context<TokenRateLimitAction>,
+        limit_threshold: u128,
+    ) -> Result<()> {
+        instructions::admin::set_token_rate_limit(ctx, limit_threshold)
+    }
+
+    // =========================
     //             TSS
     // =========================
     pub fn init_tss(ctx: Context<InitTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
@@ -266,7 +288,7 @@ pub mod universal_gateway {
 }
 
 // Re-export account structs and types
-pub use instructions::admin::{AdminAction, PauseAction, WhitelistAction};
+pub use instructions::admin::{AdminAction, PauseAction, WhitelistAction, TokenRateLimitAction, RateLimitConfigAction};
 pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas};
 pub use instructions::initialize::Initialize;
 pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
