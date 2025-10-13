@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IWETH} from "../../src/interfaces/IWETH.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IWETH } from "../../src/interfaces/IWETH.sol";
 
 /**
  * @title MockWETH
@@ -13,13 +13,13 @@ import {IWETH} from "../../src/interfaces/IWETH.sol";
  */
 contract MockWETH is ERC20, IWETH {
     uint8 private constant _DECIMALS = 18;
-    
+
     bool public depositPaused;
     bool public withdrawPaused;
     bool public transferPaused;
-    
+
     mapping(address => bool) public blacklisted;
-    
+
     event DepositPaused(address account);
     event DepositUnpaused(address account);
     event WithdrawPaused(address account);
@@ -31,10 +31,7 @@ contract MockWETH is ERC20, IWETH {
     event MockDeposit(address indexed dst, uint256 wad);
     event MockWithdrawal(address indexed src, uint256 wad);
 
-    constructor(
-        string memory name,
-        string memory symbol
-    ) ERC20(name, symbol) {
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) {
         // No initial supply - WETH is typically minted through deposits
     }
 
@@ -52,7 +49,7 @@ contract MockWETH is ERC20, IWETH {
         require(!depositPaused, "MockWETH: deposits are paused");
         require(!blacklisted[msg.sender], "MockWETH: account is blacklisted");
         require(msg.value > 0, "MockWETH: deposit amount must be greater than 0");
-        
+
         _mint(msg.sender, msg.value);
         emit MockDeposit(msg.sender, msg.value);
     }
@@ -66,13 +63,13 @@ contract MockWETH is ERC20, IWETH {
         require(!blacklisted[msg.sender], "MockWETH: account is blacklisted");
         require(wad > 0, "MockWETH: withdrawal amount must be greater than 0");
         require(balanceOf(msg.sender) >= wad, "MockWETH: insufficient balance");
-        
+
         _burn(msg.sender, wad);
-        
+
         // In a real WETH contract, this would transfer ETH
         // For testing, we'll just emit an event
         emit MockWithdrawal(msg.sender, wad);
-        
+
         // Simulate ETH transfer (in real contract: payable(msg.sender).transfer(wad))
         // For testing purposes, we'll just emit the event
     }
@@ -211,7 +208,7 @@ contract MockWETH is ERC20, IWETH {
     /**
      * @dev Simulates a failed withdrawal (for testing error conditions)
      */
-    function simulateWithdrawalFailure(uint256 /* wad */) external pure {
+    function simulateWithdrawalFailure(uint256 /* wad */ ) external pure {
         revert("MockWETH: simulated withdrawal failure");
     }
 
@@ -290,15 +287,11 @@ contract MockWETH is ERC20, IWETH {
      * @return Contract info string
      */
     function getContractInfo() external view returns (string memory) {
-        return string(abi.encodePacked(
-            "MockWETH - ",
-            name(),
-            " (",
-            symbol(),
-            ") - Total Supply: ",
-            _toString(totalSupply()),
-            " wei"
-        ));
+        return string(
+            abi.encodePacked(
+                "MockWETH - ", name(), " (", symbol(), ") - Total Supply: ", _toString(totalSupply()), " wei"
+            )
+        );
     }
 
     /**

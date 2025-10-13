@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @title MockERC20
@@ -15,9 +15,9 @@ contract MockERC20 is ERC20 {
     bool public transferPaused;
     bool public mintPaused;
     bool public burnPaused;
-    
+
     mapping(address => bool) public blacklisted;
-    
+
     event TransferPaused(address account);
     event TransferUnpaused(address account);
     event MintPaused(address account);
@@ -27,12 +27,7 @@ contract MockERC20 is ERC20 {
     event Blacklisted(address account);
     event Unblacklisted(address account);
 
-    constructor(
-        string memory name,
-        string memory symbol,
-        uint8 decimals_,
-        uint256 initialSupply
-    ) ERC20(name, symbol) {
+    constructor(string memory name, string memory symbol, uint8 decimals_, uint256 initialSupply) ERC20(name, symbol) {
         _decimals = decimals_;
         if (initialSupply > 0) {
             _mint(msg.sender, initialSupply);

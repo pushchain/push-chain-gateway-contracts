@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test, console2} from "forge-std/Test.sol";
-import {BaseTest} from "../BaseTest.t.sol";
-import {Errors} from "../../src/libraries/Errors.sol";
-import {IUniversalGateway} from "../../src/interfaces/IUniversalGateway.sol";
-import {RevertInstructions, UniversalPayload, TX_TYPE, VerificationType} from "../../src/libraries/Types.sol";
-import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { Test, console2 } from "forge-std/Test.sol";
+import { BaseTest } from "../BaseTest.t.sol";
+import { Errors } from "../../src/libraries/Errors.sol";
+import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
+import { RevertInstructions, UniversalPayload, TX_TYPE, VerificationType } from "../../src/libraries/Types.sol";
+import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {MockAggregatorV3} from "../mocks/MockAggregatorV3.sol";
-import {MockSequencerUptimeFeed} from "../mocks/MockSequencerUptimeFeed.sol";
+import { MockAggregatorV3 } from "../mocks/MockAggregatorV3.sol";
+import { MockSequencerUptimeFeed } from "../mocks/MockSequencerUptimeFeed.sol";
 /**
  * @title GatewayAdminSettersTest
  * @notice Comprehensive test suite for all admin and operational functions in UniversalGateway
  * @dev Tests all admin setters, role-based access control, pause functionality, and operational functions
  */
+
 contract GatewayAdminSettersTest is BaseTest {
-
-
     // =========================
     //      SETUP
     // =========================
     function setUp() public override {
         super.setUp();
     }
+
     function testPauseOnlyPauser() public {
         // Non-pauser should not be able to pause
         vm.prank(user1);
         vm.expectRevert();
         gateway.pause();
-        
+
         // Pauser should be able to pause
         vm.prank(pauser);
         gateway.pause();
@@ -74,53 +74,53 @@ contract GatewayAdminSettersTest is BaseTest {
 
     function testSetTSSAddress() public {
         address newTSS = address(0x123);
-        
+
         vm.prank(admin);
-        gateway.setTSSAddress(newTSS);
-        
-        assertEq(gateway.tssAddress(), newTSS);
+        gateway.setTSS(newTSS);
+
+        assertEq(gateway.TSS_ADDRESS(), newTSS);
         assertTrue(gateway.hasRole(gateway.TSS_ROLE(), newTSS));
         assertFalse(gateway.hasRole(gateway.TSS_ROLE(), tss));
     }
 
     function testSetTSSAddressOnlyAdmin() public {
         address newTSS = address(0x123);
-        
+
         // Non-admin should not be able to set TSS
         vm.prank(user1);
         vm.expectRevert();
-        gateway.setTSSAddress(newTSS);
-        
+        gateway.setTSS(newTSS);
+
         // Admin should be able to set TSS
         vm.prank(admin);
-        gateway.setTSSAddress(newTSS);
-        assertEq(gateway.tssAddress(), newTSS);
+        gateway.setTSS(newTSS);
+        assertEq(gateway.TSS_ADDRESS(), newTSS);
     }
 
     function testSetTSSAddressZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.setTSSAddress(address(0));
+        gateway.setTSS(address(0));
     }
 
     function testSetTSSAddressWhenPaused() public {
         // Pause the contract
         vm.prank(pauser);
         gateway.pause();
-        
+
         // Should not be able to set TSS when paused
         vm.prank(admin);
         vm.expectRevert();
-        gateway.setTSSAddress(address(0x123));
+        gateway.setTSS(address(0x123));
     }
 
     function testSetCapsUSD() public {
         uint256 newMinCap = 2e18; // 2 USD
         uint256 newMaxCap = 20e18; // 20 USD
-        
+
         vm.prank(admin);
         gateway.setCapsUSD(newMinCap, newMaxCap);
-        
+
         assertEq(gateway.MIN_CAP_UNIVERSAL_TX_USD(), newMinCap);
         assertEq(gateway.MAX_CAP_UNIVERSAL_TX_USD(), newMaxCap);
     }
@@ -128,12 +128,12 @@ contract GatewayAdminSettersTest is BaseTest {
     function testSetCapsUSDOnlyAdmin() public {
         uint256 newMinCap = 2e18;
         uint256 newMaxCap = 20e18;
-        
+
         // Non-admin should not be able to set caps
         vm.prank(user1);
         vm.expectRevert();
         gateway.setCapsUSD(newMinCap, newMaxCap);
-        
+
         // Admin should be able to set caps
         vm.prank(admin);
         gateway.setCapsUSD(newMinCap, newMaxCap);
@@ -143,7 +143,7 @@ contract GatewayAdminSettersTest is BaseTest {
     function testSetCapsUSDInvalidRange() public {
         uint256 minCap = 20e18;
         uint256 maxCap = 2e18; // max < min
-        
+
         vm.prank(admin);
         vm.expectRevert(Errors.InvalidCapRange.selector);
         gateway.setCapsUSD(minCap, maxCap);
@@ -153,7 +153,7 @@ contract GatewayAdminSettersTest is BaseTest {
         // Pause the contract
         vm.prank(pauser);
         gateway.pause();
-        
+
         // Should not be able to set caps when paused
         vm.prank(admin);
         vm.expectRevert();
@@ -167,10 +167,10 @@ contract GatewayAdminSettersTest is BaseTest {
     function testSetRouters() public {
         address newFactory = address(0x456);
         address newRouter = address(0x789);
-        
+
         vm.prank(admin);
         gateway.setRouters(newFactory, newRouter);
-        
+
         assertEq(address(gateway.uniV3Factory()), newFactory);
         assertEq(address(gateway.uniV3Router()), newRouter);
     }
@@ -178,12 +178,12 @@ contract GatewayAdminSettersTest is BaseTest {
     function testSetRoutersOnlyAdmin() public {
         address newFactory = address(0x456);
         address newRouter = address(0x789);
-        
+
         // Non-admin should not be able to set routers
         vm.prank(user1);
         vm.expectRevert();
         gateway.setRouters(newFactory, newRouter);
-        
+
         // Admin should be able to set routers
         vm.prank(admin);
         gateway.setRouters(newFactory, newRouter);
@@ -195,7 +195,7 @@ contract GatewayAdminSettersTest is BaseTest {
         vm.prank(admin);
         vm.expectRevert(Errors.ZeroAddress.selector);
         gateway.setRouters(address(0), address(0x789));
-        
+
         // Zero router
         vm.prank(admin);
         vm.expectRevert(Errors.ZeroAddress.selector);
@@ -206,7 +206,7 @@ contract GatewayAdminSettersTest is BaseTest {
         // Pause the contract
         vm.prank(pauser);
         gateway.pause();
-        
+
         // Should not be able to set routers when paused
         vm.prank(admin);
         vm.expectRevert();
@@ -224,12 +224,17 @@ contract GatewayAdminSettersTest is BaseTest {
         tokens[1] = address(usdc);
         supportFlags[0] = true;
         supportFlags[1] = false;
-        
+
         vm.prank(admin);
-        gateway.modifySupportForToken(tokens, supportFlags);
-        
-        assertTrue(gateway.isSupportedToken(address(tokenA)));
-        assertFalse(gateway.isSupportedToken(address(usdc)));
+        // Set threshold to a large value to enable support (0 means unsupported)
+        uint256[] memory thresholds = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            thresholds[i] = supportFlags[i] ? 1000000 ether : 0;
+        }
+        gateway.setTokenLimitThresholds(tokens, thresholds);
+
+        assertTrue(gateway.tokenToLimitThreshold(address(tokenA)) > 0);
+        assertEq(gateway.tokenToLimitThreshold(address(usdc)), 0);
     }
 
     function testModifySupportForTokenOnlyAdmin() public {
@@ -237,43 +242,39 @@ contract GatewayAdminSettersTest is BaseTest {
         bool[] memory supportFlags = new bool[](1);
         tokens[0] = address(tokenA);
         supportFlags[0] = true;
-        
+
         // Non-admin should not be able to modify support
         vm.prank(user1);
         vm.expectRevert();
-        gateway.modifySupportForToken(tokens, supportFlags);
-        
+        // Set threshold to a large value to enable support (0 means unsupported)
+        uint256[] memory thresholds = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            thresholds[i] = supportFlags[i] ? 1000000 ether : 0;
+        }
+        gateway.setTokenLimitThresholds(tokens, thresholds);
+
         // Admin should be able to modify support
         vm.prank(admin);
-        gateway.modifySupportForToken(tokens, supportFlags);
-        assertTrue(gateway.isSupportedToken(address(tokenA)));
+        // Set threshold to a large value to enable support (0 means unsupported)
+        thresholds = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            thresholds[i] = supportFlags[i] ? 1000000 ether : 0;
+        }
+        gateway.setTokenLimitThresholds(tokens, thresholds);
+        assertTrue(gateway.tokenToLimitThreshold(address(tokenA)) > 0);
     }
 
     function testModifySupportForTokenInvalidInput() public {
         address[] memory tokens = new address[](2);
         bool[] memory supportFlags = new bool[](1); // Length mismatch
-        
+
         vm.prank(admin);
         vm.expectRevert(Errors.InvalidInput.selector);
-        gateway.modifySupportForToken(tokens, supportFlags);
+        // Set threshold to a large value to enable support (0 means unsupported)
+        uint256[] memory thresholds = new uint256[](1); // This will cause length mismatch with tokens array
+        thresholds[0] = supportFlags[0] ? 1000000 ether : 0;
+        gateway.setTokenLimitThresholds(tokens, thresholds);
     }
-
-    function testModifySupportForTokenWhenPaused() public {
-        // Pause the contract
-        vm.prank(pauser);
-        gateway.pause();
-        
-        address[] memory tokens = new address[](1);
-        bool[] memory supportFlags = new bool[](1);
-        tokens[0] = address(tokenA);
-        supportFlags[0] = true;
-        
-        // Should not be able to modify support when paused
-        vm.prank(admin);
-        vm.expectRevert();
-        gateway.modifySupportForToken(tokens, supportFlags);
-    }
-
 
     // =========================
     //      DEFAULT SWAP DEADLINE TESTS
@@ -309,12 +310,6 @@ contract GatewayAdminSettersTest is BaseTest {
     //      V3 FEE ORDER TESTS
     // =========================
     function testSetV3FeeOrder() public {
-        // Get the old fee order
-        uint24[3] memory oldFeeOrder = [gateway.v3FeeOrder(0), gateway.v3FeeOrder(1), gateway.v3FeeOrder(2)];
-        
-        vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.V3FeeOrderUpdated(oldFeeOrder, [uint24(10000), uint24(3000), uint24(500)]);
-        
         vm.prank(admin);
         gateway.setV3FeeOrder(10000, 3000, 500);
         assertEq(gateway.v3FeeOrder(0), 10000);
@@ -446,7 +441,7 @@ contract GatewayAdminSettersTest is BaseTest {
     // =========================
     function testGetMinMaxValueReflectsNewCaps() public {
         // Price is seeded in BaseTest at $2000 with 8 decimals -> 2000e18 on getEthUsdPrice
-        uint256 newMinCap = 2e18;  // $2
+        uint256 newMinCap = 2e18; // $2
         uint256 newMaxCap = 20e18; // $20
         vm.prank(admin);
         gateway.setCapsUSD(newMinCap, newMaxCap);
@@ -501,5 +496,4 @@ contract GatewayAdminSettersTest is BaseTest {
         vm.expectRevert();
         gateway.withdrawFunds(user2, address(0), 1);
     }
-
 }

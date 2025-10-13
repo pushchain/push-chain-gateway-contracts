@@ -35,7 +35,7 @@ import {SafeERC20}                  from "@openzeppelin/contracts/token/ERC20/ut
 import {Errors}                     from "./libraries/Errors.sol";
 import {IUniversalGatewayV0}          from "./interfaces/IUniversalGatewayV0.sol";
 
-import {RevertInstructions, UniversalPayload, TX_TYPE} from "./libraries/Types.sol";
+import {RevertInstructions, UniversalPayload, TX_TYPE, EpochUsage} from "./libraries/Types.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -63,14 +63,14 @@ contract UniversalGatewayV0 is
     // =========================
 
     /// @notice The current TSS address (receives native from universal-tx deposits)
-    address public tssAddress;
+    address public TSS_ADDRESS;
 
     /// @notice USD caps for universal tx deposits (1e18 = $1)
     uint256 public MIN_CAP_UNIVERSAL_TX_USD; // inclusive lower bound = 1USD = 1e18
     uint256 public MAX_CAP_UNIVERSAL_TX_USD; // inclusive upper bound = 10USD = 10e18
 
     /// @notice Token whitelist for BRIDGING (assets locked in this contract)
-    mapping(address => bool) public isSupportedToken;
+    mapping(address => bool) public isSupportedToken; // Deprecated - Use tokenToLimitThreshold instead
 
     /// @notice Uniswap V3 factory & router (chain-specific)
     IUniswapV3Factory public uniV3Factory;
@@ -97,6 +97,17 @@ contract UniversalGatewayV0 is
     uint24 public POOL_FEE = 3000;
     /// @notice USDT/USD price feed for calculating final USD amount
     AggregatorV3Interface public usdtUsdPriceFeed;
+
+
+    /// @notice Per-block cap for total USD value spend on GAS routes (1e18 = $1). 0 disables.
+    uint256 public BLOCK_USD_CAP;
+    /// @dev Two-scalar accounting for block-based USD cap checks
+    uint256 private _lastBlockNumber;
+    uint256 private _consumedUSDinBlock;
+    uint256 public epochDurationSec;                            // Epoch duration in seconds.
+    mapping(address => uint256) public tokenToLimitThreshold;   // Per-token epoch limit thresholds.
+    mapping(address => EpochUsage) private _usage;              // Current-epoch usage per token (address(0) represents native).
+
 
     uint256[40] private __gap;
 
@@ -137,7 +148,7 @@ contract UniversalGatewayV0 is
         _grantRole(PAUSER_ROLE,          pauser);
         _grantRole(TSS_ROLE,             tss);
 
-        tssAddress = tss;
+        TSS_ADDRESS = tss;
         MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
         MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
         
@@ -156,7 +167,6 @@ contract UniversalGatewayV0 is
         ethUsdFeed = AggregatorV3Interface(_ethUsdPriceFeed);
         USDT = _usdtAddress;
 
-        emit ChainlinkStalePeriodUpdated(chainlinkStalePeriod);
     }
 
     /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.
@@ -185,14 +195,13 @@ contract UniversalGatewayV0 is
     /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.
     function setTSSAddress(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         if (newTSS == address(0)) revert Errors.ZeroAddress();
-        address old = tssAddress;
+        address old = TSS_ADDRESS;
 
         // transfer role
         if (hasRole(TSS_ROLE, old)) _revokeRole(TSS_ROLE, old);
         _grantRole(TSS_ROLE, newTSS);
 
-        tssAddress = newTSS;
-        emit TSSAddressUpdated(old, newTSS);
+        TSS_ADDRESS = newTSS;
     }
 
     /// @notice Allows the admin to set the USD cap ranges
@@ -211,7 +220,6 @@ contract UniversalGatewayV0 is
     function setDefaultSwapDeadline(uint256 deadlineSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         if (deadlineSec == 0) revert Errors.InvalidAmount();
         defaultSwapDeadlineSec = deadlineSec;
-        emit DefaultSwapDeadlineUpdated(deadlineSec);
     }
 
     /// @notice Allows the admin to set the Uniswap V3 factory and router
@@ -231,7 +239,6 @@ contract UniversalGatewayV0 is
         if (tokens.length != isSupported.length) revert Errors.InvalidInput();
         for (uint256 i = 0; i < tokens.length; i++) {
             isSupportedToken[tokens[i]] = isSupported[i];
-            emit TokenSupportModified(tokens[i], isSupported[i]);
         }
     }
 
@@ -253,28 +260,65 @@ contract UniversalGatewayV0 is
         uint8 dec = f.decimals();
         ethUsdFeed = f;
         chainlinkEthUsdDecimals = dec;
-        emit ChainlinkEthUsdFeedUpdated(feed, dec);
     }
 
     /// @notice Configure the maximum allowed data staleness for Chainlink reads
     /// @param stalePeriodSec If > 0, latestRoundData().updatedAt must be within this many seconds
     function setChainlinkStalePeriod(uint256 stalePeriodSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         chainlinkStalePeriod = stalePeriodSec;
-        emit ChainlinkStalePeriodUpdated(stalePeriodSec);
     }
 
     /// @notice Set (or clear) the Chainlink L2 sequencer uptime feed for rollups
     /// @dev    Set to address(0) on L1s / chains without a sequencer feed.
     function setL2SequencerFeed(address feed) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         l2SequencerFeed = AggregatorV3Interface(feed);
-        emit L2SequencerFeedUpdated(feed);
     }
 
     /// @notice Configure the grace window after sequencer comes back up
     /// @param gracePeriodSec If > 0, require `block.timestamp - sequencer.updatedAt > gracePeriodSec`
     function setL2SequencerGracePeriod(uint256 gracePeriodSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         l2SequencerGracePeriodSec = gracePeriodSec;
-        emit L2SequencerGracePeriodUpdated(gracePeriodSec);
+    }
+
+    /// @notice             Set the per-block USD cap for GAS routes (1e18 = $1). Set to 0 to disable.
+    function setBlockUsdCap(uint256 cap1e18) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        BLOCK_USD_CAP = cap1e18;
+    }
+
+    /// @notice             Set limit thresholds for a batch of tokens (0 disables support for that token)
+    /// @param tokens       tokens to set limit thresholds for
+    /// @param thresholds   limit thresholds for the tokens
+    function setTokenLimitThresholds(address[] calldata tokens, uint256[] calldata thresholds)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        if (tokens.length != thresholds.length) revert Errors.InvalidInput();
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokenToLimitThreshold[tokens[i]] = thresholds[i];
+            emit TokenLimitThresholdUpdated(tokens[i], thresholds[i]);
+        }
+    }
+
+    /// @notice             Update limit thresholds for a batch of tokens
+    /// @param tokens       tokens to update limit thresholds for
+    /// @param thresholds   limit thresholds for the tokens
+    function updateTokenLimitThreshold(address[] calldata tokens, uint256[] calldata thresholds)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        if (tokens.length != thresholds.length) revert Errors.InvalidInput();
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokenToLimitThreshold[tokens[i]] = thresholds[i];
+            emit TokenLimitThresholdUpdated(tokens[i], thresholds[i]);
+        }
+    }
+
+    /// @notice               Update the epoch duration (hard reset schedule)
+    /// @param newDurationSec new epoch duration
+    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 old = epochDurationSec;
+        epochDurationSec = newDurationSec;
+        emit EpochDurationUpdated(old, newDurationSec);
     }
 
     // =========================
@@ -349,9 +393,6 @@ contract UniversalGatewayV0 is
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
 
-
-        _checkUSDCaps(msg.value);
-        _handleNativeDeposit(msg.value);
         _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData);  
     }
 
@@ -375,8 +416,6 @@ contract UniversalGatewayV0 is
         // Swap token to native ETH
         uint256 ethOut = swapToNative(tokenIn, amountIn, amountOutMinETH, deadline);
 
-        // Forward ETH to TSS and emit deposit event
-        _handleNativeDeposit(ethOut);
         _sendTxWithGas(
             _msgSender(),
             abi.encode(payload),
@@ -404,6 +443,12 @@ contract UniversalGatewayV0 is
     ) internal {
         if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
 
+
+
+        //_checkUSDCaps(_nativeTokenAmount);
+        _checkBlockUSDCap(_nativeTokenAmount);
+        _handleNativeDeposit(_nativeTokenAmount);
+
         emit UniversalTx({
             sender: _caller,
             recipient: address(0),
@@ -430,11 +475,12 @@ contract UniversalGatewayV0 is
         if (recipient == address(0)) revert Errors.InvalidRecipient();
 
         if (bridgeToken == address(0)) {
-            // native: amount must match value; funds are held in this contract for TVL
             if (msg.value != bridgeAmount) revert Errors.InvalidAmount();
+            // _consumeRateLimit(address(0), bridgeAmount);
             _handleNativeDeposit(bridgeAmount);
         } else {
             if (msg.value != 0) revert Errors.InvalidAmount();
+            //_consumeRateLimit(bridgeToken, bridgeAmount);
             _handleTokenDeposit(bridgeToken, bridgeAmount);
         }
 
@@ -443,7 +489,7 @@ contract UniversalGatewayV0 is
             recipient,
             bridgeToken,
             bridgeAmount,
-            bytes(""), // Empty payload for funds-only bridge
+            bytes(""),              // Empty payload for funds-only bridge
             revertInstruction,
             TX_TYPE.FUNDS,
             bytes("")
@@ -468,6 +514,36 @@ contract UniversalGatewayV0 is
 
         // Check and initiate Universal TX 
         _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _sendTxWithFunds(
+            _msgSender(),
+            address(0),
+            bridgeToken,
+            bridgeAmount,
+            abi.encode(payload),
+            revertInstruction,
+            TX_TYPE.FUNDS_AND_PAYLOAD,
+            signatureData
+        );
+    }
+
+     /// @notice NEW Implementation of sendTxWithFunds with new fee abstraction route - ONLY FOR TESTNET 
+    function sendTxWithFunds_new(
+        address bridgeToken,
+        uint256 bridgeAmount,
+        UniversalPayload calldata payload,
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
+    ) external payable nonReentrant whenNotPaused {
+        if (bridgeAmount == 0) revert Errors.InvalidAmount();
+        uint256 gasAmount = msg.value;
+        if (gasAmount == 0) revert Errors.InvalidAmount();
+
+        _sendTxWithGas(_msgSender(), bytes(""), gasAmount, revertInstruction, TX_TYPE.GAS, signatureData);
+
+        // performs rate-limit checks and handle deposit
+        //_consumeRateLimit(bridgeToken, bridgeAmount);
+        _handleTokenDeposit(bridgeToken, bridgeAmount);
+
         _sendTxWithFunds(
             _msgSender(),
             address(0),
@@ -515,6 +591,42 @@ contract UniversalGatewayV0 is
             signatureData
         );
 
+    }
+
+    /// @notice NEW Implementation of sendTxWithFunds with new fee abstraction route - ONLY FOR TESTNET 
+    function sendTxWithFunds_new(
+        address bridgeToken,
+        uint256 bridgeAmount,
+        address gasToken,
+        uint256 gasAmount,
+        uint256 amountOutMinETH,
+        uint256 deadline,
+        UniversalPayload calldata payload,
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
+    ) external nonReentrant whenNotPaused {
+        if (bridgeAmount == 0) revert Errors.InvalidAmount();
+        if (gasToken == address(0)) revert Errors.InvalidInput();
+        if (gasAmount == 0) revert Errors.InvalidAmount();
+
+        // Swap gasToken to native ETH
+        uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
+
+        _sendTxWithGas(_msgSender(), bytes(""), nativeGasAmount, revertInstruction, TX_TYPE.GAS, signatureData);
+
+        // performs rate-limit checks and handle deposit
+        //_consumeRateLimit(bridgeToken, bridgeAmount);
+        _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _sendTxWithFunds(
+            _msgSender(),
+            address(0),
+            bridgeToken,
+            bridgeAmount,
+            abi.encode(payload),
+            revertInstruction,
+            TX_TYPE.FUNDS_AND_PAYLOAD,
+            signatureData
+        );
     }
 
     /// @notice Internal helper function to deposit for Universal TX.   
@@ -718,9 +830,33 @@ contract UniversalGatewayV0 is
         if (usdValue > MAX_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
     }
 
+    /// @dev                Enforce per-block USD budget for GAS routes using two-scalar accounting.
+    ///                     - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.
+    ///                     - Resets the window when a new block is observed.
+    /// @param amountWei    native amount (in wei) to be accounted against the current block's USD budget
+    function _checkBlockUSDCap(uint256 amountWei) public {
+        uint256 cap = BLOCK_USD_CAP;
+        if (cap == 0) return; // disabled
+
+        if (block.number != _lastBlockNumber) {
+            _lastBlockNumber = block.number;
+            _consumedUSDinBlock = 0;
+        }
+
+        uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
+
+        if (usd1e18 > cap) revert Errors.BlockCapLimitExceeded();
+
+        unchecked {
+            uint256 newUsed = _consumedUSDinBlock + usd1e18;
+            if (newUsed > cap) revert Errors.BlockCapLimitExceeded();
+            _consumedUSDinBlock = newUsed;
+        }
+    }
+
     /// @dev Forward native ETH to TSS; returns amount forwarded (= msg.value or computed after swap).
     function _handleNativeDeposit(uint256 amount) internal returns (uint256) {
-        (bool ok, ) = payable(tssAddress).call{value: amount}("");
+        (bool ok, ) = payable(TSS_ADDRESS).call{value: amount}("");
         if (!ok) revert Errors.DepositFailed();
         return amount;
     }
@@ -752,6 +888,53 @@ contract UniversalGatewayV0 is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
         IERC20(token).safeTransfer(recipient, amount);
     }
+
+    /// @dev                Enforce and consume the per-token epoch rate limit. 
+    ///                     For a token, if threshold is 0, it is unsupported.
+    ///                     epoch.used is reset to 0 when a new epoch starts (no rollover).
+    /// @param token        token address to consume rate limit
+    /// @param amount       amount of token to consume rate limit
+    function _consumeRateLimit(address token, uint256 amount) internal {
+        uint256 threshold = tokenToLimitThreshold[token];
+        if (threshold == 0) revert Errors.NotSupported();
+
+        uint256 _epochDuration = epochDurationSec;
+        if (_epochDuration == 0) revert Errors.InvalidData();
+
+        uint64 current = uint64(block.timestamp / _epochDuration);
+        EpochUsage storage e = _usage[token];
+
+        if (e.epoch != current) {
+            e.epoch = current;
+            e.used = 0;
+        }
+
+        unchecked {
+            uint256 newUsed = uint256(e.used) + amount; // natural units
+            if (newUsed > threshold) revert Errors.RateLimitExceeded();
+            e.used = uint192(newUsed);
+        }
+    }
+
+    /// @notice             Returns both the total token amount used and remaining in the current epoch.
+    /// @param token        token address to query (use address(0) for native)
+    /// @return used        amount already consumed in the current epoch (in token's natural units)
+    /// @return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
+    function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining) {
+        uint256 thr = tokenToLimitThreshold[token];
+        if (thr == 0) return (0, 0);
+
+        uint256 _epochDuration = epochDurationSec;
+        if (_epochDuration == 0) return (0, 0);
+
+        uint64 current = uint64(block.timestamp / _epochDuration);
+        EpochUsage storage e = _usage[token];
+        uint256 u = (e.epoch == current) ? uint256(e.used) : 0;
+
+        used = u;
+        remaining = u >= thr ? 0 : (thr - u);
+    }
+
 
     /// @dev Swap any ERC20 to the chain's native token via a direct Uniswap v3 pool to WETH.
     ///      - If tokenIn == WETH: unwrap to native and return.

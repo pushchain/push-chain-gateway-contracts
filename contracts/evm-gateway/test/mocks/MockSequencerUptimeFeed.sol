@@ -1,4 +1,3 @@
-
 /// @dev Minimal Chainlink Sequencer Uptime Feed mock (status: 0=UP, 1=DOWN)
 contract MockSequencerUptimeFeed {
     int256 public status;
@@ -18,13 +17,7 @@ contract MockSequencerUptimeFeed {
     function latestRoundData()
         external
         view
-        returns (
-            uint80 _roundId,
-            int256 _status,
-            uint256 _startedAt,
-            uint256 _updatedAt,
-            uint80 _answeredInRound
-        )
+        returns (uint80 _roundId, int256 _status, uint256 _startedAt, uint256 _updatedAt, uint80 _answeredInRound)
     {
         return (roundId, status, 0, updatedAt, roundId);
     }
