@@ -414,17 +414,15 @@ contract GatewayDepositNonNativeTest is BaseTest {
     //      PARAMETER VALIDATION TESTS
     // =========================
 
-
-
     function testUSDCapValidation() public {
         // Setup: Create a valid payload and revert config
         (UniversalPayload memory payload, RevertInstructions memory revertCfg_) =
             buildERC20Payload(recipient, abi.encodeWithSignature("receive()"), 0);
-            
+
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
         (uint256 minEth, uint256 maxEth) = gateway.getMinMaxValueForNative();
         uint256 aboveMaxEth = maxEth + 1000000; // Above max USD cap
-        
+
         vm.deal(user1, aboveMaxEth); // Give user enough ETH for the transaction
 
         fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount);
@@ -458,7 +456,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             amountIn,
             payload,
             revertCfg_,
-            amountOutMinETH,    
+            amountOutMinETH,
             deadline,
             bytes("")
         );
