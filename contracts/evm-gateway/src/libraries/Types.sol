@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-//import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-
 /// @notice Transaction Types in Universal Gateway
 enum TX_TYPE {
     /// @dev        only for funding the UEA on Push Chain with GAS
