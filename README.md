@@ -20,6 +20,7 @@ This package contains the core `src/UniversalGateway.sol` implementation, its pu
 - Deployment and Verification
 - Security Notes
 
+> Note: The README is designed based on EVM UniversalGateway. However, the same also applies for SVM ( Solana Smart Contracts)
 ## Overview
 
 The gateway exposes two categories of routes:
