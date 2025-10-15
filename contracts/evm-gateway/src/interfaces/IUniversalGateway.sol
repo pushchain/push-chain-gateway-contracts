@@ -19,6 +19,16 @@ interface IUniversalGateway {
         TX_TYPE txType,
         bytes signatureData
     );
+    /// @notice         Universal tx execution event. Emits for outbound transactions from Push Chain to external chains
+    event UniversalTxExecuted(
+        bytes32 indexed txID,
+        address indexed originCaller,
+        address indexed target,
+        address token,
+        uint256 amount,
+        bytes data
+    );
+
     /// @notice         Withdraw funds event
     event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);   
     /// @notice         Caps updated event

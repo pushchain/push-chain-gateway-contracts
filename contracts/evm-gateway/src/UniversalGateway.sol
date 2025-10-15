@@ -98,7 +98,13 @@ contract UniversalGateway is
     uint256 public l2SequencerGracePeriodSec;                   // L2 Sequencer grace period. (e.g., 300 seconds)  
     AggregatorV3Interface public l2SequencerFeed;               // L2 Sequencer uptime feed & grace period for rollups (if set, enforce sequencer up + grace)
     
+    /// @notice Map to track if a payload has been executed
+     mapping(bytes32 => bool) private isExecuted;
 
+    /// @notice Public getter for isExecuted mapping
+    function isTxExecuted(bytes32 txID) external view returns (bool) {
+        return isExecuted[txID];
+    }
 
     /// @notice Gap for future upgrades.
     uint256[43] private __gap;
@@ -528,6 +534,51 @@ contract UniversalGateway is
     }
 
     // =========================
+    //       GATEWAY Payload Execution Paths
+    // =========================
+
+    /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
+    /// @dev                   Allows outbound payload execution from Push Chain to external chains.
+    ///                        - The tokens used for payload execution, are to be burnt on Push Chain.
+    ///                        - approval and reset of approval is handled by the gateway.
+    /// @param txID            unique transaction identifier
+    /// @param originCaller    original caller/user on source chain
+    /// @param token           token address (address(0) for native)
+    /// @param target          target contract address to execute call
+    /// @param amount          amount of token/native to send along
+    /// @param payload         calldata to be executed on target
+    function executeUniversalTx(
+        bytes32 txID,
+        address originCaller,
+        address token,
+        address target,
+        uint256 amount,
+        bytes calldata payload
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+
+        if (token == address(0)) { // native token
+            if (msg.value != amount) revert Errors.InvalidAmount();
+            _executeCall(target, payload, amount);
+        } else {                    // ERC20 token
+            if (msg.value != 0) revert Errors.InvalidAmount();
+            if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+
+            _resetApproval(token, target);             // reset approval to zero
+            _safeApprove(token, target, amount);     // approve target to spend amount
+            _executeCall(target, payload, 0);          // execute call with required amount
+            _resetApproval(token, target);             // reset approval back to zero
+        }
+
+        isExecuted[txID] = true;
+
+        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
+    }
+
+    // =========================
     //      PUBLIC HELPERS
     // =========================
 
@@ -681,6 +732,46 @@ contract UniversalGateway is
 
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
         IERC20(token).safeTransfer(recipient, amount);
+    }
+
+    /// @dev Safely reset approval to zero before granting any new allowance to target contract.
+    function _resetApproval(address token, address spender) internal {
+        (bool success, bytes memory returnData) =
+            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, 0));
+        if (!success) {
+            // Some non-standard tokens revert on zero-approval; treat as reset-ok to avoid breaking the flow.
+            return;
+        }
+        // If token returns a boolean, ensure it is true; if no return data, assume success (USDT-style).
+        if (returnData.length > 0) {
+            bool approved = abi.decode(returnData, (bool));
+            if (!approved) revert Errors.InvalidData();
+        }
+    }
+
+    /// @dev Safely approve ERC20 token spending to a target contract.
+    ///      Low-level call must succeed AND (if returns data) decode to true; otherwise revert.
+    function _safeApprove(address token, address spender, uint256 amount) internal {
+        (bool success, bytes memory returnData) =
+            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, amount));
+        if (!success) {
+            revert Errors.InvalidData(); // approval failed
+        }
+        if (returnData.length > 0) {
+            bool approved = abi.decode(returnData, (bool));
+            if (!approved) {
+                revert Errors.InvalidData(); // approval failed
+            }
+        }
+    }
+
+    /// @dev Unified helper to execute a low-level call to target
+    ///      Call can be executed with native value or ERC20 token. 
+    ///      Reverts with Errors.ExecutionFailed() if the call fails (no bubbling).
+    function _executeCall(address target, bytes calldata payload, uint256 value) internal returns (bytes memory result) {
+        (bool success, bytes memory ret) = target.call{value: value}(payload);
+        if (!success) revert Errors.ExecutionFailed();
+        return ret;
     }
 
     /// @dev                Enforce and consume the per-token epoch rate limit. 

@@ -10,6 +10,7 @@ library Errors {
     error InvalidAmount();
     error InvalidTxType();
     error InvalidCapRange();
+    error PayloadExecuted();
 
     // =========================
     //           UniversalGateway ERRORS
@@ -17,6 +18,7 @@ library Errors {
     error NotSupported();
     error DepositFailed();
     error WithdrawFailed();
+    error ExecutionFailed();
     error InvalidRecipient();
     error RateLimitExceeded();
     error BlockCapLimitExceeded();
