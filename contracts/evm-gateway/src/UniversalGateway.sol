@@ -99,12 +99,7 @@ contract UniversalGateway is
     AggregatorV3Interface public l2SequencerFeed;               // L2 Sequencer uptime feed & grace period for rollups (if set, enforce sequencer up + grace)
     
     /// @notice Map to track if a payload has been executed
-     mapping(bytes32 => bool) private isExecuted;
-
-    /// @notice Public getter for isExecuted mapping
-    function isTxExecuted(bytes32 txID) external view returns (bool) {
-        return isExecuted[txID];
-    }
+    mapping(bytes32 => bool) public isExecuted;
 
     /// @notice Gap for future upgrades.
     uint256[43] private __gap;
