@@ -104,9 +104,8 @@ contract UniversalGatewayPC is
             _calculateGasFeesWithLimit(token, gasLimit);
         _moveFees(msg.sender, gasToken, gasFee);
 
-        // Burn PRC20 on Push Chain
-        bool ok = IPRC20(token).burn(amount);
-        if (!ok) revert Errors.TokenBurnFailed(token, amount);
+        // Move PRC20 to this contract and burn on Push Chain
+        _burnPRC20(msg.sender, token, amount);
 
         // Emit
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
@@ -139,9 +138,8 @@ contract UniversalGatewayPC is
             _calculateGasFeesWithLimit(token, gasLimit);
         _moveFees(msg.sender, gasToken, gasFee);
 
-        // Burn PRC20 on Push Chain
-        bool ok = IPRC20(token).burn(amount);
-        if (!ok) revert Errors.TokenBurnFailed(token, amount);
+        // Move PRC20 to this contract and burn on Push Chain
+        _burnPRC20(msg.sender, token, amount);
 
         // Emit
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
@@ -199,5 +197,14 @@ contract UniversalGatewayPC is
 
         bool ok = IPRC20(gasToken).transferFrom(from, _ueModule, gasFee);
         if (!ok) revert Errors.GasFeeTransferFailed(gasToken, from, gasFee);
+    }
+
+    function _burnPRC20(address from, address token, uint256 amount) internal {
+        // Pull PRC20 into this gateway first
+        IPRC20(token).transferFrom(from, address(this), amount);
+
+        // Then burn from this contract's balance
+        bool ok = IPRC20(token).burn(amount);
+        if (!ok) revert Errors.TokenBurnFailed(token, amount);
     }
 }
