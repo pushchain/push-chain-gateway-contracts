@@ -13,18 +13,16 @@ pragma solidity 0.8.26;
  *      Integrates with UniversalCore to discover the Universal Executor Module (fee sink)
  *      and with PRC20 tokens to compute gas fees and burn on withdraw.
  */
+import { Errors } from "./libraries/Errors.sol";
+import { IPRC20 } from "./interfaces/IPRC20.sol";
+import { RevertInstructions } from "./libraries/Types.sol";
+import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
+import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
 
-import {Errors} from "./libraries/Errors.sol";
-import {IPRC20} from "./interfaces/IPRC20.sol";
-import {RevertInstructions} from "./libraries/Types.sol";
-import {IUniversalCore} from "./interfaces/IUniversalCore.sol";
-import {IUniversalGatewayPC} from "./interfaces/IUniversalGatewayPC.sol";
-
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 contract UniversalGatewayPC is
     Initializable,
@@ -44,16 +42,11 @@ contract UniversalGatewayPC is
     /// @dev    If UniversalCore updates, call {refreshUniversalExecutor} to recache.
     address public UNIVERSAL_EXECUTOR_MODULE;
 
-     // ========= Storage gap for upgradeability =========
+    // ========= Storage gap for upgradeability =========
     uint256[47] private __gap;
 
-
-
     // ========= Initializer =========
-    function initialize(address admin, address pauser, address universalCore)
-        external
-        initializer
-    {
+    function initialize(address admin, address pauser, address universalCore) external initializer {
         if (admin == address(0) || pauser == address(0) || universalCore == address(0)) revert Errors.ZeroAddress();
 
         __AccessControl_init();
@@ -78,7 +71,6 @@ contract UniversalGatewayPC is
     function refreshUniversalExecutor() external onlyRole(DEFAULT_ADMIN_ROLE) {
         UNIVERSAL_EXECUTOR_MODULE = IUniversalCore(UNIVERSAL_CORE).UNIVERSAL_EXECUTOR_MODULE();
     }
-
 
     function pause() external onlyRole(PAUSER_ROLE) whenNotPaused {
         _pause();
