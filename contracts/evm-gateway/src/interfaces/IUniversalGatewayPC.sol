@@ -31,7 +31,8 @@ interface IUniversalGatewayPC {
         uint256 gasFee,
         uint256 gasLimit,
         bytes payload,
-        uint256 protocolFee
+        uint256 protocolFee,
+        RevertInstructions revertInstruction
     );
 
     // ========= Admin Functions =========

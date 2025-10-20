@@ -111,7 +111,7 @@ contract UniversalGatewayPC is
         // Emit
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
         emit UniversalTxWithdraw(
-            msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee
+            msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee, revertInstruction
         );
     }
 
@@ -120,7 +120,7 @@ contract UniversalGatewayPC is
      * @param target             Raw destination (contract) address on origin chain.
      * @param token              PRC20 token address on Push Chain.
      * @param amount             Amount to withdraw (burn on Push, unlock at origin).
-     * @param payload            ABI-encoded calldata to execute on the origin chain.
+     * @param payload            ABI-encoded calldata to execute on the origin chain.   
      * @param gasLimit           Gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
      * @param revertInstruction  Revert configuration (fundRecipient, revertMsg) for off-chain use.
      */
@@ -146,7 +146,7 @@ contract UniversalGatewayPC is
         // Emit
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
         emit UniversalTxWithdraw(
-            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee
+            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, revertInstruction
         );
     }
 
