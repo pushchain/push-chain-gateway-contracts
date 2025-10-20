@@ -1,4 +1,4 @@
-# Push Chain Universal Contracts
+# Push Chain Universal Gateway Contracts
 
 The Universal Gateway contracts are the main entry point to Push Chain from any external blockchain. These contracts are designed to be deployed on multiple EVM (Ethereum Virtual Machine), SVM (Solana Virtual Machine), and other blockchain platforms, serving as the core entry point for users of those chains to initiate transactions, lock funds, and interact with the Push ecosystem.
 
