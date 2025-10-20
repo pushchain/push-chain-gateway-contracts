@@ -13,7 +13,7 @@ contract MockRevertingTarget {
     function receiveFunds() external payable {
         revert("Mock revert");
     }
-    
+
     /**
      * @notice Gas-heavy function that causes gas exhaustion
      * @dev Consumes excessive gas to simulate out-of-gas scenarios
@@ -24,14 +24,14 @@ contract MockRevertingTarget {
             keccak256(abi.encode(i));
         }
     }
-    
+
     /**
      * @notice Function that reverts with a custom message
      */
     function receiveFundsWithCustomRevert() external payable {
         revert("Custom revert message");
     }
-    
+
     /**
      * @notice Non-payable function that fails when ETH is sent
      * @dev Replaces MockNonPayableTarget - tests ETH transfer to non-payable function
@@ -40,6 +40,3 @@ contract MockRevertingTarget {
         // Non-payable function - will revert if ETH is sent
     }
 }
-
-
-
