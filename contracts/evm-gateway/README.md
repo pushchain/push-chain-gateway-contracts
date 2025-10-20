@@ -89,7 +89,7 @@ From `IUniversalGateway.sol`:
 
 Core structs and enums in `src/libraries/Types.sol`:
 - `TX_TYPE`: `GAS`, `GAS_AND_PAYLOAD`, `FUNDS`, `FUNDS_AND_PAYLOAD`
-- `RevertInstructions { address fundRecipient; bytes revertMsg; }`
+- `RevertInstructions { address fundRecipient; bytes revertContext; }`
 - `UniversalPayload { to, value, data, gasLimit, maxFeePerGas, maxPriorityFeePerGas, nonce, deadline, vType }`
 - `EpochUsage { uint64 epoch; uint192 used; }`
 
