@@ -4,9 +4,9 @@ pragma solidity 0.8.26;
 import {RevertInstructions} from "../libraries/Types.sol";
 
 /**
- * @title IUniversalGatewayPC
- * @notice Interface for UniversalGatewayPC contract
- * @dev Defines all public functions and events for the Push Chain outbound gateway
+ * @title   IUniversalGatewayPC
+ * @notice  Interface for UniversalGatewayPC contract
+ * @dev     Defines all public functions and events for the Push Chain outbound gateway
  */
 interface IUniversalGatewayPC {
     // ========= Events =========
@@ -41,7 +41,15 @@ interface IUniversalGatewayPC {
     function pause() external;
     function unpause() external;
 
-    // ========= User Functions =========
+    /**
+     * @notice                   Withdraw PRC20 back to origin chain (funds only).
+     * @dev                      Uses UniversalCore to fetch gasToken, gasFee and protocolFee.
+     * @param to                 raw destination address on origin chain.
+     * @param token              PRC20 token address on Push Chain.
+     * @param amount             amount to withdraw (burn on Push, unlock at origin).
+     * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
+     * @param revertInstruction  revert configuration (fundRecipient, revertMsg) for off-chain use.
+     */
     function withdraw(
         bytes calldata to,
         address token,
@@ -50,6 +58,16 @@ interface IUniversalGatewayPC {
         RevertInstructions calldata revertInstruction
     ) external;
 
+    /**
+     * @notice                   Withdraw PRC20 and attach an arbitrary payload to be executed on the origin chain.
+     * @dev                      Uses UniversalCore to fetch gasToken, gasFee and protocolFee.
+     * @param target             raw destination (contract) address on origin chain.
+     * @param token              PRC20 token address on Push Chain.
+     * @param amount             amount to withdraw (burn on Push, unlock at origin).
+     * @param payload            ABI-encoded calldata to execute on the origin chain.   
+     * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
+     * @param revertInstruction  revert configuration (fundRecipient, revertMsg) for off-chain use.
+     */
     function withdrawAndExecute(
         bytes calldata target,
         address token,
