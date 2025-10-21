@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import {Vault} from "../../src/Vault.sol";
 import {UniversalGateway} from "../../src/UniversalGateway.sol";
 import {Errors} from "../../src/libraries/Errors.sol";
+import {RevertInstructions} from "../../src/libraries/Types.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockTokenApprovalVariants} from "../mocks/MockTokenApprovalVariants.sol";
 import {MockTarget} from "../mocks/MockTarget.sol";
@@ -36,7 +37,7 @@ contract VaultTest is Test {
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(address indexed token, address indexed to, uint256 amount);
-    event VaultRefund(address indexed token, address indexed to, uint256 amount);
+    event VaultRefund(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
 
     function setUp() public {
         admin = makeAddr("admin");
@@ -53,6 +54,7 @@ contract VaultTest is Test {
             admin,
             pauser,
             tss,
+            address(this), // vault address (will be set to actual vault after deployment)
             1e18,  // minCapUsd
             10e18, // maxCapUsd
             address(0), // factory (not needed for Vault tests)
@@ -73,6 +75,18 @@ contract VaultTest is Test {
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), vaultInitData);
         vault = Vault(address(vaultProxy));
+        
+        // Update gateway's VAULT_ROLE to point to actual vault
+        vm.startPrank(pauser);
+        gateway.pause();
+        vm.stopPrank();
+        
+        vm.prank(admin);
+        gateway.updateVault(address(vault));
+        
+        vm.startPrank(pauser);
+        gateway.unpause();
+        vm.stopPrank();
 
         // Deploy tokens
         token = new MockERC20("Test Token", "TST", 18, 1_000_000e18);
@@ -217,7 +231,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, 1e18, 10e18, address(0), address(0), weth
+            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -243,7 +257,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, 1e18, 10e18, address(0), address(0), weth
+            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -338,7 +352,7 @@ contract VaultTest is Test {
     function test_RevertWithdraw_OnlyTSSCanCall() public {
         vm.prank(user1);
         vm.expectRevert();
-        vault.revertWithdraw(address(token), user1, 100e18);
+        vault.revertWithdraw(address(token), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     // ============================================================================
@@ -360,7 +374,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertWithdraw(address(token), user1, 100e18);
+        vault.revertWithdraw(address(token), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     function test_Pause_AllowsSetGateway() public {
@@ -370,7 +384,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, 1e18, 10e18, address(0), address(0), weth
+            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -426,7 +440,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.revertWithdraw(address(unsupportedToken), user1, 100e18);
+        vault.revertWithdraw(address(unsupportedToken), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     function test_TokenSupport_TogglingReflectsImmediately() public {
@@ -467,7 +481,7 @@ contract VaultTest is Test {
     function test_RevertWithdraw_ZeroTokenAddressReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.revertWithdraw(address(0), user1, 100e18);
+        vault.revertWithdraw(address(0), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     // ============================================================================
@@ -542,7 +556,7 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
         
         vm.prank(tss);
-        vault.revertWithdraw(address(token), user1, amount);
+        vault.revertWithdraw(address(token), user1, amount, RevertInstructions(user1, ""));
         
         assertEq(token.balanceOf(user1), amount);
     }
@@ -550,22 +564,24 @@ contract VaultTest is Test {
     function test_RevertWithdraw_EmitsEvent() public {
         uint256 amount = 1000e18;
         
+        RevertInstructions memory revertInstr = RevertInstructions(user1, "");
+        
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
-        emit VaultRefund(address(token), user1, amount);
-        vault.revertWithdraw(address(token), user1, amount);
+        emit VaultRefund(address(token), user1, amount, revertInstr);
+        vault.revertWithdraw(address(token), user1, amount, revertInstr);
     }
 
     function test_RevertWithdraw_ZeroAmountReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertWithdraw(address(token), user1, 0);
+        vault.revertWithdraw(address(token), user1, 0, RevertInstructions(user1, ""));
     }
 
     function test_RevertWithdraw_ZeroRecipientReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.revertWithdraw(address(token), address(0), 100e18);
+        vault.revertWithdraw(address(token), address(0), 100e18, RevertInstructions(address(0), ""));
     }
 
     function test_RevertWithdraw_InsufficientBalanceReverts() public {
@@ -573,7 +589,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertWithdraw(address(token), user1, vaultBalance + 1);
+        vault.revertWithdraw(address(token), user1, vaultBalance + 1, RevertInstructions(user1, ""));
     }
 
     function test_RevertWithdraw_WhenPausedReverts() public {
@@ -582,7 +598,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertWithdraw(address(token), user1, 100e18);
+        vault.revertWithdraw(address(token), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     // ============================================================================
@@ -678,7 +694,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, 1e18, 10e18, address(0), address(0), weth
+            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -696,7 +712,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, 1e18, 10e18, address(0), address(0), weth
+            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -730,7 +746,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, 1e18, 10e18, address(0), address(0), weth
+            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -762,10 +778,12 @@ contract VaultTest is Test {
     function test_Events_VaultRefund() public {
         uint256 amount = 1000e18;
         
+        RevertInstructions memory revertInstr = RevertInstructions(user1, "");
+        
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
-        emit VaultRefund(address(token), user1, amount);
-        vault.revertWithdraw(address(token), user1, amount);
+        emit VaultRefund(address(token), user1, amount, revertInstr);
+        vault.revertWithdraw(address(token), user1, amount, revertInstr);
     }
 
     function test_Events_InitializationEvents() public {

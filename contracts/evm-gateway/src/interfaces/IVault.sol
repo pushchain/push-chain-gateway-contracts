@@ -90,6 +90,6 @@ interface IVault {
      * @param to     recipient of the refund
      * @param amount amount to refund
      */
-    function revertWithdraw(address token, address to, uint256 amount) external;
+    function revertWithdraw(address token, address to, uint256 amount, RevertInstructions calldata revertInstruction) external;
 }
 

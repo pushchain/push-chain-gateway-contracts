@@ -12,6 +12,7 @@ pragma solidity 0.8.26;
 
 import {Errors}                     from "./libraries/Errors.sol";
 import {IVault}                     from "./interfaces/IVault.sol";
+import {RevertInstructions}         from "./libraries/Types.sol";
 import {IUniversalGateway}          from "./interfaces/IUniversalGateway.sol";
 
 import {IERC20}                     from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -168,8 +169,6 @@ contract Vault is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         IERC20(token).safeTransfer(to, amount);
-
-        gateway.revertTokens(token, amount, revertInstruction);
         emit VaultRefund(token, to, amount, revertInstruction);
     }
 
