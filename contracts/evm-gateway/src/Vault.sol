@@ -11,6 +11,7 @@ pragma solidity 0.8.26;
  */
 
 import {Errors}                     from "./libraries/Errors.sol";
+import {IVault}                     from "./interfaces/IVault.sol";
 import {IUniversalGateway}          from "./interfaces/IUniversalGateway.sol";
 
 import {IERC20}                     from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -27,7 +28,8 @@ contract Vault is
     ContextUpgradeable,
     PausableUpgradeable,
     ReentrancyGuardUpgradeable,
-    AccessControlUpgradeable
+    AccessControlUpgradeable,
+    IVault
 {
     using SafeERC20 for IERC20;
 
@@ -50,23 +52,9 @@ contract Vault is
     uint256[48] private __gap;
 
     // =========================
-    //           EVENTS
-    // =========================
-    event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
-    event TSSUpdated(address indexed oldTss, address indexed newTss);
-    event VaultWithdraw(address indexed token, address indexed to, uint256 amount);
-    event VaultWithdrawAndCall(address indexed token, address indexed target, uint256 amount, bytes data);
-    event VaultRefund(address indexed token, address indexed to, uint256 amount);
-
-    // =========================
     //         INITIALIZER
     // =========================
-    /**
-     * @param admin   DEFAULT_ADMIN_ROLE holder
-     * @param pauser  PAUSER_ROLE
-     * @param tss     TSS_ROLE
-     * @param gw      UniversalGateway address (must be non-zero)
-     */
+    /// @inheritdoc IVault
     function initialize(address admin, address pauser, address tss, address gw) external initializer {
         if (admin == address(0) || pauser == address(0) || tss == address(0) || gw == address(0)) {
             revert Errors.ZeroAddress();
@@ -90,14 +78,17 @@ contract Vault is
     // =========================
     //          ADMIN OPS
     // =========================
+    /// @inheritdoc IVault
     function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {
         _pause();
     }
+
+    /// @inheritdoc IVault
     function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
-    /// @notice Update the UniversalGateway pointer.
+    /// @inheritdoc IVault
     function setGateway(address gw) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (gw == address(0)) revert Errors.ZeroAddress();
         address old = address(gateway);
@@ -105,7 +96,7 @@ contract Vault is
         emit GatewayUpdated(old, gw);
     }
 
-    /// @notice Update the TSS signer address (role transfer).
+    /// @inheritdoc IVault
     function setTSS(address newTss) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         if (newTss == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
@@ -118,7 +109,7 @@ contract Vault is
         emit TSSUpdated(old, newTss);
     }
 
-    /// @notice Optional admin sweep for mistakenly sent tokens (never native).
+    /// @inheritdoc IVault
     function sweep(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
         IERC20(token).safeTransfer(to, amount);
@@ -127,12 +118,7 @@ contract Vault is
     // =========================
     //          WITHDRAW
     // =========================
-    /**
-     * @notice TSS-only withdraw to an external recipient.
-     * @param token  ERC20 token to transfer (must be supported by gateway)
-     * @param to     destination address
-     * @param amount amount to transfer
-     */
+    /// @inheritdoc IVault
     function withdraw(address token, address to, uint256 amount)
         external
         nonReentrant
@@ -148,14 +134,7 @@ contract Vault is
         emit VaultWithdraw(token, to, amount);
     }
 
-    /**
-     * @notice TSS-only withdraw and arbitrary call using the withdrawn ERC20.
-     *         Pattern: resetApproval(0) -> safeApprove(amount) -> target.call(data) -> resetApproval(0)
-     * @param token   ERC20 token to spend (must be supported by gateway)
-     * @param target  contract to call
-     * @param amount  token amount to allow target to pull/spend
-     * @param data    calldata for the target
-     */
+    /// @inheritdoc IVault
     function withdrawAndCall(address token, address target, uint256 amount, bytes calldata data)
         external
         nonReentrant
@@ -190,12 +169,7 @@ contract Vault is
         emit VaultWithdrawAndCall(token, target, amount, data);
     }
 
-    /**
-     * @notice TSS-only refund path (e.g., failed outbound flow) to a designated recipient.
-     * @param token  ERC20 token to refund (must be supported)
-     * @param to     recipient of the refund
-     * @param amount amount to refund
-     */
+    /// @inheritdoc IVault
     function revertWithdraw(address token, address to, uint256 amount)
         external
         nonReentrant
