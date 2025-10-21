@@ -402,6 +402,7 @@ contract OracleTest is BaseTest {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             1e18, // minCapUsd
             10e18, // maxCapUsd
             address(0), // factory = address(0)

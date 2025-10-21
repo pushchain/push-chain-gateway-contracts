@@ -494,6 +494,6 @@ contract GatewayAdminSettersTest is BaseTest {
         // TSS operations should be blocked
         vm.prank(tss);
         vm.expectRevert();
-        gateway.withdrawFunds(user2, address(0), 1);
+        gateway.revertNative(1, RevertInstructions(user2, ""));
     }
 }

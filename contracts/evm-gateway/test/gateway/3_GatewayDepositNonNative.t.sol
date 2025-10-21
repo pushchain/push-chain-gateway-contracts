@@ -1397,6 +1397,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             address(0), // Zero admin
             pauser,
             tss,
+            address(this), // vault address
             100e18, // minCapUsd
             10000e18, // maxCapUsd
             address(0x123), // factory
@@ -1410,6 +1411,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             address(0), // Zero pauser
             tss,
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123),
@@ -1423,6 +1425,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             address(0), // Zero tss
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123),
@@ -1436,6 +1439,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123),
@@ -1448,6 +1452,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123), // Non-zero factory
@@ -1471,6 +1476,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             50e18,
             5000e18,
             address(0), // Zero factory

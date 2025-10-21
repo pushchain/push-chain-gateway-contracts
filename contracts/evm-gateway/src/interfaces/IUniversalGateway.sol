@@ -29,8 +29,10 @@ interface IUniversalGateway {
         bytes data
     );
 
-    /// @notice         Withdraw funds event
-    event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);   
+    /// @notice         Vault updated event
+    event VaultUpdated(address indexed oldVault, address indexed newVault);
+    /// @notice         Revert withdraw event
+    event RevertWithdraw(address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
     /// @notice         Caps updated event
     event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
     /// @notice         Rate-limit / config events
@@ -203,30 +205,42 @@ interface IUniversalGateway {
 
     /// @notice Withdraw functions (TSS-only)
 
-    /// @notice             TSS-only withdraw (unlock) to an external recipient on Push Chain.
-    /// @param recipient    destination address
-    /// @param token        address(0) for native; ERC20 otherwise
-    /// @param amount       amount to withdraw
-    function withdrawFunds(address recipient, address token, uint256 amount) external;
+    /// @notice             Revert tokens to the recipient specified in revertInstruction
+    /// @param token        token address to revert
+    /// @param amount       amount of token to revert
+    /// @param revertCFG    revert settings
+    function revertTokens(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
+    
+    /// @notice             Revert native tokens to the recipient specified in revertInstruction
+    /// @param amount       amount of native token to revert
+    /// @param revertCFG    revert settings
+    function revertNative(uint256 amount, RevertInstructions calldata revertCFG) external;
 
-    /// @notice             Refund (revert) path controlled by TSS (e.g., failed universal/bridge).
-    /// @dev                Sends funds to revertCFG.fundRecipient using same rules as withdraw.
-    /// @param token        address(0) for native; ERC20 otherwise
-    /// @param amount       amount to refund
-    /// @param revertCFG   (fundRecipient, revertMsg)
-    function revertWithdrawFunds(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
-
-    /// @notice             Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
+    /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier
     /// @param originCaller original caller/user on source chain
-    /// @param token        token address (address(0) for native)
+    /// @param token        token address (ERC20 token)
     /// @param target       target contract address to execute call
-    /// @param amount       amount of token/native to send along
+    /// @param amount       amount of token to send along
     /// @param payload      calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
         address originCaller,
         address token,
+        address target,
+        uint256 amount,
+        bytes calldata payload
+    ) external;
+    
+    /// @notice             Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
+    /// @param txID         unique transaction identifier
+    /// @param originCaller original caller/user on source chain
+    /// @param target       target contract address to execute call
+    /// @param amount       amount of native token to send along
+    /// @param payload      calldata to be executed on target
+    function executeUniversalTx(
+        bytes32 txID,
+        address originCaller,
         address target,
         uint256 amount,
         bytes calldata payload
