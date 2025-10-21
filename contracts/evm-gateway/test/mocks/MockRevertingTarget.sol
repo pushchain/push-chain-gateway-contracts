@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 /**
  * @title MockRevertingTarget
  * @notice Consolidated mock contract for testing various call failure scenarios
@@ -38,5 +40,26 @@ contract MockRevertingTarget {
      */
     function receiveFundsNonPayable() external {
         // Non-payable function - will revert if ETH is sent
+    }
+
+    /**
+     * @notice Pull tokens and revert with reason
+     */
+    function pullTokensRevertWithReason(address, address, uint256) external pure {
+        revert("Pull failed with reason");
+    }
+
+    /**
+     * @notice Pull tokens and revert without reason
+     */
+    function pullTokensRevertNoReason(address, address, uint256) external pure {
+        revert();
+    }
+
+    /**
+     * @notice Successfully pull tokens from sender
+     */
+    function pullTokens(address token, address from, uint256 amount) external {
+        IERC20(token).transferFrom(from, address(this), amount);
     }
 }

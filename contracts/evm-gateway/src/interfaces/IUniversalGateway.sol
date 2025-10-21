@@ -215,4 +215,20 @@ interface IUniversalGateway {
     /// @param amount       amount to refund
     /// @param revertCFG   (fundRecipient, revertMsg)
     function revertWithdrawFunds(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
+
+    /// @notice             Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
+    /// @param txID         unique transaction identifier
+    /// @param originCaller original caller/user on source chain
+    /// @param token        token address (address(0) for native)
+    /// @param target       target contract address to execute call
+    /// @param amount       amount of token/native to send along
+    /// @param payload      calldata to be executed on target
+    function executeUniversalTx(
+        bytes32 txID,
+        address originCaller,
+        address token,
+        address target,
+        uint256 amount,
+        bytes calldata payload
+    ) external payable;
 }

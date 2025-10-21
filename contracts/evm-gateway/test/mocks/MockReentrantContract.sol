@@ -1,25 +1,35 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-
-import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.sol";
-import { RevertInstructions } from "../../src/libraries/Types.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IUniversalGatewayPC} from "../../src/interfaces/IUniversalGatewayPC.sol";
+import {RevertInstructions} from "../../src/libraries/Types.sol";
 
 /**
  * @title MockReentrantContract
- * @notice Mock contract that attempts to reenter the UniversalGatewayPC contract
- * @dev Used for testing reentrancy protection
+ * @notice Mock contract that attempts to reenter gateway contracts
+ * @dev Used for testing reentrancy protection on UniversalGatewayPC and Vault
  */
 contract MockReentrantContract {
     address public gateway;
     address public prc20Token;
     address public gasToken;
+    
+    // Vault-specific reentrancy state
+    address public vault;
+    address public token;
+    bool public shouldReenter;
+    uint256 public reenterType; // 0=withdraw, 1=withdrawAndCall, 2=revertWithdraw
 
     constructor(address _gateway, address _prc20Token, address _gasToken) {
         gateway = _gateway;
         prc20Token = _prc20Token;
         gasToken = _gasToken;
     }
+
+    // ============================================================================
+    // UniversalGatewayPC Reentrancy Functions
+    // ============================================================================
 
     function attemptReentrancy(
         bytes calldata to,
@@ -45,6 +55,49 @@ contract MockReentrantContract {
             gasLimit, 
             revertCfg
         );
+    }
+
+    // ============================================================================
+    // Vault Reentrancy Functions
+    // ============================================================================
+
+    function setVault(address _vault) external {
+        vault = _vault;
+    }
+
+    function enableVaultReentry(address _token, uint256 _type) external {
+        token = _token;
+        shouldReenter = true;
+        reenterType = _type;
+    }
+
+    function pullTokens(address _token, address from, uint256 amount) external {
+        IERC20(_token).transferFrom(from, address(this), amount);
+        
+        if (shouldReenter && vault != address(0)) {
+            shouldReenter = false; // prevent infinite loop
+            
+            // Call vault based on reenter type
+            if (reenterType == 0) {
+                // Attempt to reenter withdraw
+                (bool success,) = vault.call(
+                    abi.encodeWithSignature("withdraw(address,address,uint256)", _token, address(this), 1)
+                );
+                require(success, "Reentry failed");
+            } else if (reenterType == 1) {
+                // Attempt to reenter withdrawAndCall
+                (bool success,) = vault.call(
+                    abi.encodeWithSignature("withdrawAndCall(address,address,uint256,bytes)", _token, address(this), 1, "")
+                );
+                require(success, "Reentry failed");
+            } else if (reenterType == 2) {
+                // Attempt to reenter revertWithdraw
+                (bool success,) = vault.call(
+                    abi.encodeWithSignature("revertWithdraw(address,address,uint256)", _token, address(this), 1)
+                );
+                require(success, "Reentry failed");
+            }
+        }
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {

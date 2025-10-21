@@ -12,7 +12,7 @@ interface IVault {
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(address indexed token, address indexed to, uint256 amount);
-    event VaultWithdrawAndCall(address indexed token, address indexed target, uint256 amount, bytes data);
+    event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
     event VaultRefund(address indexed token, address indexed to, uint256 amount);
 
     // =========================
@@ -72,14 +72,16 @@ interface IVault {
     function withdraw(address token, address to, uint256 amount) external;
 
     /**
-     * @notice TSS-only withdraw and arbitrary call using the withdrawn ERC20
-     * @dev    Pattern: resetApproval(0) -> safeApprove(amount) -> target.call(data) -> resetApproval(0)
-     * @param token   ERC20 token to spend (must be supported by gateway)
-     * @param target  contract to call
-     * @param amount  token amount to allow target to pull/spend
-     * @param data    calldata for the target
+     * @notice TSS-only withdraw and execute transaction via gateway
+     * @dev    Transfers tokens to gateway and forwards execution call
+     * @param txID          unique transaction identifier
+     * @param originCaller  original caller/user on source chain
+     * @param token         ERC20 token to transfer (must be supported by gateway)
+     * @param target        contract to call via gateway
+     * @param amount        token amount to transfer and use in execution
+     * @param data          calldata for the target execution
      */
-    function withdrawAndCall(address token, address target, uint256 amount, bytes calldata data) external;
+    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data) external;
 
     /**
      * @notice TSS-only refund path (e.g., failed outbound flow) to a designated recipient

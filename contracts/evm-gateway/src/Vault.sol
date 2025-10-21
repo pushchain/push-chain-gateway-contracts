@@ -135,7 +135,7 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function withdrawAndCall(address token, address target, uint256 amount, bytes calldata data)
+    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
         external
         nonReentrant
         whenNotPaused
@@ -146,27 +146,13 @@ contract Vault is
         _enforceSupported(token);
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        // Approve target to pull `amount`, call, then reset to 0.
-        _resetApproval(token, target);
-        _safeApprove(token, target, amount);
+        // Transfer tokens to gateway
+        IERC20(token).safeTransfer(address(gateway), amount);
 
-        (bool ok, bytes memory ret) = target.call(data);
-        if (!ok) {
-            // Reset approval before bubbling an error.
-            _resetApproval(token, target);
-            // If target returned a reason, bubble it; else revert with a generic error.
-            if (ret.length > 0) {
-                assembly {
-                    let size := mload(ret)
-                    revert(add(ret, 32), size)
-                }
-            } else {
-                revert Errors.ExecutionFailed();
-            }
-        }
-
-        _resetApproval(token, target);
-        emit VaultWithdrawAndCall(token, target, amount, data);
+        // Forward execution call to gateway
+        gateway.executeUniversalTx(txID, originCaller, token, target, amount, data);
+        
+        emit VaultWithdrawAndExecute(token, target, amount, data);
     }
 
     /// @inheritdoc IVault
@@ -191,31 +177,5 @@ contract Vault is
     function _enforceSupported(address token) internal view {
         // Single source of truth lives in UniversalGateway
         if (!gateway.isSupportedToken(token)) revert Errors.NotSupported();
-    }
-
-    /// @dev Safely reset approval to zero before granting any new allowance to target contract.
-    function _resetApproval(address token, address spender) internal {
-        (bool success, bytes memory returnData) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, 0));
-        if (!success) {
-            // Some non-standard tokens revert on zero-approval; treat as reset-ok to avoid breaking the flow.
-            return;
-        }
-        // If token returns a boolean, ensure it is true; if no return data, assume success (USDT-style).
-        if (returnData.length > 0) {
-            bool ok = abi.decode(returnData, (bool));
-            if (!ok) revert Errors.InvalidData();
-        }
-    }
-
-    /// @dev Safely approve ERC20 token spending to a target contract.
-    function _safeApprove(address token, address spender, uint256 amount) internal {
-        (bool success, bytes memory returnData) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, amount));
-        if (!success) revert Errors.InvalidData();
-        if (returnData.length > 0) {
-            bool ok = abi.decode(returnData, (bool));
-            if (!ok) revert Errors.InvalidData();
-        }
     }
 }
