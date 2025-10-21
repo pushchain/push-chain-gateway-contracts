@@ -38,6 +38,21 @@ interface IUniversalGateway {
     event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
 
     // =========================
+    //           Public Helpers 
+    // =========================
+    /// @notice             Checks if a token is supported by the gateway.
+    /// @param token        Token address to check
+    /// @return             True if the token is supported, false otherwise
+    function isSupportedToken(address token) external view returns (bool);
+
+    /// @notice             Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
+    /// @dev                Uses the current ETH/USD price from {getEthUsdPrice}.
+    /// @return minValue    Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
+    /// @return maxValue    Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
+    function getMinMaxValueForNative() external view returns (uint256 minValue, uint256 maxValue);
+
+    
+    // =========================
     //     sendTxWithGas - Fee Abstraction Route
     // =========================
 

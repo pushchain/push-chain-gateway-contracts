@@ -577,13 +577,14 @@ contract UniversalGateway is
     //      PUBLIC HELPERS
     // =========================
 
-    /// @notice             Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
-    /// @dev                Uses the current ETH/USD price from {getEthUsdPrice}.
-    /// @return minValue    Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
-    /// @return maxValue    Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
-    function getMinMaxValueForNative() public view returns (uint256 minValue, uint256 maxValue) {
-        (uint256 ethUsdPrice,) = getEthUsdPrice(); // ETH price in USD (1e18 scaled)
+    /// @inheritdoc IUniversalGateway
+    function isSupportedToken(address token) public view returns (bool) {
+        return tokenToLimitThreshold[token] != 0;
+    }
 
+    /// @inheritdoc IUniversalGateway
+    function getMinMaxValueForNative() external view returns (uint256 minValue, uint256 maxValue) {
+        (uint256 ethUsdPrice,) = getEthUsdPrice(); // ETH price in USD (1e18 scaled)
         minValue = (MIN_CAP_UNIVERSAL_TX_USD * 1e18) / ethUsdPrice;
         maxValue = (MAX_CAP_UNIVERSAL_TX_USD * 1e18) / ethUsdPrice;
     }
