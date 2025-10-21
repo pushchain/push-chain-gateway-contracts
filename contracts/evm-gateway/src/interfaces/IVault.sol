@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import { RevertInstructions } from "../libraries/Types.sol";
 /**
  * @title IVault
  * @notice Interface for ERC20 custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
@@ -13,7 +14,7 @@ interface IVault {
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(address indexed token, address indexed to, uint256 amount);
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
-    event VaultRefund(address indexed token, address indexed to, uint256 amount);
+    event VaultRefund(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
 
     // =========================
     //         INITIALIZER

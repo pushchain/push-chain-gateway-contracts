@@ -156,7 +156,7 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function revertWithdraw(address token, address to, uint256 amount)
+    function revertWithdraw(address token, address to, uint256 amount, RevertInstructions calldata revertInstruction)
         external
         nonReentrant
         whenNotPaused
@@ -168,7 +168,9 @@ contract Vault is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         IERC20(token).safeTransfer(to, amount);
-        emit VaultRefund(token, to, amount);
+
+        gateway.revertTokens(token, amount, revertInstruction);
+        emit VaultRefund(token, to, amount, revertInstruction);
     }
 
     // =========================
