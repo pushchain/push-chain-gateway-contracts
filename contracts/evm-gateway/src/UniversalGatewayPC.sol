@@ -153,8 +153,8 @@ contract UniversalGatewayPC is
     }
 
     /**
-     * @dev                 Use the PRC20's withdrawGasFeeWithGasLimit to compute fee (gas coin + amount).
-     *                          If gasLimit = 0, pull the default token.GAS_LIMIT().
+     * @dev                 Use UniversalCore's withdrawGasFeeWithGasLimit to compute fee (gas coin + amount).
+     *                          If gasLimit = 0, pull the default BASE_GAS_LIMIT from UniversalCore.
      * @return gasToken     PRC20 address to be used for fee payment.
      * @return gasFee       amount of gasToken to collect from the user (includes protocol fee).
      * @return gasLimitUsed gas limit actually used for the quote.
@@ -166,12 +166,12 @@ contract UniversalGatewayPC is
         returns (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee)
     {
         if (gasLimit == 0) {
-            gasLimitUsed = IPRC20(token).GAS_LIMIT();
+            gasLimitUsed = IUniversalCore(UNIVERSAL_CORE).BASE_GAS_LIMIT();
         } else {
             gasLimitUsed = gasLimit;
         }
 
-        (gasToken, gasFee) = IPRC20(token).withdrawGasFeeWithGasLimit(gasLimitUsed);
+        (gasToken, gasFee) = IUniversalCore(UNIVERSAL_CORE).withdrawGasFeeWithGasLimit(token, gasLimitUsed);
         if (gasToken == address(0) || gasFee == 0) revert Errors.InvalidData();
 
         protocolFee = IPRC20(token).PC_PROTOCOL_FEE();
