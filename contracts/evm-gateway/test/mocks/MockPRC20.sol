@@ -11,12 +11,16 @@ import { IPRC20 } from "../../src/interfaces/IPRC20.sol";
  */
 contract MockPRC20 is IPRC20 {
     // ========= Constants =========
+    /// @notice The protocol's privileged executor module (auth & fee sink)
     address public immutable UNIVERSAL_EXECUTOR_MODULE = 0x14191Ea54B4c176fCf86f51b0FAc7CB1E71Df7d7;
 
     // ========= State =========
+    /// @notice Source chain this PRC20 mirrors (used for oracle lookups)
     string public SOURCE_CHAIN_ID;
+    /// @notice Source Chain ERC20 address of the PRC20
     string public SOURCE_TOKEN_ADDRESS;
 
+    /// @notice Classification of this synthetic
     enum TokenType {
         PC,
         NATIVE,
@@ -25,8 +29,10 @@ contract MockPRC20 is IPRC20 {
 
     TokenType public TOKEN_TYPE;
 
+    /// @notice UniversalCore contract providing gas oracles (gas coin token & gas price)
     address public UNIVERSAL_CORE;
-    uint256 public GAS_LIMIT;
+
+    /// @notice Flat fee (absolute units in gas coin PRC20), NOT basis points
     uint256 public PC_PROTOCOL_FEE;
 
     string private _name;
@@ -43,27 +49,37 @@ contract MockPRC20 is IPRC20 {
     event Deposit(bytes indexed from, address indexed to, uint256 amount);
     event Withdrawal(address indexed from, bytes indexed to, uint256 amount, uint256 gasFee, uint256 protocolFee);
     event UpdatedUniversalCore(address addr);
-    event UpdatedGasLimit(uint256 gasLimit);
     event UpdatedProtocolFlatFee(uint256 protocolFlatFee);
 
+    //*** MODIFIERS ***//
+
+    /// @notice Restricts to the Universal Executor Module (protocol owner)
+    modifier onlyUniversalExecutor() {
+        require(msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: caller is not Universal Executor");
+        _;
+    }
+
+    //*** CONSTRUCTOR ***//
+
+    /// @dev For testing convenience, we use a constructor instead of initialize pattern
     constructor(
         string memory name_,
         string memory symbol_,
         uint8 decimals_,
         string memory sourceChainId_,
         TokenType tokenType_,
-        uint256 gasLimit_,
         uint256 protocolFlatFee_,
         address universalCore_,
         string memory sourceTokenAddress_
     ) {
+        require(universalCore_ != address(0), "MockPRC20: zero address");
+
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
 
         SOURCE_CHAIN_ID = sourceChainId_;
         TOKEN_TYPE = tokenType_;
-        GAS_LIMIT = gasLimit_;
         PC_PROTOCOL_FEE = protocolFlatFee_;
         UNIVERSAL_CORE = universalCore_;
         SOURCE_TOKEN_ADDRESS = sourceTokenAddress_;
@@ -126,11 +142,16 @@ contract MockPRC20 is IPRC20 {
         return true;
     }
 
-    // ========= Bridge Functions =========
+    //*** BRIDGE ENTRYPOINTS ***//
+
+    /// @notice         Mint PRC20 on inbound bridge (lock on source)
+    /// @dev            Only callable by UNIVERSAL_CORE or UNIVERSAL_EXECUTOR_MODULE
+    /// @param to       Recipient on Push EVM
+    /// @param amount   Amount to mint
     function deposit(address to, uint256 amount) external returns (bool) {
         require(
             msg.sender == UNIVERSAL_CORE || msg.sender == UNIVERSAL_EXECUTOR_MODULE,
-            "MockPRC20: caller is not authorized"
+            "MockPRC20: Invalid sender"
         );
 
         _mint(to, amount);
@@ -139,84 +160,77 @@ contract MockPRC20 is IPRC20 {
         return true;
     }
 
-    function withdraw(bytes calldata to, uint256 amount) external returns (bool) {
-        (address gasToken, uint256 gasFee) = withdrawGasFee();
+    //*** GAS FEE DELEGATION TO UNIVERSAL CORE ***//
 
-        bool result = IPRC20(gasToken).transferFrom(msg.sender, UNIVERSAL_EXECUTOR_MODULE, gasFee);
-        require(result, "MockPRC20: gas fee transfer failed");
-
-        _burn(msg.sender, amount);
-        emit Withdrawal(msg.sender, to, amount, gasFee, PC_PROTOCOL_FEE);
-        return true;
+    /// @notice Get the gas limit (delegates to UniversalCore)
+    function GAS_LIMIT() external view returns (uint256) {
+        return IUniversalCore(UNIVERSAL_CORE).BASE_GAS_LIMIT();
     }
 
-    // ========= Gas Fee Functions =========
-    function withdrawGasFee() public view returns (address gasToken, uint256 gasFee) {
-        gasToken = IUniversalCore(UNIVERSAL_CORE).gasTokenPRC20ByChainId(SOURCE_CHAIN_ID);
-        require(gasToken != address(0), "MockPRC20: zero gas token");
-
-        uint256 price = IUniversalCore(UNIVERSAL_CORE).gasPriceByChainId(SOURCE_CHAIN_ID);
-        require(price != 0, "MockPRC20: zero gas price");
-
-        gasFee = price * GAS_LIMIT + PC_PROTOCOL_FEE;
+    /// @notice Get gas fee with custom gas limit (delegates to UniversalCore)
+    function withdrawGasFeeWithGasLimit(uint256 gasLimit) external view returns (address gasToken, uint256 gasFee) {
+        return IUniversalCore(UNIVERSAL_CORE).withdrawGasFeeWithGasLimit(address(this), gasLimit);
     }
 
-    function withdrawGasFeeWithGasLimit(uint256 gasLimit_) external view returns (address gasToken, uint256 gasFee) {
-        gasToken = IUniversalCore(UNIVERSAL_CORE).gasTokenPRC20ByChainId(SOURCE_CHAIN_ID);
-        require(gasToken != address(0), "MockPRC20: zero gas token");
+    //*** ADMIN FUNCTIONS ***//
 
-        uint256 price = IUniversalCore(UNIVERSAL_CORE).gasPriceByChainId(SOURCE_CHAIN_ID);
-        require(price != 0, "MockPRC20: zero gas price");
-
-        gasFee = price * gasLimit_ + PC_PROTOCOL_FEE;
-    }
-
-    // ========= Admin Functions =========
-    function updateUniversalCore(address addr) external {
-        require(msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: caller is not UEM");
+    /// @notice Update UniversalCore contract (gas coin & price oracle source)
+    /// @dev only Universal Executor may update
+    function updateUniversalCore(address addr) external onlyUniversalExecutor {
         require(addr != address(0), "MockPRC20: zero address");
         UNIVERSAL_CORE = addr;
         emit UpdatedUniversalCore(addr);
     }
 
-    function updateGasLimit(uint256 gasLimit_) external {
-        require(msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: caller is not UEM");
-        GAS_LIMIT = gasLimit_;
-        emit UpdatedGasLimit(gasLimit_);
-    }
-
-    function updateProtocolFlatFee(uint256 protocolFlatFee_) external {
-        require(msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: caller is not UEM");
+    /// @notice Update flat protocol fee (absolute units in gas coin PRC20)
+    function updateProtocolFlatFee(uint256 protocolFlatFee_) external onlyUniversalExecutor {
         PC_PROTOCOL_FEE = protocolFlatFee_;
         emit UpdatedProtocolFlatFee(protocolFlatFee_);
     }
 
-    function setName(string memory newName) external {
-        require(msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: caller is not UEM");
+    /// @notice Update token name
+    function setName(string memory newName) external onlyUniversalExecutor {
         _name = newName;
     }
 
-    function setSymbol(string memory newSymbol) external {
-        require(msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: caller is not UEM");
+    /// @notice Update token symbol
+    function setSymbol(string memory newSymbol) external onlyUniversalExecutor {
         _symbol = newSymbol;
     }
 
-    // ========= Internal Functions =========
+    //*** INTERNAL ERC-20 HELPERS ***//
+
+    /**
+     * @notice          Internal function to transfer PRC20 tokens between addresses
+     * @dev             Handles the core transfer logic with balance and zero address checks
+     * @param sender    Address to transfer tokens from
+     * @param recipient Address to transfer tokens to
+     * @param amount    Amount of PRC20 tokens to transfer
+     */
     function _transfer(address sender, address recipient, uint256 amount) internal {
-        require(sender != address(0) && recipient != address(0), "MockPRC20: transfer to/from zero address");
-        require(_balances[sender] >= amount, "MockPRC20: insufficient balance");
+        require(sender != address(0) && recipient != address(0), "MockPRC20: zero address");
+
+        uint256 senderBalance = _balances[sender];
+        require(senderBalance >= amount, "MockPRC20: insufficient balance");
 
         unchecked {
-            _balances[sender] = _balances[sender] - amount;
-            _balances[recipient] = _balances[recipient] + amount;
+            _balances[sender] = senderBalance - amount;
+            _balances[recipient] += amount;
         }
 
         emit Transfer(sender, recipient, amount);
     }
 
+    /**
+     * @notice          Internal function to mint new PRC20 tokens
+     * @dev             Creates new tokens and assigns them to the specified account
+     * @dev             Increases total supply and account balance
+     * @param account   Address to mint tokens to
+     * @param amount    Amount of PRC20 tokens to mint
+     */
     function _mint(address account, uint256 amount) internal {
-        require(account != address(0), "MockPRC20: mint to zero address");
-        require(amount > 0, "MockPRC20: mint zero amount");
+        require(account != address(0), "MockPRC20: zero address");
+        require(amount > 0, "MockPRC20: zero amount");
 
         unchecked {
             _totalSupply += amount;
@@ -225,12 +239,18 @@ contract MockPRC20 is IPRC20 {
         emit Transfer(address(0), account, amount);
     }
 
+    /**
+     * @notice          Internal function to burn PRC20 tokens
+     * @dev             Burns tokens from the specified account and reduces total supply
+     * @param account   Address to burn tokens from
+     * @param amount    Amount of PRC20 tokens to burn
+     */
     function _burn(address account, uint256 amount) internal {
-        require(account != address(0), "MockPRC20: burn from zero address");
-        require(amount > 0, "MockPRC20: burn zero amount");
+        require(account != address(0), "MockPRC20: zero address");
+        require(amount > 0, "MockPRC20: zero amount");
 
         uint256 bal = _balances[account];
-        require(bal >= amount, "MockPRC20: burn amount exceeds balance");
+        require(bal >= amount, "MockPRC20: insufficient balance");
 
         unchecked {
             _balances[account] = bal - amount;
