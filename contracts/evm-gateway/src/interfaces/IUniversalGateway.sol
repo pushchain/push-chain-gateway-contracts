@@ -214,7 +214,7 @@ interface IUniversalGateway {
     /// @notice             Revert native tokens to the recipient specified in revertInstruction
     /// @param amount       amount of native token to revert
     /// @param revertCFG    revert settings
-    function revertNative(uint256 amount, RevertInstructions calldata revertCFG) external;
+    function revertNative(uint256 amount, RevertInstructions calldata revertCFG) external payable;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier
