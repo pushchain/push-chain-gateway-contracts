@@ -49,7 +49,7 @@ contract UniversalGatewayPCTest is Test {
     //      TEST CONSTANTS
     // =========================
     uint256 public constant LARGE_AMOUNT = 1000000 * 1e18;
-    uint256 public constant DEFAULT_GAS_LIMIT = 100000;
+    uint256 public constant DEFAULT_GAS_LIMIT = 500_000; // Matches UniversalCore.BASE_GAS_LIMIT
     uint256 public constant DEFAULT_PROTOCOL_FEE = 0.01 ether;
     uint256 public constant DEFAULT_GAS_PRICE = 20 gwei;
     string public constant SOURCE_CHAIN_ID = "1"; // Ethereum mainnet
@@ -945,7 +945,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_ID,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_GAS_LIMIT,
             DEFAULT_PROTOCOL_FEE,
             address(invalidCore),
             SOURCE_TOKEN_ADDRESS
@@ -955,10 +954,23 @@ contract UniversalGatewayPCTest is Test {
         invalidToken.mint(user1, amount);
         vm.prank(user1);
         invalidToken.approve(address(gateway), amount);
-
-        // Withdrawal should fail (either from mock validation or gateway validation)
+        
+        // Setup gas token for user1
+        gasToken.mint(user1, 100 ether);
         vm.prank(user1);
-        vm.expectRevert();
+        gasToken.approve(address(gateway), 100 ether);
+        
+        // Update gateway's UniversalCore to the invalid one
+        vm.prank(admin);
+        gateway.setUniversalCore(address(invalidCore));
+        
+        // Refresh the executor module to ensure it's up to date
+        vm.prank(admin);
+        gateway.refreshUniversalExecutor();
+
+        // Withdrawal should fail with "MockUniversalCore: zero gas token" error
+        vm.prank(user1);
+        vm.expectRevert("MockUniversalCore: zero gas token");
         gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertCfg);
     }
 
@@ -969,7 +981,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_ID,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_GAS_LIMIT,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
@@ -1005,7 +1016,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_ID,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_GAS_LIMIT,
             DEFAULT_PROTOCOL_FEE,
             address(invalidCore),
             SOURCE_TOKEN_ADDRESS
@@ -1015,10 +1025,23 @@ contract UniversalGatewayPCTest is Test {
         invalidToken.mint(user1, amount);
         vm.prank(user1);
         invalidToken.approve(address(gateway), amount);
-
-        // Withdrawal should fail (either from mock validation or gateway validation)
+        
+        // Setup gas token for user1
+        gasToken.mint(user1, 100 ether);
         vm.prank(user1);
-        vm.expectRevert();
+        gasToken.approve(address(gateway), 100 ether);
+        
+        // Update gateway's UniversalCore to the invalid one
+        vm.prank(admin);
+        gateway.setUniversalCore(address(invalidCore));
+        
+        // Refresh the executor module to ensure it's up to date
+        vm.prank(admin);
+        gateway.refreshUniversalExecutor();
+
+        // Withdrawal should fail with "MockUniversalCore: zero gas price" error
+        vm.prank(user1);
+        vm.expectRevert("MockUniversalCore: zero gas price");
         gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertCfg);
     }
 
@@ -1061,7 +1084,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_ID,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_GAS_LIMIT,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
@@ -1105,7 +1127,6 @@ contract UniversalGatewayPCTest is Test {
             18,
             SOURCE_CHAIN_ID,
             MockPRC20.TokenType.PC,
-            DEFAULT_GAS_LIMIT,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             ""
@@ -1118,7 +1139,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_ID,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_GAS_LIMIT,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
