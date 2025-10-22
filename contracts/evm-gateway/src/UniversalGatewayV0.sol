@@ -109,7 +109,13 @@ contract UniversalGatewayV0 is
     mapping(address => EpochUsage) private _usage;              // Current-epoch usage per token (address(0) represents native).
 
 
-    uint256[40] private __gap;
+    /// @notice The Vault contract address
+    address public VAULT;
+    bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
+    /// @notice Map to track if a payload has been executed
+    mapping(bytes32 => bool) public isExecuted;
+
+    uint256[38] private __gap; // Reduced gap to account for new state variables
 
     /**
      * @notice Initialize the UniversalGateway contract
@@ -121,6 +127,20 @@ contract UniversalGatewayV0 is
      * @param factory          UniswapV2 factory 
      * @param router           UniswapV2 router
      */
+    /// @notice             Update the Vault address
+    /// @param newVault     new Vault address
+    function updateVault(address newVault) external onlyRole(DEFAULT_ADMIN_ROLE) whenPaused {
+        if (newVault == address(0)) revert Errors.ZeroAddress();
+        address old = VAULT;
+        
+        // transfer role
+        if (hasRole(VAULT_ROLE, old)) _revokeRole(VAULT_ROLE, old);
+        _grantRole(VAULT_ROLE, newVault);
+        
+        VAULT = newVault;
+        emit VaultUpdated(old, newVault);
+    }
+
     function initialize(
         address admin,
         address pauser,
@@ -710,10 +730,55 @@ contract UniversalGatewayV0 is
 
         emit WithdrawFunds(revertInstruction.fundRecipient, amount, token);
     }
+    
+    /// @notice             Revert tokens to the recipient specified in revertInstruction
+    /// @param token        token address to revert
+    /// @param amount       amount of token to revert
+    /// @param revertInstruction revert settings
+    function revertTokens(address token, uint256 amount, RevertInstructions calldata revertInstruction)
+        external
+        nonReentrant
+        whenNotPaused
+        onlyRole(VAULT_ROLE)
+    {
+        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (amount == 0) revert Errors.InvalidAmount();
+        
+        IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
+        
+        emit RevertWithdraw(revertInstruction.fundRecipient, token, amount, revertInstruction);
+    }
+    
+    /// @notice             Revert native tokens to the recipient specified in revertInstruction
+    /// @param amount       amount of native token to revert
+    /// @param revertInstruction revert settings
+    function revertNative(uint256 amount, RevertInstructions calldata revertInstruction)
+        external
+        payable 
+        nonReentrant
+        whenNotPaused
+        onlyTSS
+    {
+        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
+
+        (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
+        if (!ok) revert Errors.WithdrawFailed();
+        
+        emit RevertWithdraw(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+    }
 
     // =========================
     //      PUBLIC HELPERS
     // =========================
+
+    /// @notice             Checks if a token is supported by the gateway.
+    /// @param token        Token address to check
+    /// @return             True if the token is supported, false otherwise
+    function isTokenSupported(address token) public view returns (bool) {
+        // Check if token has a non-zero limit threshold
+        return tokenToLimitThreshold[token] != 0;
+    }
 
     /// @notice Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
     /// @dev    Uses the current ETH/USD price from {getEthUsdPrice}.
@@ -861,13 +926,19 @@ contract UniversalGatewayV0 is
         return amount;
     }
 
-    /// @dev Lock ERC20 in this contract for bridging (must be isSupported).
-    ///      Tokens are stored in gateway contract.
+    /// @dev Lock ERC20 in the Vault contract for bridging.
+    ///      Token must be supported, i.e., tokenToLimitThreshold[token] != 0.
     /// @param token Token address to deposit
     /// @param amount Amount of token to deposit
     function _handleTokenDeposit(address token, uint256 amount) internal {
-        if (!isSupportedToken[token]) revert Errors.NotSupported();
-        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
+        if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
+        if (VAULT != address(0)) {
+            // If Vault is set, transfer tokens to Vault
+            IERC20(token).safeTransferFrom(_msgSender(), VAULT, amount);
+        } else {
+            // Legacy behavior - transfer tokens to this contract
+            IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
+        }
     }
 
     /// @dev Native withdraw by TSS
@@ -967,7 +1038,7 @@ contract UniversalGatewayV0 is
 
             uint256 balBefore = address(this).balance;
             IWETH(WETH).withdraw(amountIn);
-            ethOut = address(this).balance - balBefore;
+            ethOut = address(this).balance - balanceBefore;
 
             // Slippage bound still applies for a consistent interface (caller can set to amountIn)
             if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
@@ -1039,6 +1110,120 @@ contract UniversalGatewayV0 is
     // =========================
     //         RECEIVE/FALLBACK
     // =========================
+
+    // =========================
+    //       GATEWAY Payload Execution Paths
+    // =========================
+
+    /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
+    /// @dev                   Allows outbound payload execution from Push Chain to external chains.
+    ///                        - The tokens used for payload execution, are to be burnt on Push Chain.
+    ///                        - approval and reset of approval is handled by the gateway.
+    ///                        - tokens are transferred from Vault to Gateway before calling this function
+    /// @param txID            unique transaction identifier
+    /// @param originCaller    original caller/user on source chain
+    /// @param token           token address (ERC20 token)
+    /// @param target          target contract address to execute call
+    /// @param amount          amount of token to send along
+    /// @param payload         calldata to be executed on target
+    function executeUniversalTx(
+        bytes32 txID,
+        address originCaller,
+        address token,
+        address target,
+        uint256 amount,
+        bytes calldata payload
+    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (token == address(0)) revert Errors.InvalidInput(); // This function is for ERC20 tokens only
+        
+        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+
+        _resetApproval(token, target);             // reset approval to zero
+        _safeApprove(token, target, amount);       // approve target to spend amount
+        _executeCall(target, payload, 0);          // execute call with required amount
+        _resetApproval(token, target);             // reset approval back to zero
+        
+        // Return any remaining tokens to the Vault
+        uint256 remainingBalance = IERC20(token).balanceOf(address(this));
+        if (remainingBalance > 0 && VAULT != address(0)) {
+            IERC20(token).safeTransfer(VAULT, remainingBalance);
+        }
+
+        isExecuted[txID] = true;
+        
+        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
+    }
+    
+    /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
+    /// @dev                   Allows outbound payload execution from Push Chain to external chains with native tokens.
+    /// @param txID            unique transaction identifier
+    /// @param originCaller    original caller/user on source chain
+    /// @param target          target contract address to execute call
+    /// @param amount          amount of native token to send along
+    /// @param payload         calldata to be executed on target
+    function executeUniversalTx(
+        bytes32 txID,
+        address originCaller,
+        address target,
+        uint256 amount,
+        bytes calldata payload
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (msg.value != amount) revert Errors.InvalidAmount();
+        
+        _executeCall(target, payload, amount);
+        
+        isExecuted[txID] = true;
+
+        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
+    }
+
+    /// @dev Safely reset approval to zero before granting any new allowance to target contract.
+    function _resetApproval(address token, address spender) internal {
+        (bool success, bytes memory returnData) =
+            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, 0));
+        if (!success) {
+            // Some non-standard tokens revert on zero-approval; treat as reset-ok to avoid breaking the flow.
+            return;
+        }
+        // If token returns a boolean, ensure it is true; if no return data, assume success (USDT-style).
+        if (returnData.length > 0) {
+            bool approved = abi.decode(returnData, (bool));
+            if (!approved) revert Errors.InvalidData();
+        }
+    }
+
+    /// @dev Safely approve ERC20 token spending to a target contract.
+    ///      Low-level call must succeed AND (if returns data) decode to true; otherwise revert.
+    function _safeApprove(address token, address spender, uint256 amount) internal {
+        (bool success, bytes memory returnData) =
+            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, amount));
+        if (!success) {
+            revert Errors.InvalidData(); // approval failed
+        }
+        if (returnData.length > 0) {
+            bool approved = abi.decode(returnData, (bool));
+            if (!approved) {
+                revert Errors.InvalidData(); // approval failed
+            }
+        }
+    }
+
+    /// @dev Unified helper to execute a low-level call to target
+    ///      Call can be executed with native value or ERC20 token. 
+    ///      Reverts with Errors.ExecutionFailed() if the call fails (no bubbling).
+    function _executeCall(address target, bytes calldata payload, uint256 value) internal returns (bytes memory result) {
+        (bool success, bytes memory ret) = target.call{value: value}(payload);
+        if (!success) revert Errors.ExecutionFailed();
+        return ret;
+    }
 
     /// @dev Reject plain ETH; we only accept ETH via explicit deposit functions or WETH unwrapping.
    receive() external payable {
