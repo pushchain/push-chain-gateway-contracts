@@ -21,6 +21,18 @@ contract GatewayTSSFunctionsTest is BaseTest {
         // Fund the gateway with some ETH and tokens for withdrawal tests
         vm.deal(address(gateway), 10 ether);
 
+        // Configure token support
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(usdc);
+        tokens[1] = address(tokenA);
+        
+        uint256[] memory thresholds = new uint256[](2);
+        thresholds[0] = 1000000e6;  // 1M USDC
+        thresholds[1] = 1000000e18; // 1M tokenA
+        
+        vm.prank(admin);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
+
         // Mint and transfer some test tokens to the gateway
         usdc.mint(address(gateway), 1000e6);
         tokenA.mint(address(gateway), 1000e18);
@@ -77,7 +89,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.RevertWithdraw(user1, address(usdc), withdrawAmount, RevertInstructions(user1, ""));
 
-        vm.prank(tss);
+        // revertTokens requires VAULT_ROLE (test contract has this role)
         gateway.revertTokens(address(usdc), withdrawAmount, RevertInstructions(user1, ""));
 
         // Check balances
@@ -147,7 +159,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.RevertWithdraw(user1, address(usdc), withdrawAmount, revertCfg);
 
-        vm.prank(tss);
+        // revertTokens requires VAULT_ROLE (test contract has this role)
         gateway.revertTokens(address(usdc), withdrawAmount, revertCfg);
 
         // Check balances
@@ -223,19 +235,17 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 tokenAAmount = 100e18;
         uint256 ethAmount = 0.5 ether;
 
-        // Withdraw USDC
+        // Withdraw USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
-        vm.prank(tss);
         gateway.revertTokens(address(usdc), usdcAmount, RevertInstructions(user1, ""));
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
-        // Withdraw TokenA
+        // Withdraw TokenA (requires VAULT_ROLE)
         uint256 initialTokenABalance = tokenA.balanceOf(user1);
-        vm.prank(tss);
         gateway.revertTokens(address(tokenA), tokenAAmount, RevertInstructions(user1, ""));
         assertEq(tokenA.balanceOf(user1), initialTokenABalance + tokenAAmount);
 
-        // Withdraw ETH
+        // Withdraw ETH (requires TSS_ROLE)
         uint256 initialEthBalance = user1.balance;
         vm.prank(tss);
         gateway.revertNative(ethAmount, RevertInstructions(user1, ""));
@@ -249,13 +259,12 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 usdcAmount = 25e6;
         uint256 ethAmount = 0.25 ether;
 
-        // Revert USDC
+        // Revert USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
-        vm.prank(tss);
         gateway.revertTokens(address(usdc), usdcAmount, revertCfg);
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
-        // Revert ETH
+        // Revert ETH (requires TSS_ROLE)
         uint256 initialEthBalance = user1.balance;
         vm.prank(tss);
         gateway.revertNative(ethAmount, revertCfg);

@@ -178,6 +178,7 @@ abstract contract BaseTest is Test {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             MIN_CAP_USD,
             MAX_CAP_USD,
             uniV3Factory,

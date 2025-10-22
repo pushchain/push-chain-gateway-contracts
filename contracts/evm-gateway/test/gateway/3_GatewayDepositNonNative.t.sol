@@ -155,6 +155,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin, // admin
             pauser, // pauser
             tss, // tss
+            address(this), // vault address
             MIN_CAP_USD,
             MAX_CAP_USD,
             uniV3Factory,
@@ -271,11 +272,11 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // Verify user's token balance decreased
         assertEq(mainnetUSDC.balanceOf(user1), initialUserTokenBalance - bridgeAmount, "User should pay ERC20 tokens");
 
-        // Verify gateway's token balance increased
+        // Verify VAULT's token balance increased (tokens are now transferred to VAULT)
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayTokenBalance + bridgeAmount,
-            "Gateway should receive ERC20 tokens"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            bridgeAmount,
+            "VAULT should receive ERC20 tokens"
         );
     }
 
@@ -352,9 +353,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Verify gateway's token balance increased
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayTokenBalance + bridgeAmount,
-            "Gateway should receive USDC for bridging"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            bridgeAmount,
+            "VAULT should receive USDC for bridging"
         );
     }
 
@@ -382,9 +383,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Test passes if no revert occurs
         assertEq(
-            IERC20(MAINNET_USDC).balanceOf(address(gateway)),
-            initialGatewayBalance + minAmount,
-            "Gateway should receive USDC"
+            IERC20(MAINNET_USDC).balanceOf(gateway.VAULT()),
+            minAmount,
+            "VAULT should receive USDC"
         );
     }
 
@@ -778,9 +779,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
         );
 
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayBalance + tokenAmount,
-            "Gateway should receive the tokens"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            tokenAmount,
+            "VAULT should receive the tokens"
         );
     }
 
@@ -829,9 +830,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
         );
 
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayBalance + bridgeAmount,
-            "Gateway should receive both bridge and gas tokens"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            bridgeAmount,
+            "VAULT should receive the bridge tokens"
         );
 
         assertApproxEqAbs(
