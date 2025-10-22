@@ -526,7 +526,6 @@ contract UniversalGateway is
     {
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
-        if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
         
         IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
         
@@ -538,14 +537,16 @@ contract UniversalGateway is
     /// @param revertInstruction revert settings
     function revertNative(uint256 amount, RevertInstructions calldata revertInstruction)
         external
+        payable 
         nonReentrant
         whenNotPaused
         onlyTSS
     {
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
-        if (amount == 0) revert Errors.InvalidAmount();
-        
-        _handleNativeWithdraw(revertInstruction.fundRecipient, amount);
+        if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
+
+        (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
+        if (!ok) revert Errors.WithdrawFailed();
         
         emit RevertWithdraw(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
     }
@@ -593,7 +594,7 @@ contract UniversalGateway is
         }
 
         isExecuted[txID] = true;
-
+        
         emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
     }
     
@@ -760,14 +761,6 @@ contract UniversalGateway is
     function _handleTokenDeposit(address token, uint256 amount) internal {
         if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
         IERC20(token).safeTransferFrom(_msgSender(), VAULT, amount);
-    }
-
-    /// @dev                Native withdraw by TSS
-    /// @param recipient    recipient address
-    /// @param amount       amount of native ETH to withdraw
-    function _handleNativeWithdraw(address recipient, uint256 amount) internal {
-        (bool ok,) = payable(recipient).call{ value: amount }("");
-        if (!ok) revert Errors.WithdrawFailed();
     }
 
     // _handleTokenWithdraw function removed as token withdrawals are now handled by the Vault
