@@ -1038,7 +1038,7 @@ contract UniversalGatewayV0 is
 
             uint256 balBefore = address(this).balance;
             IWETH(WETH).withdraw(amountIn);
-            ethOut = address(this).balance - balanceBefore;
+            ethOut = address(this).balance - balBefore;
 
             // Slippage bound still applies for a consistent interface (caller can set to amountIn)
             if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
@@ -1071,9 +1071,9 @@ contract UniversalGatewayV0 is
         IERC20(tokenIn).forceApprove(address(uniV3Router), 0);
 
         // Unwrap WETH -> native and compute exact ETH out
-        uint256 balBefore = address(this).balance;
+        uint256 _balBefore = address(this).balance;
         IWETH(WETH).withdraw(wethOut);
-        ethOut = address(this).balance - balBefore;
+        ethOut = address(this).balance - _balBefore;
 
         // Defensive: enforce the bound again after unwrap
         if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
