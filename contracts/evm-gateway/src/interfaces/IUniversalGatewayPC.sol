@@ -37,7 +37,6 @@ interface IUniversalGatewayPC {
 
     // ========= Admin Functions =========
     function setUniversalCore(address universalCore) external;
-    function refreshUniversalExecutor() external;
     function pause() external;
     function unpause() external;
 

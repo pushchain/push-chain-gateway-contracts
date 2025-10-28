@@ -253,25 +253,6 @@ contract UniversalGatewayPCTest is Test {
         assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), newerUem);
     }
 
-    function testRefreshUniversalExecutorRevertNonAdmin() public {
-        vm.prank(attacker);
-        vm.expectRevert();
-        gateway.refreshUniversalExecutor();
-    }
-
-    function testRefreshUniversalExecutorWorksWhenPaused() public {
-        // Pause the contract
-        vm.prank(pauser);
-        gateway.pause();
-
-        // Admin should still be able to refresh executor
-        vm.prank(admin);
-        gateway.refreshUniversalExecutor();
-
-        // Verify UEM is still correct
-        assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), uem);
-    }
-
     function testPauseSuccess() public {
         assertFalse(gateway.paused());
 
@@ -348,10 +329,6 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(admin);
         gateway.setUniversalCore(address(newUniversalCore));
-
-        vm.prank(admin);
-        gateway.refreshUniversalExecutor();
-
         // Verify state changes worked
         assertEq(gateway.UNIVERSAL_CORE(), address(newUniversalCore));
         assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), address(0x8));
@@ -963,10 +940,7 @@ contract UniversalGatewayPCTest is Test {
         // Update gateway's UniversalCore to the invalid one
         vm.prank(admin);
         gateway.setUniversalCore(address(invalidCore));
-        
-        // Refresh the executor module to ensure it's up to date
-        vm.prank(admin);
-        gateway.refreshUniversalExecutor();
+    
 
         // Withdrawal should fail with "MockUniversalCore: zero gas token" error
         vm.prank(user1);
@@ -1034,11 +1008,7 @@ contract UniversalGatewayPCTest is Test {
         // Update gateway's UniversalCore to the invalid one
         vm.prank(admin);
         gateway.setUniversalCore(address(invalidCore));
-        
-        // Refresh the executor module to ensure it's up to date
-        vm.prank(admin);
-        gateway.refreshUniversalExecutor();
-
+    
         // Withdrawal should fail with "MockUniversalCore: zero gas price" error
         vm.prank(user1);
         vm.expectRevert("MockUniversalCore: zero gas price");

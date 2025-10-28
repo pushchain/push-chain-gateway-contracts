@@ -105,9 +105,6 @@ contract UniversalGateway is
     /// @notice Map to track if a payload has been executed
     mapping(bytes32 => bool) public isExecuted;
 
-    /// @notice Gap for future upgrades.
-    uint256[43] private __gap;
-
     /**
      * @notice                  Initialize the UniversalGateway contract
      * @param admin             DEFAULT_ADMIN_ROLE holder

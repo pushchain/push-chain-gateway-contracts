@@ -41,9 +41,6 @@ contract UniversalGatewayPC is
     /// @dev    If UniversalCore updates, call {refreshUniversalExecutor} to recache.
     address public UNIVERSAL_EXECUTOR_MODULE;
 
-    // ========= Storage gap for upgradeability =========
-    uint256[47] private __gap;
-
     /// @notice                 Initializes the contract.
     /// @param admin            address of the admin.
     /// @param pauser           address of the pauser.
@@ -69,12 +66,6 @@ contract UniversalGatewayPC is
         UNIVERSAL_CORE = universalCore;
 
         UNIVERSAL_EXECUTOR_MODULE = IUniversalCore(universalCore).UNIVERSAL_EXECUTOR_MODULE();
-    }
-
-    /// @notice                 Refreshes the UniversalExecutorModule address.
-    /// @dev                    Called by the admin to refresh the UniversalExecutorModule address.
-    function refreshUniversalExecutor() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        UNIVERSAL_EXECUTOR_MODULE = IUniversalCore(UNIVERSAL_CORE).UNIVERSAL_EXECUTOR_MODULE();
     }
 
     function pause() external onlyRole(PAUSER_ROLE) whenNotPaused {

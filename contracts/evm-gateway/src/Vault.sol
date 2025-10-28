@@ -49,9 +49,6 @@ contract Vault is
     /// @notice The current TSS address for Vault
     address public TSS_ADDRESS;
 
-    /// @notice gap for future upgrades
-    uint256[48] private __gap;
-
     // =========================
     //         INITIALIZER
     // =========================
