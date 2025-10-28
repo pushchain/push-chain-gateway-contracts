@@ -98,7 +98,7 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function setTSS(address newTss) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+    function setTSS(address newTss) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTss == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
 
@@ -120,7 +120,7 @@ contract Vault is
     //          WITHDRAW
     // =========================
     /// @inheritdoc IVault
-    function withdraw(address token, address to, uint256 amount)
+    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount)
         external
         nonReentrant
         whenNotPaused
@@ -132,7 +132,7 @@ contract Vault is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         IERC20(token).safeTransfer(to, amount);
-        emit VaultWithdraw(token, to, amount);
+        emit VaultWithdraw(txID, originCaller, token, to, amount);
     }
 
     /// @inheritdoc IVault

@@ -108,10 +108,10 @@ contract GatewayAdminSettersTest is BaseTest {
         vm.prank(pauser);
         gateway.pause();
 
-        // Should not be able to set TSS when paused
+        // Admin functions like setTSS should work even when paused
         vm.prank(admin);
-        vm.expectRevert();
         gateway.setTSS(address(0x123));
+        assertEq(gateway.TSS_ADDRESS(), address(0x123));
     }
 
     function testSetCapsUSD() public {

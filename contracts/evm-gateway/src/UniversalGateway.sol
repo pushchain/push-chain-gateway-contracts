@@ -180,7 +180,7 @@ contract UniversalGateway is
 
     /// @notice             Allows the admin to set the TSS address
     /// @param newTSS       new TSS address
-    function setTSS(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+    function setTSS(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTSS == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
 

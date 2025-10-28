@@ -213,7 +213,7 @@ contract UniversalGatewayV0 is
     /// @notice Allows the admin to set the TSS address
     /// @param newTSS The new TSS address
     /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.
-    function setTSSAddress(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+    function setTSSAddress(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTSS == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
 

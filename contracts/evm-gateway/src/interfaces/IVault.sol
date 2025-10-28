@@ -12,7 +12,7 @@ interface IVault {
     // =========================
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
-    event VaultWithdraw(address indexed token, address indexed to, uint256 amount);
+    event VaultWithdraw(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
     event VaultRefund(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
 
@@ -66,11 +66,13 @@ interface IVault {
     // =========================
     /**
      * @notice TSS-only withdraw to an external recipient
+     * @param txID          unique transaction identifier
+     * @param originCaller  original caller/user on source chain
      * @param token  ERC20 token to transfer (must be supported by gateway)
      * @param to     destination address
      * @param amount amount to transfer
      */
-    function withdraw(address token, address to, uint256 amount) external;
+    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
 
     /**
      * @notice TSS-only withdraw and execute transaction via gateway
