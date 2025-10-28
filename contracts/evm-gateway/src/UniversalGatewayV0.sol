@@ -1142,6 +1142,8 @@ contract UniversalGatewayV0 is
         
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
+        isExecuted[txID] = true;
+
         _resetApproval(token, target);             // reset approval to zero
         _safeApprove(token, target, amount);       // approve target to spend amount
         _executeCall(target, payload, 0);          // execute call with required amount
@@ -1152,8 +1154,6 @@ contract UniversalGatewayV0 is
         if (remainingBalance > 0 && VAULT != address(0)) {
             IERC20(token).safeTransfer(VAULT, remainingBalance);
         }
-
-        isExecuted[txID] = true;
         
         emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
     }
@@ -1177,11 +1177,11 @@ contract UniversalGatewayV0 is
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
+
+        isExecuted[txID] = true;
         
         _executeCall(target, payload, amount);
         
-        isExecuted[txID] = true;
-
         emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
     }
 
