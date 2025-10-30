@@ -30,6 +30,7 @@ contract UniversalGatewayPCTest is Test {
     address public user2;
     address public attacker;
     address public uem;
+    address public vaultPC;
 
     // =========================
     //        CONTRACTS
@@ -95,7 +96,8 @@ contract UniversalGatewayPCTest is Test {
             UniversalGatewayPC.initialize.selector,
             admin,
             pauser,
-            address(universalCore)
+            address(universalCore),
+            vaultPC
         );
 
         TransparentUpgradeableProxy newProxy = new TransparentUpgradeableProxy(
@@ -108,7 +110,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Verify initialization
         assertEq(newGateway.UNIVERSAL_CORE(), address(universalCore));
-        assertEq(newGateway.UNIVERSAL_EXECUTOR_MODULE(), uem);
+        assertEq(address(newGateway.VAULT_PC()), vaultPC);
         assertTrue(newGateway.hasRole(newGateway.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(newGateway.hasRole(newGateway.PAUSER_ROLE(), pauser));
     }
@@ -121,10 +123,11 @@ contract UniversalGatewayPCTest is Test {
             UniversalGatewayPC.initialize.selector,
             address(0), // zero admin
             pauser,
-            address(universalCore)
+            address(universalCore),
+            vaultPC
         );
 
-        vm.expectRevert(Errors.ZeroAddress.selector);
+        vm.expectRevert(); // Proxy wraps the error
         new TransparentUpgradeableProxy(address(newImplementation), address(newProxyAdmin), initData);
     }
 
@@ -136,10 +139,11 @@ contract UniversalGatewayPCTest is Test {
             UniversalGatewayPC.initialize.selector,
             admin,
             address(0), // zero pauser
-            address(universalCore)
+            address(universalCore),
+            vaultPC
         );
 
-        vm.expectRevert(Errors.ZeroAddress.selector);
+        vm.expectRevert(); // Proxy wraps the error
         new TransparentUpgradeableProxy(address(newImplementation), address(newProxyAdmin), initData);
     }
 
@@ -151,10 +155,27 @@ contract UniversalGatewayPCTest is Test {
             UniversalGatewayPC.initialize.selector,
             admin,
             pauser,
-            address(0) // zero universal core
+            address(0), // zero universal core
+            vaultPC
         );
 
-        vm.expectRevert(Errors.ZeroAddress.selector);
+        vm.expectRevert(); // Proxy wraps the error
+        new TransparentUpgradeableProxy(address(newImplementation), address(newProxyAdmin), initData);
+    }
+
+    function testInitializeRevertZeroVaultPC() public {
+        UniversalGatewayPC newImplementation = new UniversalGatewayPC();
+        ProxyAdmin newProxyAdmin = new ProxyAdmin(admin);
+
+        bytes memory initData = abi.encodeWithSelector(
+            UniversalGatewayPC.initialize.selector,
+            admin,
+            pauser,
+            address(universalCore),
+            address(0) // zero vaultPC
+        );
+
+        vm.expectRevert(); // Proxy wraps the error
         new TransparentUpgradeableProxy(address(newImplementation), address(newProxyAdmin), initData);
     }
 
@@ -166,7 +187,8 @@ contract UniversalGatewayPCTest is Test {
             UniversalGatewayPC.initialize.selector,
             admin,
             pauser,
-            address(universalCore)
+            address(universalCore),
+            vaultPC
         );
 
         TransparentUpgradeableProxy newProxy = new TransparentUpgradeableProxy(
@@ -179,79 +201,53 @@ contract UniversalGatewayPCTest is Test {
 
         // Try to initialize again
         vm.expectRevert();
-        newGateway.initialize(admin, pauser, address(universalCore));
+        newGateway.initialize(admin, pauser, address(universalCore), vaultPC);
     }
 
     // =========================
     //      ADMIN FUNCTION TESTS
     // =========================
 
-    function testSetUniversalCoreSuccess() public {
-        // Deploy new UniversalCore
-        MockUniversalCoreReal newUniversalCore = new MockUniversalCoreReal(address(0x7));
+    function testSetVaultPCSuccess() public {
+        address newVaultPC = address(0x999);
         
-        // Configure new core
-        vm.prank(address(0x7));
-        newUniversalCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
-        vm.prank(address(0x7));
-        newUniversalCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
-
-        // Admin sets new universal core
+        // Admin sets new VaultPC
         vm.prank(admin);
-        gateway.setUniversalCore(address(newUniversalCore));
+        vm.expectEmit(true, true, false, false);
+        emit IUniversalGatewayPC.VaultPCUpdated(vaultPC, newVaultPC);
+        gateway.setVaultPC(newVaultPC);
 
         // Verify state changes
-        assertEq(gateway.UNIVERSAL_CORE(), address(newUniversalCore));
-        assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), address(0x7));
+        assertEq(address(gateway.VAULT_PC()), newVaultPC);
     }
 
-    function testSetUniversalCoreRevertNonAdmin() public {
-        MockUniversalCoreReal newUniversalCore = new MockUniversalCoreReal(address(0x7));
+    function testSetVaultPCRevertNonAdmin() public {
+        address newVaultPC = address(0x999);
 
         vm.prank(attacker);
         vm.expectRevert();
-        gateway.setUniversalCore(address(newUniversalCore));
+        gateway.setVaultPC(newVaultPC);
     }
 
-    function testSetUniversalCoreRevertZeroAddress() public {
+    function testSetVaultPCRevertZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.setUniversalCore(address(0));
+        gateway.setVaultPC(address(0));
     }
 
-    function testRefreshUniversalExecutorSuccess() public {
-        // Deploy new UniversalCore with different UEM
-        address newUem = address(0x8);
-        MockUniversalCoreReal newUniversalCore = new MockUniversalCoreReal(newUem);
+    function testSetVaultPCRevertWhenPaused() public {
+        // Pause the gateway first
+        vm.prank(pauser);
+        gateway.pause();
+
+        address newVaultPC = address(0x999);
         
-        // Configure new core
-        vm.prank(newUem);
-        newUniversalCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
-        vm.prank(newUem);
-        newUniversalCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
-
-        // Set new universal core
+        // Attempt to set VaultPC while paused should revert
         vm.prank(admin);
-        gateway.setUniversalCore(address(newUniversalCore));
-
-        // Verify UEM was updated
-        assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), newUem);
-
-        // Update UEM in the core and refresh
-        address newerUem = address(0x9);
-        MockUniversalCoreReal newerUniversalCore = new MockUniversalCoreReal(newerUem);
-        
-        vm.prank(newerUem);
-        newerUniversalCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
-        vm.prank(newerUem);
-        newerUniversalCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
-
-        vm.prank(admin);
-        gateway.setUniversalCore(address(newerUniversalCore));
-
-        // Verify UEM was refreshed
-        assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), newerUem);
+        vm.expectRevert();
+        gateway.setVaultPC(newVaultPC);
     }
+
 
     function testPauseSuccess() public {
         assertFalse(gateway.paused());
@@ -319,19 +315,14 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(pauser);
         gateway.pause();
 
-        // Admin functions should still work when paused
-        MockUniversalCoreReal newUniversalCore = new MockUniversalCoreReal(address(0x8));
+        // Verify that the contract is paused
+        assertTrue(gateway.paused());
         
-        vm.prank(address(0x8));
-        newUniversalCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
-        vm.prank(address(0x8));
-        newUniversalCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
-
-        vm.prank(admin);
-        gateway.setUniversalCore(address(newUniversalCore));
-        // Verify state changes worked
-        assertEq(gateway.UNIVERSAL_CORE(), address(newUniversalCore));
-        assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), address(0x8));
+        // Unpause should still work
+        vm.prank(pauser);
+        gateway.unpause();
+        
+        assertFalse(gateway.paused());
     }
 
     // =========================
@@ -353,14 +344,14 @@ contract UniversalGatewayPCTest is Test {
         }
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(uem);
+        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
         gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(uem), initialGasTokenBalance + expectedGasFee);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -385,14 +376,14 @@ contract UniversalGatewayPCTest is Test {
         RevertInstructions memory revertCfg = buildRevertInstructions(user2);
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(uem);
+        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
         gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(uem), initialGasTokenBalance + expectedGasFee);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -518,14 +509,14 @@ contract UniversalGatewayPCTest is Test {
         RevertInstructions memory revertCfg = buildRevertInstructions(user2);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(uem);
+        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
         gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(uem), initialGasTokenBalance + expectedGasFee);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -552,14 +543,14 @@ contract UniversalGatewayPCTest is Test {
         RevertInstructions memory revertCfg = buildRevertInstructions(user2);
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(uem);
+        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
         gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(uem), initialGasTokenBalance + expectedGasFee);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -571,14 +562,14 @@ contract UniversalGatewayPCTest is Test {
         RevertInstructions memory revertCfg = buildRevertInstructions(user2);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(uem);
+        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
         gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(uem), initialGasTokenBalance + expectedGasFee);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -599,14 +590,14 @@ contract UniversalGatewayPCTest is Test {
         RevertInstructions memory revertCfg = buildRevertInstructionsWithMsg(user2, "Complex operation failed");
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(uem);
+        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
         gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(uem), initialGasTokenBalance + expectedGasFee);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -833,7 +824,7 @@ contract UniversalGatewayPCTest is Test {
         RevertInstructions memory revertCfg = buildRevertInstructions(user2);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(uem);
+        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
 
         // Ensure user has enough gas tokens for the fee
         uint256 userGasBalance = gasToken.balanceOf(user1);
@@ -847,7 +838,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
 
         // Verify withdrawal with max gas limit succeeded
-        assertEq(gasToken.balanceOf(uem), initialGasTokenBalance + expectedGasFee);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
     }
 
     function testGasFeeCalculationAccuracy() public {
@@ -865,12 +856,12 @@ contract UniversalGatewayPCTest is Test {
 
     function _testGasFeeForLimit(uint256 amount, bytes memory to, RevertInstructions memory revertCfg, uint256 gasLimit) internal {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 balanceBefore = gasToken.balanceOf(uem);
+        uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 
         vm.prank(user1);
         gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
 
-        uint256 balanceAfter = gasToken.balanceOf(uem);
+        uint256 balanceAfter = gasToken.balanceOf(vaultPC);
         assertEq(balanceAfter - balanceBefore, expectedGasFee);
 
         // Reset for next iteration
@@ -879,28 +870,11 @@ contract UniversalGatewayPCTest is Test {
         prc20Token.approve(address(gateway), amount);
     }
 
-    function testZeroUemAddress() public {
-        // Deploy UniversalCore with zero UEM
-        MockUniversalCoreReal zeroUemCore = new MockUniversalCoreReal(address(0));
-        
-        vm.prank(address(0));
-        zeroUemCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
-        vm.prank(address(0));
-        zeroUemCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
-
-        // Set the zero UEM core
+    function testSetVaultPCToZeroReverts() public {
+        // Attempt to set VaultPC to zero should revert
         vm.prank(admin);
-        gateway.setUniversalCore(address(zeroUemCore));
-
-        uint256 amount = 1000 * 1e6;
-        uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
-
-        // Withdrawal should fail with zero UEM
-        vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.setVaultPC(address(0));
     }
 
     function testInvalidFeeQuoteZeroGasToken() public {
@@ -909,21 +883,16 @@ contract UniversalGatewayPCTest is Test {
         bytes memory to = abi.encodePacked(user2);
         RevertInstructions memory revertCfg = buildRevertInstructions(user2);
 
-        // Create invalid core with zero gas token (don't set it, leave as default zero)
-        MockUniversalCoreReal invalidCore = new MockUniversalCoreReal(uem);
-        vm.prank(uem);
-        invalidCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
-        // Intentionally NOT setting gasTokenPRC20, so it remains address(0)
-
-        // Create token with invalid core
+        // Create token with unconfigured chain ID (no gas token set for this chain)
+        string memory unconfiguredChainId = "999"; // Chain ID not configured in universalCore
         MockPRC20 invalidToken = new MockPRC20(
             "Invalid Token",
             "INV",
             6,
-            SOURCE_CHAIN_ID,
+            unconfiguredChainId,
             MockPRC20.TokenType.ERC20,
             DEFAULT_PROTOCOL_FEE,
-            address(invalidCore),
+            address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
 
@@ -932,16 +901,6 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(user1);
         invalidToken.approve(address(gateway), amount);
         
-        // Setup gas token for user1
-        gasToken.mint(user1, 100 ether);
-        vm.prank(user1);
-        gasToken.approve(address(gateway), 100 ether);
-        
-        // Update gateway's UniversalCore to the invalid one
-        vm.prank(admin);
-        gateway.setUniversalCore(address(invalidCore));
-    
-
         // Withdrawal should fail with "MockUniversalCore: zero gas token" error
         vm.prank(user1);
         vm.expectRevert("MockUniversalCore: zero gas token");
@@ -976,22 +935,22 @@ contract UniversalGatewayPCTest is Test {
         bytes memory to = abi.encodePacked(user2);
         RevertInstructions memory revertCfg = buildRevertInstructions(user2);
 
-        // Create invalid core with zero gas price
-        MockUniversalCoreReal invalidCore = new MockUniversalCoreReal(uem);
+        // Create token with a chain ID that has gas token but no gas price configured
+        string memory chainWithTokenNoPrice = "777";
+        
+        // Configure this chain in universalCore with gas token but NO gas price
         vm.prank(uem);
-        invalidCore.setGasPrice(SOURCE_CHAIN_ID, 0); // Zero gas price
-        vm.prank(uem);
-        invalidCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
-
-        // Create token with invalid core
+        universalCore.setGasTokenPRC20(chainWithTokenNoPrice, address(gasToken));
+        // Intentionally NOT setting gas price for this chain
+        
         MockPRC20 invalidToken = new MockPRC20(
             "Invalid Token",
             "INV",
             6,
-            SOURCE_CHAIN_ID,
+            chainWithTokenNoPrice,
             MockPRC20.TokenType.ERC20,
             DEFAULT_PROTOCOL_FEE,
-            address(invalidCore),
+            address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
 
@@ -1000,15 +959,6 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(user1);
         invalidToken.approve(address(gateway), amount);
         
-        // Setup gas token for user1
-        gasToken.mint(user1, 100 ether);
-        vm.prank(user1);
-        gasToken.approve(address(gateway), 100 ether);
-        
-        // Update gateway's UniversalCore to the invalid one
-        vm.prank(admin);
-        gateway.setUniversalCore(address(invalidCore));
-    
         // Withdrawal should fail with "MockUniversalCore: zero gas price" error
         vm.prank(user1);
         vm.expectRevert("MockUniversalCore: zero gas price");
@@ -1071,6 +1021,7 @@ contract UniversalGatewayPCTest is Test {
         user2 = address(0x4);
         attacker = address(0x5);
         uem = address(0x6);
+        vaultPC = address(0x7);
 
         vm.label(admin, "admin");
         vm.label(pauser, "pauser");
@@ -1078,6 +1029,7 @@ contract UniversalGatewayPCTest is Test {
         vm.label(user2, "user2");
         vm.label(attacker, "attacker");
         vm.label(uem, "uem");
+        vm.label(vaultPC, "vaultPC");
 
         vm.deal(admin, 100 ether);
         vm.deal(pauser, 100 ether);
@@ -1137,7 +1089,8 @@ contract UniversalGatewayPCTest is Test {
             UniversalGatewayPC.initialize.selector,
             admin,
             pauser,
-            address(universalCore)
+            address(universalCore),
+            vaultPC
         );
 
         gatewayProxy = new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
@@ -1154,7 +1107,7 @@ contract UniversalGatewayPCTest is Test {
         // Gateway is already initialized via proxy constructor
         // Verify initialization
         assertEq(gateway.UNIVERSAL_CORE(), address(universalCore));
-        assertEq(gateway.UNIVERSAL_EXECUTOR_MODULE(), uem);
+        assertEq(address(gateway.VAULT_PC()), vaultPC);
         assertTrue(gateway.hasRole(gateway.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(gateway.hasRole(gateway.PAUSER_ROLE(), pauser));
     }

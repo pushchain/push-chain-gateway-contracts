@@ -15,6 +15,7 @@ pragma solidity 0.8.26;
  */
 import { Errors } from "./libraries/Errors.sol";
 import { IPRC20 } from "./interfaces/IPRC20.sol";
+import { IVaultPC } from "./interfaces/IVaultPC.sol";
 import { RevertInstructions } from "./libraries/Types.sol";
 import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
 import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
@@ -37,16 +38,16 @@ contract UniversalGatewayPC is
     /// @notice UniversalCore on Push Chain (provides gas coin/prices + UEM address).
     address public UNIVERSAL_CORE;
 
-    /// @notice Cached Universal Executor Module as fee vault; derived from UniversalCore.
-    /// @dev    If UniversalCore updates, call {refreshUniversalExecutor} to recache.
-    address public UNIVERSAL_EXECUTOR_MODULE;
+    /// @notice VaultPC on Push Chain (custody vault for fees collected from outbound flows).
+    IVaultPC public VAULT_PC;
 
     /// @notice                 Initializes the contract.
     /// @param admin            address of the admin.
     /// @param pauser           address of the pauser.
     /// @param universalCore    address of the UniversalCore.
-    function initialize(address admin, address pauser, address universalCore) external initializer {
-        if (admin == address(0) || pauser == address(0) || universalCore == address(0)) revert Errors.ZeroAddress();
+    /// @param vaultPC          address of the VaultPC.
+    function initialize(address admin, address pauser, address universalCore, address vaultPC) external initializer {
+        if (admin == address(0) || pauser == address(0) || universalCore == address(0) || vaultPC == address(0)) revert Errors.ZeroAddress();
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -56,16 +57,16 @@ contract UniversalGatewayPC is
         _grantRole(PAUSER_ROLE, pauser);
 
         UNIVERSAL_CORE = universalCore;
-        UNIVERSAL_EXECUTOR_MODULE = IUniversalCore(universalCore).UNIVERSAL_EXECUTOR_MODULE();
+        VAULT_PC = IVaultPC(vaultPC);
     }
 
-    /// @notice                 Sets the UniversalCore address.
-    /// @param universalCore    address of the UniversalCore.
-    function setUniversalCore(address universalCore) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (universalCore == address(0)) revert Errors.ZeroAddress();
-        UNIVERSAL_CORE = universalCore;
-
-        UNIVERSAL_EXECUTOR_MODULE = IUniversalCore(universalCore).UNIVERSAL_EXECUTOR_MODULE();
+    /// @notice                 Sets the VaultPC address.
+    /// @param vaultPC    address of the VaultPC.
+    function setVaultPC(address vaultPC) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        if (vaultPC == address(0)) revert Errors.ZeroAddress();
+        address oldVaultPC = address(VAULT_PC);
+        VAULT_PC = IVaultPC(vaultPC);
+        emit VaultPCUpdated(oldVaultPC, vaultPC);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) whenNotPaused {
@@ -169,14 +170,14 @@ contract UniversalGatewayPC is
     }
 
     /**
-     * @dev     Pull fee from user into the Universal Executor Module.
+     * @dev     Pull fee from user into the VaultPC.
      *          Caller must have approved `gasToken` for at least `gasFee`.
      */
     function _moveFees(address from, address gasToken, uint256 gasFee) internal {
-        address _ueModule = UNIVERSAL_EXECUTOR_MODULE;
-        if (_ueModule == address(0)) revert Errors.ZeroAddress();
+        address _vaultPC = address(VAULT_PC);
+        if (_vaultPC == address(0)) revert Errors.ZeroAddress();
 
-        bool ok = IPRC20(gasToken).transferFrom(from, _ueModule, gasFee);
+        bool ok = IPRC20(gasToken).transferFrom(from, _vaultPC, gasFee);
         if (!ok) revert Errors.GasFeeTransferFailed(gasToken, from, gasFee);
     }
 

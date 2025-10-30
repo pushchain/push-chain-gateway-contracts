@@ -12,6 +12,7 @@ pragma solidity 0.8.26;
  */
 
 import {Errors}                     from "./libraries/Errors.sol";
+import {IVaultPC}                   from "./interfaces/IVaultPC.sol";
 import {IUniversalCore}             from "./interfaces/IUniversalCore.sol";
 
 import {IERC20}                     from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -28,28 +29,17 @@ contract VaultPC is
     ContextUpgradeable,
     PausableUpgradeable,
     ReentrancyGuardUpgradeable,
-    AccessControlUpgradeable
+    AccessControlUpgradeable,
+    IVaultPC
 {
     using SafeERC20 for IERC20;
 
-
-    // =========================
-    //           STATE
-    // =========================
     /// @notice UniversalCore on Push Chain (provides gas coin/prices + UEM address).   
     address public UNIVERSAL_CORE;
 
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant FUND_MANAGER_ROLE = keccak256("FUND_MANAGER_ROLE");
 
-    // =========================
-    //           EVENTS
-    // =========================
-    event GatewayPCUpdated(address indexed oldGatewayPC, address indexed newGatewayPC);
-
-    // =========================
-    //         INITIALIZER
-    // =========================
     /**
      * @param admin   DEFAULT_ADMIN_ROLE holder
      * @param pauser  PAUSER_ROLE
@@ -94,12 +84,7 @@ contract VaultPC is
     // =========================
     //          WITHDRAW
     // =========================
-    /**
-     * @notice TSS-only withdraw to an external recipient.
-     * @param token  ERC20 token to transfer (must be supported by gateway)
-     * @param to     destination address
-     * @param amount amount to transfer
-     */
+    /// @inheritdoc IVaultPC
     function withdraw(address token, address to, uint256 amount)
         external
         nonReentrant
