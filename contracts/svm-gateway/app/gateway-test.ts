@@ -8,9 +8,10 @@ import {
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
-import type { Pushsolanagateway } from "../target/types/pushsolanagateway";
+import type { UniversalGateway } from "../target/types/universal_gateway";
 import * as spl from "@solana/spl-token";
-import { keccak_256 } from "js-sha3";
+import pkg from 'js-sha3';
+const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
 import { assert } from "chai";
 
@@ -40,9 +41,9 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 anchor.setProvider(adminProvider);
 
 // Load IDL
-const idl = JSON.parse(fs.readFileSync("./target/idl/pushsolanagateway.json", "utf8"));
-const program = new Program(idl as Pushsolanagateway, adminProvider);
-const userProgram = new Program(idl as Pushsolanagateway, userProvider);
+const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
+const program = new Program(idl, adminProvider);
+const userProgram = new Program(idl, userProvider);
 
 // Helper: Get dynamic gas amount based on current SOL price
 async function getDynamicGasAmount(targetUsd: number, fallbackSol: number = 0.01): Promise<anchor.BN> {
@@ -282,12 +283,12 @@ async function run() {
         to: Array.from(Buffer.from("1234567890123456789012345678901234567890", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
         value: new anchor.BN(0), // Value to send
         data: Buffer.from("test payload data"),
-        gas_limit: new anchor.BN(100000),
-        max_fee_per_gas: new anchor.BN(20000000000), // 20 gwei
-        max_priority_fee_per_gas: new anchor.BN(1000000000), // 1 gwei
+        gasLimit: new anchor.BN(100000),
+        maxFeePerGas: new anchor.BN(20000000000), // 20 gwei
+        maxPriorityFeePerGas: new anchor.BN(1000000000), // 1 gwei
         nonce: new anchor.BN(0),
         deadline: new anchor.BN(Date.now() + 3600000), // 1 hour from now
-        v_type: { signedVerification: {} }, // VerificationType enum
+        vType: { signedVerification: {} }, // VerificationType enum
     };
 
     const revertInstructions = {
@@ -299,8 +300,11 @@ async function run() {
     // Get dynamic gas amount for USD cap compliance
     const gasAmount = await getDynamicGasAmount(1.20, 0.01); // Target $1.20, fallback 0.01 SOL
 
+    // Generate signature data for send_tx_with_gas
+    const gasSignatureData = Buffer.from("test_signature_data_for_send_tx_with_gas", "utf8");
+
     const gasTx = await userProgram.methods
-        .sendTxWithGas(payload, revertInstructions, gasAmount)
+        .sendTxWithGas(payload, revertInstructions, gasAmount, gasSignatureData)
         .accounts({
             config: configPda,
             vault: vaultPda,
@@ -445,12 +449,12 @@ async function run() {
         to: Array.from(Buffer.from("abcdefabcdefabcdefabcdefabcdefabcdefabcd", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
         value: new anchor.BN(0), // Value to send
         data: Buffer.from("test payload for funds+gas"),
-        gas_limit: new anchor.BN(120000),
-        max_fee_per_gas: new anchor.BN(20000000000), // 20 gwei
-        max_priority_fee_per_gas: new anchor.BN(1000000000), // 1 gwei
+        gasLimit: new anchor.BN(120000),
+        maxFeePerGas: new anchor.BN(20000000000), // 20 gwei
+        maxPriorityFeePerGas: new anchor.BN(1000000000), // 1 gwei
         nonce: new anchor.BN(1),
         deadline: new anchor.BN(Date.now() + 3600000), // 1 hour from now
-        v_type: { signedVerification: {} }, // VerificationType enum
+        vType: { signedVerification: {} }, // VerificationType enum
     };
 
     console.log(`🚀 Testing combined SPL + Gas transaction...`);
@@ -608,9 +612,10 @@ async function run() {
     }
 
     // Try to send funds while paused (should fail)
+    const signatureNew = Buffer.from("test_signature_data_for_gas", "utf8");
     try {
         await userProgram.methods
-            .sendTxWithGas(payload, revertInstructions, gasAmount)
+            .sendTxWithGas(payload, revertInstructions, gasAmount, signatureNew)
             .accounts({
                 config: configPda,
                 vault: vaultPda,
