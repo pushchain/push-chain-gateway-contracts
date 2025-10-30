@@ -35,8 +35,13 @@ interface IUniversalGatewayPC {
         RevertInstructions revertInstruction
     );
 
+    /// @notice Emitted when VaultPC address is updated
+    /// @param oldVaultPC Previous VaultPC address
+    /// @param newVaultPC New VaultPC address
+    event VaultPCUpdated(address indexed oldVaultPC, address indexed newVaultPC);
+
     // ========= Admin Functions =========
-    function setUniversalCore(address universalCore) external;
+    function setVaultPC(address vaultPC) external;
     function pause() external;
     function unpause() external;
 
@@ -78,6 +83,5 @@ interface IUniversalGatewayPC {
 
     // ========= View Functions =========
     function UNIVERSAL_CORE() external view returns (address);
-    function UNIVERSAL_EXECUTOR_MODULE() external view returns (address);
     function PAUSER_ROLE() external view returns (bytes32);
 }
