@@ -37,9 +37,10 @@ contract VaultTest is Test {
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
+    event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
+    event VaultRevert(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
     
     bytes32 txID = bytes32(uint256(1));
-    event VaultRevert(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
 
     function setUp() public {
         admin = makeAddr("admin");
@@ -601,6 +602,138 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectRevert();
         vault.revertWithdraw(address(token), user1, 100e18, RevertInstructions(user1, ""));
+    }
+
+    // ============================================================================
+    // WITHDRAWANDEXECUTE TESTS
+    // ============================================================================
+
+    function test_WithdrawAndExecute_StandardToken_Success() public {
+        uint256 amount = 100e18;
+        bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
+        
+        uint256 initialVaultBalance = token.balanceOf(address(vault));
+        
+        vm.prank(tss);
+        vault.withdrawAndExecute(bytes32(uint256(200)), user1, address(token), address(mockTarget), amount, callData);
+        
+        // Verify tokens were transferred and call was executed
+        assertEq(mockTarget.lastCaller(), address(gateway));
+        assertEq(token.balanceOf(address(vault)), initialVaultBalance - amount);
+    }
+
+    function test_WithdrawAndExecute_EmitsEvent() public {
+        uint256 amount = 100e18;
+        bytes memory callData = "";
+        
+        vm.prank(tss);
+        vm.expectEmit(true, true, false, true);
+        emit VaultWithdrawAndExecute(address(token), address(mockTarget), amount, callData);
+        vault.withdrawAndExecute(bytes32(uint256(201)), user1, address(token), address(mockTarget), amount, callData);
+    }
+
+    function test_WithdrawAndExecute_OnlyTSSCanCall() public {
+        bytes memory callData = "";
+        
+        vm.prank(user1);
+        vm.expectRevert();
+        vault.withdrawAndExecute(bytes32(uint256(202)), user1, address(token), address(mockTarget), 100e18, callData);
+    }
+
+    function test_WithdrawAndExecute_WhenPausedReverts() public {
+        vm.prank(pauser);
+        vault.pause();
+        
+        bytes memory callData = "";
+        
+        vm.prank(tss);
+        vm.expectRevert();
+        vault.withdrawAndExecute(bytes32(uint256(203)), user1, address(token), address(mockTarget), 100e18, callData);
+    }
+
+    function test_WithdrawAndExecute_ZeroTokenReverts() public {
+        bytes memory callData = "";
+        
+        vm.prank(tss);
+        vm.expectRevert(Errors.ZeroAddress.selector);
+        vault.withdrawAndExecute(bytes32(uint256(204)), user1, address(0), address(mockTarget), 100e18, callData);
+    }
+
+    function test_WithdrawAndExecute_ZeroTargetReverts() public {
+        bytes memory callData = "";
+        
+        vm.prank(tss);
+        vm.expectRevert(Errors.ZeroAddress.selector);
+        vault.withdrawAndExecute(bytes32(uint256(205)), user1, address(token), address(0), 100e18, callData);
+    }
+
+    function test_WithdrawAndExecute_ZeroAmountReverts() public {
+        bytes memory callData = "";
+        
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.withdrawAndExecute(bytes32(uint256(206)), user1, address(token), address(mockTarget), 0, callData);
+    }
+
+    function test_WithdrawAndExecute_InsufficientBalanceReverts() public {
+        uint256 vaultBalance = token.balanceOf(address(vault));
+        bytes memory callData = "";
+        
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.withdrawAndExecute(bytes32(uint256(207)), user1, address(token), address(mockTarget), vaultBalance + 1, callData);
+    }
+
+    function test_WithdrawAndExecute_UnsupportedTokenReverts() public {
+        MockERC20 unsupportedToken = new MockERC20("Unsupported", "UNS", 18, 1000e18);
+        unsupportedToken.mint(address(vault), 100e18);
+        bytes memory callData = "";
+        
+        vm.prank(tss);
+        vm.expectRevert(Errors.NotSupported.selector);
+        vault.withdrawAndExecute(bytes32(uint256(208)), user1, address(unsupportedToken), address(mockTarget), 100e18, callData);
+    }
+
+    function test_WithdrawAndExecute_WithPayload_VerifiesExecution() public {
+        uint256 amount = 100e18;
+        bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
+        
+        vm.prank(tss);
+        vault.withdrawAndExecute(bytes32(uint256(209)), user1, address(token), address(mockTarget), amount, callData);
+        
+        // Verify the call was executed (MockTarget stores lastCaller)
+        assertEq(mockTarget.lastCaller(), address(gateway));
+        assertEq(mockTarget.lastToken(), address(token));
+    }
+
+    function test_WithdrawAndExecute_EmptyPayload_Success() public {
+        uint256 amount = 100e18;
+        bytes memory callData = "";
+        
+        // With empty payload, tokens are approved to target but not consumed
+        // Gateway will return them back to vault, so balance should remain same
+        uint256 initialVaultBalance = token.balanceOf(address(vault));
+        
+        vm.prank(tss);
+        vault.withdrawAndExecute(bytes32(uint256(210)), user1, address(token), address(mockTarget), amount, callData);
+        
+        // Tokens returned to vault after empty call
+        assertEq(token.balanceOf(address(vault)), initialVaultBalance);
+    }
+
+    function test_WithdrawAndExecute_DifferentTokens() public {
+        bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 50e18);
+        
+        vm.prank(tss);
+        vault.withdrawAndExecute(bytes32(uint256(211)), user1, address(token), address(mockTarget), 50e18, callData);
+        
+        // Token 2 with different decimals
+        bytes memory callData2 = abi.encodeWithSignature("receiveToken(address,uint256)", address(token2), 25e6);
+        vm.prank(tss);
+        vault.withdrawAndExecute(bytes32(uint256(212)), user1, address(token2), address(mockTarget), 25e6, callData2);
+        
+        // Verify both calls executed
+        assertEq(mockTarget.lastCaller(), address(gateway));
     }
 
     // ============================================================================
