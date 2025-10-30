@@ -97,11 +97,6 @@ pub fn whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<(
     // Add token to whitelist
     whitelist.tokens.push(token);
 
-    // Emit event
-    emit!(TokenWhitelisted {
-        token_address: token,
-    });
-
     Ok(())
 }
 
@@ -113,11 +108,6 @@ pub fn remove_whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> R
     // Find and remove token from whitelist
     if let Some(pos) = whitelist.tokens.iter().position(|&x| x == token) {
         whitelist.tokens.remove(pos);
-
-        // Emit event
-        emit!(TokenRemovedFromWhitelist {
-            token_address: token,
-        });
     } else {
         return Err(GatewayError::TokenNotWhitelisted.into());
     }
