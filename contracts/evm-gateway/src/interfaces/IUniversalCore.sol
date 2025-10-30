@@ -4,6 +4,13 @@ pragma solidity 0.8.26;
 interface IUniversalCore {
 
     /**
+     * @notice Check if a token is supported
+     * @param token Token address
+     * @return bool True if the token is supported, false otherwise
+     */
+    function isSupportedToken(address token) external view returns (bool);
+
+    /**
      * @notice Get gas token PRC20 address for a chain
      * @param chainId Chain ID
      * @return gasToken Gas token address

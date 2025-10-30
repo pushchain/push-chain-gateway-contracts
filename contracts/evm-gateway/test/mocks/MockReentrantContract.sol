@@ -17,6 +17,7 @@ contract MockReentrantContract {
     
     // Vault-specific reentrancy state
     address public vault;
+    address public vaultPC;
     address public token;
     bool public shouldReenter;
     uint256 public reenterType; // 0=withdraw, 1=withdrawAndCall, 2=revertWithdraw
@@ -65,6 +66,10 @@ contract MockReentrantContract {
         vault = _vault;
     }
 
+    function setVaultPC(address _vaultPC) external {
+        vaultPC = _vaultPC;
+    }
+
     function enableVaultReentry(address _token, uint256 _type) external {
         token = _token;
         shouldReenter = true;
@@ -98,6 +103,28 @@ contract MockReentrantContract {
                 require(success, "Reentry failed");
             }
         }
+    }
+
+    // ============================================================================
+    // VaultPC Reentrancy Functions
+    // ============================================================================
+
+    function attackVaultPCWithdraw(address _token, address to, uint256 amount) external {
+        // First call to VaultPC withdraw - this should trigger transferFrom callback
+        (bool success,) = vaultPC.call(
+            abi.encodeWithSignature("withdraw(address,address,uint256)", _token, to, amount)
+        );
+        require(!success, "Attack should have failed due to reentrancy guard");
+    }
+
+    // Callback from ERC20 transfer that attempts reentrancy
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        // Attempt to reenter withdraw during the transfer callback
+        (bool success,) = vaultPC.call(
+            abi.encodeWithSignature("withdraw(address,address,uint256)", msg.sender, address(this), 1)
+        );
+        // The reentrancy should fail, so we just return true for the original transfer
+        return true;
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
