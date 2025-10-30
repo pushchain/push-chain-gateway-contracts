@@ -128,7 +128,8 @@ contract Vault is
         _enforceSupported(token);
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        IERC20(token).safeTransfer(to, amount);
+        IERC20(token).safeTransfer(address(gateway), amount);
+        gateway.withdrawToken(txID, originCaller, token, to, amount);
         emit VaultWithdraw(txID, originCaller, token, to, amount);
     }
 
@@ -165,8 +166,10 @@ contract Vault is
         _enforceSupported(token);
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        IERC20(token).safeTransfer(to, amount);
-        emit VaultRefund(token, to, amount, revertInstruction);
+        IERC20(token).safeTransfer(address(gateway), amount);
+        gateway.revertUniversalTxToken(token, amount, revertInstruction);
+
+        emit VaultRevert(token, to, amount, revertInstruction);
     }
 
     // =========================

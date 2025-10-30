@@ -14,7 +14,7 @@ interface IVault {
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
-    event VaultRefund(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
+    event VaultRevert(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
 
     // =========================
     //         INITIALIZER

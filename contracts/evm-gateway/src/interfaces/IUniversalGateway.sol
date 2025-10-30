@@ -31,8 +31,10 @@ interface IUniversalGateway {
 
     /// @notice         Vault updated event
     event VaultUpdated(address indexed oldVault, address indexed newVault);
+    /// @notice         Withdraw token event
+    event WithdrawToken(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
     /// @notice         Revert withdraw event
-    event RevertWithdraw(address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+    event RevertUniversalTx(address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
     /// @notice         Caps updated event
     event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
     /// @notice         Rate-limit / config events
@@ -205,16 +207,29 @@ interface IUniversalGateway {
 
     /// @notice Withdraw functions (TSS-only)
 
-    /// @notice             Revert tokens to the recipient specified in revertInstruction
+    /// @notice             Revert universal transaction with tokens to the recipient specified in revertInstruction
     /// @param token        token address to revert
     /// @param amount       amount of token to revert
     /// @param revertCFG    revert settings
-    function revertTokens(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
+    function revertUniversalTxToken(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
     
     /// @notice             Revert native tokens to the recipient specified in revertInstruction
     /// @param amount       amount of native token to revert
     /// @param revertCFG    revert settings
-    function revertNative(uint256 amount, RevertInstructions calldata revertCFG) external payable;
+    function revertUniversalTx(uint256 amount, RevertInstructions calldata revertCFG) external payable;
+
+    
+    // =========================
+    //       Withdraw and Payload Execution Paths
+    // =========================
+
+    /// @notice             Withdraw token from the gateway
+    /// @param txID         unique transaction identifier
+    /// @param originCaller original caller/user on source chain
+    /// @param token        token address (ERC20 token)
+    /// @param to           recipient address
+    /// @param amount       amount of token to withdraw
+    function withdrawToken(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier

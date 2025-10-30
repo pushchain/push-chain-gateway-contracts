@@ -509,13 +509,8 @@ contract UniversalGateway is
         });
     }
 
-    // withdrawFunds function removed as token withdrawals are now handled by the Vault
-
-    /// @notice             Revert tokens to the recipient specified in revertInstruction
-    /// @param token        token address to revert
-    /// @param amount       amount of token to revert
-    /// @param revertInstruction revert settings
-    function revertTokens(address token, uint256 amount, RevertInstructions calldata revertInstruction)
+    /// @inheritdoc IUniversalGateway
+    function revertUniversalTxToken(address token, uint256 amount, RevertInstructions calldata revertInstruction)
         external
         nonReentrant
         whenNotPaused
@@ -526,13 +521,11 @@ contract UniversalGateway is
         
         IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
         
-        emit RevertWithdraw(revertInstruction.fundRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(revertInstruction.fundRecipient, token, amount, revertInstruction);
     }
     
-    /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param amount       amount of native token to revert
-    /// @param revertInstruction revert settings
-    function revertNative(uint256 amount, RevertInstructions calldata revertInstruction)
+    /// @inheritdoc IUniversalGateway
+    function revertUniversalTx(uint256 amount, RevertInstructions calldata revertInstruction)
         external
         payable 
         nonReentrant
@@ -545,12 +538,32 @@ contract UniversalGateway is
         (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertWithdraw(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================
-    //       GATEWAY Payload Execution Paths
+    //       GATEWAY Withdraw and Payload Execution Paths
     // =========================
+
+    function withdrawToken(
+        bytes32 txID,
+        address originCaller,
+        address token,
+        address to,
+        uint256 amount
+    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (token == address(0)) revert Errors.InvalidInput();
+        
+        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+
+        isExecuted[txID] = true;
+        IERC20(token).safeTransfer(to, amount);
+        emit WithdrawToken(txID, originCaller, token, to, amount);
+    }
 
     /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
     /// @dev                   Allows outbound payload execution from Push Chain to external chains.
@@ -875,9 +888,9 @@ contract UniversalGateway is
             // Fast-path: pull WETH from user and unwrap to native
             IERC20(WETH).safeTransferFrom(_msgSender(), address(this), amountIn);
 
-            uint256 balBefore = address(this).balance;
+            uint256 balanceBeforeUnwrap = address(this).balance;
             IWETH(WETH).withdraw(amountIn);
-            ethOut = address(this).balance - balBefore;
+            ethOut = address(this).balance - balanceBeforeUnwrap;
 
             // Slippage bound still applies for a consistent interface (caller can set to amountIn)
             if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
@@ -903,9 +916,9 @@ contract UniversalGateway is
 
         IERC20(tokenIn).forceApprove(address(uniV3Router), 0);
 
-        uint256 balBefore = address(this).balance;
+        uint256 balanceBeforeSwapUnwrap = address(this).balance;
         IWETH(WETH).withdraw(wethOut);
-        ethOut = address(this).balance - balBefore;
+        ethOut = address(this).balance - balanceBeforeSwapUnwrap;
 
         // Defensive: enforce the bound again after unwrap
         if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
