@@ -11,11 +11,19 @@ interface IVaultPC {
     // =========================
     
     /**
-     * @notice Emitted when the UniversalCore address is updated
+     * @notice          Emitted when the UniversalCore address is updated
     * @param oldVaultPC The previous VaultPC address
     * @param newVaultPC The new VaultPC address
      */
     event VaultPCUpdated(address indexed oldVaultPC, address indexed newVaultPC);
+
+    /**
+     * @notice          Emitted when fees are withdrawn from the vault
+     * @param caller    The address that initiated the withdrawal (FUND_MANAGER_ROLE)
+     * @param token     The PRC20 token address
+     * @param amount    The amount withdrawn
+     */
+    event FeesWithdrawn(address indexed caller, address indexed token, uint256 amount);
 
     // =========================
     //          WITHDRAW

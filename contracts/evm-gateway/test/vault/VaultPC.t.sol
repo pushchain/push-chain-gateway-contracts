@@ -27,6 +27,7 @@ contract VaultPCTest is Test {
 
     // Events
     event GatewayPCUpdated(address indexed oldGatewayPC, address indexed newGatewayPC);
+    event FeesWithdrawn(address indexed caller, address indexed token, uint256 amount);
 
     function setUp() public {
         admin = makeAddr("admin");
@@ -363,6 +364,15 @@ contract VaultPCTest is Test {
         assertEq(prc20Token.balanceOf(user1), amount);
     }
 
+    function test_Withdraw_EmitsFeesWithdrawnEvent() public {
+        uint256 amount = 1000e18;
+        
+        vm.prank(fundManager);
+        vm.expectEmit(true, true, false, true);
+        emit FeesWithdrawn(fundManager, address(prc20Token), amount);
+        vault.withdraw(address(prc20Token), user1, amount);
+    }
+
     function test_Withdraw_ZeroAmountReverts() public {
         vm.prank(fundManager);
         vm.expectRevert(Errors.InvalidAmount.selector);
@@ -535,6 +545,129 @@ contract VaultPCTest is Test {
         vm.prank(fundManager);
         vault.sweep(address(prc20Token), user1, 100e18);
         assertEq(prc20Token.balanceOf(user1), 100e18);
+    }
+
+    // ============================================================================
+    // EDGE CASE & ADDITIONAL COVERAGE TESTS
+    // ============================================================================
+
+    function test_UpdateUniversalCore_SequentialUpdates() public {
+        MockUniversalCoreReal newCore1 = new MockUniversalCoreReal(uem);
+        MockUniversalCoreReal newCore2 = new MockUniversalCoreReal(uem);
+        
+        vm.prank(admin);
+        vault.updateUniversalCore(address(newCore1));
+        assertEq(vault.UNIVERSAL_CORE(), address(newCore1));
+        
+        vm.prank(admin);
+        vault.updateUniversalCore(address(newCore2));
+        assertEq(vault.UNIVERSAL_CORE(), address(newCore2));
+    }
+
+    function test_Sweep_ExactBalance() public {
+        uint256 exactBalance = prc20Token.balanceOf(address(vault));
+        
+        vm.prank(fundManager);
+        vault.sweep(address(prc20Token), user1, exactBalance);
+        
+        assertEq(prc20Token.balanceOf(address(vault)), 0);
+        assertEq(prc20Token.balanceOf(user1), exactBalance);
+    }
+
+    function test_Withdraw_AfterUniversalCoreChange_RespectNewSupport() public {
+        // Create new core with different token support
+        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
+        newCore.setSupportedToken(address(prc20Token), false); // Disable prc20Token
+        newCore.setSupportedToken(address(prc20Token2), true);  // Enable prc20Token2
+        
+        vm.prank(admin);
+        vault.updateUniversalCore(address(newCore));
+        
+        // prc20Token should now fail
+        vm.prank(fundManager);
+        vm.expectRevert(Errors.NotSupported.selector);
+        vault.withdraw(address(prc20Token), user1, 100e18);
+        
+        // prc20Token2 should succeed
+        vm.prank(fundManager);
+        vault.withdraw(address(prc20Token2), user1, 100e18);
+        assertEq(prc20Token2.balanceOf(user1), 100e18);
+    }
+
+    function test_Sweep_WorksRegardlessOfTokenSupport() public {
+        // Create unsupported token
+        MockPRC20 unsupportedToken = new MockPRC20(
+            "Unsupported",
+            "UNS",
+            18,
+            "999",
+            MockPRC20.TokenType.ERC20,
+            0,
+            address(universalCore),
+            "0x0"
+        );
+        unsupportedToken.mint(address(vault), 1000e18);
+        
+        // Sweep should work even for unsupported tokens (emergency recovery)
+        vm.prank(fundManager);
+        vault.sweep(address(unsupportedToken), user1, 500e18);
+        assertEq(unsupportedToken.balanceOf(user1), 500e18);
+    }
+
+    function test_Withdraw_AfterPauseUnpause_WorksNormally() public {
+        vm.prank(pauser);
+        vault.pause();
+        
+        vm.prank(pauser);
+        vault.unpause();
+        
+        vm.prank(fundManager);
+        vault.withdraw(address(prc20Token), user1, 100e18);
+        assertEq(prc20Token.balanceOf(user1), 100e18);
+    }
+
+    function test_Withdraw_ChecksSupportBeforeZeroAddress() public {
+        // Create unsupported token first
+        MockPRC20 unsupportedToken = new MockPRC20(
+            "Unsupported",
+            "UNS",
+            18,
+            "888",
+            MockPRC20.TokenType.ERC20,
+            0,
+            address(universalCore),
+            "0x0"
+        );
+        unsupportedToken.mint(address(vault), 1000e18);
+        
+        // Should revert with NotSupported (checked first via _enforceSupportedToken)
+        vm.prank(fundManager);
+        vm.expectRevert(Errors.NotSupported.selector);
+        vault.withdraw(address(unsupportedToken), user1, 100e18);
+    }
+
+    function test_Sweep_PartialAmount() public {
+        uint256 totalBalance = prc20Token.balanceOf(address(vault));
+        uint256 sweepAmount = totalBalance / 3;
+        
+        vm.prank(fundManager);
+        vault.sweep(address(prc20Token), user1, sweepAmount);
+        
+        assertEq(prc20Token.balanceOf(address(vault)), totalBalance - sweepAmount);
+        assertEq(prc20Token.balanceOf(user1), sweepAmount);
+    }
+
+    function test_Withdraw_MultipleSmallAmounts() public {
+        vm.prank(fundManager);
+        vault.withdraw(address(prc20Token), user1, 1e18);
+        
+        vm.prank(fundManager);
+        vault.withdraw(address(prc20Token), user1, 2e18);
+        
+        vm.prank(fundManager);
+        vault.withdraw(address(prc20Token), user1, 3e18);
+        
+        assertEq(prc20Token.balanceOf(user1), 6e18);
     }
 
     // ============================================================================

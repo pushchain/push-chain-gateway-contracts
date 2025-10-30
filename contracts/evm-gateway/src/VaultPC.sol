@@ -97,6 +97,7 @@ contract VaultPC is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         IERC20(token).safeTransfer(to, amount);
+        emit FeesWithdrawn(msg.sender, token, amount);
     }
 
     // =========================
