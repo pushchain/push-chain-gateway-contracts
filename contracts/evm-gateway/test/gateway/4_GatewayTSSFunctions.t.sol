@@ -46,7 +46,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         // Non-TSS user should not be able to call TSS functions
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(Errors.WithdrawFailed.selector));
-        gateway.revertNative(1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx(1 ether, RevertInstructions(user1, ""));
     }
 
     function testOnlyTSS_TSSShouldSucceed() public {
@@ -55,7 +55,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.deal(tss, 1 ether);
         vm.prank(tss);
-        gateway.revertNative{value: 1 ether}(1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{value: 1 ether}(1 ether, RevertInstructions(user1, ""));
 
         assertEq(user1.balance, initialBalance + 1 ether);
     }
@@ -68,13 +68,13 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 withdrawAmount = 2 ether;
         uint256 initialRecipientBalance = user1.balance;
 
-        // Expect RevertWithdraw event
+        // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.RevertWithdraw(user1, address(0), withdrawAmount, RevertInstructions(user1, ""));
+        emit IUniversalGateway.RevertUniversalTx(user1, address(0), withdrawAmount, RevertInstructions(user1, ""));
 
         vm.deal(tss, withdrawAmount);
         vm.prank(tss);
-        gateway.revertNative{value: withdrawAmount}(withdrawAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{value: withdrawAmount}(withdrawAmount, RevertInstructions(user1, ""));
 
         // Check balances
         assertEq(user1.balance, initialRecipientBalance + withdrawAmount);
@@ -85,12 +85,12 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 initialGatewayBalance = usdc.balanceOf(address(gateway));
         uint256 initialRecipientBalance = usdc.balanceOf(user1);
 
-        // Expect RevertWithdraw event
+        // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.RevertWithdraw(user1, address(usdc), withdrawAmount, RevertInstructions(user1, ""));
+        emit IUniversalGateway.RevertUniversalTx(user1, address(usdc), withdrawAmount, RevertInstructions(user1, ""));
 
-        // revertTokens requires VAULT_ROLE (test contract has this role)
-        gateway.revertTokens(address(usdc), withdrawAmount, RevertInstructions(user1, ""));
+        // revertUniversalTxToken requires VAULT_ROLE (test contract has this role)
+        gateway.revertUniversalTxToken(address(usdc), withdrawAmount, RevertInstructions(user1, ""));
 
         // Check balances
         assertEq(usdc.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
@@ -100,13 +100,13 @@ contract GatewayTSSFunctionsTest is BaseTest {
     function testWithdrawFunds_InvalidRecipient_Revert() public {
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
-        gateway.revertNative(1 ether, RevertInstructions(address(0), ""));
+        gateway.revertUniversalTx(1 ether, RevertInstructions(address(0), ""));
     }
 
     function testWithdrawFunds_InvalidAmount_Revert() public {
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertNative(0, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx(0, RevertInstructions(user1, ""));
     }
 
     function testWithdrawFunds_InsufficientBalance_Revert() public {
@@ -116,7 +116,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.deal(tss, wrongValue);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertNative{value: wrongValue}(amount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{value: wrongValue}(amount, RevertInstructions(user1, ""));
     }
 
     function testWithdrawFunds_ERC20InsufficientBalance_Revert() public {
@@ -124,7 +124,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertTokens(address(usdc), excessiveAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(address(usdc), excessiveAmount, RevertInstructions(user1, ""));
     }
 
     // =========================
@@ -137,13 +137,13 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         RevertInstructions memory revertCfg = revertCfg(user1);
 
-        // Expect WithdrawFunds event
+        // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.RevertWithdraw(user1, address(0), withdrawAmount, revertCfg);
+        emit IUniversalGateway.RevertUniversalTx(user1, address(0), withdrawAmount, revertCfg);
 
         vm.deal(tss, withdrawAmount);
         vm.prank(tss);
-        gateway.revertNative{value: withdrawAmount}(withdrawAmount, revertCfg);
+        gateway.revertUniversalTx{value: withdrawAmount}(withdrawAmount, revertCfg);
 
         // Check balances
         assertEq(user1.balance, initialRecipientBalance + withdrawAmount);
@@ -156,12 +156,12 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         RevertInstructions memory revertCfg = revertCfg(user1);
 
-        // Expect WithdrawFunds event
+        // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.RevertWithdraw(user1, address(usdc), withdrawAmount, revertCfg);
+        emit IUniversalGateway.RevertUniversalTx(user1, address(usdc), withdrawAmount, revertCfg);
 
-        // revertTokens requires VAULT_ROLE (test contract has this role)
-        gateway.revertTokens(address(usdc), withdrawAmount, revertCfg);
+        // revertUniversalTxToken requires VAULT_ROLE (test contract has this role)
+        gateway.revertUniversalTxToken(address(usdc), withdrawAmount, revertCfg);
 
         // Check balances
         assertEq(usdc.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
@@ -173,7 +173,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
-        gateway.revertNative(1 ether, revertCfg);
+        gateway.revertUniversalTx(1 ether, revertCfg);
     }
 
     function testRevertWithdrawFunds_InvalidAmount_Revert() public {
@@ -181,7 +181,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertNative(0, revertCfg);
+        gateway.revertUniversalTx(0, revertCfg);
     }
 
     function testRevertWithdrawFunds_InsufficientBalance_Revert() public {
@@ -192,7 +192,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.deal(tss, wrongValue);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertNative{value: wrongValue}(amount, revertCfg);
+        gateway.revertUniversalTx{value: wrongValue}(amount, revertCfg);
     }
 
     // =========================
@@ -206,7 +206,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertNative(1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx(1 ether, RevertInstructions(user1, ""));
     }
 
     function testRevertWithdrawFunds_WhenPaused_Revert() public {
@@ -218,7 +218,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertNative(1 ether, revertCfg);
+        gateway.revertUniversalTx(1 ether, revertCfg);
     }
 
     function testWithdrawFunds_ReentrancyProtection() public {
@@ -227,7 +227,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         // but the modifier is there and will be covered by the test execution
         vm.deal(tss, 1 ether);
         vm.prank(tss);
-        gateway.revertNative{value: 1 ether}(1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{value: 1 ether}(1 ether, RevertInstructions(user1, ""));
 
         // If we get here without reverting, the reentrancy protection is working
         assertTrue(true);
@@ -241,19 +241,19 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Withdraw USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
-        gateway.revertTokens(address(usdc), usdcAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(address(usdc), usdcAmount, RevertInstructions(user1, ""));
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
         // Withdraw TokenA (requires VAULT_ROLE)
         uint256 initialTokenABalance = tokenA.balanceOf(user1);
-        gateway.revertTokens(address(tokenA), tokenAAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(address(tokenA), tokenAAmount, RevertInstructions(user1, ""));
         assertEq(tokenA.balanceOf(user1), initialTokenABalance + tokenAAmount);
 
         // Withdraw ETH (requires TSS_ROLE)
         uint256 initialEthBalance = user1.balance;
         vm.deal(tss, ethAmount);
         vm.prank(tss);
-        gateway.revertNative{value: ethAmount}(ethAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{value: ethAmount}(ethAmount, RevertInstructions(user1, ""));
         assertEq(user1.balance, initialEthBalance + ethAmount);
     }
 
@@ -266,14 +266,14 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Revert USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
-        gateway.revertTokens(address(usdc), usdcAmount, revertCfg);
+        gateway.revertUniversalTxToken(address(usdc), usdcAmount, revertCfg);
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
         // Revert ETH (requires TSS_ROLE)
         uint256 initialEthBalance = user1.balance;
         vm.deal(tss, ethAmount);
         vm.prank(tss);
-        gateway.revertNative{value: ethAmount}(ethAmount, revertCfg);
+        gateway.revertUniversalTx{value: ethAmount}(ethAmount, revertCfg);
         assertEq(user1.balance, initialEthBalance + ethAmount);
     }
 }

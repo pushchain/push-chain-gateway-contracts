@@ -38,8 +38,8 @@ contract VaultTest is Test {
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
     
-    bytes32 constant txID = bytes32(uint256(1));
-    event VaultRefund(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
+    bytes32 txID = bytes32(uint256(1));
+    event VaultRevert(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
 
     function setUp() public {
         admin = makeAddr("admin");
@@ -448,7 +448,7 @@ contract VaultTest is Test {
     function test_TokenSupport_TogglingReflectsImmediately() public {
         // Initially supported
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(bytes32(uint256(1)), user1, address(token), user1, 100e18);
         assertEq(token.balanceOf(user1), 100e18);
         
         // Remove support
@@ -462,7 +462,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(txID, user2, address(token), user2, 100e18);
+        vault.withdraw(bytes32(uint256(2)), user2, address(token), user2, 100e18);
         
         // Re-add support
         thresholds[0] = 1_000_000e18;
@@ -470,7 +470,7 @@ contract VaultTest is Test {
         gateway.setTokenLimitThresholds(tokens, thresholds);
         
         vm.prank(tss);
-        vault.withdraw(txID, user2, address(token), user2, 100e18);
+        vault.withdraw(bytes32(uint256(3)), user2, address(token), user2, 100e18);
         assertEq(token.balanceOf(user2), 100e18);
     }
 
@@ -530,10 +530,10 @@ contract VaultTest is Test {
 
     function test_Withdraw_MultipleRecipients() public {
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(bytes32(uint256(1)), user1, address(token), user1, 100e18);
         
         vm.prank(tss);
-        vault.withdraw(txID, user2, address(token), user2, 200e18);
+        vault.withdraw(bytes32(uint256(2)), user2, address(token), user2, 200e18);
         
         assertEq(token.balanceOf(user1), 100e18);
         assertEq(token.balanceOf(user2), 200e18);
@@ -541,10 +541,10 @@ contract VaultTest is Test {
 
     function test_Withdraw_DifferentTokens() public {
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(bytes32(uint256(1)), user1, address(token), user1, 100e18);
         
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token2), user1, 50e6);
+        vault.withdraw(bytes32(uint256(2)), user1, address(token2), user1, 50e6);
         
         assertEq(token.balanceOf(user1), 100e18);
         assertEq(token2.balanceOf(user1), 50e6);
@@ -570,7 +570,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
-        emit VaultRefund(address(token), user1, amount, revertInstr);
+        emit VaultRevert(address(token), user1, amount, revertInstr);
         vault.revertWithdraw(address(token), user1, amount, revertInstr);
     }
 
@@ -713,7 +713,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            admin, pauser, tss, address(vault), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -723,7 +723,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(bytes32(uint256(100)), user1, address(token), user1, 100e18);
         
         // Re-enable support in new gateway
         address[] memory tokens = new address[](1);
@@ -735,7 +735,7 @@ contract VaultTest is Test {
         newGateway.setTokenLimitThresholds(tokens, thresholds);
         
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(bytes32(uint256(101)), user1, address(token), user1, 100e18);
         assertEq(token.balanceOf(user1), 100e18);
     }
 
@@ -783,7 +783,7 @@ contract VaultTest is Test {
         
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
-        emit VaultRefund(address(token), user1, amount, revertInstr);
+        emit VaultRevert(address(token), user1, amount, revertInstr);
         vault.revertWithdraw(address(token), user1, amount, revertInstr);
     }
 
