@@ -18,6 +18,7 @@ pub fn send_tx_with_gas(
     payload: UniversalPayload,
     revert_instruction: RevertInstructions,
     amount: u64,
+    signature_data: Vec<u8>,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let user = &ctx.accounts.user;
@@ -71,7 +72,7 @@ pub fn send_tx_with_gas(
         payload: payload_to_bytes(&payload),
         revert_instruction,
         tx_type: TxType::GasAndPayload,
-        signature_data: vec![], // Empty for gas-only route
+        signature_data, // Use the provided signature data
     });
 
     Ok(())
