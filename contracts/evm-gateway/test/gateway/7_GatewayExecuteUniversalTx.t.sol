@@ -53,7 +53,6 @@ contract GatewayExecuteUniversalTxTest is Test {
         // Initialize gateway
         gateway.initialize(
             admin,
-            pauser,
             tss,
             address(this), // vault address
             1e18, // minCapUsd
@@ -92,7 +91,7 @@ contract GatewayExecuteUniversalTxTest is Test {
     }
 
     function testExecuteUniversalTx_WhenPaused_Reverts() public {
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         vm.expectRevert();

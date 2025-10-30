@@ -201,7 +201,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testWithdrawFunds_WhenPaused_Revert() public {
         // Pause the contract
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         vm.prank(tss);
@@ -211,7 +211,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testRevertWithdrawFunds_WhenPaused_Revert() public {
         // Pause the contract
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         RevertInstructions memory revertCfg = revertCfg(user1);

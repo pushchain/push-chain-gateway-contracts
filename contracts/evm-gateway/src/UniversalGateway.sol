@@ -66,7 +66,6 @@ contract UniversalGateway is
     using SafeERC20 for IERC20;
 
     bytes32 public constant TSS_ROLE = keccak256("TSS_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
 
     /// @notice The current TSS address for UniversalGateway
@@ -108,7 +107,6 @@ contract UniversalGateway is
     /**
      * @notice                  Initialize the UniversalGateway contract
      * @param admin             DEFAULT_ADMIN_ROLE holder
-     * @param pauser            PAUSER_ROLE
      * @param tss               initial TSS address
      * @param vaultAddress      Vault contract address
      * @param minCapUsd         min USD cap (1e18 decimals)
@@ -118,7 +116,6 @@ contract UniversalGateway is
      */
     function initialize(
         address admin,
-        address pauser,
         address tss,
         address vaultAddress,
         uint256 minCapUsd,
@@ -127,7 +124,7 @@ contract UniversalGateway is
         address router,
         address _wethAddress
     ) external initializer {
-        if (admin == address(0) || pauser == address(0) || tss == address(0) || vaultAddress == address(0) || _wethAddress == address(0)) {
+        if (admin == address(0) || tss == address(0) || vaultAddress == address(0) || _wethAddress == address(0)) {
             revert Errors.ZeroAddress();
         }
 
@@ -137,7 +134,6 @@ contract UniversalGateway is
         __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE, pauser);
         _grantRole(TSS_ROLE, tss);
         _grantRole(VAULT_ROLE, vaultAddress);
 
@@ -168,10 +164,10 @@ contract UniversalGateway is
     // =========================
     //           ADMIN ACTIONS
     // =========================
-    function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {
+    function pause() external whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
-    function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
+    function unpause() external whenPaused onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
 

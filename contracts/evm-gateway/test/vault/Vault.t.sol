@@ -55,7 +55,6 @@ contract VaultTest is Test {
         bytes memory gatewayInitData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
-            pauser,
             tss,
             address(this), // vault address (will be set to actual vault after deployment)
             1e18,  // minCapUsd
@@ -80,14 +79,14 @@ contract VaultTest is Test {
         vault = Vault(address(vaultProxy));
         
         // Update gateway's VAULT_ROLE to point to actual vault
-        vm.startPrank(pauser);
+        vm.startPrank(admin);
         gateway.pause();
         vm.stopPrank();
         
         vm.prank(admin);
         gateway.updateVault(address(vault));
         
-        vm.startPrank(pauser);
+        vm.startPrank(admin);
         gateway.unpause();
         vm.stopPrank();
 
@@ -234,7 +233,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -260,7 +259,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -387,7 +386,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -828,7 +827,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -846,7 +845,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, address(vault), 1e18, 10e18, address(0), address(0), weth
+            admin, tss, address(vault), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -880,7 +879,7 @@ contract VaultTest is Test {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));

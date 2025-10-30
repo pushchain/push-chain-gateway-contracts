@@ -176,7 +176,6 @@ abstract contract BaseTest is Test {
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
-            pauser,
             tss,
             address(this), // vault address
             MIN_CAP_USD,
