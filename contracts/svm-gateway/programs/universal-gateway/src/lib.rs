@@ -25,8 +25,15 @@ pub mod universal_gateway {
         payload: UniversalPayload,
         revert_instruction: RevertInstructions,
         amount: u64,
+        signature_data: Vec<u8>,
     ) -> Result<()> {
-        instructions::deposit::send_tx_with_gas(ctx, payload, revert_instruction, amount)
+        instructions::deposit::send_tx_with_gas(
+            ctx,
+            payload,
+            revert_instruction,
+            amount,
+            signature_data,
+        )
     }
 
     /// @notice Allows initiating a TX for movement of funds from source chain to Push Chain.
@@ -149,12 +156,18 @@ pub mod universal_gateway {
     // =========================
 
     /// @notice Set block-based USD cap for rate limiting
-    pub fn set_block_usd_cap(ctx: Context<RateLimitConfigAction>, block_usd_cap: u128) -> Result<()> {
+    pub fn set_block_usd_cap(
+        ctx: Context<RateLimitConfigAction>,
+        block_usd_cap: u128,
+    ) -> Result<()> {
         instructions::admin::set_block_usd_cap(ctx, block_usd_cap)
     }
 
     /// @notice Update epoch duration for rate limiting
-    pub fn update_epoch_duration(ctx: Context<RateLimitConfigAction>, epoch_duration_sec: u64) -> Result<()> {
+    pub fn update_epoch_duration(
+        ctx: Context<RateLimitConfigAction>,
+        epoch_duration_sec: u64,
+    ) -> Result<()> {
         instructions::admin::update_epoch_duration(ctx, epoch_duration_sec)
     }
 
@@ -288,7 +301,9 @@ pub mod universal_gateway {
 }
 
 // Re-export account structs and types
-pub use instructions::admin::{AdminAction, PauseAction, WhitelistAction, TokenRateLimitAction, RateLimitConfigAction};
+pub use instructions::admin::{
+    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
+};
 pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas};
 pub use instructions::initialize::Initialize;
 pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
@@ -301,9 +316,7 @@ pub use state::{
     Config,
     RevertInstructions,
     TSSAddressUpdated,
-    TokenRemovedFromWhitelist,
     TokenWhitelist,
-    TokenWhitelisted,
     TxType,
     UniversalPayload,
     UniversalTx,

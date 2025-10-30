@@ -169,16 +169,6 @@ pub struct TSSAddressUpdated {
 }
 
 #[event]
-pub struct TokenWhitelisted {
-    pub token_address: Pubkey,
-}
-
-#[event]
-pub struct TokenRemovedFromWhitelist {
-    pub token_address: Pubkey,
-}
-
-#[event]
 pub struct CapsUpdated {
     pub min_cap_usd: u128,
     pub max_cap_usd: u128,
