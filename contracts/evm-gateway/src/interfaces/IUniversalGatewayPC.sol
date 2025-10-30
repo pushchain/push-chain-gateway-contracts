@@ -10,17 +10,18 @@ import {RevertInstructions} from "../libraries/Types.sol";
  */
 interface IUniversalGatewayPC {
     // ========= Events =========
-    /// @notice Single event covering both flows (funds-only and funds+payload).
-    /// @param sender      EVM sender on Push Chain (burn initiator)
-    /// @param chainId     Origin chain id string, fetched from PRC20
-    /// @param token       PRC20 token address being withdrawn (represents origin ERC20/native)
-    /// @param target      Raw destination address on origin chain (bytes)
-    /// @param amount      Amount burned on Push Chain
-    /// @param gasToken    PRC20 gas coin used to pay cross-chain execution fees
-    /// @param gasFee      Amount of gasToken charged
-    /// @param gasLimit    Gas limit used for fee quote
-    /// @param payload     Optional payload for arbitrary call on origin chain (empty for funds-only)
-    /// @param protocolFee Flat protocol fee portion (as defined by PRC20), included inside gasFee
+
+    /// @notice             Single event covering both flows (funds-only and funds+payload).
+    /// @param sender       EVM sender on Push Chain (burn initiator) on Push Chain
+    /// @param chainId      Origin chain id string, fetched from PRC20 on external chain
+    /// @param token        PRC20 token address being withdrawn (represents origin ERC20/native) on external chain
+    /// @param target       Raw destination address on origin chain (bytes) on external chain
+    /// @param amount       Amount burned on Push Chain
+    /// @param gasToken     PRC20 gas coin used to pay cross-chain execution fees on external chain
+    /// @param gasFee       Amount of gasToken charged on external chain
+    /// @param gasLimit     Gas limit used for fee quote on external chain
+    /// @param payload      Optional payload for arbitrary call on origin chain (empty for funds-only) on external chain
+    /// @param protocolFee  Flat protocol fee portion (as defined by PRC20), included inside gasFee on external chain
     event UniversalTxWithdraw(
         address indexed sender,
         string indexed chainId,
@@ -39,11 +40,6 @@ interface IUniversalGatewayPC {
     /// @param oldVaultPC Previous VaultPC address
     /// @param newVaultPC New VaultPC address
     event VaultPCUpdated(address indexed oldVaultPC, address indexed newVaultPC);
-
-    // ========= Admin Functions =========
-    function setVaultPC(address vaultPC) external;
-    function pause() external;
-    function unpause() external;
 
     /**
      * @notice                   Withdraw PRC20 back to origin chain (funds only).
@@ -83,5 +79,4 @@ interface IUniversalGatewayPC {
 
     // ========= View Functions =========
     function UNIVERSAL_CORE() external view returns (address);
-    function PAUSER_ROLE() external view returns (bytes32);
 }

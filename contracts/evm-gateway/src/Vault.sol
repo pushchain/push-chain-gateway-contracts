@@ -52,7 +52,6 @@ contract Vault is
     // =========================
     //         INITIALIZER
     // =========================
-    /// @inheritdoc IVault
     function initialize(address admin, address pauser, address tss, address gw) external initializer {
         if (admin == address(0) || pauser == address(0) || tss == address(0) || gw == address(0)) {
             revert Errors.ZeroAddress();
@@ -76,17 +75,21 @@ contract Vault is
     // =========================
     //          ADMIN OPS
     // =========================
-    /// @inheritdoc IVault
+    /// @notice             Allows the admin to pause the contract
+    /// @dev                Only callable by PAUSER_ROLE
     function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    /// @inheritdoc IVault
+    /// @notice             Allows the admin to unpause the contract
+    /// @dev                Only callable by PAUSER_ROLE
     function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
-    /// @inheritdoc IVault
+    /// @notice             Allows the admin to update the UniversalGateway address
+    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
+    /// @param gw           New UniversalGateway address
     function setGateway(address gw) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (gw == address(0)) revert Errors.ZeroAddress();
         address old = address(gateway);
@@ -94,7 +97,9 @@ contract Vault is
         emit GatewayUpdated(old, gw);
     }
 
-    /// @inheritdoc IVault
+    /// @notice             Allows the admin to update the TSS address
+    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
+    /// @param newTss       New TSS address
     function setTSS(address newTss) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTss == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
@@ -107,7 +112,11 @@ contract Vault is
         emit TSSUpdated(old, newTss);
     }
 
-    /// @inheritdoc IVault
+    /// @notice             Allows the admin to sweep tokens from the contract
+    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
+    /// @param token        Token address
+    /// @param to           Recipient address
+    /// @param amount       Amount of token to sweep
     function sweep(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
         IERC20(token).safeTransfer(to, amount);
