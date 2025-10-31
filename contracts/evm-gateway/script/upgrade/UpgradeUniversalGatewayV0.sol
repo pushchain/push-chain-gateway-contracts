@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.26;
+
+import {Script} from "forge-std/Script.sol";
+import {console} from "forge-std/console.sol";
+import {UniversalGatewayV0} from "../../src/UniversalGatewayV0.sol";
+import {TransparentUpgradeableProxy, ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+
+/**
+ * @title UpgradeUniversalGatewayV0
+ * @notice Upgrade UniversalGatewayV0 proxy to new implementation
+ */
+contract UpgradeUniversalGatewayV0 is Script {
+    bytes32 internal constant _ADMIN_SLOT =
+        0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+
+    string network;
+    address deployer;
+    address existingProxy;
+    address existingProxyAdmin;
+
+    address public newImplementationAddress;
+
+    function run() external {
+        network = vm.envOr("NETWORK", string("sepolia"));
+        console.log("=== UPGRADING UNIVERSAL GATEWAY V0 ON %s ===", network);
+
+        string memory envKey = string.concat("PRIVATE_KEY_", network);
+        uint256 deployerKey = vm.envUint(envKey);
+        deployer = vm.addr(deployerKey);
+
+        vm.startBroadcast(deployerKey);
+
+        _loadConfig();
+        _deployNewImplementation();
+        _upgradeProxy();
+
+        vm.stopBroadcast();
+
+        _logSummary();
+    }
+
+    function _loadConfig() internal {
+        console.log("\n--- Loading Configuration ---");
+
+        existingProxy = vm.envAddress("PROXY_ADDRESS");
+        require(existingProxy != address(0), "PROXY_ADDRESS env var required");
+
+        // Read ProxyAdmin directly from EIP-1967 admin slot
+        bytes32 adminSlot = vm.load(existingProxy, _ADMIN_SLOT);
+        existingProxyAdmin = address(uint160(uint256(adminSlot)));
+
+        require(
+            existingProxyAdmin != address(0),
+            "ProxyAdmin address is zero - check proxy deployment"
+        );
+
+        console.log("Network:", network);
+        console.log("Deployer:", deployer);
+        console.log("Existing Proxy:", existingProxy);
+        console.log("Existing ProxyAdmin:", existingProxyAdmin);
+    }
+
+    function _deployNewImplementation() internal {
+        console.log("\n--- Deploying New Implementation ---");
+
+        UniversalGatewayV0 newImpl = new UniversalGatewayV0();
+        newImplementationAddress = address(newImpl);
+
+        console.log("New Implementation:", newImplementationAddress);
+    }
+
+    function _upgradeProxy() internal {
+        console.log("\n--- Upgrading Proxy ---");
+
+        ProxyAdmin proxyAdmin = ProxyAdmin(existingProxyAdmin);
+        ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(
+            existingProxy
+        );
+
+        proxyAdmin.upgradeAndCall(proxy, newImplementationAddress, "");
+
+        console.log("Upgrade successful!");
+    }
+
+    function _logSummary() internal view {
+        console.log("\n=== UPGRADE SUMMARY ===");
+        console.log("Network:", network);
+        console.log("Proxy:", existingProxy);
+        console.log("ProxyAdmin:", existingProxyAdmin);
+        console.log("New Implementation:", newImplementationAddress);
+    }
+}
