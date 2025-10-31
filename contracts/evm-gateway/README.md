@@ -214,21 +214,28 @@ forge coverage --ir-minimum
 
 ## Deployment and Verification
 
-See `script/` and `script/DeployCommands.md` for example commands. Example (Sepolia):
-
-Deploy (proxy + implementation + admin via script):
+**Deploy:**
 ```bash
-forge script script/1_DeployGatewayWithProxy.sol:DeployGatewayWithProxy \
-  --rpc-url $SEPOLIA_RPC_URL --private-key $KEY --broadcast
+make deploy-gateway network=sepolia
+make deploy-gateway-v0 network=sepolia
+make deploy-gateway-pc network=push_chain
 ```
 
-Upgrade:
+**Upgrade (auto-detects proxy address if not provided):**
 ```bash
-forge script script/3_UpgradeGatewayNewImpl.sol:UpgradeGatewayNewImpl \
-  --rpc-url $SEPOLIA_RPC_URL --private-key $KEY --broadcast
+make upgrade-gateway network=sepolia
+make upgrade-gateway-v0 network=sepolia
+make upgrade-vault network=sepolia
+make upgrade-gateway-pc network=push_chain
+make upgrade-vault-pc network=push_chain
 ```
 
-Verification examples are listed in `script/DeployCommands.md`.
+**Manual override:**
+```bash
+make upgrade-gateway-v0 network=sepolia PROXY_ADDRESS=0x...
+```
+
+**Networks:** `sepolia`, `base_sepolia`, `arb_sepolia`, `bsc_testnet`, `push_chain`
 
 ## Security Notes
 
