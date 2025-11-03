@@ -1,0 +1,23 @@
+[package]
+name = "universal-gateway"
+version = "0.1.0"
+description = "Universal Gateway for Solana - Cross-chain bridge and transaction router"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "universal_gateway"
+
+[features]
+default = ["idl-build"]
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+anchor-spl = { version = "0.31.1", features = ["token"] }
+pyth-solana-receiver-sdk = "0.6.1"
+pyth-sdk-solana = "0.10.4"
