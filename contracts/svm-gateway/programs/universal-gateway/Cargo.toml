@@ -9,7 +9,7 @@ crate-type = ["cdylib", "lib"]
 name = "universal_gateway"
 
 [features]
-default = ["idl-build"]
+default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
