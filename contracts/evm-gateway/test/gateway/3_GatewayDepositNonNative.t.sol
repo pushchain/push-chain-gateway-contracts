@@ -153,7 +153,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin, // admin
-            pauser, // pauser
             tss, // tss
             address(this), // vault address
             MIN_CAP_USD,
@@ -679,7 +678,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.stopPrank();
 
         // Pause the contract
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         vm.startPrank(user1);
@@ -1348,7 +1347,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         fundUserWithMainnetTokens(user1, MAINNET_USDC, bridgeAmount + gasAmount);
 
         // Pause the gateway
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         vm.prank(user1);
@@ -1396,7 +1395,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
         newGateway.initialize(
             address(0), // Zero admin
-            pauser,
             tss,
             address(this), // vault address
             100e18, // minCapUsd
@@ -1406,12 +1404,11 @@ contract GatewayDepositNonNativeTest is BaseTest {
             MAINNET_WETH
         );
 
-        // Test 2: Zero address validation - pauser
+        // Test 2: Zero address validation - tss
         vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
         newGateway.initialize(
             admin,
-            address(0), // Zero pauser
-            tss,
+            address(0), // Zero tss
             address(this), // vault address
             100e18,
             10000e18,
@@ -1420,13 +1417,12 @@ contract GatewayDepositNonNativeTest is BaseTest {
             MAINNET_WETH
         );
 
-        // Test 3: Zero address validation - tss
+        // Test 3: Zero address validation - vault
         vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
         newGateway.initialize(
             admin,
-            pauser,
-            address(0), // Zero tss
-            address(this), // vault address
+            tss,
+            address(0), // Zero vault
             100e18,
             10000e18,
             address(0x123),
@@ -1438,7 +1434,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
         newGateway.initialize(
             admin,
-            pauser,
             tss,
             address(this), // vault address
             100e18,
@@ -1451,7 +1446,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // Test 5: Successful initialization with Uniswap addresses
         newGateway.initialize(
             admin,
-            pauser,
             tss,
             address(this), // vault address
             100e18,
@@ -1475,7 +1469,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
         UniversalGateway newGateway2 = new UniversalGateway();
         newGateway2.initialize(
             admin,
-            pauser,
             tss,
             address(this), // vault address
             50e18,
@@ -1497,7 +1490,6 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Test 7: Verify roles are set correctly
         assertTrue(newGateway.hasRole(newGateway.DEFAULT_ADMIN_ROLE(), admin));
-        assertTrue(newGateway.hasRole(newGateway.PAUSER_ROLE(), pauser));
         assertTrue(newGateway.hasRole(newGateway.TSS_ROLE(), tss));
 
         // Test 8: Verify initial state
