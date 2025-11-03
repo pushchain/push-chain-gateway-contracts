@@ -66,10 +66,13 @@ contract UniversalGateway is
     using SafeERC20 for IERC20;
 
     bytes32 public constant TSS_ROLE = keccak256("TSS_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
 
     /// @notice The current TSS address for UniversalGateway
     address public TSS_ADDRESS;
+    
+    /// @notice The Vault contract address
+    address public VAULT;
 
     /// @notice Rate-Limiting CAPS and States
     uint256 public BLOCK_USD_CAP;
@@ -98,16 +101,14 @@ contract UniversalGateway is
     uint256 public l2SequencerGracePeriodSec;                   // L2 Sequencer grace period. (e.g., 300 seconds)  
     AggregatorV3Interface public l2SequencerFeed;               // L2 Sequencer uptime feed & grace period for rollups (if set, enforce sequencer up + grace)
     
-
-
-    /// @notice Gap for future upgrades.
-    uint256[43] private __gap;
+    /// @notice Map to track if a payload has been executed
+    mapping(bytes32 => bool) public isExecuted;
 
     /**
      * @notice                  Initialize the UniversalGateway contract
      * @param admin             DEFAULT_ADMIN_ROLE holder
-     * @param pauser            PAUSER_ROLE
      * @param tss               initial TSS address
+     * @param vaultAddress      Vault contract address
      * @param minCapUsd         min USD cap (1e18 decimals)
      * @param maxCapUsd         max USD cap (1e18 decimals)
      * @param factory           UniswapV2 factory
@@ -115,15 +116,15 @@ contract UniversalGateway is
      */
     function initialize(
         address admin,
-        address pauser,
         address tss,
+        address vaultAddress,
         uint256 minCapUsd,
         uint256 maxCapUsd,
         address factory,
         address router,
         address _wethAddress
     ) external initializer {
-        if (admin == address(0) || pauser == address(0) || tss == address(0) || _wethAddress == address(0)) {
+        if (admin == address(0) || tss == address(0) || vaultAddress == address(0) || _wethAddress == address(0)) {
             revert Errors.ZeroAddress();
         }
 
@@ -133,10 +134,11 @@ contract UniversalGateway is
         __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE, pauser);
         _grantRole(TSS_ROLE, tss);
+        _grantRole(VAULT_ROLE, vaultAddress);
 
         TSS_ADDRESS = tss;
+        VAULT = vaultAddress;
         MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
         MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
 
@@ -162,16 +164,16 @@ contract UniversalGateway is
     // =========================
     //           ADMIN ACTIONS
     // =========================
-    function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {
+    function pause() external whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
-    function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
+    function unpause() external whenPaused onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
 
     /// @notice             Allows the admin to set the TSS address
     /// @param newTSS       new TSS address
-    function setTSS(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+    function setTSS(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTSS == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
 
@@ -180,6 +182,20 @@ contract UniversalGateway is
         _grantRole(TSS_ROLE, newTSS);
 
         TSS_ADDRESS = newTSS;
+    }
+    
+    /// @notice             Allows the admin to update the Vault address
+    /// @param newVault     new Vault address
+    function updateVault(address newVault) external onlyRole(DEFAULT_ADMIN_ROLE) whenPaused {
+        if (newVault == address(0)) revert Errors.ZeroAddress();
+        address old = VAULT;
+        
+        // transfer role
+        if (hasRole(VAULT_ROLE, old)) _revokeRole(VAULT_ROLE, old);
+        _grantRole(VAULT_ROLE, newVault);
+        
+        VAULT = newVault;
+        emit VaultUpdated(old, newVault);
     }
 
     /// @notice             Allows the admin to set the USD cap ranges
@@ -490,54 +506,143 @@ contract UniversalGateway is
     }
 
     /// @inheritdoc IUniversalGateway
-    function withdrawFunds(address recipient, address token, uint256 amount)
+    function revertUniversalTxToken(address token, uint256 amount, RevertInstructions calldata revertInstruction)
         external
         nonReentrant
         whenNotPaused
-        onlyTSS
+        onlyRole(VAULT_ROLE)
     {
-        if (recipient == address(0)) revert Errors.InvalidRecipient();
+        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
-
-        if (token == address(0)) {
-            _handleNativeWithdraw(recipient, amount);
-        } else {
-            _handleTokenWithdraw(token, recipient, amount);
-        }
-
-        emit WithdrawFunds(recipient, amount, token);
+        
+        IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
+        
+        emit RevertUniversalTx(revertInstruction.fundRecipient, token, amount, revertInstruction);
     }
-
+    
     /// @inheritdoc IUniversalGateway
-    function revertWithdrawFunds(address token, uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertUniversalTx(uint256 amount, RevertInstructions calldata revertInstruction)
         external
+        payable 
         nonReentrant
         whenNotPaused
         onlyTSS
     {
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
+
+        (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
+        if (!ok) revert Errors.WithdrawFailed();
+        
+        emit RevertUniversalTx(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+    }
+
+    // =========================
+    //       GATEWAY Withdraw and Payload Execution Paths
+    // =========================
+
+    function withdrawToken(
+        bytes32 txID,
+        address originCaller,
+        address token,
+        address to,
+        uint256 amount
+    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
+        if (token == address(0)) revert Errors.InvalidInput();
+        
+        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        if (token == address(0)) {
-            _handleNativeWithdraw(revertInstruction.fundRecipient, amount);
-        } else {
-            _handleTokenWithdraw(token, revertInstruction.fundRecipient, amount);
+        isExecuted[txID] = true;
+        IERC20(token).safeTransfer(to, amount);
+        emit WithdrawToken(txID, originCaller, token, to, amount);
+    }
+
+    /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
+    /// @dev                   Allows outbound payload execution from Push Chain to external chains.
+    ///                        - The tokens used for payload execution, are to be burnt on Push Chain.
+    ///                        - approval and reset of approval is handled by the gateway.
+    ///                        - tokens are transferred from Vault to Gateway before calling this function
+    /// @param txID            unique transaction identifier
+    /// @param originCaller    original caller/user on source chain
+    /// @param token           token address (ERC20 token)
+    /// @param target          target contract address to execute call
+    /// @param amount          amount of token to send along
+    /// @param payload         calldata to be executed on target
+    function executeUniversalTx(
+        bytes32 txID,
+        address originCaller,
+        address token,
+        address target,
+        uint256 amount,
+        bytes calldata payload
+    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (token == address(0)) revert Errors.InvalidInput(); // This function is for ERC20 tokens only
+        
+        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+
+        isExecuted[txID] = true;
+
+        _resetApproval(token, target);             // reset approval to zero
+        _safeApprove(token, target, amount);       // approve target to spend amount
+        _executeCall(target, payload, 0);          // execute call with required amount
+        _resetApproval(token, target);             // reset approval back to zero
+        
+        // Return any remaining tokens to the Vault
+        uint256 remainingBalance = IERC20(token).balanceOf(address(this));
+        if (remainingBalance > 0) {
+            IERC20(token).safeTransfer(VAULT, remainingBalance);
         }
+        
+        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
+    }
+    
+    /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
+    /// @dev                   Allows outbound payload execution from Push Chain to external chains with native tokens.
+    /// @param txID            unique transaction identifier
+    /// @param originCaller    original caller/user on source chain
+    /// @param target          target contract address to execute call
+    /// @param amount          amount of native token to send along
+    /// @param payload         calldata to be executed on target
+    function executeUniversalTx(
+        bytes32 txID,
+        address originCaller,
+        address target,
+        uint256 amount,
+        bytes calldata payload
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (msg.value != amount) revert Errors.InvalidAmount();
 
-        emit WithdrawFunds(revertInstruction.fundRecipient, amount, token);
+        isExecuted[txID] = true;
+        
+        _executeCall(target, payload, amount);
+        
+        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
     }
 
     // =========================
     //      PUBLIC HELPERS
     // =========================
 
-    /// @notice             Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
-    /// @dev                Uses the current ETH/USD price from {getEthUsdPrice}.
-    /// @return minValue    Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
-    /// @return maxValue    Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
-    function getMinMaxValueForNative() public view returns (uint256 minValue, uint256 maxValue) {
-        (uint256 ethUsdPrice,) = getEthUsdPrice(); // ETH price in USD (1e18 scaled)
+    /// @inheritdoc IUniversalGateway
+    function isSupportedToken(address token) public view returns (bool) {
+        return tokenToLimitThreshold[token] != 0;
+    }
 
+    /// @inheritdoc IUniversalGateway
+    function getMinMaxValueForNative() external view returns (uint256 minValue, uint256 maxValue) {
+        (uint256 ethUsdPrice,) = getEthUsdPrice(); // ETH price in USD (1e18 scaled)
         minValue = (MIN_CAP_UNIVERSAL_TX_USD * 1e18) / ethUsdPrice;
         maxValue = (MAX_CAP_UNIVERSAL_TX_USD * 1e18) / ethUsdPrice;
     }
@@ -655,32 +760,55 @@ contract UniversalGateway is
         return amount;
     }
 
-    /// @dev                Lock ERC20 in this contract for bridging.
+    /// @dev                Lock ERC20 in the Vault contract for bridging.
     ///                     Token must be supported, i.e., tokenToLimitThreshold[token] != 0.
     /// @param token        token address to deposit
     /// @param amount       amount of token to deposit
     function _handleTokenDeposit(address token, uint256 amount) internal {
         if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
-        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
+        IERC20(token).safeTransferFrom(_msgSender(), VAULT, amount);
     }
 
-    /// @dev                Native withdraw by TSS
-    /// @param recipient    recipient address
-    /// @param amount       amount of native ETH to withdraw
-    function _handleNativeWithdraw(address recipient, uint256 amount) internal {
-        (bool ok,) = payable(recipient).call{ value: amount }("");
-        if (!ok) revert Errors.WithdrawFailed();
+    // _handleTokenWithdraw function removed as token withdrawals are now handled by the Vault
+
+    /// @dev Safely reset approval to zero before granting any new allowance to target contract.
+    function _resetApproval(address token, address spender) internal {
+        (bool success, bytes memory returnData) =
+            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, 0));
+        if (!success) {
+            // Some non-standard tokens revert on zero-approval; treat as reset-ok to avoid breaking the flow.
+            return;
+        }
+        // If token returns a boolean, ensure it is true; if no return data, assume success (USDT-style).
+        if (returnData.length > 0) {
+            bool approved = abi.decode(returnData, (bool));
+            if (!approved) revert Errors.InvalidData();
+        }
     }
 
-    /// @dev                ERC20 withdraw by TSS (token must be isSupported for bridging)
-    ///                     Tokens are moved out of gateway contract.
-    /// @param token        token address to withdraw
-    /// @param recipient    recipient address
-    /// @param amount       amount of token to withdraw
-    function _handleTokenWithdraw(address token, address recipient, uint256 amount) internal {
+    /// @dev Safely approve ERC20 token spending to a target contract.
+    ///      Low-level call must succeed AND (if returns data) decode to true; otherwise revert.
+    function _safeApprove(address token, address spender, uint256 amount) internal {
+        (bool success, bytes memory returnData) =
+            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, amount));
+        if (!success) {
+            revert Errors.InvalidData(); // approval failed
+        }
+        if (returnData.length > 0) {
+            bool approved = abi.decode(returnData, (bool));
+            if (!approved) {
+                revert Errors.InvalidData(); // approval failed
+            }
+        }
+    }
 
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-        IERC20(token).safeTransfer(recipient, amount);
+    /// @dev Unified helper to execute a low-level call to target
+    ///      Call can be executed with native value or ERC20 token. 
+    ///      Reverts with Errors.ExecutionFailed() if the call fails (no bubbling).
+    function _executeCall(address target, bytes calldata payload, uint256 value) internal returns (bytes memory result) {
+        (bool success, bytes memory ret) = target.call{value: value}(payload);
+        if (!success) revert Errors.ExecutionFailed();
+        return ret;
     }
 
     /// @dev                Enforce and consume the per-token epoch rate limit. 
@@ -756,9 +884,9 @@ contract UniversalGateway is
             // Fast-path: pull WETH from user and unwrap to native
             IERC20(WETH).safeTransferFrom(_msgSender(), address(this), amountIn);
 
-            uint256 balBefore = address(this).balance;
+            uint256 balanceBeforeUnwrap = address(this).balance;
             IWETH(WETH).withdraw(amountIn);
-            ethOut = address(this).balance - balBefore;
+            ethOut = address(this).balance - balanceBeforeUnwrap;
 
             // Slippage bound still applies for a consistent interface (caller can set to amountIn)
             if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();
@@ -784,9 +912,9 @@ contract UniversalGateway is
 
         IERC20(tokenIn).forceApprove(address(uniV3Router), 0);
 
-        uint256 balBefore = address(this).balance;
+        uint256 balanceBeforeSwapUnwrap = address(this).balance;
         IWETH(WETH).withdraw(wethOut);
-        ethOut = address(this).balance - balBefore;
+        ethOut = address(this).balance - balanceBeforeSwapUnwrap;
 
         // Defensive: enforce the bound again after unwrap
         if (ethOut < amountOutMinETH) revert Errors.SlippageExceededOrExpired();

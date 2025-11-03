@@ -155,6 +155,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin, // admin
             pauser, // pauser
             tss, // tss
+            address(this), // vault address
             MIN_CAP_USD,
             MAX_CAP_USD,
             uniV3Factory,
@@ -240,7 +241,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendFunds (ERC20) with valid parameters
     function testSendFunds_ERC20_HappyPath() public {
         // Setup: Create revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
 
         // Use USDC for bridging
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -271,11 +272,11 @@ contract GatewayDepositNonNativeTest is BaseTest {
         // Verify user's token balance decreased
         assertEq(mainnetUSDC.balanceOf(user1), initialUserTokenBalance - bridgeAmount, "User should pay ERC20 tokens");
 
-        // Verify gateway's token balance increased
+        // Verify VAULT's token balance increased (tokens are now transferred to VAULT)
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayTokenBalance + bridgeAmount,
-            "Gateway should receive ERC20 tokens"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            bridgeAmount,
+            "VAULT should receive ERC20 tokens"
         );
     }
 
@@ -352,16 +353,16 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Verify gateway's token balance increased
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayTokenBalance + bridgeAmount,
-            "Gateway should receive USDC for bridging"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            bridgeAmount,
+            "VAULT should receive USDC for bridging"
         );
     }
 
     /// @notice Test all ERC20 functions with minimum valid amounts
     function testAllERC20Functions_MinimumAmounts_Success() public {
         // Test sendFunds with minimum amount (no Uniswap dependency)
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
 
         uint256 minAmount = 1; // Minimum amount
 
@@ -382,16 +383,16 @@ contract GatewayDepositNonNativeTest is BaseTest {
 
         // Test passes if no revert occurs
         assertEq(
-            IERC20(MAINNET_USDC).balanceOf(address(gateway)),
-            initialGatewayBalance + minAmount,
-            "Gateway should receive USDC"
+            IERC20(MAINNET_USDC).balanceOf(gateway.VAULT()),
+            minAmount,
+            "VAULT should receive USDC"
         );
     }
 
     /// @notice Test all ERC20 functions with maximum valid amounts
     function testAllERC20Functions_MaximumAmounts_Success() public {
         // Test sendFunds with maximum amount (no Uniswap dependency)
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
 
         // Test sendFunds with maximum amount
         uint256 maxTokenAmount = 1000000e6; // Large token amount
@@ -572,12 +573,12 @@ contract GatewayDepositNonNativeTest is BaseTest {
             revertCfg_,
             bytes("")
         );
-    }
+    }   
 
     /// @notice Test sendFunds (ERC20) with zero bridge amount
     function testSendFunds_ERC20_ZeroBridgeAmount_Reverts() public {
         // Setup: Create revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
 
         // Note: ERC20 sendFunds doesn't explicitly check for zero amount
         // The _handleTokenDeposit function just calls safeTransferFrom with zero amount
@@ -753,7 +754,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test that ERC20 bridge tokens are actually transferred to gateway
     function testSendFunds_ERC20_TokenTransferToGateway_Success() public {
         // Setup: Create revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
 
         uint256 tokenAmount = 1000e6; // 1000 USDC (6 decimals)
 
@@ -778,9 +779,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
         );
 
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayBalance + tokenAmount,
-            "Gateway should receive the tokens"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            tokenAmount,
+            "VAULT should receive the tokens"
         );
     }
 
@@ -829,9 +830,9 @@ contract GatewayDepositNonNativeTest is BaseTest {
         );
 
         assertEq(
-            mainnetUSDC.balanceOf(address(gateway)),
-            initialGatewayBalance + bridgeAmount,
-            "Gateway should receive both bridge and gas tokens"
+            mainnetUSDC.balanceOf(gateway.VAULT()),
+            bridgeAmount,
+            "VAULT should receive the bridge tokens"
         );
 
         assertApproxEqAbs(
@@ -846,7 +847,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test comprehensive edge cases for ERC20 functions
     function testERC20Functions_EdgeCases_Success() public {
         // Setup: Create payload and revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
 
         uint256 amount = 1000e6; // 1000 USDC (6 decimals)
 
@@ -1009,7 +1010,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             vType: VerificationType.signedVerification
         });
 
-        RevertInstructions memory revertCfg = RevertInstructions({ fundRecipient: to, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg = RevertInstructions({ fundRecipient: to, revertContext: bytes("") });
 
         return (payload, revertCfg);
     }
@@ -1397,6 +1398,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             address(0), // Zero admin
             pauser,
             tss,
+            address(this), // vault address
             100e18, // minCapUsd
             10000e18, // maxCapUsd
             address(0x123), // factory
@@ -1410,6 +1412,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             address(0), // Zero pauser
             tss,
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123),
@@ -1423,6 +1426,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             address(0), // Zero tss
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123),
@@ -1436,6 +1440,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123),
@@ -1448,6 +1453,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             100e18,
             10000e18,
             address(0x123), // Non-zero factory
@@ -1471,6 +1477,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             admin,
             pauser,
             tss,
+            address(this), // vault address
             50e18,
             5000e18,
             address(0), // Zero factory

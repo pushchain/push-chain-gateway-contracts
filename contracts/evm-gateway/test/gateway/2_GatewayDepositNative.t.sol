@@ -315,7 +315,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendTxWithGas (native) when contract is paused
     function testSendTxWithGas_NativeETH_WhenPaused_Reverts() public {
         // Pause the contract
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         // Setup: Create a valid payload and revert config
@@ -333,7 +333,7 @@ contract GatewayDepositNativeTest is BaseTest {
     /// @notice Test sendFunds when contract is paused
     function testSendFunds_WhenPaused_Reverts() public {
         // Pause the contract
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         // Setup: Create revert config
