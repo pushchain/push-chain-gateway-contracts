@@ -5,6 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
+# Use 9mBrgXgC6v5a6oBvs7amcCTkeDohadP8ZmP5CikV3qvT for local testing
 universal_gateway = "CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS"
 
 [registry]
