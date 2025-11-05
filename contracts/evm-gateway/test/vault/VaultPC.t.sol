@@ -49,7 +49,7 @@ contract VaultPCTest is Test {
             fundManager
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), vaultInitData);
-        vault = VaultPC(address(vaultProxy));
+        vault = VaultPC(payable(address(vaultProxy)));
 
         // Deploy PRC20 tokens
         prc20Token = new MockPRC20(
@@ -167,41 +167,29 @@ contract VaultPCTest is Test {
         vault.unpause();
     }
 
-    function test_Withdraw_OnlyFundManagerCanCall() public {
+    function test_WithdrawToken_OnlyFundManagerCanCall() public {
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
         assertEq(prc20Token.balanceOf(user1), 100e18);
     }
 
-    function test_Withdraw_NonFundManagerReverts() public {
+    function test_WithdrawToken_NonFundManagerReverts() public {
         vm.prank(user1);
         vm.expectRevert();
-        vault.withdraw(address(prc20Token), user1, 100e18);
-    }
-
-    function test_Sweep_OnlyFundManagerCanCall() public {
-        vm.prank(fundManager);
-        vault.sweep(address(prc20Token), user1, 100e18);
-        assertEq(prc20Token.balanceOf(user1), 100e18);
-    }
-
-    function test_Sweep_NonFundManagerReverts() public {
-        vm.prank(user1);
-        vm.expectRevert();
-        vault.sweep(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
     }
 
     // ============================================================================
     // PAUSE GATING TESTS
     // ============================================================================
 
-    function test_Pause_BlocksWithdraw() public {
+    function test_Pause_BlocksWithdrawToken() public {
         vm.prank(pauser);
         vault.pause();
         
         vm.prank(fundManager);
         vm.expectRevert();
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
     }
 
     function test_Pause_DoublePauseReverts() public {
@@ -219,7 +207,7 @@ contract VaultPCTest is Test {
         vault.unpause();
     }
 
-    function test_Unpause_RestoresWithdrawFunctionality() public {
+    function test_Unpause_RestoresWithdrawTokenFunctionality() public {
         vm.prank(pauser);
         vault.pause();
         
@@ -227,216 +215,229 @@ contract VaultPCTest is Test {
         vault.unpause();
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
         assertEq(prc20Token.balanceOf(user1), 100e18);
     }
 
     // ============================================================================
-    // WITHDRAW TESTS
+    // WITHDRAW TOKEN TESTS
     // ============================================================================
 
-    function test_Withdraw_StandardToken_Success() public {
+    function test_WithdrawToken_StandardToken_Success() public {
         uint256 amount = 1000e18;
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, amount);
+        vault.withdrawToken(address(prc20Token), user1, amount);
         
         assertEq(prc20Token.balanceOf(user1), amount);
     }
 
-    function test_Withdraw_EmitsFeesWithdrawnEvent() public {
+    function test_WithdrawToken_EmitsFeesWithdrawnEvent() public {
         uint256 amount = 1000e18;
         
         vm.prank(fundManager);
         vm.expectEmit(true, true, false, true);
         emit FeesWithdrawn(fundManager, address(prc20Token), amount);
-        vault.withdraw(address(prc20Token), user1, amount);
+        vault.withdrawToken(address(prc20Token), user1, amount);
     }
 
-    function test_Withdraw_ZeroAmountReverts() public {
+    function test_WithdrawToken_ZeroAmountReverts() public {
         vm.prank(fundManager);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.withdraw(address(prc20Token), user1, 0);
+        vault.withdrawToken(address(prc20Token), user1, 0);
     }
 
-    function test_Withdraw_ZeroRecipientReverts() public {
+    function test_WithdrawToken_ZeroRecipientReverts() public {
         vm.prank(fundManager);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.withdraw(address(prc20Token), address(0), 100e18);
+        vault.withdrawToken(address(prc20Token), address(0), 100e18);
     }
 
-    function test_Withdraw_ZeroTokenAddressReverts() public {
+    function test_WithdrawToken_ZeroTokenAddressReverts() public {
         vm.prank(fundManager);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.withdraw(address(0), user1, 100e18);
+        vault.withdrawToken(address(0), user1, 100e18);
     }
 
-    function test_Withdraw_InsufficientBalanceReverts() public {
+    function test_WithdrawToken_InsufficientBalanceReverts() public {
         uint256 vaultBalance = prc20Token.balanceOf(address(vault));
         
         vm.prank(fundManager);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.withdraw(address(prc20Token), user1, vaultBalance + 1);
+        vault.withdrawToken(address(prc20Token), user1, vaultBalance + 1);
     }
 
-    function test_Withdraw_MultipleRecipients() public {
+    function test_WithdrawToken_MultipleRecipients() public {
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user2, 200e18);
+        vault.withdrawToken(address(prc20Token), user2, 200e18);
         
         assertEq(prc20Token.balanceOf(user1), 100e18);
         assertEq(prc20Token.balanceOf(user2), 200e18);
     }
 
-    function test_Withdraw_DifferentTokens() public {
+    function test_WithdrawToken_DifferentTokens() public {
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token2), user1, 50e18);
+        vault.withdrawToken(address(prc20Token2), user1, 50e18);
         
         assertEq(prc20Token.balanceOf(user1), 100e18);
         assertEq(prc20Token2.balanceOf(user1), 50e18);
     }
 
-    function test_Withdraw_SequentialCalls_Success() public {
+    function test_WithdrawToken_SequentialCalls_Success() public {
         // Multiple sequential withdrawals should work fine
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 200e18);
+        vault.withdrawToken(address(prc20Token), user1, 200e18);
         
         assertEq(prc20Token.balanceOf(user1), 300e18);
     }
 
     // ============================================================================
-    // SWEEP TESTS
+    // WITHDRAW NATIVE PC TESTS
     // ============================================================================
 
-    function test_Sweep_StandardToken_Success() public {
-        uint256 amount = 500e18;
+    function test_Withdraw_Native_Success() public {
+        uint256 amount = 10 ether;
+        vm.deal(address(vault), amount);
+        
+        uint256 userBalanceBefore = user1.balance;
         
         vm.prank(fundManager);
-        vault.sweep(address(prc20Token), user1, amount);
+        vault.withdraw(user1, amount);
         
-        assertEq(prc20Token.balanceOf(user1), amount);
+        assertEq(user1.balance, userBalanceBefore + amount);
+        assertEq(address(vault).balance, 0);
     }
 
-    function test_Sweep_ZeroTokenReverts() public {
+    function test_Withdraw_Native_EmitsFeesWithdrawnEvent() public {
+        uint256 amount = 5 ether;
+        vm.deal(address(vault), amount);
+        
+        vm.prank(fundManager);
+        vm.expectEmit(true, true, false, true);
+        emit FeesWithdrawn(fundManager, address(0), amount);
+        vault.withdraw(user1, amount);
+    }
+
+    function test_Withdraw_Native_ZeroAmountReverts() public {
+        vm.deal(address(vault), 10 ether);
+        
+        vm.prank(fundManager);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.withdraw(user1, 0);
+    }
+
+    function test_Withdraw_Native_ZeroRecipientReverts() public {
+        vm.deal(address(vault), 10 ether);
+        
         vm.prank(fundManager);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.sweep(address(0), user1, 100e18);
+        vault.withdraw(address(0), 1 ether);
     }
 
-    function test_Sweep_ZeroRecipientReverts() public {
-        vm.prank(fundManager);
-        vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.sweep(address(prc20Token), address(0), 100e18);
-    }
-
-    function test_Sweep_UnsupportedToken_NoRevert() public {
-        // Sweep should work even for unsupported tokens (emergency recovery)
-        MockPRC20 unsupportedToken = new MockPRC20(
-            "Unsupported",
-            "UNS",
-            18,
-            "999",
-            MockPRC20.TokenType.NATIVE,
-            10e18,
-            address(universalCore),
-            "0x0000000000000000000000000000000000000000"
-        );
-        unsupportedToken.mint(address(vault), 100e18);
+    function test_Withdraw_Native_InsufficientBalanceReverts() public {
+        vm.deal(address(vault), 5 ether);
         
         vm.prank(fundManager);
-        vault.sweep(address(unsupportedToken), user1, 100e18);
-        assertEq(unsupportedToken.balanceOf(user1), 100e18);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.withdraw(user1, 10 ether);
     }
 
-    function test_Sweep_WorksWhenPaused() public {
+    function test_Withdraw_Native_OnlyFundManagerCanCall() public {
+        vm.deal(address(vault), 10 ether);
+        
+        vm.prank(user1);
+        vm.expectRevert();
+        vault.withdraw(user1, 1 ether);
+    }
+
+    function test_Withdraw_Native_BlockedWhenPaused() public {
+        vm.deal(address(vault), 10 ether);
+        
         vm.prank(pauser);
         vault.pause();
         
-        // Sweep should work even when paused (emergency recovery)
         vm.prank(fundManager);
-        vault.sweep(address(prc20Token), user1, 100e18);
-        assertEq(prc20Token.balanceOf(user1), 100e18);
+        vm.expectRevert();
+        vault.withdraw(user1, 1 ether);
+    }
+
+    function test_Withdraw_Native_SequentialCalls() public {
+        vm.deal(address(vault), 30 ether);
+        
+        vm.prank(fundManager);
+        vault.withdraw(user1, 10 ether);
+        
+        vm.prank(fundManager);
+        vault.withdraw(user2, 15 ether);
+        
+        assertEq(user1.balance, 10 ether);
+        assertEq(user2.balance, 15 ether);
+        assertEq(address(vault).balance, 5 ether);
+    }
+
+    function test_Withdraw_Native_ExactBalance() public {
+        uint256 vaultBalance = 25 ether;
+        vm.deal(address(vault), vaultBalance);
+        
+        vm.prank(fundManager);
+        vault.withdraw(user1, vaultBalance);
+        
+        assertEq(user1.balance, vaultBalance);
+        assertEq(address(vault).balance, 0);
+    }
+
+    function test_ReceiveNative_ContractCanReceiveETH() public {
+        uint256 amount = 10 ether;
+        vm.deal(user1, amount);
+        
+        vm.prank(user1);
+        (bool success, ) = address(vault).call{value: amount}("");
+        
+        assertTrue(success);
+        assertEq(address(vault).balance, amount);
     }
 
     // ============================================================================
     // EDGE CASES AND INTEGRATION TESTS
     // ============================================================================
 
-    function test_MultipleWithdrawals_ReducesBalance() public {
+    function test_MultipleWithdrawalsToken_ReducesBalance() public {
         uint256 initialBalance = prc20Token.balanceOf(address(vault));
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user2, 200e18);
+        vault.withdrawToken(address(prc20Token), user2, 200e18);
         
         uint256 finalBalance = prc20Token.balanceOf(address(vault));
         assertEq(finalBalance, initialBalance - 300e18);
     }
 
-    function test_Withdraw_ExactBalance_Success() public {
+    function test_WithdrawToken_ExactBalance_Success() public {
         uint256 vaultBalance = prc20Token.balanceOf(address(vault));
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, vaultBalance);
+        vault.withdrawToken(address(prc20Token), user1, vaultBalance);
         
         assertEq(prc20Token.balanceOf(user1), vaultBalance);
         assertEq(prc20Token.balanceOf(address(vault)), 0);
-    }
-
-    function test_Pause_DoesNotAffectSweep() public {
-        vm.prank(pauser);
-        vault.pause();
-        
-        vm.prank(fundManager);
-        vault.sweep(address(prc20Token), user1, 100e18);
-        assertEq(prc20Token.balanceOf(user1), 100e18);
     }
 
     // ============================================================================
     // EDGE CASE & ADDITIONAL COVERAGE TESTS
     // ============================================================================
 
-    function test_Sweep_ExactBalance() public {
-        uint256 exactBalance = prc20Token.balanceOf(address(vault));
-        
-        vm.prank(fundManager);
-        vault.sweep(address(prc20Token), user1, exactBalance);
-        
-        assertEq(prc20Token.balanceOf(address(vault)), 0);
-        assertEq(prc20Token.balanceOf(user1), exactBalance);
-    }
-
-    function test_Sweep_WorksRegardlessOfTokenSupport() public {
-        // Create unsupported token
-        MockPRC20 unsupportedToken = new MockPRC20(
-            "Unsupported",
-            "UNS",
-            18,
-            "999",
-            MockPRC20.TokenType.ERC20,
-            0,
-            address(universalCore),
-            "0x0"
-        );
-        unsupportedToken.mint(address(vault), 1000e18);
-        
-        // Sweep should work even for unsupported tokens (emergency recovery)
-        vm.prank(fundManager);
-        vault.sweep(address(unsupportedToken), user1, 500e18);
-        assertEq(unsupportedToken.balanceOf(user1), 500e18);
-    }
-
-    function test_Withdraw_AfterPauseUnpause_WorksNormally() public {
+    function test_WithdrawToken_AfterPauseUnpause_WorksNormally() public {
         vm.prank(pauser);
         vault.pause();
         
@@ -444,54 +445,22 @@ contract VaultPCTest is Test {
         vault.unpause();
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
+        vault.withdrawToken(address(prc20Token), user1, 100e18);
         assertEq(prc20Token.balanceOf(user1), 100e18);
     }
 
-    function test_Sweep_PartialAmount() public {
-        uint256 totalBalance = prc20Token.balanceOf(address(vault));
-        uint256 sweepAmount = totalBalance / 3;
+    function test_WithdrawToken_MultipleSmallAmounts() public {
+        vm.prank(fundManager);
+        vault.withdrawToken(address(prc20Token), user1, 1e18);
         
         vm.prank(fundManager);
-        vault.sweep(address(prc20Token), user1, sweepAmount);
-        
-        assertEq(prc20Token.balanceOf(address(vault)), totalBalance - sweepAmount);
-        assertEq(prc20Token.balanceOf(user1), sweepAmount);
-    }
-
-    function test_Withdraw_MultipleSmallAmounts() public {
-        vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 1e18);
+        vault.withdrawToken(address(prc20Token), user1, 2e18);
         
         vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 2e18);
-        
-        vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 3e18);
+        vault.withdrawToken(address(prc20Token), user1, 3e18);
         
         assertEq(prc20Token.balanceOf(user1), 6e18);
     }
 
-    // ============================================================================
-    // NO NATIVE INVARIANT TESTS
-    // ============================================================================
-
-    function test_NoNative_DirectETHSendReverts() public {
-        vm.deal(user1, 1 ether);
-        
-        vm.prank(user1);
-        (bool success,) = address(vault).call{value: 1 ether}("");
-        assertFalse(success);
-    }
-
-    function test_NoNative_FunctionsDoNotAcceptValue() public {
-        vm.deal(fundManager, 1 ether);
-        
-        vm.prank(fundManager);
-        (bool success,) = address(vault).call{value: 1 ether}(
-            abi.encodeWithSelector(vault.withdraw.selector, address(prc20Token), user1, 100e18)
-        );
-        assertFalse(success);
-    }
 }
 

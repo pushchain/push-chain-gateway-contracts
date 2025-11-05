@@ -64,17 +64,29 @@ contract VaultPC is
         _unpause();
     }
 
-    /// @notice Optional admin sweep for mistakenly sent tokens (never native).
-    function sweep(address token, address to, uint256 amount) external onlyRole(FUND_MANAGER_ROLE) {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
-        IERC20(token).safeTransfer(to, amount);
-    }
-
     // =========================
     //          WITHDRAW
     // =========================
+    
     /// @inheritdoc IVaultPC
-    function withdraw(address token, address to, uint256 amount)
+    function withdraw(address to, uint256 amount)
+        external
+        nonReentrant
+        whenNotPaused
+        onlyRole(FUND_MANAGER_ROLE)
+    {
+        if (to == address(0)) revert Errors.ZeroAddress();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (address(this).balance < amount) revert Errors.InvalidAmount();
+
+        (bool success, ) = payable(to).call{value: amount}("");
+        if (!success) revert Errors.DepositFailed();
+        
+        emit FeesWithdrawn(msg.sender, address(0), amount);
+    }
+
+    /// @inheritdoc IVaultPC
+    function withdrawToken(address token, address to, uint256 amount)
         external
         nonReentrant
         whenNotPaused
@@ -87,4 +99,7 @@ contract VaultPC is
         IERC20(token).safeTransfer(to, amount);
         emit FeesWithdrawn(msg.sender, token, amount);
     }
+
+    /// @notice Allow contract to receive native PC tokens
+    receive() external payable {}
 }
