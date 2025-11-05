@@ -506,35 +506,50 @@ contract UniversalGateway is
     }
 
     /// @inheritdoc IUniversalGateway
-    function revertUniversalTxToken(address token, uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertUniversalTxToken(
+        bytes32 txID,
+        address token,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    )
         external
         nonReentrant
         whenNotPaused
         onlyRole(VAULT_ROLE)
     {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
         
+        isExecuted[txID] = true;
         IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
         
-        emit RevertUniversalTx(revertInstruction.fundRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
     }
     
     /// @inheritdoc IUniversalGateway
-    function revertUniversalTx(uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertUniversalTx(
+        bytes32 txID,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    )
         external
         payable 
         nonReentrant
         whenNotPaused
         onlyTSS
     {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
+        isExecuted[txID] = true;
         (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertUniversalTx(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================

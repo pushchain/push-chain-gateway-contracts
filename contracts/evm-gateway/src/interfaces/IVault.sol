@@ -72,10 +72,11 @@ interface IVault {
     /**
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
+     * @param txID          unique transaction identifier (for replay protection)
      * @param token         ERC20 token to refund (must be supported) on external chain
      * @param to            recipient of the refund on external chain
      * @param amount        amount to refund on external chain
      */
-    function revertWithdraw(address token, address to, uint256 amount, RevertInstructions calldata revertInstruction) external;
+    function revertWithdraw(bytes32 txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction) external;
 }
 
