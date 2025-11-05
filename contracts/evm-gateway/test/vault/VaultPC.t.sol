@@ -46,8 +46,7 @@ contract VaultPCTest is Test {
             VaultPC.initialize.selector,
             admin,
             pauser,
-            fundManager,
-            address(universalCore)
+            fundManager
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), vaultInitData);
         vault = VaultPC(address(vaultProxy));
@@ -75,10 +74,6 @@ contract VaultPCTest is Test {
             "0x0000000000000000000000000000000000000000"
         );
 
-        // Setup token support in UniversalCore
-        universalCore.setSupportedToken(address(prc20Token), true);
-        universalCore.setSupportedToken(address(prc20Token2), true);
-
         // Deploy reentrant attacker
         reentrantAttacker = new MockReentrantContract(address(0), address(0), address(0));
         reentrantAttacker.setVaultPC(address(vault));
@@ -98,10 +93,6 @@ contract VaultPCTest is Test {
         assertTrue(vault.hasRole(vault.FUND_MANAGER_ROLE(), fundManager));
     }
 
-    function test_Initialization_UniversalCoreSet() public view {
-        assertEq(vault.UNIVERSAL_CORE(), address(universalCore));
-    }
-
     function test_Initialization_StartsUnpaused() public view {
         assertFalse(vault.paused());
     }
@@ -112,8 +103,7 @@ contract VaultPCTest is Test {
             VaultPC.initialize.selector,
             address(0),
             pauser,
-            fundManager,
-            address(universalCore)
+            fundManager
         );
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
@@ -125,8 +115,7 @@ contract VaultPCTest is Test {
             VaultPC.initialize.selector,
             admin,
             address(0),
-            fundManager,
-            address(universalCore)
+            fundManager
         );
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
@@ -138,20 +127,6 @@ contract VaultPCTest is Test {
             VaultPC.initialize.selector,
             admin,
             pauser,
-            address(0),
-            address(universalCore)
-        );
-        vm.expectRevert(Errors.ZeroAddress.selector);
-        new ERC1967Proxy(address(newImpl), initData);
-    }
-
-    function test_Initialization_RevertsOnZeroUniversalCore() public {
-        VaultPC newImpl = new VaultPC();
-        bytes memory initData = abi.encodeWithSelector(
-            VaultPC.initialize.selector,
-            admin,
-            pauser,
-            fundManager,
             address(0)
         );
         vm.expectRevert(Errors.ZeroAddress.selector);
@@ -190,28 +165,6 @@ contract VaultPCTest is Test {
         vm.prank(user1);
         vm.expectRevert();
         vault.unpause();
-    }
-
-    function test_UpdateUniversalCore_OnlyAdminCanUpdate() public {
-        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore));
-        assertEq(vault.UNIVERSAL_CORE(), address(newCore));
-    }
-
-    function test_UpdateUniversalCore_NonAdminReverts() public {
-        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
-        
-        vm.prank(user1);
-        vm.expectRevert();
-        vault.updateUniversalCore(address(newCore));
-    }
-
-    function test_UpdateUniversalCore_ZeroAddressReverts() public {
-        vm.prank(admin);
-        vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.updateUniversalCore(address(0));
     }
 
     function test_Withdraw_OnlyFundManagerCanCall() public {
@@ -278,79 +231,6 @@ contract VaultPCTest is Test {
         assertEq(prc20Token.balanceOf(user1), 100e18);
     }
 
-    function test_UpdateUniversalCore_WorksWhenPaused() public {
-        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
-        
-        vm.prank(pauser);
-        vault.pause();
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore));
-        assertEq(vault.UNIVERSAL_CORE(), address(newCore));
-    }
-
-    // ============================================================================
-    // TOKEN SUPPORT / UNIVERSALCORE GATING TESTS
-    // ============================================================================
-
-    function test_Withdraw_UnsupportedTokenReverts() public {
-        MockPRC20 unsupportedToken = new MockPRC20(
-            "Unsupported",
-            "UNS",
-            18,
-            "999",
-            MockPRC20.TokenType.NATIVE,
-            10e18,
-            address(universalCore),
-            "0x0000000000000000000000000000000000000000"
-        );
-        unsupportedToken.mint(address(vault), 100e18);
-        
-        vm.prank(fundManager);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(address(unsupportedToken), user1, 100e18);
-    }
-
-    function test_TokenSupport_TogglingReflectsImmediately() public {
-        // Initially supported
-        vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
-        assertEq(prc20Token.balanceOf(user1), 100e18);
-        
-        // Remove support in UniversalCore
-        universalCore.setSupportedToken(address(prc20Token), false);
-        
-        vm.prank(fundManager);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(address(prc20Token), user2, 100e18);
-        
-        // Re-add support
-        universalCore.setSupportedToken(address(prc20Token), true);
-        
-        vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user2, 100e18);
-        assertEq(prc20Token.balanceOf(user2), 100e18);
-    }
-
-    function test_UniversalCoreChange_LiveSupport() public {
-        // Create new UniversalCore without token support
-        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore));
-        
-        vm.prank(fundManager);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(address(prc20Token), user1, 100e18);
-        
-        // Add support in new core
-        newCore.setSupportedToken(address(prc20Token), true);
-        
-        vm.prank(fundManager);
-        vault.withdraw(address(prc20Token), user1, 100e18);
-        assertEq(prc20Token.balanceOf(user1), 100e18);
-    }
-
     // ============================================================================
     // WITHDRAW TESTS
     // ============================================================================
@@ -386,9 +266,8 @@ contract VaultPCTest is Test {
     }
 
     function test_Withdraw_ZeroTokenAddressReverts() public {
-        // Token support is checked first, so we expect NotSupported for address(0)
         vm.prank(fundManager);
-        vm.expectRevert(Errors.NotSupported.selector);
+        vm.expectRevert(Errors.ZeroAddress.selector);
         vault.withdraw(address(0), user1, 100e18);
     }
 
@@ -514,30 +393,6 @@ contract VaultPCTest is Test {
         assertEq(prc20Token.balanceOf(address(vault)), 0);
     }
 
-    function test_UpdateUniversalCore_AffectsTokenSupport() public {
-        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
-        // Don't configure any token support in new core
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore));
-        
-        // Should now fail because new core doesn't support the token
-        vm.prank(fundManager);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(address(prc20Token), user1, 100e18);
-    }
-
-    function test_Pause_DoesNotAffectUpdateUniversalCore() public {
-        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
-        
-        vm.prank(pauser);
-        vault.pause();
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore));
-        assertEq(vault.UNIVERSAL_CORE(), address(newCore));
-    }
-
     function test_Pause_DoesNotAffectSweep() public {
         vm.prank(pauser);
         vault.pause();
@@ -551,19 +406,6 @@ contract VaultPCTest is Test {
     // EDGE CASE & ADDITIONAL COVERAGE TESTS
     // ============================================================================
 
-    function test_UpdateUniversalCore_SequentialUpdates() public {
-        MockUniversalCoreReal newCore1 = new MockUniversalCoreReal(uem);
-        MockUniversalCoreReal newCore2 = new MockUniversalCoreReal(uem);
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore1));
-        assertEq(vault.UNIVERSAL_CORE(), address(newCore1));
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore2));
-        assertEq(vault.UNIVERSAL_CORE(), address(newCore2));
-    }
-
     function test_Sweep_ExactBalance() public {
         uint256 exactBalance = prc20Token.balanceOf(address(vault));
         
@@ -572,26 +414,6 @@ contract VaultPCTest is Test {
         
         assertEq(prc20Token.balanceOf(address(vault)), 0);
         assertEq(prc20Token.balanceOf(user1), exactBalance);
-    }
-
-    function test_Withdraw_AfterUniversalCoreChange_RespectNewSupport() public {
-        // Create new core with different token support
-        MockUniversalCoreReal newCore = new MockUniversalCoreReal(uem);
-        newCore.setSupportedToken(address(prc20Token), false); // Disable prc20Token
-        newCore.setSupportedToken(address(prc20Token2), true);  // Enable prc20Token2
-        
-        vm.prank(admin);
-        vault.updateUniversalCore(address(newCore));
-        
-        // prc20Token should now fail
-        vm.prank(fundManager);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(address(prc20Token), user1, 100e18);
-        
-        // prc20Token2 should succeed
-        vm.prank(fundManager);
-        vault.withdraw(address(prc20Token2), user1, 100e18);
-        assertEq(prc20Token2.balanceOf(user1), 100e18);
     }
 
     function test_Sweep_WorksRegardlessOfTokenSupport() public {
@@ -624,26 +446,6 @@ contract VaultPCTest is Test {
         vm.prank(fundManager);
         vault.withdraw(address(prc20Token), user1, 100e18);
         assertEq(prc20Token.balanceOf(user1), 100e18);
-    }
-
-    function test_Withdraw_ChecksSupportBeforeZeroAddress() public {
-        // Create unsupported token first
-        MockPRC20 unsupportedToken = new MockPRC20(
-            "Unsupported",
-            "UNS",
-            18,
-            "888",
-            MockPRC20.TokenType.ERC20,
-            0,
-            address(universalCore),
-            "0x0"
-        );
-        unsupportedToken.mint(address(vault), 1000e18);
-        
-        // Should revert with NotSupported (checked first via _enforceSupportedToken)
-        vm.prank(fundManager);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(address(unsupportedToken), user1, 100e18);
     }
 
     function test_Sweep_PartialAmount() public {
