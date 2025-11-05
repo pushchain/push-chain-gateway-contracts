@@ -324,4 +324,134 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
         gateway.revertUniversalTxToken(txID, address(usdc), amount, RevertInstructions(user1, ""));
     }
+
+    // =========================
+    //      WITHDRAW NATIVE TESTS
+    // =========================
+
+    function testWithdraw_Native_Success() public {
+        bytes32 txID = bytes32(uint256(24));
+        uint256 amount = 5 ether;
+        address originCaller = user2;
+        
+        uint256 initialBalance = user1.balance;
+        
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGateway.WithdrawToken(txID, originCaller, address(0), user1, amount);
+        
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        gateway.withdraw{value: amount}(txID, originCaller, user1, amount);
+        
+        assertEq(user1.balance, initialBalance + amount);
+    }
+
+    function testWithdraw_Native_OnlyTSS() public {
+        bytes32 txID = bytes32(uint256(25));
+        uint256 amount = 1 ether;
+        
+        vm.deal(user1, amount);
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Errors.WithdrawFailed.selector));
+        gateway.withdraw{value: amount}(txID, user1, user2, amount);
+    }
+
+    function testWithdraw_Native_ReplayProtection() public {
+        bytes32 txID = bytes32(uint256(26));
+        uint256 amount = 2 ether;
+        
+        // First call should succeed
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        gateway.withdraw{value: amount}(txID, user1, user2, amount);
+        
+        // Second call with same txID should revert
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
+        gateway.withdraw{value: amount}(txID, user1, user2, amount);
+    }
+
+    function testWithdraw_Native_ZeroRecipient_Reverts() public {
+        bytes32 txID = bytes32(uint256(27));
+        uint256 amount = 1 ether;
+        
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        gateway.withdraw{value: amount}(txID, user1, address(0), amount);
+    }
+
+    function testWithdraw_Native_ZeroOriginCaller_Reverts() public {
+        bytes32 txID = bytes32(uint256(28));
+        uint256 amount = 1 ether;
+        
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        gateway.withdraw{value: amount}(txID, address(0), user1, amount);
+    }
+
+    function testWithdraw_Native_ZeroAmount_Reverts() public {
+        bytes32 txID = bytes32(uint256(29));
+        
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        gateway.withdraw(txID, user1, user2, 0);
+    }
+
+    function testWithdraw_Native_AmountMismatch_Reverts() public {
+        bytes32 txID = bytes32(uint256(30));
+        uint256 amount = 1 ether;
+        uint256 wrongValue = 0.5 ether;
+        
+        vm.deal(tss, wrongValue);
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        gateway.withdraw{value: wrongValue}(txID, user1, user2, amount);
+    }
+
+    function testWithdraw_Native_WhenPaused_Reverts() public {
+        bytes32 txID = bytes32(uint256(31));
+        uint256 amount = 1 ether;
+        
+        vm.prank(admin);
+        gateway.pause();
+        
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vm.expectRevert();
+        gateway.withdraw{value: amount}(txID, user1, user2, amount);
+    }
+
+    function testWithdraw_Native_EmitsCorrectEvent() public {
+        bytes32 txID = bytes32(uint256(32));
+        uint256 amount = 3 ether;
+        address originCaller = user2;
+        address recipient = user1;
+        
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGateway.WithdrawToken(txID, originCaller, address(0), recipient, amount);
+        
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        gateway.withdraw{value: amount}(txID, originCaller, recipient, amount);
+    }
+
+    function testWithdraw_Native_MultipleSequentialWithdrawals() public {
+        uint256 amount1 = 1 ether;
+        uint256 amount2 = 2 ether;
+        
+        uint256 initialBalance = user1.balance;
+        
+        vm.deal(tss, amount1);
+        vm.prank(tss);
+        gateway.withdraw{value: amount1}(bytes32(uint256(33)), user2, user1, amount1);
+        
+        vm.deal(tss, amount2);
+        vm.prank(tss);
+        gateway.withdraw{value: amount2}(bytes32(uint256(34)), user2, user1, amount2);
+        
+        assertEq(user1.balance, initialBalance + amount1 + amount2);
+    }
 }

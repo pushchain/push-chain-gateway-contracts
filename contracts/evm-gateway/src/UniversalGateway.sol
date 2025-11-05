@@ -556,7 +556,28 @@ contract UniversalGateway is
     //       GATEWAY Withdraw and Payload Execution Paths
     // =========================
 
-    function withdrawToken(
+    /// @inheritdoc IUniversalGateway
+    function withdraw(
+        bytes32 txID,
+        address originCaller,
+        address to,
+        uint256 amount
+    ) external payable nonReentrant whenNotPaused onlyTSS {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (msg.value != amount) revert Errors.InvalidAmount();
+        
+        isExecuted[txID] = true;
+        (bool ok,) = payable(to).call{ value: amount }("");
+        if (!ok) revert Errors.WithdrawFailed();
+        
+        emit WithdrawToken(txID, originCaller, address(0), to, amount);
+    }
+
+    /// @inheritdoc IUniversalGateway
+    function withdrawFunds(
         bytes32 txID,
         address originCaller,
         address token,

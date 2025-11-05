@@ -261,13 +261,20 @@ interface IUniversalGateway {
     //       Withdraw and Payload Execution Paths
     // =========================
 
-    /// @notice             Withdraw token from the gateway
+    /// @notice             Withdraw native token from the gateway
+    /// @param txID         unique transaction identifier
+    /// @param originCaller original caller/user on source chain
+    /// @param to           recipient address
+    /// @param amount       amount of native token to withdraw
+    function withdraw(bytes32 txID, address originCaller, address to, uint256 amount) external payable;
+
+    /// @notice             Withdraw ERC20 token from the gateway
     /// @param txID         unique transaction identifier
     /// @param originCaller original caller/user on source chain
     /// @param token        token address (ERC20 token)
     /// @param to           recipient address
     /// @param amount       amount of token to withdraw
-    function withdrawToken(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawFunds(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier

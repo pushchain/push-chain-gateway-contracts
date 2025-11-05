@@ -138,7 +138,7 @@ contract Vault is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.withdrawToken(txID, originCaller, token, to, amount);
+        gateway.withdrawFunds(txID, originCaller, token, to, amount);
         emit VaultWithdraw(txID, originCaller, token, to, amount);
     }
 
