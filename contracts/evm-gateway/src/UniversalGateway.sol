@@ -358,7 +358,7 @@ contract UniversalGateway is
         // performs rate-limit checks and handle deposit
         _checkUSDCaps(_nativeTokenAmount);
         _checkBlockUSDCap(_nativeTokenAmount);
-        _handleNativeDeposit(_nativeTokenAmount);
+        _handleDeposits(address(0), _nativeTokenAmount);
 
         emit UniversalTx({
             sender: _caller,
@@ -388,11 +388,11 @@ contract UniversalGateway is
         if (bridgeToken == address(0)) {
             if (msg.value != bridgeAmount) revert Errors.InvalidAmount();
             _consumeRateLimit(address(0), bridgeAmount);
-            _handleNativeDeposit(bridgeAmount);
+            _handleDeposits(address(0), bridgeAmount);
         } else {
             if (msg.value != 0) revert Errors.InvalidAmount();
             _consumeRateLimit(bridgeToken, bridgeAmount);
-            _handleTokenDeposit(bridgeToken, bridgeAmount);
+            _handleDeposits(bridgeToken, bridgeAmount);
         }
 
         _sendTxWithFunds(
@@ -423,7 +423,7 @@ contract UniversalGateway is
 
         // performs rate-limit checks and handle deposit
         _consumeRateLimit(bridgeToken, bridgeAmount);
-        _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _handleDeposits(bridgeToken, bridgeAmount);
 
         _sendTxWithFunds(
             _msgSender(),
@@ -460,7 +460,7 @@ contract UniversalGateway is
 
         // performs rate-limit checks and handle deposit
         _consumeRateLimit(bridgeToken, bridgeAmount);
-        _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _handleDeposits(bridgeToken, bridgeAmount);
         _sendTxWithFunds(
             _msgSender(),
             address(0),
@@ -506,42 +506,78 @@ contract UniversalGateway is
     }
 
     /// @inheritdoc IUniversalGateway
-    function revertUniversalTxToken(address token, uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertUniversalTxToken(
+        bytes32 txID,
+        address token,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    )
         external
         nonReentrant
         whenNotPaused
         onlyRole(VAULT_ROLE)
     {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
         
+        isExecuted[txID] = true;
         IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
         
-        emit RevertUniversalTx(revertInstruction.fundRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
     }
     
     /// @inheritdoc IUniversalGateway
-    function revertUniversalTx(uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertUniversalTx(
+        bytes32 txID,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    )
         external
         payable 
         nonReentrant
         whenNotPaused
         onlyTSS
     {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
+        isExecuted[txID] = true;
         (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertUniversalTx(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================
     //       GATEWAY Withdraw and Payload Execution Paths
     // =========================
 
-    function withdrawToken(
+    /// @inheritdoc IUniversalGateway
+    function withdraw(
+        bytes32 txID,
+        address originCaller,
+        address to,
+        uint256 amount
+    ) external payable nonReentrant whenNotPaused onlyTSS {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (msg.value != amount) revert Errors.InvalidAmount();
+        
+        isExecuted[txID] = true;
+        (bool ok,) = payable(to).call{ value: amount }("");
+        if (!ok) revert Errors.WithdrawFailed();
+        
+        emit WithdrawToken(txID, originCaller, address(0), to, amount);
+    }
+
+    /// @inheritdoc IUniversalGateway
+    function withdrawFunds(
         bytes32 txID,
         address originCaller,
         address token,
@@ -751,22 +787,21 @@ contract UniversalGateway is
         }
     }
 
-    /// @dev                Forward native ETH to TSS
-    /// @param amount       amount of native ETH to forward
-    /// @return             amount forwarded
-    function _handleNativeDeposit(uint256 amount) internal returns (uint256) {
-        (bool ok,) = payable(TSS_ADDRESS).call{ value: amount }("");
-        if (!ok) revert Errors.DepositFailed();
-        return amount;
-    }
-
-    /// @dev                Lock ERC20 in the Vault contract for bridging.
-    ///                     Token must be supported, i.e., tokenToLimitThreshold[token] != 0.
-    /// @param token        token address to deposit
-    /// @param amount       amount of token to deposit
-    function _handleTokenDeposit(address token, uint256 amount) internal {
-        if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
-        IERC20(token).safeTransferFrom(_msgSender(), VAULT, amount);
+    /// @dev                Handle deposits of native ETH or ERC20 tokens
+    ///                     If token is address(0): Forward native ETH to TSS
+    ///                     Otherwise: Lock ERC20 in the Vault contract for bridging
+    /// @param token        token address (address(0) for native ETH)
+    /// @param amount       amount to deposit
+    function _handleDeposits(address token, uint256 amount) internal {
+        if (token == address(0)) {
+            // Handle native ETH deposit to TSS
+            (bool ok,) = payable(TSS_ADDRESS).call{ value: amount }("");
+            if (!ok) revert Errors.DepositFailed();
+        } else {
+            // Handle ERC20 token deposit to Vault
+            if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
+            IERC20(token).safeTransferFrom(_msgSender(), VAULT, amount);
+        }
     }
 
     // _handleTokenWithdraw function removed as token withdrawals are now handled by the Vault
