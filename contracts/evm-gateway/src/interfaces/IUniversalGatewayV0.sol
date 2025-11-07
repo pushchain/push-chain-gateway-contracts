@@ -5,13 +5,6 @@ import { RevertInstructions, UniversalPayload, TX_TYPE } from "../libraries/Type
 
 interface IUniversalGatewayV0 {
     // =========================
-    //           Public Helpers 
-    // =========================
-    /// @notice             Checks if a token is supported by the gateway.
-    /// @param token        Token address to check
-    /// @return             True if the token is supported, false otherwise
-    function isTokenSupported(address token) external view returns (bool);
-    // =========================
     //           EVENTS
     // =========================
 
@@ -27,20 +20,7 @@ interface IUniversalGatewayV0 {
         bytes signatureData
     );
     /// @notice         Withdraw funds event
-    event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);
-    /// @notice         Universal tx execution event. Emits for outbound transactions from Push Chain to external chains
-    event UniversalTxExecuted(
-        bytes32 indexed txID,
-        address indexed originCaller,
-        address indexed target,
-        address token,
-        uint256 amount,
-        bytes data
-    );
-    /// @notice         Vault updated event
-    event VaultUpdated(address indexed oldVault, address indexed newVault);
-    /// @notice         Revert withdraw event
-    event RevertWithdraw(address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+    event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress);   
     /// @notice         Caps updated event
     event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
     /// @notice         Rate-limit / config events
@@ -210,45 +190,4 @@ interface IUniversalGatewayV0 {
     /// @param amount       amount to refund
     /// @param revertCFG   (fundRecipient, revertMsg)
     function revertWithdrawFunds(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
-
-    /// @notice             Revert tokens to the recipient specified in revertInstruction
-    /// @param token        token address to revert
-    /// @param amount       amount of token to revert
-    /// @param revertCFG    revert settings
-    function revertTokens(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
-    
-    /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param amount       amount of native token to revert
-    /// @param revertCFG    revert settings
-    function revertNative(uint256 amount, RevertInstructions calldata revertCFG) external payable;
-
-    /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
-    /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param token        token address (ERC20 token)
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        address originCaller,
-        address token,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external;
-    
-    /// @notice             Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
-    /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of native token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        address originCaller,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external payable;
 }
