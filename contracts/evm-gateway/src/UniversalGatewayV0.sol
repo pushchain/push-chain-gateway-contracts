@@ -109,13 +109,10 @@ contract UniversalGatewayV0 is
     mapping(address => EpochUsage) private _usage;              // Current-epoch usage per token (address(0) represents native).
 
 
-    /// @notice The Vault contract address
-    address public VAULT;
-    bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
     /// @notice Map to track if a payload has been executed
     mapping(bytes32 => bool) public isExecuted;
 
-    uint256[38] private __gap; // Reduced gap to account for new state variables
+    uint256[40] private __gap;
 
     /**
      * @notice Initialize the UniversalGateway contract
@@ -127,20 +124,6 @@ contract UniversalGatewayV0 is
      * @param factory          UniswapV2 factory 
      * @param router           UniswapV2 router
      */
-    /// @notice             Update the Vault address
-    /// @param newVault     new Vault address
-    function updateVault(address newVault) external onlyRole(DEFAULT_ADMIN_ROLE) whenPaused {
-        if (newVault == address(0)) revert Errors.ZeroAddress();
-        address old = VAULT;
-        
-        // transfer role
-        if (hasRole(VAULT_ROLE, old)) _revokeRole(VAULT_ROLE, old);
-        _grantRole(VAULT_ROLE, newVault);
-        
-        VAULT = newVault;
-        emit VaultUpdated(old, newVault);
-    }
-
     function initialize(
         address admin,
         address pauser,
@@ -739,7 +722,7 @@ contract UniversalGatewayV0 is
         external
         nonReentrant
         whenNotPaused
-        onlyRole(VAULT_ROLE)
+        onlyTSS
     {
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
@@ -926,19 +909,13 @@ contract UniversalGatewayV0 is
         return amount;
     }
 
-    /// @dev Lock ERC20 in the Vault contract for bridging.
+    /// @dev Lock ERC20 within the gateway contract for bridging.
     ///      Token must be supported, i.e., tokenToLimitThreshold[token] != 0.
     /// @param token Token address to deposit
     /// @param amount Amount of token to deposit
     function _handleTokenDeposit(address token, uint256 amount) internal {
         if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
-        if (VAULT != address(0)) {
-            // If Vault is set, transfer tokens to Vault
-            IERC20(token).safeTransferFrom(_msgSender(), VAULT, amount);
-        } else {
-            // Legacy behavior - transfer tokens to this contract
-            IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
-        }
+        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
     }
 
     /// @dev Native withdraw by TSS
@@ -1119,7 +1096,6 @@ contract UniversalGatewayV0 is
     /// @dev                   Allows outbound payload execution from Push Chain to external chains.
     ///                        - The tokens used for payload execution, are to be burnt on Push Chain.
     ///                        - approval and reset of approval is handled by the gateway.
-    ///                        - tokens are transferred from Vault to Gateway before calling this function
     /// @param txID            unique transaction identifier
     /// @param originCaller    original caller/user on source chain
     /// @param token           token address (ERC20 token)
@@ -1133,7 +1109,7 @@ contract UniversalGatewayV0 is
         address target,
         uint256 amount,
         bytes calldata payload
-    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+    ) external nonReentrant whenNotPaused onlyTSS {
         if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
@@ -1148,12 +1124,6 @@ contract UniversalGatewayV0 is
         _safeApprove(token, target, amount);       // approve target to spend amount
         _executeCall(target, payload, 0);          // execute call with required amount
         _resetApproval(token, target);             // reset approval back to zero
-        
-        // Return any remaining tokens to the Vault
-        uint256 remainingBalance = IERC20(token).balanceOf(address(this));
-        if (remainingBalance > 0 && VAULT != address(0)) {
-            IERC20(token).safeTransfer(VAULT, remainingBalance);
-        }
         
         emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
     }
@@ -1171,7 +1141,7 @@ contract UniversalGatewayV0 is
         address target,
         uint256 amount,
         bytes calldata payload
-    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+    ) external payable nonReentrant whenNotPaused onlyTSS {
         if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();

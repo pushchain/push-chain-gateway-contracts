@@ -37,8 +37,6 @@ interface IUniversalGatewayV0 {
         uint256 amount,
         bytes data
     );
-    /// @notice         Vault updated event
-    event VaultUpdated(address indexed oldVault, address indexed newVault);
     /// @notice         Revert withdraw event
     event RevertWithdraw(address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
     /// @notice         Caps updated event
@@ -222,7 +220,7 @@ interface IUniversalGatewayV0 {
     /// @param revertCFG    revert settings
     function revertNative(uint256 amount, RevertInstructions calldata revertCFG) external payable;
 
-    /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
+    /// @notice             Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
     /// @param txID         unique transaction identifier
     /// @param originCaller original caller/user on source chain
     /// @param token        token address (ERC20 token)
