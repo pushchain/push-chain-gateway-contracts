@@ -577,7 +577,7 @@ contract UniversalGateway is
     }
 
     /// @inheritdoc IUniversalGateway
-    function withdrawFunds(
+    function withdrawTokens(
         bytes32 txID,
         address originCaller,
         address token,
