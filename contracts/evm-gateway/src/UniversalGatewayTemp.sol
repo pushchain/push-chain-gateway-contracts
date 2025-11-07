@@ -371,7 +371,7 @@ contract UniversalGatewayTemp is
         bytes memory _payload,
         RevertInstructions memory _revertInstruction,
         bytes memory _signatureData
-    ) internal {
+    ) private {
         _validateUniversalTxWithGas(_txType, _payload, _revertInstruction);
         // performs rate-limit checks and handle deposit
         _checkUSDCaps(_gasAmount);
@@ -383,7 +383,7 @@ contract UniversalGatewayTemp is
     }
 
     
-    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue) internal {
+    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue) private {
         _validateUniversalTxWithFunds(_req.txType, _req.payload, _req.revertInstruction, _req.amount);
 
         // Case 1: For TX_TYPE = FUNDS
