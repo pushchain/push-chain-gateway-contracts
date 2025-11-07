@@ -674,6 +674,57 @@ contract UniversalGatewayV0 is
         });
     }
 
+    ///==============================
+    ///      REVERT UNIVERSAL TX
+    ///==============================
+    
+    /// @inheritdoc IUniversalGatewayV0
+    function revertUniversalTx(
+        bytes32 txID,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    )
+        external
+        payable 
+        nonReentrant
+        whenNotPaused
+        onlyTSS
+    {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        
+        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
+
+        isExecuted[txID] = true;
+        (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
+        if (!ok) revert Errors.WithdrawFailed();
+        
+        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+    }
+
+    /// @inheritdoc IUniversalGatewayV0
+    function revertUniversalTxToken(
+        bytes32 txID,
+        address token,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    )
+        external
+        nonReentrant
+        whenNotPaused
+        onlyTSS
+    {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        
+        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (amount == 0) revert Errors.InvalidAmount();
+        
+        isExecuted[txID] = true;
+        IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
+        
+        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
+    }
+
     // =========================
     //          WITHDRAW
     // =========================
@@ -694,61 +745,6 @@ contract UniversalGatewayV0 is
         }
 
         emit WithdrawFunds(recipient, amount, token);
-    }
-
-    /// @inheritdoc IUniversalGatewayV0
-    function revertWithdrawFunds(
-        address token,
-        uint256 amount,
-        RevertInstructions calldata revertInstruction
-    ) external nonReentrant whenNotPaused onlyTSS {
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
-        if (amount == 0) revert Errors.InvalidAmount();
-
-        if (token == address(0)) {
-            _handleNativeWithdraw(revertInstruction.fundRecipient, amount);
-        } else {
-            _handleTokenWithdraw(token, revertInstruction.fundRecipient, amount);
-        }
-
-        emit WithdrawFunds(revertInstruction.fundRecipient, amount, token);
-    }
-    
-    /// @notice             Revert tokens to the recipient specified in revertInstruction
-    /// @param token        token address to revert
-    /// @param amount       amount of token to revert
-    /// @param revertInstruction revert settings
-    function revertTokens(address token, uint256 amount, RevertInstructions calldata revertInstruction)
-        external
-        nonReentrant
-        whenNotPaused
-        onlyTSS
-    {
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
-        if (amount == 0) revert Errors.InvalidAmount();
-        
-        IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
-        
-        emit RevertWithdraw(revertInstruction.fundRecipient, token, amount, revertInstruction);
-    }
-    
-    /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param amount       amount of native token to revert
-    /// @param revertInstruction revert settings
-    function revertNative(uint256 amount, RevertInstructions calldata revertInstruction)
-        external
-        payable 
-        nonReentrant
-        whenNotPaused
-        onlyTSS
-    {
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
-        if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
-
-        (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
-        if (!ok) revert Errors.WithdrawFailed();
-        
-        emit RevertWithdraw(revertInstruction.fundRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================

@@ -44,6 +44,14 @@ interface IUniversalGatewayV0 {
     /// @notice         Rate-limit / config events
     event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
     event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
+        /// @notice                     Revert withdraw event: For withdrwals/actions during a revert
+    /// @param txID                 Unique transaction identifier
+    /// @param to                   Recipient address on external chain
+    /// @param token                Token address being reverted
+    /// @param amount               Amount of token being reverted
+    /// @param revertInstruction    Revert settings configuration
+    event RevertUniversalTx(bytes32 indexed txID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+
 
     // =========================
     //     sendTxWithGas - Fee Abstraction Route
@@ -194,6 +202,20 @@ interface IUniversalGatewayV0 {
         bytes memory signatureData
     ) external;
 
+    /// @notice             Revert universal transaction with tokens to the recipient specified in revertInstruction
+    /// @param txID         unique transaction identifier (for replay protection)
+    /// @param token        token address to revert
+    /// @param amount       amount of token to revert
+    /// @param revertCFG    revert settings
+    function revertUniversalTxToken(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertCFG) external;
+    
+    /// @notice             Revert native tokens to the recipient specified in revertInstruction
+    /// @param txID         unique transaction identifier (for replay protection)
+    /// @param amount       amount of native token to revert
+    /// @param revertCFG    revert settings
+    function revertUniversalTx(bytes32 txID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
+
+
     /// @notice Withdraw functions (TSS-only)
 
     /// @notice             TSS-only withdraw (unlock) to an external recipient on Push Chain.
@@ -201,24 +223,6 @@ interface IUniversalGatewayV0 {
     /// @param token        address(0) for native; ERC20 otherwise
     /// @param amount       amount to withdraw
     function withdrawFunds(address recipient, address token, uint256 amount) external;
-
-    /// @notice             Refund (revert) path controlled by TSS (e.g., failed universal/bridge).
-    /// @dev                Sends funds to revertCFG.fundRecipient using same rules as withdraw.
-    /// @param token        address(0) for native; ERC20 otherwise
-    /// @param amount       amount to refund
-    /// @param revertCFG   (fundRecipient, revertMsg)
-    function revertWithdrawFunds(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
-
-    /// @notice             Revert tokens to the recipient specified in revertInstruction
-    /// @param token        token address to revert
-    /// @param amount       amount of token to revert
-    /// @param revertCFG    revert settings
-    function revertTokens(address token, uint256 amount, RevertInstructions calldata revertCFG) external;
-    
-    /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param amount       amount of native token to revert
-    /// @param revertCFG    revert settings
-    function revertNative(uint256 amount, RevertInstructions calldata revertCFG) external payable;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
     /// @param txID         unique transaction identifier
