@@ -28,3 +28,8 @@ bind_address = "0.0.0.0"
 rpc_port = 8899
 ledger = ".anchor/test-ledger"
 reset = true
+
+[[test.genesis]]
+address = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"
+program = "tests/fixtures/pyth_pull.so"
+upgradeable = true
