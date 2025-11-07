@@ -274,7 +274,7 @@ interface IUniversalGateway {
     /// @param token        token address (ERC20 token)
     /// @param to           recipient address
     /// @param amount       amount of token to withdraw
-    function withdrawFunds(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawTokens(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier
