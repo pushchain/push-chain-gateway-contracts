@@ -377,118 +377,14 @@ contract UniversalGatewayV0 is
         emit FundsAdded(msg.sender, _transactionHash, usdAmountStruct);
     }
 
-
-    /// @inheritdoc IUniversalGatewayV0
-     function sendTxWithGas(
-        UniversalPayload calldata payload,
-        RevertInstructions calldata revertInstruction,
-        bytes memory signatureData
-    ) external payable nonReentrant whenNotPaused {
-
-        _sendTxWithGas(_msgSender(), abi.encode(payload), msg.value, revertInstruction, TX_TYPE.GAS_AND_PAYLOAD, signatureData);  
-    }
-
-  
-    /// @inheritdoc IUniversalGatewayV0
-    function sendTxWithGas(
-        address tokenIn,
-        uint256 amountIn,
-        UniversalPayload calldata payload,
-        RevertInstructions calldata revertInstruction,
-        uint256 amountOutMinETH,
-        uint256 deadline,
-        bytes memory signatureData
-    ) external nonReentrant whenNotPaused {
-        if (tokenIn == address(0)) revert Errors.InvalidInput();
-        if (amountIn == 0) revert Errors.InvalidAmount();
-        if (amountOutMinETH == 0) revert Errors.InvalidAmount();
-        // Allow deadline == 0 (use contract default); otherwise ensure it's in the future
-        if (deadline != 0 && deadline < block.timestamp) revert Errors.SlippageExceededOrExpired();
-
-        // Swap token to native ETH
-        uint256 ethOut = swapToNative(tokenIn, amountIn, amountOutMinETH, deadline);
-
-        _sendTxWithGas(
-            _msgSender(),
-            abi.encode(payload),
-            ethOut,
-            revertInstruction,
-            TX_TYPE.GAS_AND_PAYLOAD,
-            signatureData
-        );
-    }
-
-    /// @dev    Internal helper function to deposit for Instant TX.
-    ///         Emits the core TxWithGas event - important for Instant TX Route.
-    /// @param _caller Sender address
-    /// @param _payload Payload
-    /// @param _nativeTokenAmount Amount of native token deposited
-    /// @param _revertInstruction Revert settings
-    /// @param _txType Transaction type
-    function _sendTxWithGas(
-        address _caller, 
-        bytes memory _payload, 
-        uint256 _nativeTokenAmount, 
-        RevertInstructions calldata _revertInstruction,
-        TX_TYPE _txType,
-        bytes memory _signatureData
-    ) internal {
-        if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
-
-
-
-        //_checkUSDCaps(_nativeTokenAmount);
-        //_checkBlockUSDCap(_nativeTokenAmount);
-        _handleDeposits(address(0), _nativeTokenAmount);
-
-        emit UniversalTx({
-            sender: _caller,
-            recipient: address(0),
-            token: address(0),
-            amount: _nativeTokenAmount,
-            payload: _payload,
-            revertInstruction: _revertInstruction,
-            txType: _txType,
-            signatureData: _signatureData
-        });
-    }
    
     // =========================
     //           DEPOSITS - Universal TX Route
     // =========================
 
+    
     /// @inheritdoc IUniversalGatewayV0
-    function sendFunds(
-        address recipient,
-        address bridgeToken,
-        uint256 bridgeAmount,
-        RevertInstructions calldata revertInstruction
-    ) external payable nonReentrant whenNotPaused {
-        if (recipient == address(0)) revert Errors.InvalidRecipient();
-
-        if (bridgeToken == address(0)) {
-            if (msg.value != bridgeAmount) revert Errors.InvalidAmount();
-            // _consumeRateLimit(address(0), bridgeAmount);
-            _handleDeposits(address(0), bridgeAmount);
-        } else {
-            if (msg.value != 0) revert Errors.InvalidAmount();
-            //_consumeRateLimit(bridgeToken, bridgeAmount);
-            _handleDeposits(bridgeToken, bridgeAmount);
-        }
-
-        _sendTxWithFunds(
-            _msgSender(),
-            recipient,
-            bridgeToken,
-            bridgeAmount,
-            bytes(""),              // Empty payload for funds-only bridge
-            revertInstruction,
-            TX_TYPE.FUNDS,
-            bytes("")
-        );
-    }
-
-    /// @inheritdoc IUniversalGatewayV0
+   // NOTE: This uses  the OLD Fee Abstraction Route ( PC MINTED ON Push Chain ) 
     function sendTxWithFunds(
         address bridgeToken,
         uint256 bridgeAmount,
@@ -506,7 +402,7 @@ contract UniversalGatewayV0 is
 
         // Check and initiate Universal TX 
         _handleDeposits(bridgeToken, bridgeAmount);
-        _sendTxWithFunds(
+        _sendTxWithFunds_old( //@audit - USES Old internal _sendTxWithFunds() 
             _msgSender(),
             address(0),
             bridgeToken,
@@ -517,37 +413,6 @@ contract UniversalGatewayV0 is
             signatureData
         );
     }
-
-     /// @notice NEW Implementation of sendTxWithFunds with new fee abstraction route - ONLY FOR TESTNET 
-    function sendTxWithFunds_new(
-        address bridgeToken,
-        uint256 bridgeAmount,
-        UniversalPayload calldata payload,
-        RevertInstructions calldata revertInstruction,
-        bytes memory signatureData
-    ) external payable nonReentrant whenNotPaused {
-        if (bridgeAmount == 0) revert Errors.InvalidAmount();
-        uint256 gasAmount = msg.value;
-        if (gasAmount == 0) revert Errors.InvalidAmount();
-
-        _sendTxWithGas(_msgSender(), bytes(""), gasAmount, revertInstruction, TX_TYPE.GAS, signatureData);
-
-        // performs rate-limit checks and handle deposit
-        //_consumeRateLimit(bridgeToken, bridgeAmount);
-        _handleDeposits(bridgeToken, bridgeAmount);
-
-        _sendTxWithFunds(
-            _msgSender(),
-            address(0),
-            bridgeToken,
-            bridgeAmount,
-            abi.encode(payload),
-            revertInstruction,
-            TX_TYPE.FUNDS_AND_PAYLOAD,
-            signatureData
-        );
-    }
-
 
     /// @inheritdoc IUniversalGatewayV0
     function sendTxWithFunds(
@@ -572,7 +437,7 @@ contract UniversalGatewayV0 is
         _addFunds(bytes32(0), nativeGasAmount);
 
         _handleDeposits(bridgeToken, bridgeAmount);
-        _sendTxWithFunds(
+        _sendTxWithFunds_old( //@audit - USES Old internal _sendTxWithFunds() 
             _msgSender(),
             address(0),
             bridgeToken,
@@ -585,52 +450,81 @@ contract UniversalGatewayV0 is
 
     }
 
-    /// @notice NEW Implementation of sendTxWithFunds with new fee abstraction route - ONLY FOR TESTNET 
-    function sendTxWithFunds_new(
-        address bridgeToken,
-        uint256 bridgeAmount,
-        address gasToken,
-        uint256 gasAmount,
-        uint256 amountOutMinETH,
-        uint256 deadline,
-        UniversalPayload calldata payload,
-        RevertInstructions calldata revertInstruction,
-        bytes memory signatureData
-    ) external nonReentrant whenNotPaused {
-        if (bridgeAmount == 0) revert Errors.InvalidAmount();
-        if (gasToken == address(0)) revert Errors.InvalidInput();
-        if (gasAmount == 0) revert Errors.InvalidAmount();
 
-        // Swap gasToken to native ETH
-        uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
+     /// @notice NEW Implementation of sendTxWithFunds with new fee abstraction route - ONLY FOR TESTNET 
+    // NOTE: This uses  the NEW Fee Abstraction Route ( PC SWAPPED USING AMM ON Push Chain ) 
 
-        _sendTxWithGas(_msgSender(), bytes(""), nativeGasAmount, revertInstruction, TX_TYPE.GAS, signatureData);
+    // function sendTxWithFunds_new(
+    //     address bridgeToken,
+    //     uint256 bridgeAmount,
+    //     UniversalPayload calldata payload,
+    //     RevertInstructions calldata revertInstruction,
+    //     bytes memory signatureData
+    // ) external payable nonReentrant whenNotPaused {
+    //     if (bridgeAmount == 0) revert Errors.InvalidAmount();
+    //     uint256 gasAmount = msg.value;
+    //     if (gasAmount == 0) revert Errors.InvalidAmount();
 
-        // performs rate-limit checks and handle deposit
-        //_consumeRateLimit(bridgeToken, bridgeAmount);
-        _handleDeposits(bridgeToken, bridgeAmount);
-        _sendTxWithFunds(
-            _msgSender(),
-            address(0),
-            bridgeToken,
-            bridgeAmount,
-            abi.encode(payload),
-            revertInstruction,
-            TX_TYPE.FUNDS_AND_PAYLOAD,
-            signatureData
-        );
-    }
+    //     _sendTxWithGas(_msgSender(), bytes(""), gasAmount, revertInstruction, TX_TYPE.GAS, signatureData);
 
-    /// @notice Internal helper function to deposit for Universal TX.   
-    /// @dev    Emits the core TxWithFunds event - important for Universal TX Route.
-    /// @param _caller Sender address
-    /// @param _recipient Recipient address
-    /// @param _bridgeToken Token address to bridge
-    /// @param _bridgeAmount Amount of token to bridge
-    /// @param _payload Payload
-    /// @param _revertInstruction Revert settings
-    /// @param _txType Transaction type
-    function _sendTxWithFunds(
+    //     // performs rate-limit checks and handle deposit
+    //     //_consumeRateLimit(bridgeToken, bridgeAmount);
+    //     _handleDeposits(bridgeToken, bridgeAmount);
+
+    //     _sendTxWithFunds(
+    //         _msgSender(),
+    //         address(0),
+    //         bridgeToken,
+    //         bridgeAmount,
+    //         abi.encode(payload),
+    //         revertInstruction,
+    //         TX_TYPE.FUNDS_AND_PAYLOAD,
+    //         signatureData
+    //     );
+    // }
+
+
+    // /// @notice NEW Implementation of sendTxWithFunds(TOKENS ) with new fee abstraction route - ONLY FOR TESTNET 
+    // NOTE: This uses  the NEW Fee Abstraction Route ( PC SWAPPED USING AMM ON Push Chain ) 
+
+    // function sendTxWithFunds_new(
+    //     address bridgeToken,
+    //     uint256 bridgeAmount,
+    //     address gasToken,
+    //     uint256 gasAmount,
+    //     uint256 amountOutMinETH,
+    //     uint256 deadline,
+    //     UniversalPayload calldata payload,
+    //     RevertInstructions calldata revertInstruction,
+    //     bytes memory signatureData
+    // ) external nonReentrant whenNotPaused {
+    //     if (bridgeAmount == 0) revert Errors.InvalidAmount();
+    //     if (gasToken == address(0)) revert Errors.InvalidInput();
+    //     if (gasAmount == 0) revert Errors.InvalidAmount();
+
+    //     // Swap gasToken to native ETH
+    //     uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
+
+    //     _sendTxWithGas(_msgSender(), bytes(""), nativeGasAmount, revertInstruction, TX_TYPE.GAS, signatureData);
+
+    //     // performs rate-limit checks and handle deposit
+    //     //_consumeRateLimit(bridgeToken, bridgeAmount);
+    //     _handleDeposits(bridgeToken, bridgeAmount);
+    //     _sendTxWithFunds(
+    //         _msgSender(),
+    //         address(0),
+    //         bridgeToken,
+    //         bridgeAmount,
+    //         abi.encode(payload),
+    //         revertInstruction,
+    //         TX_TYPE.FUNDS_AND_PAYLOAD,
+    //         signatureData
+    //     );
+    // }
+
+        /// @notice                     Internal helper function to deposit for Universal TX.
+    /// @dev                        Handles rate-limit checks for Universal Transaction Route
+    function _sendTxWithFunds_old(
         address _caller,
         address _recipient,
         address _bridgeToken,
@@ -642,11 +536,8 @@ contract UniversalGatewayV0 is
     ) internal {
         if (_revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         /// for recipient == address(0), the funds are being moved to UEA of the msg.sender on Push Chain.
-        if (_recipient == address(0)){
-            if (
-                _txType != TX_TYPE.FUNDS_AND_PAYLOAD &&
-                _txType != TX_TYPE.GAS_AND_PAYLOAD
-            ) {
+        if (_recipient == address(0)) {
+            if (_txType != TX_TYPE.FUNDS_AND_PAYLOAD && _txType != TX_TYPE.GAS_AND_PAYLOAD) {
                 revert Errors.InvalidTxType();
             }
         }
@@ -805,6 +696,163 @@ contract UniversalGatewayV0 is
                 _req.signatureData
             );
         }
+    }
+
+    // =========================
+    //      LEGACY COMPATIBILITY WRAPPERS
+    // =========================
+        // These functions maintain backward compatibility with existing SDKs
+    // All logic is delegated to the new unified internal functions
+
+    /// @notice Legacy: Send transaction with gas using native token (GAS_AND_PAYLOAD route)
+    /// @param payload Universal payload for execution
+    /// @param revertInstruction Revert instructions
+    /// @param signatureData Signature data for verification
+    function sendTxWithGas(
+        UniversalPayload calldata payload,
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
+    ) external payable nonReentrant whenNotPaused {
+        _sendTxWithGas(
+            TX_TYPE.GAS_AND_PAYLOAD,
+            _msgSender(),
+            msg.value,
+            abi.encode(payload),
+            revertInstruction,
+            signatureData
+        );
+    }
+
+
+    /// @notice Legacy: Send transaction with gas using ERC20 token (GAS_AND_PAYLOAD route)
+    /// @param tokenIn Token to swap for gas
+    /// @param amountIn Amount of tokenIn to swap
+    /// @param payload Universal payload for execution
+    /// @param revertInstruction Revert instructions
+    /// @param amountOutMinETH Minimum ETH to receive from swap
+    /// @param deadline Swap deadline
+    /// @param signatureData Signature data for verification
+    function sendTxWithGas(
+        address tokenIn,
+        uint256 amountIn,
+        UniversalPayload calldata payload,
+        RevertInstructions calldata revertInstruction,
+        uint256 amountOutMinETH,
+        uint256 deadline,
+        bytes memory signatureData
+    ) external nonReentrant whenNotPaused {
+        if (tokenIn == address(0)) revert Errors.InvalidInput();
+        if (amountIn == 0) revert Errors.InvalidAmount();
+        if (amountOutMinETH == 0) revert Errors.InvalidAmount();
+        if (deadline != 0 && deadline < block.timestamp) revert Errors.SlippageExceededOrExpired();
+
+        // Swap token to native ETH
+        uint256 ethOut = swapToNative(tokenIn, amountIn, amountOutMinETH, deadline);
+
+        _sendTxWithGas(
+            TX_TYPE.GAS_AND_PAYLOAD,
+            _msgSender(),
+            ethOut,
+            abi.encode(payload),
+            revertInstruction,
+            signatureData
+        );
+    }
+
+    /// @notice Legacy: Send funds only (FUNDS route, no payload)
+    /// @param recipient Recipient address on Push Chain
+    /// @param bridgeToken Token to bridge (address(0) for native)
+    /// @param bridgeAmount Amount to bridge
+    /// @param revertInstruction Revert instructions
+    function sendFunds(
+        address recipient,
+        address bridgeToken,
+        uint256 bridgeAmount,
+        RevertInstructions calldata revertInstruction
+    ) external payable nonReentrant whenNotPaused {
+
+        UniversalTxRequest memory req = UniversalTxRequest({
+            txType: TX_TYPE.FUNDS,
+            recipient: recipient,
+            token: bridgeToken,
+            amount: bridgeAmount,
+            payload: bytes(""),
+            revertInstruction: revertInstruction,
+            signatureData: bytes("")
+        });
+
+        _routeUniversalTx(req, _msgSender(), msg.value);
+    }
+
+    /// @notice Legacy: Send funds with payload (FUNDS_AND_PAYLOAD route)
+    /// @param bridgeToken Token to bridge
+    /// @param bridgeAmount Amount to bridge
+    /// @param payload Universal payload for execution
+    /// @param revertInstruction Revert instructions
+    /// @param signatureData Signature data for verification
+    function sendTxWithFunds_new(
+        address bridgeToken,
+        uint256 bridgeAmount,
+        UniversalPayload calldata payload,
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
+    ) external payable nonReentrant whenNotPaused {
+
+        UniversalTxRequest memory req = UniversalTxRequest({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
+            recipient: address(0),
+            token: bridgeToken,
+            amount: bridgeAmount,
+            payload: abi.encode(payload),
+            revertInstruction: revertInstruction,
+            signatureData: signatureData
+        });
+
+        _routeUniversalTx(req, _msgSender(), msg.value);
+    }
+
+
+    /// @notice Legacy: Send funds with payload using ERC20 token as gas (FUNDS_AND_PAYLOAD route)
+    /// @param bridgeToken Token to bridge
+    /// @param bridgeAmount Amount to bridge
+    /// @param gasToken Token to swap for gas
+    /// @param gasAmount Amount of gasToken to swap
+    /// @param amountOutMinETH Minimum ETH to receive from swap
+    /// @param deadline Swap deadline
+    /// @param payload Universal payload for execution
+    /// @param revertInstruction Revert instructions
+    /// @param signatureData Signature data for verification
+    function sendTxWithFunds_new(
+        address bridgeToken,
+        uint256 bridgeAmount,
+        address gasToken,
+        uint256 gasAmount,
+        uint256 amountOutMinETH,
+        uint256 deadline,
+        UniversalPayload calldata payload,
+        RevertInstructions calldata revertInstruction,
+        bytes memory signatureData
+    ) external nonReentrant whenNotPaused {
+        if (bridgeAmount == 0) revert Errors.InvalidAmount();
+        if (gasToken == address(0)) revert Errors.InvalidInput();
+        if (gasAmount == 0) revert Errors.InvalidAmount();
+        if (amountOutMinETH == 0) revert Errors.InvalidAmount();
+        if (deadline != 0 && deadline < block.timestamp) revert Errors.SlippageExceededOrExpired();
+
+        // Swap gasToken to native ETH
+        uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
+
+        UniversalTxRequest memory req = UniversalTxRequest({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
+            recipient: address(0),
+            token: bridgeToken,
+            amount: bridgeAmount,
+            payload: abi.encode(payload),
+            revertInstruction: revertInstruction,
+            signatureData: signatureData
+        });
+
+        _routeUniversalTx(req, _msgSender(), nativeGasAmount);
     }
 
 
@@ -1283,13 +1331,14 @@ contract UniversalGatewayV0 is
         if (tx_type != TX_TYPE.GAS && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
             revert Errors.InvalidTxType();
         }
-        if (tx_type == TX_TYPE.GAS_AND_PAYLOAD && payload.length == 0) {
-            revert Errors.InvalidInput();
-        }
+        /// NOTE: REMOVED STRICT REQUIREMENTS FOR TESTNET 
+        // if (tx_type == TX_TYPE.GAS_AND_PAYLOAD && payload.length == 0) {
+        //     revert Errors.InvalidInput();
+        // }
 
-        if(tx_type == TX_TYPE.GAS && payload.length != 0) {
-            revert Errors.InvalidInput();
-        }
+        // if(tx_type == TX_TYPE.GAS && payload.length != 0) {
+        //     revert Errors.InvalidInput();
+        // }
         
         if (revertInstruction.fundRecipient == address(0)) {
             revert Errors.InvalidRecipient();
@@ -1308,13 +1357,14 @@ contract UniversalGatewayV0 is
         if (tx_type != TX_TYPE.FUNDS && tx_type != TX_TYPE.FUNDS_AND_PAYLOAD) {
             revert Errors.InvalidTxType();
         }
-        if (tx_type == TX_TYPE.FUNDS && payload.length != 0) {
-            // Note: FUNDS-only must not carry a payload
-            revert Errors.InvalidInput();
-        }
-        if (tx_type == TX_TYPE.FUNDS_AND_PAYLOAD && payload.length == 0) {
-            revert Errors.InvalidInput();
-        }
+        /// NOTE: REMOVED STRICT REQUIREMENTS FOR TESTNET 
+        // if (tx_type == TX_TYPE.FUNDS && payload.length != 0) {
+        //     // Note: FUNDS-only must not carry a payload
+        //     revert Errors.InvalidInput();
+        // }
+        // if (tx_type == TX_TYPE.FUNDS_AND_PAYLOAD && payload.length == 0) {
+        //     revert Errors.InvalidInput();
+        // }
         if (revertInstruction.fundRecipient == address(0)) {
             revert Errors.InvalidRecipient();
         }

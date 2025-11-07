@@ -1102,7 +1102,6 @@ contract UniversalGatewayTemp is
         RevertInstructions calldata revertInstruction,
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
-        if (bridgeAmount == 0) revert Errors.InvalidAmount();
 
         UniversalTxRequest memory req = UniversalTxRequest({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
