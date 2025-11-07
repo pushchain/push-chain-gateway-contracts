@@ -129,7 +129,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         });
 
         it("Rejects unauthorized admin operations", async () => {
-
             try {
                 await program.methods
                     .setTssAddress(unauthorizedUser.publicKey)
@@ -141,7 +140,10 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                     .rpc();
 
                 expect.fail("Unauthorized TSS update should have failed");
-            } catch (error) {
+            } catch (error: any) {
+                expect(error).to.exist;
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("Unauthorized");
             }
         });
     });
@@ -180,7 +182,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         });
 
         it("Rejects pause/unpause from unauthorized users", async () => {
-
             try {
                 await program.methods
                     .pause()
@@ -192,7 +193,10 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                     .rpc();
 
                 expect.fail("Unauthorized pause should have failed");
-            } catch (error) {
+            } catch (error: any) {
+                expect(error).to.exist;
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("Unauthorized");
             }
 
             try {
@@ -206,7 +210,10 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                     .rpc();
 
                 expect.fail("Unauthorized unpause should have failed");
-            } catch (error) {
+            } catch (error: any) {
+                expect(error).to.exist;
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("Unauthorized");
             }
         });
     });
@@ -232,12 +239,9 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
         });
 
-        // Pyth-related test commented out temporarily
-        /*
         it("Updates Pyth configuration", async () => {
-
             const newPriceFeed = Keypair.generate().publicKey;
-            const newConfidenceThreshold = new anchor.BN(2000000); // Higher threshold
+            const newConfidenceThreshold = new anchor.BN(2000000);
 
             // Update price feed
             await program.methods
@@ -263,8 +267,16 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             expect(config.pythPriceFeed.toString()).to.equal(newPriceFeed.toString());
             expect(config.pythConfidenceThreshold.toString()).to.equal(newConfidenceThreshold.toString());
 
+            // Restore original price feed for other tests
+            await program.methods
+                .setPythPriceFeed(mockPriceFeed)
+                .accounts({
+                    admin: admin.publicKey,
+                    config: configPda,
+                })
+                .signers([admin])
+                .rpc();
         });
-        */
 
         it("Updates rate limiting configuration", async () => {
 
@@ -350,7 +362,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         });
 
         it("Rejects unauthorized whitelist operations", async () => {
-
             try {
                 await program.methods
                     .whitelistToken(tempWhitelistToken.mint.publicKey)
@@ -364,7 +375,10 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                     .rpc();
 
                 expect.fail("Unauthorized whitelist addition should have failed");
-            } catch (error) {
+            } catch (error: any) {
+                expect(error).to.exist;
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("Unauthorized");
             }
         });
     });
@@ -400,15 +414,17 @@ describe("Universal Gateway - Admin Functions Tests", () => {
     });
 
     describe("TSS Management", () => {
-        it("Initializes TSS PDA", async () => {
+        it("Initializes TSS PDA if not already initialized", async () => {
             const expectedTssEthAddress = getTssEthAddress();
             const chainId = new anchor.BN(TSS_CHAIN_ID);
 
             try {
-                await program.account.tssPda.fetch(tssPda);
+                const existingTss = await program.account.tssPda.fetch(tssPda);
+                // Verify it's already initialized correctly
+                expect(existingTss.chainId.toString()).to.equal(chainId.toString());
                 return;
             } catch {
-                // Not initialized, proceed
+                // Not initialized, proceed with initialization
             }
 
             await program.methods
@@ -487,32 +503,21 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
     describe("Price Oracle Functions", () => {
         it("Gets SOL price from Pyth oracle", async () => {
+            const priceData = await program.methods
+                .getSolPrice()
+                .accounts({
+                    priceUpdate: mockPriceFeed,
+                })
+                .view();
 
-            try {
-                // Pyth-related test commented out temporarily
-                /*
-                const priceData = await program.methods
-                    .getSolPrice()
-                    .accounts({
-                        config: configPda,
-                        priceUpdate: mockPriceFeed,
-                    })
-                    .view();
-
-                expect(priceData).to.not.be.null;
-                expect(priceData.price.toNumber()).to.be.greaterThan(0);
-
-                */
-                // Pyth price test skipped temporarily
-            } catch {
-                // get_sol_price may not be callable as a view function in tests
-            }
+            expect(priceData).to.not.be.null;
+            expect(priceData.price.toNumber()).to.be.greaterThan(0);
+            expect(priceData.exponent).to.be.a('number');
         });
     });
 
     describe("Error Conditions", () => {
         it("Rejects invalid USD caps (min > max)", async () => {
-
             const invalidMinCap = new anchor.BN(2_000_000_000); // $20
             const invalidMaxCap = new anchor.BN(1_000_000_000); // $10 (less than min)
 
@@ -527,12 +532,14 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                     .rpc();
 
                 expect.fail("Invalid caps should have been rejected");
-            } catch (error) {
+            } catch (error: any) {
+                expect(error).to.exist;
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("InvalidCapRange");
             }
         });
 
         it("Rejects zero TSS address", async () => {
-
             try {
                 await program.methods
                     .setTssAddress(PublicKey.default)
@@ -544,7 +551,10 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                     .rpc();
 
                 expect.fail("Zero TSS address should have been rejected");
-            } catch (error) {
+            } catch (error: any) {
+                expect(error).to.exist;
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("ZeroAddress");
             }
         });
     });

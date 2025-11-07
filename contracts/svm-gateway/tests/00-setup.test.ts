@@ -6,6 +6,7 @@ import { expect } from "chai";
 import { createMockUSDT, createMockUSDC } from "./helpers/mockSpl";
 import * as sharedState from "./shared-state";
 import { getTssEthAddress, TSS_CHAIN_ID } from "./helpers/tss";
+import { setupPriceFeed } from "./setup-pricefeed";
 
 describe("Universal Gateway - Setup Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -63,12 +64,16 @@ describe("Universal Gateway - Setup Tests", () => {
         mockUSDC = await createMockUSDC(provider.connection, admin);
         await mockUSDC.createMint();
         sharedState.setMockUSDC(mockUSDC);
+
+        // Create token accounts and mint initial balances for testing
         const user1UsdtAccount = await mockUSDT.createTokenAccount(user1.publicKey);
         await mockUSDT.mintTo(user1UsdtAccount, 10000);
         const user1UsdcAccount = await mockUSDC.createTokenAccount(user1.publicKey);
         await mockUSDC.mintTo(user1UsdcAccount, 5000);
         const user2UsdtAccount = await mockUSDT.createTokenAccount(user2.publicKey);
         await mockUSDT.mintTo(user2UsdtAccount, 7500);
+
+        // Verify tokens were created and minted correctly
         const user1UsdtBalance = await mockUSDT.getBalance(user1UsdtAccount);
         const user1UsdcBalance = await mockUSDC.getBalance(user1UsdcAccount);
         const user2UsdtBalance = await mockUSDT.getBalance(user2UsdtAccount);
@@ -76,7 +81,6 @@ describe("Universal Gateway - Setup Tests", () => {
         expect(user1UsdtBalance).to.equal(10000);
         expect(user1UsdcBalance).to.equal(5000);
         expect(user2UsdtBalance).to.equal(7500);
-
     });
 
     it("Derives program PDAs", async () => {
@@ -86,19 +90,24 @@ describe("Universal Gateway - Setup Tests", () => {
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
     });
 
+    it("Sets up mock Pyth price feed", async () => {
+        mockPriceFeed = await setupPriceFeed();
+        sharedState.setMockPriceFeed(mockPriceFeed);
+    });
+
     it("Initializes the Universal Gateway program and whitelists tokens", async () => {
         let configAccount: any;
         try {
             configAccount = await program.account.config.fetch(configPda);
-            sharedState.setMockPriceFeed(configAccount.pythPriceFeed);
             if (configAccount.admin.toString() !== admin.publicKey.toString()) {
                 throw new Error(
                     `Config admin ${configAccount.admin.toString()} does not match provider wallet ${admin.publicKey.toString()}. Delete .anchor/test-ledger and rerun tests.`
                 );
             }
+            // Use existing price feed from config
+            sharedState.setMockPriceFeed(configAccount.pythPriceFeed);
         } catch {
-            const dummyPyth = Keypair.generate().publicKey;
-            sharedState.setMockPriceFeed(dummyPyth);
+            // Initialize with mock-pyth price feed
             await program.methods
                 .initialize(
                     admin.publicKey,
@@ -106,12 +115,13 @@ describe("Universal Gateway - Setup Tests", () => {
                     tssAddress.publicKey,
                     new anchor.BN(100_000_000),
                     new anchor.BN(1_000_000_000),
-                    dummyPyth
+                    mockPriceFeed
                 )
                 .accounts({ admin: admin.publicKey })
                 .signers([admin])
                 .rpc();
             configAccount = await program.account.config.fetch(configPda);
+            sharedState.setMockPriceFeed(configAccount.pythPriceFeed);
         }
 
         const whitelistToken = async (mint: PublicKey) => {

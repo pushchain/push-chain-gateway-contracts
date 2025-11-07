@@ -3,8 +3,10 @@ import { Program } from "@coral-xyz/anchor";
 import { UniversalGateway } from "../target/types/universal_gateway";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from "@solana/spl-token";
 import * as sharedState from "./shared-state";
+import { createMockUSDC } from "./helpers/mockSpl";
+import { getSolPrice, calculateSolAmount } from "./setup-pricefeed";
 
 
 describe("Universal Gateway - SPL Token Deposit Tests", () => {
@@ -29,6 +31,7 @@ describe("Universal Gateway - SPL Token Deposit Tests", () => {
     let user2UsdtAccount: PublicKey;
     let vaultUsdtAccount: PublicKey;
     let vaultUsdcAccount: PublicKey;
+    let solPrice: number;
 
     const toTokenUnits = (amount: number, decimals: number = 6) => new anchor.BN(amount * Math.pow(10, decimals));
     const createPayload = (to: number, value: number = 0, vType: any = { universalTxVerification: {} }) => ({
@@ -67,6 +70,15 @@ describe("Universal Gateway - SPL Token Deposit Tests", () => {
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
         [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
+
+        // Get current SOL price from the price feed
+        solPrice = await getSolPrice(mockPriceFeed);
+
+        // Verify calculated amounts are valid
+        const testAmount = calculateSolAmount(2.5, solPrice);
+        if (testAmount === 0) {
+            throw new Error(`Calculated amount is 0! Price: ${solPrice}, USD: 2.5`);
+        }
 
         user1UsdtAccount = await mockUSDT.createTokenAccount(user1.publicKey);
         user1UsdcAccount = await mockUSDC.createTokenAccount(user1.publicKey);
@@ -120,11 +132,10 @@ describe("Universal Gateway - SPL Token Deposit Tests", () => {
         });
     });
 
-    // Pyth-related tests commented out temporarily
-    /*
     describe("send_tx_with_funds - Success Cases", () => {
-        it("Allows combined SOL + SPL token deposit", async () => {
-            const gasAmount = 0.5 * anchor.web3.LAMPORTS_PER_SOL;
+        it("Allows combined SOL + SPL token deposit within USD caps", async () => {
+            // Calculate amount for $2.50 USD (mid-range between $1-$10, with buffer for rounding)
+            const gasAmount = calculateSolAmount(2.5, solPrice);
             const tokenAmount = 500;
             const initialUserBalance = await mockUSDC.getBalance(user1UsdcAccount);
             const initialVaultBalance = await provider.connection.getBalance(vaultPda);
@@ -139,8 +150,9 @@ describe("Universal Gateway - SPL Token Deposit Tests", () => {
             expect(await provider.connection.getBalance(vaultPda)).to.be.greaterThan(initialVaultBalance);
         });
 
-        it("Allows combined deposits with different tokens", async () => {
-            const gasAmount = 0.25 * anchor.web3.LAMPORTS_PER_SOL;
+        it("Allows combined deposits with different tokens within USD caps", async () => {
+            // Calculate amount for $2.50 USD (mid-range between $1-$10, with buffer for rounding)
+            const gasAmount = calculateSolAmount(2.5, solPrice);
 
             await program.methods
                 .sendTxWithFunds(mockUSDT.mint.publicKey, toTokenUnits(250), createPayload(6, 250), createRevertInstruction(user1.publicKey), new anchor.BN(gasAmount), Buffer.from("usdt"))
@@ -237,14 +249,14 @@ describe("Universal Gateway - SPL Token Deposit Tests", () => {
         });
     });
 
-    */
-    // Pyth-related error cases commented out temporarily
-    /*
     describe("send_tx_with_funds - Error Cases", () => {
         it("Rejects zero bridge amount, zero gas amount, invalid revert recipient, and USD cap violations", async () => {
+            // Use valid amount within USD caps for zero bridge amount test ($2.50)
+            const validGasAmount = calculateSolAmount(2.5, solPrice);
+
             try {
                 await program.methods
-                    .sendTxWithFunds(mockUSDC.mint.publicKey, new anchor.BN(0), createPayload(15), createRevertInstruction(user1.publicKey), new anchor.BN(anchor.web3.LAMPORTS_PER_SOL * 0.5), Buffer.from("sig"))
+                    .sendTxWithFunds(mockUSDC.mint.publicKey, new anchor.BN(0), createPayload(15), createRevertInstruction(user1.publicKey), new anchor.BN(validGasAmount), Buffer.from("sig"))
                     .accounts({ user: user1.publicKey, config: configPda, vault: vaultPda, tokenWhitelist: whitelistPda, userTokenAccount: user1UsdcAccount, gatewayTokenAccount: vaultUsdcAccount, priceUpdate: mockPriceFeed, bridgeToken: mockUSDC.mint.publicKey, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
                     .signers([user1])
                     .rpc();
@@ -266,7 +278,7 @@ describe("Universal Gateway - SPL Token Deposit Tests", () => {
 
             try {
                 await program.methods
-                    .sendTxWithFunds(mockUSDC.mint.publicKey, toTokenUnits(500), createPayload(17), { fundRecipient: PublicKey.default, revertMsg: Buffer.from("test") }, new anchor.BN(anchor.web3.LAMPORTS_PER_SOL * 0.5), Buffer.from("sig"))
+                    .sendTxWithFunds(mockUSDC.mint.publicKey, toTokenUnits(500), createPayload(17), { fundRecipient: PublicKey.default, revertMsg: Buffer.from("test") }, new anchor.BN(validGasAmount), Buffer.from("sig"))
                     .accounts({ user: user1.publicKey, config: configPda, vault: vaultPda, tokenWhitelist: whitelistPda, userTokenAccount: user1UsdcAccount, gatewayTokenAccount: vaultUsdcAccount, priceUpdate: mockPriceFeed, bridgeToken: mockUSDC.mint.publicKey, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
                     .signers([user1])
                     .rpc();
@@ -274,33 +286,81 @@ describe("Universal Gateway - SPL Token Deposit Tests", () => {
             } catch (error) {
                 expect(error).to.exist;
             }
+        });
 
+        it("Allows deposit within USD cap range (between min and max)", async () => {
+            // Calculate amount for $7.00 USD (mid-range between $1-$10, should pass)
+            const validGasAmount = calculateSolAmount(7.0, solPrice);
+            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
+
+            await program.methods
+                .sendTxWithFunds(mockUSDC.mint.publicKey, toTokenUnits(500), createPayload(18), createRevertInstruction(user1.publicKey), new anchor.BN(validGasAmount), Buffer.from("sig"))
+                .accounts({ user: user1.publicKey, config: configPda, vault: vaultPda, tokenWhitelist: whitelistPda, userTokenAccount: user1UsdcAccount, gatewayTokenAccount: vaultUsdcAccount, priceUpdate: mockPriceFeed, bridgeToken: mockUSDC.mint.publicKey, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
+                .signers([user1])
+                .rpc();
+
+            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+            expect(finalVaultBalance).to.be.greaterThan(initialVaultBalance);
+        });
+
+        it("Rejects deposits below minimum USD cap", async () => {
             const config = await program.account.config.fetch(configPda);
             const minCapUsd = config.minCapUniversalTxUsd.toNumber() / 100_000_000;
-            const maxCapUsd = config.maxCapUniversalTxUsd.toNumber() / 100_000_000;
+            // Calculate amount for $0.50 USD (below $1 min cap)
+            const belowMinGasAmount = calculateSolAmount(0.5, solPrice);
 
             try {
                 await program.methods
-                    .sendTxWithFunds(mockUSDC.mint.publicKey, toTokenUnits(500), createPayload(18), createRevertInstruction(user1.publicKey), new anchor.BN(Math.floor(0.001 * anchor.web3.LAMPORTS_PER_SOL)), Buffer.from("sig"))
+                    .sendTxWithFunds(mockUSDC.mint.publicKey, toTokenUnits(500), createPayload(18), createRevertInstruction(user1.publicKey), new anchor.BN(belowMinGasAmount), Buffer.from("sig"))
                     .accounts({ user: user1.publicKey, config: configPda, vault: vaultPda, tokenWhitelist: whitelistPda, userTokenAccount: user1UsdcAccount, gatewayTokenAccount: vaultUsdcAccount, priceUpdate: mockPriceFeed, bridgeToken: mockUSDC.mint.publicKey, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
                     .signers([user1])
                     .rpc();
                 expect.fail(`Should reject below min cap ($${minCapUsd})`);
-            } catch (error) {
+            } catch (error: any) {
                 expect(error).to.exist;
+                // Check error code structure - Anchor errors can be nested
+                // AnchorError structure: error.error.errorCode.code or error.errorCode.code
+                const errorCode = error.error?.errorCode?.code ||
+                    error.errorCode?.code ||
+                    error.code ||
+                    error.error?.code;
+                expect(errorCode).to.equal("BelowMinCap");
             }
+        });
+
+        it("Rejects deposits above maximum USD cap", async () => {
+            const config = await program.account.config.fetch(configPda);
+            const maxCapUsd = config.maxCapUniversalTxUsd.toNumber() / 100_000_000;
+            // Calculate amount for an amount above the actual max cap (use maxCapUsd + 10 to ensure it's above)
+            const testUsdAmount = maxCapUsd + 10;
+            const aboveMaxGasAmount = calculateSolAmount(testUsdAmount, solPrice);
+
+            // Verify the amount is actually above max cap
+            const aboveMaxUsd = (aboveMaxGasAmount / anchor.web3.LAMPORTS_PER_SOL) * solPrice;
+            expect(aboveMaxUsd).to.be.greaterThan(maxCapUsd);
 
             try {
                 await program.methods
-                    .sendTxWithFunds(mockUSDC.mint.publicKey, toTokenUnits(500), createPayload(19), createRevertInstruction(user1.publicKey), new anchor.BN(anchor.web3.LAMPORTS_PER_SOL), Buffer.from("sig"))
+                    .sendTxWithFunds(mockUSDC.mint.publicKey, toTokenUnits(500), createPayload(19), createRevertInstruction(user1.publicKey), new anchor.BN(aboveMaxGasAmount), Buffer.from("sig"))
                     .accounts({ user: user1.publicKey, config: configPda, vault: vaultPda, tokenWhitelist: whitelistPda, userTokenAccount: user1UsdcAccount, gatewayTokenAccount: vaultUsdcAccount, priceUpdate: mockPriceFeed, bridgeToken: mockUSDC.mint.publicKey, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
                     .signers([user1])
                     .rpc();
                 expect.fail(`Should reject above max cap ($${maxCapUsd})`);
-            } catch (error) {
+            } catch (error: any) {
                 expect(error).to.exist;
+                // First check error number (6005 = AboveMaxCap) - this is more reliable
+                if (error.error?.errorCode?.number === 6005 || error.errorCode?.number === 6005) {
+                    // Error number confirms it's AboveMaxCap
+                    return;
+                }
+                // Extract error code - use the exact same pattern as BelowMinCap which works
+                const errorCode = error.error?.errorCode?.code ||
+                    error.errorCode?.code ||
+                    error.code ||
+                    error.error?.code;
+
+                expect(errorCode).to.equal("AboveMaxCap");
             }
         });
     });
-    */
 });

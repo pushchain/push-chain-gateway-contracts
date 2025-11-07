@@ -4,6 +4,7 @@ import { UniversalGateway } from "../target/types/universal_gateway";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import * as sharedState from "./shared-state";
+import { getSolPrice, calculateSolAmount } from "./setup-pricefeed";
 
 
 describe("Universal Gateway - Native SOL Deposit Tests", () => {
@@ -20,6 +21,7 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
     let vaultPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
     let mockPriceFeed: PublicKey;
+    let solPrice: number;
 
     const createPayload = (to: number, vType: any = { signedVerification: {} }) => ({
         to: Array.from(Buffer.alloc(20, to)),
@@ -39,9 +41,10 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
     });
 
     before(async () => {
-        admin = Keypair.generate();
-        tssAddress = Keypair.generate();
-        pauser = Keypair.generate();
+        // Use shared state keys for consistency
+        admin = sharedState.getAdmin();
+        tssAddress = sharedState.getTssAddress();
+        pauser = sharedState.getPauser();
         user1 = Keypair.generate();
         user2 = Keypair.generate();
 
@@ -57,16 +60,28 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
-        // Pyth tests commented out temporarily
-        // const { oracle, priceFeedPubkey } = await createMockPythFeed(provider.connection, admin, 150.0);
-        // mockPythOracle = oracle;
-        // mockPriceFeed = priceFeedPubkey;
-        const dummyPythAccount = Keypair.generate().publicKey; // Temporary dummy account (random pubkey)
-        mockPriceFeed = dummyPythAccount;
+        // Use mock Pyth price feed from shared state
+        mockPriceFeed = sharedState.getMockPriceFeed();
 
+        // Get current SOL price from the price feed
+        solPrice = await getSolPrice(mockPriceFeed);
+
+        // Verify calculated amounts are valid
+        const testAmount = calculateSolAmount(2.5, solPrice);
+        if (testAmount === 0) {
+            throw new Error(`Calculated amount is 0! Price: ${solPrice}, USD: 2.5`);
+        }
+
+        // Gateway should already be initialized by 00-setup.test.ts
+        // If not, we'll initialize it here as a fallback
         try {
-            await program.account.config.fetch(configPda);
+            const config = await program.account.config.fetch(configPda);
+            // Verify we're using the same admin from shared state
+            if (config.admin.toString() !== admin.publicKey.toString()) {
+                throw new Error("Config admin mismatch - use shared state admin");
+            }
         } catch {
+            // Fallback initialization if gateway doesn't exist
             await program.methods
                 .initialize(admin.publicKey, pauser.publicKey, tssAddress.publicKey, new anchor.BN(100_000_000), new anchor.BN(1_000_000_000), mockPriceFeed)
                 .accounts({ admin: admin.publicKey })
@@ -87,11 +102,10 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
         }
     });
 
-    // Pyth-related tests commented out temporarily
-    /*
     describe("send_tx_with_gas - Success Cases", () => {
-        it("Allows basic SOL deposit", async () => {
-            const depositAmount = 1 * anchor.web3.LAMPORTS_PER_SOL;
+        it("Allows basic SOL deposit within USD caps", async () => {
+            // Calculate amount for $2.50 USD (mid-range between $1-$10, with buffer for rounding)
+            const depositAmount = calculateSolAmount(2.5, solPrice);
             const initialVaultBalance = await provider.connection.getBalance(vaultPda);
 
             await program.methods
@@ -104,9 +118,10 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
             expect(finalVaultBalance).to.be.greaterThan(initialVaultBalance);
         });
 
-        it("Allows multiple deposits from different users", async () => {
-            const deposit1 = 0.5 * anchor.web3.LAMPORTS_PER_SOL;
-            const deposit2 = 0.5 * anchor.web3.LAMPORTS_PER_SOL;
+        it("Allows multiple deposits from different users within USD caps", async () => {
+            // Calculate amounts for $2.50 USD each (mid-range between $1-$10, with buffer for rounding)
+            const deposit1 = calculateSolAmount(2.5, solPrice);
+            const deposit2 = calculateSolAmount(2.5, solPrice);
             const initialVaultBalance = await provider.connection.getBalance(vaultPda);
 
             await program.methods
@@ -122,11 +137,13 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
                 .rpc();
 
             const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            expect(finalVaultBalance - initialVaultBalance).to.be.approximately(deposit1 + deposit2, (deposit1 + deposit2) * 0.1);
+            // Vault should receive the full deposit amounts (transaction fees are paid by users, not deducted from deposits)
+            expect(finalVaultBalance - initialVaultBalance).to.equal(deposit1 + deposit2);
         });
 
-        it("Allows deposits with different gas parameters and payload data", async () => {
-            const depositAmount = 0.5 * anchor.web3.LAMPORTS_PER_SOL;
+        it("Allows deposits with different gas parameters and payload data within USD caps", async () => {
+            // Calculate amount for $2.50 USD (mid-range between $1-$10, with buffer for rounding)
+            const depositAmount = calculateSolAmount(2.5, solPrice);
 
             const highGasPayload = { ...createPayload(3), gasLimit: new anchor.BN(50000), maxFeePerGas: new anchor.BN(100_000_000_000), maxPriorityFeePerGas: new anchor.BN(10_000_000_000) };
             await program.methods
@@ -148,15 +165,18 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
         it("Rejects when paused, zero amount, invalid recipient, insufficient balance", async () => {
             await program.methods.pause().accounts({ pauser: pauser.publicKey, config: configPda }).signers([pauser]).rpc();
 
+            // Use a valid amount within USD caps for the paused test ($2.50)
+            const validAmount = calculateSolAmount(2.5, solPrice);
             try {
                 await program.methods
-                    .sendTxWithGas(createPayload(1), createRevertInstruction(user1.publicKey), new anchor.BN(anchor.web3.LAMPORTS_PER_SOL), Buffer.from("sig"))
+                    .sendTxWithGas(createPayload(1), createRevertInstruction(user1.publicKey), new anchor.BN(validAmount), Buffer.from("sig"))
                     .accounts({ config: configPda, vault: vaultPda, user: user1.publicKey, priceUpdate: mockPriceFeed, systemProgram: SystemProgram.programId })
                     .signers([user1])
                     .rpc();
                 expect.fail("Should reject when paused");
-            } catch (error) {
+            } catch (error: any) {
                 expect(error).to.exist;
+                expect(error.error?.errorCode?.code || error.code).to.equal("Paused");
             }
 
             await program.methods.unpause().accounts({ pauser: pauser.publicKey, config: configPda }).signers([pauser]).rpc();
@@ -174,7 +194,7 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
 
             try {
                 await program.methods
-                    .sendTxWithGas(createPayload(1), { fundRecipient: PublicKey.default, revertMsg: Buffer.from("test") }, new anchor.BN(anchor.web3.LAMPORTS_PER_SOL), Buffer.from("sig"))
+                    .sendTxWithGas(createPayload(1), { fundRecipient: PublicKey.default, revertMsg: Buffer.from("test") }, new anchor.BN(validAmount), Buffer.from("sig"))
                     .accounts({ config: configPda, vault: vaultPda, user: user1.publicKey, priceUpdate: mockPriceFeed, systemProgram: SystemProgram.programId })
                     .signers([user1])
                     .rpc();
@@ -196,12 +216,27 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
             }
         });
 
-        it("Rejects deposits below minimum and above maximum USD caps", async () => {
+        it("Allows deposit within USD cap range (between min and max)", async () => {
+            // Calculate amount for $7.00 USD (mid-range between $1-$10, should pass)
+            const validAmount = calculateSolAmount(7.0, solPrice);
+            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
+
+            await program.methods
+                .sendTxWithGas(createPayload(1), createRevertInstruction(user1.publicKey), new anchor.BN(validAmount), Buffer.from("sig"))
+                .accounts({ config: configPda, vault: vaultPda, user: user1.publicKey, priceUpdate: mockPriceFeed, systemProgram: SystemProgram.programId })
+                .signers([user1])
+                .rpc();
+
+            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+            expect(finalVaultBalance).to.be.greaterThan(initialVaultBalance);
+        });
+
+        it("Rejects deposits below minimum USD cap", async () => {
             const config = await program.account.config.fetch(configPda);
             const minCapUsd = config.minCapUniversalTxUsd.toNumber() / 100_000_000;
-            const maxCapUsd = config.maxCapUniversalTxUsd.toNumber() / 100_000_000;
+            // Calculate amount for $0.50 USD (below $1 min cap)
+            const belowMinAmount = calculateSolAmount(0.5, solPrice);
 
-            const belowMinAmount = Math.floor(0.001 * anchor.web3.LAMPORTS_PER_SOL);
             try {
                 await program.methods
                     .sendTxWithGas(createPayload(1), createRevertInstruction(user1.publicKey), new anchor.BN(belowMinAmount), Buffer.from("sig"))
@@ -209,11 +244,29 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
                     .signers([user1])
                     .rpc();
                 expect.fail(`Should reject below min cap ($${minCapUsd})`);
-            } catch (error) {
+            } catch (error: any) {
                 expect(error).to.exist;
+                // Check error code structure - Anchor errors can be nested
+                // AnchorError structure: error.error.errorCode.code or error.errorCode.code
+                const errorCode = error.error?.errorCode?.code ||
+                    error.errorCode?.code ||
+                    error.code ||
+                    error.error?.code;
+                expect(errorCode).to.equal("BelowMinCap");
             }
+        });
 
-            const aboveMaxAmount = 1 * anchor.web3.LAMPORTS_PER_SOL;
+        it("Rejects deposits above maximum USD cap", async () => {
+            const config = await program.account.config.fetch(configPda);
+            const maxCapUsd = config.maxCapUniversalTxUsd.toNumber() / 100_000_000;
+            // Calculate amount for an amount above the actual max cap (use maxCapUsd + 10 to ensure it's above)
+            const testUsdAmount = maxCapUsd + 10;
+            const aboveMaxAmount = calculateSolAmount(testUsdAmount, solPrice);
+
+            // Verify the amount is actually above max cap
+            const aboveMaxUsd = (aboveMaxAmount / anchor.web3.LAMPORTS_PER_SOL) * solPrice;
+            expect(aboveMaxUsd).to.be.greaterThan(maxCapUsd);
+
             try {
                 await program.methods
                     .sendTxWithGas(createPayload(1), createRevertInstruction(user1.publicKey), new anchor.BN(aboveMaxAmount), Buffer.from("sig"))
@@ -221,10 +274,21 @@ describe("Universal Gateway - Native SOL Deposit Tests", () => {
                     .signers([user1])
                     .rpc();
                 expect.fail(`Should reject above max cap ($${maxCapUsd})`);
-            } catch (error) {
+            } catch (error: any) {
                 expect(error).to.exist;
+                // First check error number (6005 = AboveMaxCap) - this is more reliable
+                if (error.error?.errorCode?.number === 6005 || error.errorCode?.number === 6005) {
+                    // Error number confirms it's AboveMaxCap
+                    return;
+                }
+                // Extract error code - use the exact same pattern as BelowMinCap which works
+                const errorCode = error.error?.errorCode?.code ||
+                    error.errorCode?.code ||
+                    error.code ||
+                    error.error?.code;
+
+                expect(errorCode).to.equal("AboveMaxCap");
             }
         });
     });
-    */
 });
