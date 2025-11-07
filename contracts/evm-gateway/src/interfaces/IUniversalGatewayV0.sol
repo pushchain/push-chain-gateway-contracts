@@ -5,13 +5,6 @@ import { RevertInstructions, UniversalPayload, TX_TYPE } from "../libraries/Type
 
 interface IUniversalGatewayV0 {
     // =========================
-    //           Public Helpers 
-    // =========================
-    /// @notice             Checks if a token is supported by the gateway.
-    /// @param token        Token address to check
-    /// @return             True if the token is supported, false otherwise
-    function isTokenSupported(address token) external view returns (bool);
-    // =========================
     //           EVENTS
     // =========================
 
@@ -51,8 +44,21 @@ interface IUniversalGatewayV0 {
     /// @param amount               Amount of token being reverted
     /// @param revertInstruction    Revert settings configuration
     event RevertUniversalTx(bytes32 indexed txID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
-
-
+    
+    /// @notice                     Withdraw token event
+    /// @param txID                 Unique transaction identifier
+    /// @param originCaller         Original caller/user on source chain ( Push Chain)
+    /// @param token                Token address being sent
+    /// @param to                   Recipient address on Push Chain
+    /// @param amount               Amount of token being sent
+    event WithdrawToken(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
+    
+    // =========================
+    //           Public Helpers 
+    // =========================
+    function isSupportedToken(address token) external view returns (bool);
+    
+    
     // =========================
     //     sendTxWithGas - Fee Abstraction Route
     // =========================
@@ -215,42 +221,21 @@ interface IUniversalGatewayV0 {
     /// @param revertCFG    revert settings
     function revertUniversalTx(bytes32 txID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
 
+    /// @notice             Withdraw native token from the gateway
+    /// @param txID         unique transaction identifier
+    /// @param originCaller original caller/user on source chain
+    /// @param to           recipient address
+    /// @param amount       amount of native token to withdraw
+    function withdraw(bytes32 txID, address originCaller, address to, uint256 amount) external payable;
 
-    /// @notice Withdraw functions (TSS-only)
-
-    /// @notice             TSS-only withdraw (unlock) to an external recipient on Push Chain.
-    /// @param recipient    destination address
-    /// @param token        address(0) for native; ERC20 otherwise
-    /// @param amount       amount to withdraw
-    function withdrawFunds(address recipient, address token, uint256 amount) external;
-
-    /// @notice             Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
+    /// @notice             Withdraw ERC20 token from the gateway
     /// @param txID         unique transaction identifier
     /// @param originCaller original caller/user on source chain
     /// @param token        token address (ERC20 token)
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        address originCaller,
-        address token,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external;
+    /// @param to           recipient address
+    /// @param amount       amount of token to withdraw
+    function withdrawTokens(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+
     
-    /// @notice             Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
-    /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of native token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        address originCaller,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external payable;
+
 }

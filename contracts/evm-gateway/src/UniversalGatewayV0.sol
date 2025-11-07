@@ -70,7 +70,7 @@ contract UniversalGatewayV0 is
     uint256 public MAX_CAP_UNIVERSAL_TX_USD; // inclusive upper bound = 10USD = 10e18
 
     /// @notice Token whitelist for BRIDGING (assets locked in this contract)
-    mapping(address => bool) public isSupportedToken; // Deprecated - Use tokenToLimitThreshold instead
+    mapping(address => bool) public _isSupportedToken; // Deprecated - Use tokenToLimitThreshold instead
 
     /// @notice Uniswap V3 factory & router (chain-specific)
     IUniswapV3Factory public uniV3Factory;
@@ -232,17 +232,6 @@ contract UniversalGatewayV0 is
         if (factory == address(0) || router == address(0)) revert Errors.ZeroAddress();
         uniV3Factory = IUniswapV3Factory(factory);
         uniV3Router  = ISwapRouterSepolia(router);
-    }
-
-    /// @notice Allows the admin to add support for a given token or remove support for a given token
-    /// @dev    Adding support for given token, indicates the wrapped version of the token is live on Push Chain.
-    /// @param tokens The tokens to modify the support for
-    /// @param isSupported The new support status
-    function modifySupportForToken(address[] calldata tokens, bool[] calldata isSupported) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
-        if (tokens.length != isSupported.length) revert Errors.InvalidInput();
-        for (uint256 i = 0; i < tokens.length; i++) {
-            isSupportedToken[tokens[i]] = isSupported[i];
-        }
     }
 
     /// @notice Allows the admin to set the fee order for the Uniswap V3 router
@@ -450,7 +439,7 @@ contract UniversalGatewayV0 is
 
         //_checkUSDCaps(_nativeTokenAmount);
         _checkBlockUSDCap(_nativeTokenAmount);
-        _handleNativeDeposit(_nativeTokenAmount);
+        _handleDeposits(address(0), _nativeTokenAmount);
 
         emit UniversalTx({
             sender: _caller,
@@ -480,11 +469,11 @@ contract UniversalGatewayV0 is
         if (bridgeToken == address(0)) {
             if (msg.value != bridgeAmount) revert Errors.InvalidAmount();
             // _consumeRateLimit(address(0), bridgeAmount);
-            _handleNativeDeposit(bridgeAmount);
+            _handleDeposits(address(0), bridgeAmount);
         } else {
             if (msg.value != 0) revert Errors.InvalidAmount();
             //_consumeRateLimit(bridgeToken, bridgeAmount);
-            _handleTokenDeposit(bridgeToken, bridgeAmount);
+            _handleDeposits(bridgeToken, bridgeAmount);
         }
 
         _sendTxWithFunds(
@@ -516,7 +505,7 @@ contract UniversalGatewayV0 is
         _addFunds(bytes32(0), gasAmount);
 
         // Check and initiate Universal TX 
-        _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _handleDeposits(bridgeToken, bridgeAmount);
         _sendTxWithFunds(
             _msgSender(),
             address(0),
@@ -545,7 +534,7 @@ contract UniversalGatewayV0 is
 
         // performs rate-limit checks and handle deposit
         //_consumeRateLimit(bridgeToken, bridgeAmount);
-        _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _handleDeposits(bridgeToken, bridgeAmount);
 
         _sendTxWithFunds(
             _msgSender(),
@@ -582,7 +571,7 @@ contract UniversalGatewayV0 is
         // _checkUSDCaps(nativeGasAmount); // TODO: DEPRECATED FOR TESTNET
         _addFunds(bytes32(0), nativeGasAmount);
 
-        _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _handleDeposits(bridgeToken, bridgeAmount);
         _sendTxWithFunds(
             _msgSender(),
             address(0),
@@ -619,7 +608,7 @@ contract UniversalGatewayV0 is
 
         // performs rate-limit checks and handle deposit
         //_consumeRateLimit(bridgeToken, bridgeAmount);
-        _handleTokenDeposit(bridgeToken, bridgeAmount);
+        _handleDeposits(bridgeToken, bridgeAmount);
         _sendTxWithFunds(
             _msgSender(),
             address(0),
@@ -725,27 +714,52 @@ contract UniversalGatewayV0 is
         emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
     }
 
+
     // =========================
-    //          WITHDRAW
+    //       GATEWAY Withdraw and Payload Execution Paths
     // =========================
 
     /// @inheritdoc IUniversalGatewayV0
-    function withdrawFunds(
-        address recipient,
+    function withdraw(
+        bytes32 txID,
+        address originCaller,
+        address to,
+        uint256 amount
+    ) external payable nonReentrant whenNotPaused onlyTSS {
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (msg.value != amount) revert Errors.InvalidAmount();
+        
+        isExecuted[txID] = true;
+        (bool ok,) = payable(to).call{ value: amount }("");
+        if (!ok) revert Errors.WithdrawFailed();
+        
+        emit WithdrawToken(txID, originCaller, address(0), to, amount);
+    }
+    //@inheritdocs IUniversalGatewayV0
+    function withdrawTokens(
+        bytes32 txID,
+        address originCaller,
         address token,
+        address to,
         uint256 amount
     ) external nonReentrant whenNotPaused onlyTSS {
-        if (recipient == address(0)) revert Errors.InvalidRecipient();
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
+        if (token == address(0)) revert Errors.InvalidInput();
+        
+        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        if (token == address(0)) {
-            _handleNativeWithdraw(recipient, amount);
-        } else {
-            _handleTokenWithdraw(token, recipient, amount);
-        }
-
-        emit WithdrawFunds(recipient, amount, token);
+        isExecuted[txID] = true;
+        IERC20(token).safeTransfer(to, amount);
+        emit WithdrawToken(txID, originCaller, token, to, amount);
     }
+
+    
 
     // =========================
     //      PUBLIC HELPERS
@@ -754,8 +768,8 @@ contract UniversalGatewayV0 is
     /// @notice             Checks if a token is supported by the gateway.
     /// @param token        Token address to check
     /// @return             True if the token is supported, false otherwise
-    function isTokenSupported(address token) public view returns (bool) {
-        // Check if token has a non-zero limit threshold
+    /// @inheritdoc IUniversalGatewayV0
+    function isSupportedToken(address token) public view returns (bool) {
         return tokenToLimitThreshold[token] != 0;
     }
 
@@ -898,39 +912,21 @@ contract UniversalGatewayV0 is
         }
     }
 
-    /// @dev Forward native ETH to TSS; returns amount forwarded (= msg.value or computed after swap).
-    function _handleNativeDeposit(uint256 amount) internal returns (uint256) {
-        (bool ok, ) = payable(TSS_ADDRESS).call{value: amount}("");
-        if (!ok) revert Errors.DepositFailed();
-        return amount;
-    }
-
-    /// @dev Lock ERC20 within the gateway contract for bridging.
-    ///      Token must be supported, i.e., tokenToLimitThreshold[token] != 0.
-    /// @param token Token address to deposit
-    /// @param amount Amount of token to deposit
-    function _handleTokenDeposit(address token, uint256 amount) internal {
-        if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
-        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
-    }
-
-    /// @dev Native withdraw by TSS
-    function _handleNativeWithdraw(address recipient, uint256 amount) internal {
-        (bool ok, ) = payable(recipient).call{value: amount}("");
-        if (!ok) revert Errors.WithdrawFailed();
-    }
-
-    /// @dev ERC20 withdraw by TSS (token must be isSupported for bridging)
-    ///      Tokens are moved out of gateway contract.
-    /// @param token Token address to withdraw
-    /// @param recipient Recipient address
-    /// @param amount Amount of token to withdraw
-    function _handleTokenWithdraw(address token, address recipient, uint256 amount) internal {
-        // Note: Removing isSupportedToken[token] for now to avoid a rare case scenario
-        //       If a token was supported before and user bridged > but was removed from support list later, funds get stuck.
-        // if (!isSupportedToken[token]) revert Errors.NotSupported();
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-        IERC20(token).safeTransfer(recipient, amount);
+    /// @dev                Handle deposits of native ETH or ERC20 tokens
+    ///                     If token is address(0): Forward native ETH to TSS
+    ///                     Otherwise: Lock ERC20 in the gateway contract for bridging
+    /// @param token        token address (address(0) for native ETH)
+    /// @param amount       amount to deposit
+    function _handleDeposits(address token, uint256 amount) internal {
+        if (token == address(0)) {
+            // Handle native ETH deposit to TSS
+            (bool ok,) = payable(TSS_ADDRESS).call{ value: amount }("");
+            if (!ok) revert Errors.DepositFailed();
+        } else {
+            // Handle ERC20 token deposit to gateway
+            if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
+            IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
+        }
     }
 
     /// @dev                Enforce and consume the per-token epoch rate limit. 
@@ -1079,118 +1075,9 @@ contract UniversalGatewayV0 is
         revert Errors.InvalidInput();
     }
 
-
     // =========================
     //         RECEIVE/FALLBACK
     // =========================
-
-    // =========================
-    //       GATEWAY Payload Execution Paths
-    // =========================
-
-    /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
-    /// @dev                   Allows outbound payload execution from Push Chain to external chains.
-    ///                        - The tokens used for payload execution, are to be burnt on Push Chain.
-    ///                        - approval and reset of approval is handled by the gateway.
-    /// @param txID            unique transaction identifier
-    /// @param originCaller    original caller/user on source chain
-    /// @param token           token address (ERC20 token)
-    /// @param target          target contract address to execute call
-    /// @param amount          amount of token to send along
-    /// @param payload         calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        address originCaller,
-        address token,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
-        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (token == address(0)) revert Errors.InvalidInput(); // This function is for ERC20 tokens only
-        
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-
-        isExecuted[txID] = true;
-
-        _resetApproval(token, target);             // reset approval to zero
-        _safeApprove(token, target, amount);       // approve target to spend amount
-        _executeCall(target, payload, 0);          // execute call with required amount
-        _resetApproval(token, target);             // reset approval back to zero
-        
-        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
-    }
-    
-    /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
-    /// @dev                   Allows outbound payload execution from Push Chain to external chains with native tokens.
-    /// @param txID            unique transaction identifier
-    /// @param originCaller    original caller/user on source chain
-    /// @param target          target contract address to execute call
-    /// @param amount          amount of native token to send along
-    /// @param payload         calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        address originCaller,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
-        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (msg.value != amount) revert Errors.InvalidAmount();
-
-        isExecuted[txID] = true;
-        
-        _executeCall(target, payload, amount);
-        
-        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
-    }
-
-    /// @dev Safely reset approval to zero before granting any new allowance to target contract.
-    function _resetApproval(address token, address spender) internal {
-        (bool success, bytes memory returnData) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, 0));
-        if (!success) {
-            // Some non-standard tokens revert on zero-approval; treat as reset-ok to avoid breaking the flow.
-            return;
-        }
-        // If token returns a boolean, ensure it is true; if no return data, assume success (USDT-style).
-        if (returnData.length > 0) {
-            bool approved = abi.decode(returnData, (bool));
-            if (!approved) revert Errors.InvalidData();
-        }
-    }
-
-    /// @dev Safely approve ERC20 token spending to a target contract.
-    ///      Low-level call must succeed AND (if returns data) decode to true; otherwise revert.
-    function _safeApprove(address token, address spender, uint256 amount) internal {
-        (bool success, bytes memory returnData) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, amount));
-        if (!success) {
-            revert Errors.InvalidData(); // approval failed
-        }
-        if (returnData.length > 0) {
-            bool approved = abi.decode(returnData, (bool));
-            if (!approved) {
-                revert Errors.InvalidData(); // approval failed
-            }
-        }
-    }
-
-    /// @dev Unified helper to execute a low-level call to target
-    ///      Call can be executed with native value or ERC20 token. 
-    ///      Reverts with Errors.ExecutionFailed() if the call fails (no bubbling).
-    function _executeCall(address target, bytes calldata payload, uint256 value) internal returns (bytes memory result) {
-        (bool success, bytes memory ret) = target.call{value: value}(payload);
-        if (!success) revert Errors.ExecutionFailed();
-        return ret;
-    }
-
     /// @dev Reject plain ETH; we only accept ETH via explicit deposit functions or WETH unwrapping.
    receive() external payable {
     // Allow WETH unwrapping; block unexpected sends.
