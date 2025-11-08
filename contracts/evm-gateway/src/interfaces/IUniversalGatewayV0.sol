@@ -6,7 +6,7 @@ import {
     UniversalPayload,
     TX_TYPE,
     UniversalTxRequest,
-    UniversalTxRequestToken
+    UniversalTokenTxRequest
 } from "../libraries/Types.sol";
 
 interface IUniversalGatewayV0 {
@@ -63,7 +63,7 @@ interface IUniversalGatewayV0 {
 
     function sendUniversalTx(UniversalTxRequest calldata req) external payable;
 
-    function sendUniversalTx(UniversalTxRequestToken calldata reqToken) external payable;
+    function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable;
 
     // =========================
     //     sendTxWithGas - Fee Abstraction Route

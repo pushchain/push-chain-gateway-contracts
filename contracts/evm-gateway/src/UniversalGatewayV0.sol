@@ -35,7 +35,7 @@ import {SafeERC20}                  from "@openzeppelin/contracts/token/ERC20/ut
 import {Errors}                     from "./libraries/Errors.sol";
 import {IUniversalGatewayV0}          from "./interfaces/IUniversalGatewayV0.sol";
 
-import {RevertInstructions, UniversalPayload, TX_TYPE, EpochUsage, UniversalTxRequest, UniversalTxRequestToken} from "./libraries/Types.sol";
+import {RevertInstructions, UniversalPayload, TX_TYPE, EpochUsage, UniversalTxRequest, UniversalTokenTxRequest} from "./libraries/Types.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -561,7 +561,7 @@ contract UniversalGatewayV0 is
         _routeUniversalTx(req, _msgSender(), msg.value);
     }
 
-    function sendUniversalTx(UniversalTxRequestToken calldata reqToken) external payable nonReentrant whenNotPaused {
+    function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable nonReentrant whenNotPaused {
         // Validate token-as-gas parameters
         _validateFeeAbstractionParams(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
 

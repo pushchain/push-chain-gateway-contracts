@@ -61,7 +61,7 @@ struct UniversalTxRequest {
 }
 
 /// @notice         Universal transaction request for ERC20 token as GAS
-struct UniversalTxRequestToken {
+struct UniversalTokenTxRequest {
     TX_TYPE txType;                         // indicates type of TX
     address recipient;                      // address(0) => credit to UEA on Push
     address token;                          // address(0) => native path (gas-only)

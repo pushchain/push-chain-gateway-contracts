@@ -6,7 +6,7 @@ import {
     UniversalPayload,
     TX_TYPE,
     UniversalTxRequest,
-    UniversalTxRequestToken
+    UniversalTokenTxRequest
 } from "../libraries/Types.sol";
 
 interface IUniversalGatewayTemp {

@@ -40,7 +40,7 @@ import {
     RevertInstructions,
     UniversalPayload,
     UniversalTxRequest,
-    UniversalTxRequestToken,
+    UniversalTokenTxRequest,
     TX_TYPE,
     EpochUsage
 } from "./libraries/Types.sol";
@@ -314,7 +314,7 @@ contract UniversalGatewayTemp is
         _routeUniversalTx(req, _msgSender(), msg.value);
     }
 
-    function sendUniversalTx(UniversalTxRequestToken calldata reqToken) external payable nonReentrant whenNotPaused {
+    function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable nonReentrant whenNotPaused {
         // Validate token-as-gas parameters
         _validateFeeAbstractionParams(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
 
