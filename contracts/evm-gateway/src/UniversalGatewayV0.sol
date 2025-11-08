@@ -604,7 +604,7 @@ contract UniversalGatewayV0 is
 
 
     function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue) private {
-        _validateUniversalTxWithFunds(_req.txType, _req.payload, _req.revertInstruction, _req.amount);
+        _validateUniversalTxWithFunds(_req.txType, _req.amount, _req.recipient, _req.payload, _req.revertInstruction);
 
         // Case 1: For TX_TYPE = FUNDS
 
@@ -1348,29 +1348,36 @@ contract UniversalGatewayV0 is
     /// @notice Validation helper for the funds routes using UniversalTxRequest.
     /// @dev    Does not involve any amount checks. Only validates the arguments passed.
     /// @dev    Allows recipient == address(0): This is to credit the caller's UEA on Push Chain.
+        /// @notice Validation helper for the funds routes using UniversalTxRequest.
+    /// @dev    Does not involve any amount checks. Only validates the arguments passed.
+    /// @dev    Allows recipient == address(0): This is to credit the caller's UEA on Push Chain.
     function _validateUniversalTxWithFunds(
         TX_TYPE tx_type,
+        uint256 amount,
+        address recipient,
         bytes memory payload,
-        RevertInstructions memory revertInstruction,
-        uint256 amount
+        RevertInstructions memory revertInstruction
     ) internal view {
         if (tx_type != TX_TYPE.FUNDS && tx_type != TX_TYPE.FUNDS_AND_PAYLOAD) {
             revert Errors.InvalidTxType();
         }
-        /// NOTE: REMOVED STRICT REQUIREMENTS FOR TESTNET 
-        // if (tx_type == TX_TYPE.FUNDS && payload.length != 0) {
-        //     // Note: FUNDS-only must not carry a payload
-        //     revert Errors.InvalidInput();
-        // }
-        // if (tx_type == TX_TYPE.FUNDS_AND_PAYLOAD && payload.length == 0) {
-        //     revert Errors.InvalidInput();
-        // }
+        if (tx_type == TX_TYPE.FUNDS && payload.length != 0) {
+            // Note: FUNDS-only must not carry a payload
+            revert Errors.InvalidInput();
+        }
+        if (tx_type == TX_TYPE.FUNDS_AND_PAYLOAD && payload.length == 0) {
+            revert Errors.InvalidInput();
+        }
         if (revertInstruction.fundRecipient == address(0)) {
             revert Errors.InvalidRecipient();
         }
 
         if (amount == 0) {
             revert Errors.InvalidAmount();
+        }
+
+        if( tx_type == TX_TYPE.FUNDS && recipient != address(0)) {
+            revert Errors.InvalidRecipient();
         }
     }
 

@@ -235,7 +235,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         uint256 fundsAmount = 100 ether; // Large amount (no USD caps on FUNDS route)
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            recipient,       // explicit recipient for funds
+            address(0),      // FUNDS requires recipient == address(0)
             address(0),      // native token
             fundsAmount,
             bytes("")        // empty payload for FUNDS type
@@ -247,7 +247,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             sender: user1,
-            recipient: recipient,
+            recipient: address(0),  // FUNDS credits caller's UEA
             token: address(0),      // Native token
             amount: fundsAmount,
             payload: bytes(""),
@@ -274,7 +274,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         uint256 fundsAmount = 1000 ether; // Large amount
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            recipient,           // explicit recipient for funds
+            address(0),          // FUNDS requires recipient == address(0)
             address(tokenA),     // ERC20 token
             fundsAmount,
             bytes("")            // empty payload for FUNDS type

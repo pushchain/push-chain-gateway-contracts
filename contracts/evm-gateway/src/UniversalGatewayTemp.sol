@@ -384,7 +384,7 @@ contract UniversalGatewayTemp is
 
     
     function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue) private {
-        _validateUniversalTxWithFunds(_req.txType, _req.payload, _req.revertInstruction, _req.amount);
+        _validateUniversalTxWithFunds(_req.txType, _req.amount, _req.recipient, _req.payload, _req.revertInstruction);
 
         // Case 1: For TX_TYPE = FUNDS
 
@@ -967,9 +967,10 @@ contract UniversalGatewayTemp is
     /// @dev    Allows recipient == address(0): This is to credit the caller's UEA on Push Chain.
     function _validateUniversalTxWithFunds(
         TX_TYPE tx_type,
+        uint256 amount,
+        address recipient,
         bytes memory payload,
-        RevertInstructions memory revertInstruction,
-        uint256 amount
+        RevertInstructions memory revertInstruction
     ) internal view {
         if (tx_type != TX_TYPE.FUNDS && tx_type != TX_TYPE.FUNDS_AND_PAYLOAD) {
             revert Errors.InvalidTxType();
@@ -987,6 +988,10 @@ contract UniversalGatewayTemp is
 
         if (amount == 0) {
             revert Errors.InvalidAmount();
+        }
+
+        if( tx_type == TX_TYPE.FUNDS && recipient != address(0)) {
+            revert Errors.InvalidRecipient();
         }
     }
 
