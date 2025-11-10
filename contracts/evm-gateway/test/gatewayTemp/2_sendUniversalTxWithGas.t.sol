@@ -224,6 +224,43 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         assertEq(tss.balance, tssBalanceBefore + gasAmount, "TSS should receive gas amount");
     }
 
+    /// @notice Test GAS_AND_PAYLOAD allows zero gas when only payload is provided
+    /// @dev User selects GAS_AND_PAYLOAD but funds are already on Push Chain
+    function test_SendTxWithGas_GAS_AND_PAYLOAD_AllowsZeroGas() public {
+        // Arrange
+        uint256 gasAmount = 0;
+        bytes memory nonEmptyPayload = abi.encode(buildDefaultPayload());
+
+        UniversalTxRequest memory req = buildUniversalTxRequest(
+            TX_TYPE.GAS_AND_PAYLOAD,
+            address(0),
+            address(0),
+            gasAmount,
+            nonEmptyPayload
+        );
+
+        uint256 tssBalanceBefore = tss.balance;
+
+        vm.expectEmit(true, true, false, true, address(gatewayTemp));
+        emit UniversalTx({
+            sender: user1,
+            recipient: address(0),
+            token: address(0),
+            amount: gasAmount,
+            payload: nonEmptyPayload,
+            revertInstruction: req.revertInstruction,
+            txType: TX_TYPE.GAS_AND_PAYLOAD,
+            signatureData: bytes("")
+        });
+
+        // Act
+        vm.prank(user1);
+        gatewayTemp.sendUniversalTx{ value: gasAmount }(req);
+
+        // Assert: No native funds moved
+        assertEq(tss.balance, tssBalanceBefore, "TSS balance should remain unchanged when gas amount is zero");
+    }
+
     /// @notice Test revertInstruction.fundRecipient must be non-zero for GAS
     /// @dev Zero fundRecipient should revert with InvalidRecipient
     function test_SendTxWithGas_GAS_RevertOn_ZeroFundRecipient() public {

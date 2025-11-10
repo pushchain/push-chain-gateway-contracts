@@ -371,14 +371,17 @@ contract UniversalGatewayTemp is
         RevertInstructions memory _revertInstruction,
         bytes memory _signatureData
     ) private {
-        _validateUniversalTxWithGas(_txType, _payload, _revertInstruction);
-        // performs rate-limit checks and handle deposit
-        _checkUSDCaps(_gasAmount);
-        _checkBlockUSDCap(_gasAmount);
-        _handleDeposits(address(0), _gasAmount);
+        _validateUniversalTxWithGas(_txType, _gasAmount, _payload, _revertInstruction);
+
+        if (_gasAmount > 0) {
+            // performs rate-limit checks and handle deposit when gasAmount > 0
+            _checkUSDCaps(_gasAmount);
+            _checkBlockUSDCap(_gasAmount);
+            _handleDeposits(address(0), _gasAmount);
+        }
 
         _emitUniversalTx( // recipient as address(0) -> UEA.
-        _caller, address(0), address(0), _gasAmount, _payload, _revertInstruction, _txType, _signatureData);
+            _caller, address(0), address(0), _gasAmount, _payload, _revertInstruction, _txType, _signatureData);
     }
 
     
@@ -396,7 +399,7 @@ contract UniversalGatewayTemp is
             }
             // Case 1.2: Token to bridge is ERC20 Token -> _req.token
             else {
-                if (nativeValue > 0) revert Errors.InvalidAmount(); //@audit - CHECK IF FUNDS allows ZERO GAS for TOKEN-AS-GAS Route
+                if (nativeValue > 0) revert Errors.InvalidAmount();
                 tokenForFunds = _req.token;
             }
 
@@ -941,12 +944,19 @@ contract UniversalGatewayTemp is
     /// @notice Validation helper for the native-gas route on UniversalTxRequest arguments
     /// @dev    Does not involve any amount checks. Only validates the arguments passed
     function _validateUniversalTxWithGas(
-    TX_TYPE tx_type, bytes memory payload, RevertInstructions memory revertInstruction)
+        TX_TYPE tx_type,
+        uint256 gasAmount,
+        bytes memory payload,
+        RevertInstructions memory revertInstruction
+    )
         internal
         pure
     {
         if (tx_type != TX_TYPE.GAS && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
             revert Errors.InvalidTxType();
+        }
+        if (gasAmount == 0 && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
+            revert Errors.InvalidAmount();
         }
         if (tx_type == TX_TYPE.GAS_AND_PAYLOAD && payload.length == 0) {
             revert Errors.InvalidInput();
