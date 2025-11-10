@@ -1046,7 +1046,6 @@ contract UniversalGatewayV0 is
 
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
-            if (nativeValue != req.amount) revert Errors.InvalidAmount();
             _sendTxWithGas(txType, caller, nativeValue, req.payload, req.revertInstruction, req.signatureData);
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
