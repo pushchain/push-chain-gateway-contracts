@@ -18,6 +18,7 @@ pub fn send_tx_with_gas(
     payload: UniversalPayload,
     revert_instruction: RevertInstructions,
     amount: u64,
+    signature_data: Vec<u8>,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let user = &ctx.accounts.user;
@@ -45,9 +46,17 @@ pub fn send_tx_with_gas(
     // Check USD caps for gas deposits using Pyth oracle
     check_usd_caps(config, gas_amount, &ctx.accounts.price_update)?;
 
-    // Note: Rate limiting is available as an optional feature
-    // To enable rate limiting, deploy the rate limit config account and pass it as remaining_accounts
-    // For now, we'll skip rate limiting to maintain backward compatibility
+    // Block-based USD cap rate limiting (optional via remaining_accounts)
+    if let Some(rate_limit_config) =
+        get_or_create_rate_limit_config(ctx.remaining_accounts, ctx.program_id)?
+    {
+        // Calculate USD amount from SOL amount using price data
+        let price_data = calculate_sol_price(&ctx.accounts.price_update)?;
+        let usd_amount = calculate_usd_amount(gas_amount, &price_data)?;
+
+        // Check block-based USD cap
+        check_block_usd_cap(rate_limit_config, usd_amount)?;
+    }
 
     // Transfer SOL to vault (like _handleNativeDeposit in ETH)
     let cpi_context = CpiContext::new(
@@ -71,7 +80,7 @@ pub fn send_tx_with_gas(
         payload: payload_to_bytes(&payload),
         revert_instruction,
         tx_type: TxType::GasAndPayload,
-        signature_data: vec![], // Empty for gas-only route
+        signature_data, // Use the provided signature data
     });
 
     Ok(())
@@ -145,9 +154,26 @@ pub fn send_funds(
         // Additional validation will happen in the token::transfer CPI below
         // which will fail if mint doesn't match or accounts are invalid
 
-        // Note: Epoch-based rate limiting for SPL tokens would be implemented here
-        // For now, we're focusing on block-based USD cap limiting for SOL deposits
-        // SPL token rate limiting can be added in a future iteration with proper account handling
+        // Epoch-based rate limiting for SPL tokens (optional via remaining_accounts)
+        if let Some(rate_limit_config) =
+            get_or_create_rate_limit_config(ctx.remaining_accounts, ctx.program_id)?
+        {
+            // Get token rate limit account from remaining_accounts (optional)
+            if let Some(mut token_rate_limit) =
+                get_token_rate_limit_optional(bridge_token, ctx.remaining_accounts, ctx.program_id)?
+            {
+                // Get epoch duration from rate limit config
+                let epoch_duration_sec = rate_limit_config.epoch_duration_sec;
+                require!(epoch_duration_sec > 0, GatewayError::InvalidData);
+
+                // Consume rate limit for SPL token
+                consume_rate_limit(
+                    &mut token_rate_limit,
+                    bridge_amount as u128,
+                    epoch_duration_sec,
+                )?;
+            }
+        }
 
         let cpi_context = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -203,9 +229,17 @@ pub fn send_tx_with_funds(
     require!(gas_amount > 0, GatewayError::InvalidAmount);
     check_usd_caps(config, gas_amount, &ctx.accounts.price_update)?;
 
-    // Note: Rate limiting is available as an optional feature
-    // To enable rate limiting, deploy the rate limit config account and pass it as remaining_accounts
-    // For now, we'll skip rate limiting to maintain backward compatibility
+    // Block-based USD cap rate limiting for gas amount (optional via remaining_accounts)
+    if let Some(rate_limit_config) =
+        get_or_create_rate_limit_config(ctx.remaining_accounts, ctx.program_id)?
+    {
+        // Calculate USD amount from SOL amount using price data
+        let price_data = calculate_sol_price(&ctx.accounts.price_update)?;
+        let usd_amount = calculate_usd_amount(gas_amount, &price_data)?;
+
+        // Check block-based USD cap
+        check_block_usd_cap(rate_limit_config, usd_amount)?;
+    }
 
     // For native SOL bridge, validate user has enough SOL for both gas and bridge upfront
     if bridge_token == Pubkey::default() {
@@ -276,9 +310,26 @@ pub fn send_tx_with_funds(
         // Additional validation will happen in the token::transfer CPI below
         // which will fail if mint doesn't match or accounts are invalid
 
-        // Note: Epoch-based rate limiting for SPL tokens would be implemented here
-        // For now, we're focusing on block-based USD cap limiting for SOL deposits
-        // SPL token rate limiting can be added in a future iteration with proper account handling
+        // Epoch-based rate limiting for SPL tokens (optional via remaining_accounts)
+        if let Some(rate_limit_config) =
+            get_or_create_rate_limit_config(ctx.remaining_accounts, ctx.program_id)?
+        {
+            // Get token rate limit account from remaining_accounts (optional)
+            if let Some(mut token_rate_limit) =
+                get_token_rate_limit_optional(bridge_token, ctx.remaining_accounts, ctx.program_id)?
+            {
+                // Get epoch duration from rate limit config
+                let epoch_duration_sec = rate_limit_config.epoch_duration_sec;
+                require!(epoch_duration_sec > 0, GatewayError::InvalidData);
+
+                // Consume rate limit for SPL token
+                consume_rate_limit(
+                    &mut token_rate_limit,
+                    bridge_amount as u128,
+                    epoch_duration_sec,
+                )?;
+            }
+        }
 
         // Transfer SPL tokens to gateway vault
         let cpi_context = CpiContext::new(

@@ -237,3 +237,34 @@ pub fn get_or_create_token_rate_limit<'info>(
         Account::<TokenRateLimit>::try_from(rate_limit_account)
     }
 }
+
+/// Get token rate limit account if it exists (optional, for backward compatibility)
+pub fn get_token_rate_limit_optional<'info>(
+    token_mint: Pubkey,
+    accounts: &'info [AccountInfo<'info>],
+    program_id: &Pubkey,
+) -> Result<Option<Account<'info, TokenRateLimit>>> {
+    let (rate_limit_pda, _bump) =
+        Pubkey::find_program_address(&[RATE_LIMIT_SEED, token_mint.as_ref()], program_id);
+
+    // Find the rate limit account in the accounts list
+    let rate_limit_account = accounts
+        .iter()
+        .find(|account| account.key() == rate_limit_pda);
+
+    match rate_limit_account {
+        Some(account) => {
+            if account.data_is_empty() {
+                // Account doesn't exist, rate limiting is disabled for this token
+                Ok(None)
+            } else {
+                // Account exists, load it
+                Ok(Some(Account::<TokenRateLimit>::try_from(account)?))
+            }
+        }
+        None => {
+            // Account not provided, rate limiting is disabled for this token
+            Ok(None)
+        }
+    }
+}
