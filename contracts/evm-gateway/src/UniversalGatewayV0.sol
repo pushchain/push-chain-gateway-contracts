@@ -547,7 +547,7 @@ contract UniversalGatewayV0 is
             }
             // Case 1.2: Token to bridge is ERC20 Token -> _req.token
             else {
-                if (nativeValue > 0) revert Errors.InvalidAmount(); //@audit - CHECK IF FUNDS allows ZERO GAS for TOKEN-AS-GAS Route
+                if (nativeValue > 0) revert Errors.InvalidAmount(); 
                 tokenForFunds = _req.token;
             }
 
