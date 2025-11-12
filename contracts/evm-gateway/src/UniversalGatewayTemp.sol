@@ -319,7 +319,7 @@ contract UniversalGatewayTemp is
         _validateFeeAbstractionParams(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
 
         // Swap token to native
-        uint256 nativeAmount = swapToNative(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
+        uint256 nativeValue = swapToNative(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
 
         // Build UniversalTxRequest from token request
         UniversalTxRequest memory req = UniversalTxRequest({
@@ -332,34 +332,9 @@ contract UniversalGatewayTemp is
             signatureData: reqToken.signatureData
         });
 
-        _routeUniversalTx(req, _msgSender(), nativeAmount);
+        _routeUniversalTx(req, _msgSender(), nativeValue);
     }
 
-
-    /// @dev Internal router that dispatches to the appropriate handler based on TX_TYPE
-    /// @param req The universal transaction request (memory for token-gas, can accept calldata too)
-    /// @param caller The original caller (msg.sender from the public function)
-    /// @param nativeValue The effective native value (msg.value for native-gas, swapped amount for token-gas)
-    function _routeUniversalTx(
-        UniversalTxRequest memory req,
-        address caller,
-        uint256 nativeValue
-    ) internal {
-        TX_TYPE txType = req.txType;
-
-        // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
-        if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
-            _sendTxWithGas(txType, caller, nativeValue, req.payload, req.revertInstruction, req.signatureData);
-        }
-        // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
-        else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
-            _sendTxWithFunds(req, nativeValue);
-        }
-        // Route 3: Invalid
-        else {
-            revert Errors.InvalidTxType();
-        }
-    }
 
     /// @notice                     Internal helper function to deposit for Instant TX.
     /// @dev                        Handles rate-limit checks for Fee Abstraction Tx Route
@@ -938,8 +913,99 @@ contract UniversalGatewayTemp is
     }
 
     // =========================
-    //       VALIDATION HELPERS
+    //       VALIDATION and Routers for sendUniversalTx()
     // =========================
+
+    /**
+     * @notice Infers the TX_TYPE for an incoming universal request by inspecting only
+     *         the four decision variables we agreed on:
+     *         - hasPayload     := (req.payload.length > 0)
+     *         - hasFunds       := (req.amount > 0)
+     *         - fundsIsNative  := (req.token == address(0))
+     *         - hasNativeValue := (nativeValue > 0)  // nativeValue = msg.value (native-gas) OR swapped amount (token-gas)
+     *
+     * @param req          UniversalTxRequest (txType field is ignored here)
+     * @param nativeValue  Effective native value attached to the call path (msg.value or swapped amount)
+     * @return inferred    The inferred TX_TYPE for routing
+     */
+    function _fetchTxType(UniversalTxRequest memory req, uint256 nativeValue)
+        private
+        pure
+        returns (TX_TYPE inferred)
+    {
+        bool hasPayload     = req.payload.length > 0;
+        bool hasFunds       = req.amount > 0;
+        bool fundsIsNative  = (req.token == address(0));
+        bool hasNativeValue = nativeValue > 0;
+
+        // For TX_TYPE.GAS
+        if (!hasPayload && !hasFunds && hasNativeValue) {
+            return TX_TYPE.GAS;
+        }
+        // For TX_TYPE.GAS_AND_PAYLOAD
+        if (hasPayload && !hasFunds && hasNativeValue) {
+            return TX_TYPE.GAS_AND_PAYLOAD;
+        }
+
+        // For TX_TYPE.FUNDS: Case 1: Native Funds
+        if (!hasPayload && hasFunds) {
+            // Case 1.1: Native Funds Only.
+            // FUNDS (native) — must come with native value 
+            if (fundsIsNative && hasNativeValue) {
+                return TX_TYPE.FUNDS;
+            }
+            // Case 1.2: ERC-20 Funds Only.
+            // FUNDS (ERC-20) — must NOT come with native value - Case 1.2
+            if (!fundsIsNative && !hasNativeValue) {
+                return TX_TYPE.FUNDS;
+            }
+            revert Errors.InvalidInput();
+        }
+
+        // For TX_TYPE.FUNDS_AND_PAYLOAD: Case 2: (Native/ERC20 Funds) + Payload
+        if (hasPayload && hasFunds) {
+            // Case 2.1: No batching (ERC-20 funds, user already has UEA gas)
+            if (!fundsIsNative && !hasNativeValue) {
+                return TX_TYPE.FUNDS_AND_PAYLOAD;
+            }
+            // Case 2.2: Batching: native funds + native gas (later we enforce nativeValue >= amount)
+            if (fundsIsNative && hasNativeValue) {
+                return TX_TYPE.FUNDS_AND_PAYLOAD;
+            }
+            // Case 2.3: Batching: ERC-20 funds + native gas
+            if (!fundsIsNative && hasNativeValue) {
+                return TX_TYPE.FUNDS_AND_PAYLOAD;
+            }
+            revert Errors.InvalidInput();
+        }
+
+        revert Errors.InvalidInput();
+    }
+
+    /// @dev Internal router that dispatches to the appropriate handler based on TX_TYPE
+    /// @param req The universal transaction request (memory for token-gas, can accept calldata too)
+    /// @param caller The original caller (msg.sender from the public function)
+    /// @param nativeValue The effective native value (msg.value for native-gas, swapped amount for token-gas)
+    function _routeUniversalTx(
+        UniversalTxRequest memory req,
+        address caller,
+        uint256 nativeValue
+    ) internal {
+        TX_TYPE txType = req.txType;
+
+        // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
+        if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
+            _sendTxWithGas(txType, caller, nativeValue, req.payload, req.revertInstruction, req.signatureData);
+        }
+        // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
+        else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
+            _sendTxWithFunds(req, nativeValue);
+        }
+        // Route 3: Invalid
+        else {
+            revert Errors.InvalidTxType();
+        }
+    }
 
     /// @notice Validation helper for the native-gas route on UniversalTxRequest arguments
     /// @dev    Does not involve any amount checks. Only validates the arguments passed
