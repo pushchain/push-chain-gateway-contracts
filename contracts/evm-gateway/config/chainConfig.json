@@ -1,0 +1,42 @@
+{
+    "sepolia": {
+        "chainId": 11155111,
+        "weth": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+        "uniswapV3Factory": "0x0227628f3F023bb0B980b67D528571c95c6DaC1c",
+        "uniswapV3Router": "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E",
+        "ethUsdFeed": "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+        "usdt": "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06",
+        "usdtUsdFeed": "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E"
+    },
+    "base_sepolia": {
+        "chainId": 84532,
+        "weth": "0x4200000000000000000000000000000000000006",
+        "uniswapV3Factory": "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
+        "uniswapV3Router": "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
+        "ethUsdFeed": "0xE7fab834B68dA8016239845D08F0B8a82fa446f0",
+        "usdt": "0x9FF5a186f53F6E6964B00320Da1D2024DE11E0cB",
+        "usdtUsdFeed": "0x3ec8593F930EA45ea58c968260e6e9FF53FC934f"
+    },
+    "arb_sepolia": {
+        "chainId": 421614,
+        "weth": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73",
+        "uniswapV3Factory": "0x248AB79Bbb9bC29bB72f7Cd42F17e054Fc40188e",
+        "uniswapV3Router": "0x101F443B4d1b059569D643917553c771E1b9663E",
+        "ethUsdFeed": "0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165",
+        "usdt": "0x1419d7C74D234fA6B73E06A2ce7822C1d37922f0",
+        "usdtUsdFeed": "0x80EDee6f667eCc9f63a0a6f55578F870651f06A4"
+    },
+    "bsc_testnet": {
+        "chainId": 97,
+        "weth": "0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd",
+        "uniswapV3Factory": "0x0bEC2a9E08658eAA15935C25cfF953caB2934C85",
+        "uniswapV3Router": "0x2908Fa14Ef79A774c2bF0ab895948B0e768e4CB0",
+        "ethUsdFeed": "0x143db3CEEfbdfe5631aDD3E50f7614B6ba708BA7",
+        "usdt": "0xBC14F348BC9667be46b35Edc9B68653d86013DC5",
+        "usdtUsdFeed": "0xEca2605f0BCF2BA5966372C99837b1F182d3D620"
+    },
+    "push_chain": {
+        "chainId": 31337,
+        "universalCore": "0x00000000000000000000000000000000000000C0"
+    }
+}
