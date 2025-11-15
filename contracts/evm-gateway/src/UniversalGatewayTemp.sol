@@ -311,7 +311,9 @@ contract UniversalGatewayTemp is
     // =========================
 
     function sendUniversalTx(UniversalTxRequest calldata req) external payable nonReentrant whenNotPaused {
-        _routeUniversalTx(req, _msgSender(), msg.value);
+        uint256 nativeValue = msg.value;
+        TX_TYPE txType = _fetchTxType(req, nativeValue);
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType);
     }
 
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable nonReentrant whenNotPaused {
@@ -323,7 +325,6 @@ contract UniversalGatewayTemp is
 
         // Build UniversalTxRequest from token request
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: reqToken.txType,
             recipient: reqToken.recipient,
             token: reqToken.token,
             amount: reqToken.amount,
@@ -332,7 +333,8 @@ contract UniversalGatewayTemp is
             signatureData: reqToken.signatureData
         });
 
-        _routeUniversalTx(req, _msgSender(), nativeValue);
+        TX_TYPE txType = _fetchTxType(req, nativeValue);
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType);
     }
 
 
@@ -360,12 +362,12 @@ contract UniversalGatewayTemp is
     }
 
     
-    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue) private {
-        _validateUniversalTxWithFunds(_req.txType, _req.amount, _req.recipient, _req.payload, _req.revertInstruction);
+    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue, TX_TYPE txType) private {
+        _validateUniversalTxWithFunds(txType, _req.amount, _req.recipient, _req.payload, _req.revertInstruction);
 
         // Case 1: For TX_TYPE = FUNDS
 
-        if (_req.txType == TX_TYPE.FUNDS) {
+        if (txType == TX_TYPE.FUNDS) {
             address tokenForFunds;
             // Case 1.1: Token to bridge is Native Token -> address(0)
             if (_req.token == address(0)) {
@@ -388,7 +390,7 @@ contract UniversalGatewayTemp is
                 _req.amount,
                 _req.payload,
                 _req.revertInstruction,
-                _req.txType,
+                txType,
                 _req.signatureData
             );
         }
@@ -408,7 +410,7 @@ contract UniversalGatewayTemp is
         //            -> No Split Needed: gasAmount is used via native_token, and bridgeAmount is used via ERC20 token.
         //            -> _sendTxWithGas is used to send gasAmount
         //            -> _sendTxWithFunds is used to send bridgeAmount
-        if (_req.txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
+        if (txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
             address tokenForFundsAndPayload;
             // Case 2.1: No Batching ( nativeValue == 0 ): user already has UEA with PC token ( gas ) on Push to execute payloads
             if (nativeValue == 0) {
@@ -449,7 +451,7 @@ contract UniversalGatewayTemp is
                 _req.amount,
                 _req.payload,
                 _req.revertInstruction,
-                _req.txType,
+                txType,
                 _req.signatureData
             );
         }
@@ -938,12 +940,16 @@ contract UniversalGatewayTemp is
         bool fundsIsNative  = (req.token == address(0));
         bool hasNativeValue = nativeValue > 0;
 
-        // For TX_TYPE.GAS
+        // For TX_TYPE.GAS:
+        //  - pure gas top-up (no payload, no funds, nativeValue > 0)
         if (!hasPayload && !hasFunds && hasNativeValue) {
             return TX_TYPE.GAS;
         }
-        // For TX_TYPE.GAS_AND_PAYLOAD
-        if (hasPayload && !hasFunds && hasNativeValue) {
+        // For TX_TYPE.GAS_AND_PAYLOAD:
+        //  - payload present
+        //  - no funds
+        //  - nativeValue MAY be 0 (payload-only) or > 0 (payload + gas)
+        if (hasPayload && !hasFunds) {
             return TX_TYPE.GAS_AND_PAYLOAD;
         }
 
@@ -989,9 +995,10 @@ contract UniversalGatewayTemp is
     function _routeUniversalTx(
         UniversalTxRequest memory req,
         address caller,
-        uint256 nativeValue
+        uint256 nativeValue,
+        TX_TYPE _TX_TYPE
     ) internal {
-        TX_TYPE txType = req.txType;
+        TX_TYPE txType = _TX_TYPE;
 
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
@@ -999,7 +1006,7 @@ contract UniversalGatewayTemp is
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
-            _sendTxWithFunds(req, nativeValue);
+            _sendTxWithFunds(req, nativeValue, txType);
         }
         // Route 3: Invalid
         else {
@@ -1157,7 +1164,6 @@ contract UniversalGatewayTemp is
     ) external payable nonReentrant whenNotPaused {
 
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS,
             recipient: recipient,
             token: bridgeToken,
             amount: bridgeAmount,
@@ -1166,7 +1172,7 @@ contract UniversalGatewayTemp is
             signatureData: bytes("")
         });
 
-        _routeUniversalTx(req, _msgSender(), msg.value);
+        _routeUniversalTx(req, _msgSender(), msg.value, TX_TYPE.FUNDS);
     }
 
     /// @notice Legacy: Send funds with payload (FUNDS_AND_PAYLOAD route)
@@ -1184,7 +1190,6 @@ contract UniversalGatewayTemp is
     ) external payable nonReentrant whenNotPaused {
 
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient: address(0),
             token: bridgeToken,
             amount: bridgeAmount,
@@ -1193,7 +1198,7 @@ contract UniversalGatewayTemp is
             signatureData: signatureData
         });
 
-        _routeUniversalTx(req, _msgSender(), msg.value);
+        _routeUniversalTx(req, _msgSender(), msg.value, TX_TYPE.FUNDS_AND_PAYLOAD);
     }
 
     /// @notice Legacy: Send funds with payload using ERC20 token as gas (FUNDS_AND_PAYLOAD route)
@@ -1227,7 +1232,6 @@ contract UniversalGatewayTemp is
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient: address(0),
             token: bridgeToken,
             amount: bridgeAmount,
@@ -1236,7 +1240,7 @@ contract UniversalGatewayTemp is
             signatureData: signatureData
         });
 
-        _routeUniversalTx(req, _msgSender(), nativeGasAmount);
+        _routeUniversalTx(req, _msgSender(), nativeGasAmount, TX_TYPE.FUNDS_AND_PAYLOAD);
     }
 
     /// @dev Reject plain ETH; we only accept ETH via explicit deposit functions or WETH unwrapping.

@@ -122,14 +122,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
     
     /// @notice Helper to build UniversalTxRequest structs
     function buildUniversalTxRequest(
-        TX_TYPE txType,
         address recipient_,
         address token,
         uint256 amount,
         bytes memory payload
     ) internal pure returns (UniversalTxRequest memory) {
         return UniversalTxRequest({
-            txType: txType,
             recipient: recipient_,
             token: token,
             amount: amount,
@@ -160,7 +158,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),  // ERC20 token (not native)
             fundsAmount,
@@ -173,13 +170,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
 
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
             recipient: recipient,
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,  // Payload preserved
             revertInstruction: req.revertInstruction,
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             signatureData: bytes("")
         });
 
@@ -206,7 +203,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory reqA = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             tokenAAmount,
@@ -214,7 +210,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         );
 
         UniversalTxRequest memory reqU = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(usdc),
             usdcAmount,
@@ -257,7 +252,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(customPayload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             fundsAmount,
@@ -266,13 +260,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
 
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
             recipient: recipient,
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,  // Exact payload preserved
             revertInstruction: req.revertInstruction,
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             signatureData: bytes("")
         });
 
@@ -305,7 +299,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(largePayload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             fundsAmount,
@@ -338,7 +331,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             fundsAmount,
@@ -368,7 +360,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req1 = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             firstAmount,
@@ -376,7 +367,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         );
 
         UniversalTxRequest memory req2 = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             secondAmount,
@@ -408,53 +398,73 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(0),      // Native token NOT allowed in no-batching mode
             fundsAmount,
             encodedPayload
         );
 
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InvalidInput.selector);  // _fetchTxType throws InvalidInput for invalid combinations
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);  // msg.value == 0
     }
 
-    /// @notice Test Case 2.1 - Empty payload reverts
-    /// @dev FUNDS_AND_PAYLOAD requires non-empty payload
+    /// @notice Test Case 2.1 - Empty payload routes to FUNDS (matrix inference)
+    /// @dev Matrix infers FUNDS when !hasPayload && hasFunds && !fundsIsNative && !hasNativeValue
+    /// FUNDS with recipient != address(0) triggers InvalidRecipient
     function test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_EmptyPayload() public {
         uint256 fundsAmount = 500 ether;
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
-            recipient,
+  // This field is ignored - matrix will infer FUNDS
+            recipient,                  // Non-zero recipient not allowed for FUNDS
             address(tokenA),
             fundsAmount,
-            bytes("")  // Empty payload not allowed
+            bytes("")  // Empty payload → matrix routes to FUNDS
         );
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        vm.expectRevert(Errors.InvalidRecipient.selector);  // FUNDS requires recipient == address(0)
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
 
-    /// @notice Test Case 2.1 - Zero amount reverts
-    /// @dev Amount must be > 0
+    /// @notice Test Case 2.1 - Zero amount routes to GAS_AND_PAYLOAD (payload-only)
+    /// @dev Ensure payload-only requests emit GAS_AND_PAYLOAD event and do not move funds
     function test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_ZeroAmount() public {
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
-            0,  // Zero amount
+            0,  // Zero amount forces routing to GAS_AND_PAYLOAD (payload-only)
             encodedPayload
         );
 
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        uint256 tssBalanceBefore = tss.balance;
+        uint256 tokenABalanceBefore = tokenA.balanceOf(address(gatewayTemp));
+
+        vm.expectEmit(true, true, false, true, address(gatewayTemp));
+        emit UniversalTx({
+            txType: TX_TYPE.GAS_AND_PAYLOAD,
+            sender: user1,
+            recipient: address(0),
+            token: address(0),
+            amount: 0,
+            payload: encodedPayload,
+            revertInstruction: req.revertInstruction,
+            signatureData: req.signatureData
+        });
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
+
+        assertEq(tss.balance, tssBalanceBefore, "TSS balance should remain unchanged when gasAmount is zero");
+        assertEq(
+            tokenA.balanceOf(address(gatewayTemp)),
+            tokenABalanceBefore,
+            "Gateway should not receive ERC20 when amount is zero"
+        );
     }
 
     /// @notice Test Case 2.1 - Zero fundRecipient reverts
@@ -465,7 +475,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient: recipient,
             token: address(tokenA),
             amount: fundsAmount,
@@ -497,7 +506,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(unsupportedToken),
             fundsAmount,
@@ -522,7 +530,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         // No approval given
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             fundsAmount,
@@ -549,7 +556,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         tokenA.approve(address(gatewayTemp), type(uint256).max);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             fundsAmount,
@@ -580,7 +586,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         });
         
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient: recipient,
             token: address(tokenA),
             amount: fundsAmount,
@@ -591,13 +596,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
 
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
             recipient: recipient,
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
             revertInstruction: revertInst,  // Full struct with revertContext
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             signatureData: bytes("")
         });
 
@@ -614,7 +619,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory sigData = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)));
         
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient: recipient,
             token: address(tokenA),
             amount: fundsAmount,
@@ -625,13 +629,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
 
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
             recipient: recipient,
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
             revertInstruction: req.revertInstruction,
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             signatureData: sigData  // Should preserve signature data
         });
 
@@ -647,7 +651,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             address(0),      // Zero recipient allowed (UEA)
             address(tokenA),
             fundsAmount,
@@ -671,7 +674,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             explicitRecipient,
             address(tokenA),
             fundsAmount,
@@ -680,13 +682,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
 
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
             recipient: explicitRecipient,  // Should preserve explicit recipient
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
             revertInstruction: req.revertInstruction,
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             signatureData: bytes("")
         });
 
@@ -702,7 +704,6 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient,
             address(tokenA),
             fundsAmount,
