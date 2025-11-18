@@ -578,6 +578,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             signatureData: bytes("sig")
         });
         
+        vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req2);
     }

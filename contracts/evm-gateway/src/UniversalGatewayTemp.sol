@@ -318,7 +318,10 @@ contract UniversalGatewayTemp is
 
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable nonReentrant whenNotPaused {
         // Validate token-as-gas parameters
-        _validateFeeAbstractionParams(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
+        if (reqToken.gasToken == address(0)) revert Errors.InvalidInput();
+        if (reqToken.gasAmount == 0) revert Errors.InvalidAmount();
+        if (reqToken.amountOutMinETH == 0) revert Errors.InvalidAmount();
+        if (reqToken.deadline != 0 && reqToken.deadline < block.timestamp) revert Errors.SlippageExceededOrExpired();
 
         // Swap token to native
         uint256 nativeValue = swapToNative(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
@@ -348,7 +351,6 @@ contract UniversalGatewayTemp is
         RevertInstructions memory _revertInstruction,
         bytes memory _signatureData
     ) private {
-        _validateUniversalTxWithGas(_txType, _gasAmount, _payload, _revertInstruction);
 
         if (_gasAmount > 0) {
             // performs rate-limit checks and handle deposit when gasAmount > 0
@@ -363,8 +365,6 @@ contract UniversalGatewayTemp is
 
     
     function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue, TX_TYPE txType) private {
-        _validateUniversalTxWithFunds(txType, _req.amount, _req.recipient, _req.payload, _req.revertInstruction);
-
         // Case 1: For TX_TYPE = FUNDS
 
         if (txType == TX_TYPE.FUNDS) {
@@ -1000,95 +1000,27 @@ contract UniversalGatewayTemp is
     ) internal {
         TX_TYPE txType = _TX_TYPE;
 
+        // Sanity Check : fundRecipient is not address(0)
+        if (req.revertInstruction.fundRecipient == address(0)) {
+            revert Errors.InvalidRecipient();
+        }
+
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
             _sendTxWithGas(txType, caller, nativeValue, req.payload, req.revertInstruction, req.signatureData);
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
+            // Sanity Check : recipient is address(0)
+            if (req.recipient != address(0)) {
+                revert Errors.InvalidRecipient();
+            }
             _sendTxWithFunds(req, nativeValue, txType);
         }
         // Route 3: Invalid
         else {
             revert Errors.InvalidTxType();
         }
-    }
-
-    /// @notice Validation helper for the native-gas route on UniversalTxRequest arguments
-    /// @dev    Does not involve any amount checks. Only validates the arguments passed
-    function _validateUniversalTxWithGas(
-        TX_TYPE tx_type,
-        uint256 gasAmount,
-        bytes memory payload,
-        RevertInstructions memory revertInstruction
-    )
-        internal
-        pure
-    {
-        if (tx_type != TX_TYPE.GAS && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
-            revert Errors.InvalidTxType();
-        }
-        if (gasAmount == 0 && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
-            revert Errors.InvalidAmount();
-        }
-        if (tx_type == TX_TYPE.GAS_AND_PAYLOAD && payload.length == 0) {
-            revert Errors.InvalidInput();
-        }
-
-        if(tx_type == TX_TYPE.GAS && payload.length != 0) {
-            revert Errors.InvalidInput();
-        }
-        
-        if (revertInstruction.fundRecipient == address(0)) {
-            revert Errors.InvalidRecipient();
-        }
-    }
-
-    /// @notice Validation helper for the funds routes using UniversalTxRequest.
-    /// @dev    Does not involve any amount checks. Only validates the arguments passed.
-    /// @dev    Allows recipient == address(0): This is to credit the caller's UEA on Push Chain.
-    function _validateUniversalTxWithFunds(
-        TX_TYPE tx_type,
-        uint256 amount,
-        address recipient,
-        bytes memory payload,
-        RevertInstructions memory revertInstruction
-    ) internal view {
-        if (tx_type != TX_TYPE.FUNDS && tx_type != TX_TYPE.FUNDS_AND_PAYLOAD) {
-            revert Errors.InvalidTxType();
-        }
-        if (tx_type == TX_TYPE.FUNDS && payload.length != 0) {
-            // Note: FUNDS-only must not carry a payload
-            revert Errors.InvalidInput();
-        }
-        if (tx_type == TX_TYPE.FUNDS_AND_PAYLOAD && payload.length == 0) {
-            revert Errors.InvalidInput();
-        }
-        if (revertInstruction.fundRecipient == address(0)) {
-            revert Errors.InvalidRecipient();
-        }
-
-        if (amount == 0) {
-            revert Errors.InvalidAmount();
-        }
-
-        if( tx_type == TX_TYPE.FUNDS && recipient != address(0)) {
-            revert Errors.InvalidRecipient();
-        }
-    }
-
-    /// @notice Validation helper for fee abstraction parameters used by the token-gas overload.
-    /// @dev    Does not involve any amount checks. Only validates the arguments passed.
-    function _validateFeeAbstractionParams(  //@audit - CHECK IF FUNDS allows ZERO GAS for TOKEN-AS-GAS Route
-        address gasToken,
-        uint256 gasAmount,
-        uint256 amountOutMinETH,
-        uint256 deadline
-    ) internal view {
-        if (gasToken == address(0)) revert Errors.InvalidInput();
-        if (gasAmount == 0) revert Errors.InvalidAmount();
-        if (amountOutMinETH == 0) revert Errors.InvalidAmount();
-        if (deadline != 0 && deadline < block.timestamp) revert Errors.SlippageExceededOrExpired();
     }
 
     // =========================

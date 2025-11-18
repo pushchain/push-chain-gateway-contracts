@@ -297,7 +297,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
 
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            recipient,           // explicit recipient
+            address(0),          // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),     // ERC20 token
             fundsAmount,
             encodedPayload       // non-empty payload required
