@@ -21,7 +21,7 @@ struct RevertInstructions {
     ///             where funds go in revert / refund cases
     address fundRecipient;
     ///             arbitrary message for relayers/UEA
-    bytes revertContext;
+    bytes revertMsg;
 }
 
 /// @notice         Packed per-token usage for the current epoch only (no on-chain history kept).
