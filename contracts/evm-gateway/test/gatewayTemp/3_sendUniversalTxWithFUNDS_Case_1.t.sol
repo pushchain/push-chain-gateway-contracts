@@ -1,17 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { BaseTest } from "../BaseTest.t.sol";
-import { UniversalGatewayTemp } from "../../src/UniversalGatewayTemp.sol";
-import { 
-    TX_TYPE, 
-    RevertInstructions, 
-    UniversalPayload, 
-    UniversalTxRequest 
-} from "../../src/libraries/Types.sol";
-import { Errors } from "../../src/libraries/Errors.sol";
-import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import { MockERC20 } from "../mocks/MockERC20.sol";
+import {BaseTest} from "../BaseTest.t.sol";
+import {UniversalGatewayTemp} from "../../src/UniversalGatewayTemp.sol";
+import {TX_TYPE, RevertInstructions, UniversalPayload, UniversalTxRequest} from "../../src/libraries/Types.sol";
+import {Errors} from "../../src/libraries/Errors.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {MockERC20} from "../mocks/MockERC20.sol";
 
 /**
  * @title GatewaySendUniversalTxWithFunds Test Suite
@@ -21,14 +16,13 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
  *      Phase 2: TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.1 (No batching)
  *      Phase 3: TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.2 (Native batching)
  *      Phase 4: TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.3 (ERC20 + native batching)
- * 
+ *
  * Current Implementation: Phase 1 - TX_TYPE.FUNDS
  */
 contract GatewaySendUniversalTxWithFundsTest is BaseTest {
-    
     // UniversalGatewayTemp instance
     UniversalGatewayTemp public gatewayTemp;
-    
+
     // =========================
     //      EVENTS
     // =========================
@@ -48,29 +42,29 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
     // =========================
     function setUp() public override {
         super.setUp();
-        
+
         // Deploy UniversalGatewayTemp
         _deployGatewayTemp();
-        
+
         // Wire oracle to the new gateway instance
         vm.prank(admin);
         gatewayTemp.setEthUsdFeed(address(ethUsdFeedMock));
-        
+
         // Setup token support on gatewayTemp (native + all mock ERC20s)
         address[] memory tokens = new address[](4);
         uint256[] memory thresholds = new uint256[](4);
-        tokens[0] = address(0);        // Native token
-        tokens[1] = address(tokenA);   // Mock ERC20 tokenA
-        tokens[2] = address(usdc);     // Mock ERC20 usdc
-        tokens[3] = address(weth);     // Mock WETH
+        tokens[0] = address(0); // Native token
+        tokens[1] = address(tokenA); // Mock ERC20 tokenA
+        tokens[2] = address(usdc); // Mock ERC20 usdc
+        tokens[3] = address(weth); // Mock WETH
         thresholds[0] = 1000000 ether; // Large threshold for native
         thresholds[1] = 1000000 ether; // Large threshold for tokenA
-        thresholds[2] = 1000000e6;     // Large threshold for usdc (6 decimals)
+        thresholds[2] = 1000000e6; // Large threshold for usdc (6 decimals)
         thresholds[3] = 1000000 ether; // Large threshold for weth
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
-        
+
         // Re-approve tokens to gatewayTemp
         address[] memory users = new address[](5);
         users[0] = user1;
@@ -78,23 +72,23 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         users[2] = user3;
         users[3] = user4;
         users[4] = attacker;
-        
+
         for (uint256 i = 0; i < users.length; i++) {
             vm.prank(users[i]);
             tokenA.approve(address(gatewayTemp), type(uint256).max);
-            
+
             vm.prank(users[i]);
             usdc.approve(address(gatewayTemp), type(uint256).max);
-            
+
             vm.prank(users[i]);
             weth.approve(address(gatewayTemp), type(uint256).max);
         }
     }
-    
+
     /// @notice Deploy UniversalGatewayTemp
     function _deployGatewayTemp() internal {
         UniversalGatewayTemp implementation = new UniversalGatewayTemp();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             UniversalGatewayTemp.initialize.selector,
             admin,
@@ -106,17 +100,17 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             uniV3Router,
             address(weth)
         );
-        
+
         TransparentUpgradeableProxy tempProxy = new TransparentUpgradeableProxy(
-            address(implementation), 
-            address(proxyAdmin), 
+            address(implementation),
+            address(proxyAdmin),
             initData
         );
-        
+
         gatewayTemp = UniversalGatewayTemp(payable(address(tempProxy)));
         vm.label(address(gatewayTemp), "UniversalGatewayTemp");
     }
-    
+
     /// @notice Helper to build UniversalTxRequest structs
     function buildUniversalTxRequest(
         TX_TYPE txType,
@@ -125,15 +119,19 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         uint256 amount,
         bytes memory payload
     ) internal pure returns (UniversalTxRequest memory) {
-        return UniversalTxRequest({
-            txType: txType,
-            recipient: recipient_,
-            token: token,
-            amount: amount,
-            payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") }),
-            signatureData: bytes("")
-        });
+        return
+            UniversalTxRequest({
+                txType: txType,
+                recipient: recipient_,
+                token: token,
+                amount: amount,
+                payload: payload,
+                revertInstruction: RevertInstructions({
+                    fundRecipient: address(0x456),
+                    revertMsg: bytes("")
+                }),
+                signatureData: bytes("")
+            });
     }
 
     // =========================================================================
@@ -152,22 +150,22 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
     ///      - Recipient must be address(0) for FUNDS type
     function test_SendTxWithFunds_FUNDS_Native_HappyPath() public {
         uint256 fundsAmount = 100 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),      // FUNDS requires recipient == address(0)
-            address(0),      // Native token
+            address(0), // FUNDS requires recipient == address(0)
+            address(0), // Native token
             fundsAmount,
-            bytes("")        // Empty payload for FUNDS
+            bytes("") // Empty payload for FUNDS
         );
 
         uint256 tssBalanceBefore = tss.balance;
-        (uint256 usedBefore,) = gatewayTemp.currentTokenUsage(address(0));
+        (uint256 usedBefore, ) = gatewayTemp.currentTokenUsage(address(0));
 
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             sender: user1,
-            recipient: address(0),  // FUNDS always has recipient == address(0)
+            recipient: address(0), // FUNDS always has recipient == address(0)
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
@@ -177,23 +175,31 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
-        assertEq(tss.balance, tssBalanceBefore + fundsAmount, "TSS should receive native funds");
-        
-        (uint256 usedAfter,) = gatewayTemp.currentTokenUsage(address(0));
-        assertEq(usedAfter, usedBefore + fundsAmount, "Rate limit should be consumed");
+        assertEq(
+            tss.balance,
+            tssBalanceBefore + fundsAmount,
+            "TSS should receive native funds"
+        );
+
+        (uint256 usedAfter, ) = gatewayTemp.currentTokenUsage(address(0));
+        assertEq(
+            usedAfter,
+            usedBefore + fundsAmount,
+            "Rate limit should be consumed"
+        );
     }
 
     /// @notice Test FUNDS with native token - recipient can be zero
     /// @dev Unlike GAS routes, FUNDS allows zero recipient ( zero recipients = UEA on Push Chain)
-    function test_SendTxWithFunds_FUNDS_Native_AllowsZeroRecipient() public {   
+    function test_SendTxWithFunds_FUNDS_Native_AllowsZeroRecipient() public {
         uint256 fundsAmount = 50 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),      // Zero recipient is allowed for FUNDS
-            address(0),      // Native token
+            address(0), // Zero recipient is allowed for FUNDS
+            address(0), // Native token
             fundsAmount,
             bytes("")
         );
@@ -201,20 +207,26 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         uint256 tssBalanceBefore = tss.balance;
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
-        assertEq(tss.balance, tssBalanceBefore + fundsAmount, "TSS should receive funds even with zero recipient");
+        assertEq(
+            tss.balance,
+            tssBalanceBefore + fundsAmount,
+            "TSS should receive funds even with zero recipient"
+        );
     }
 
     /// @notice Test FUNDS with native token - recipient MUST be zero
     /// @dev FUNDS tx type requires recipient == address(0) (funds go to caller's UEA)
-    function test_SendTxWithFunds_FUNDS_Native_RevertOn_NonZeroRecipient() public {
+    function test_SendTxWithFunds_FUNDS_Native_RevertOn_NonZeroRecipient()
+        public
+    {
         uint256 fundsAmount = 75 ether;
         address explicitRecipient = address(0x999);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            explicitRecipient,  // Non-zero recipient should revert
+            explicitRecipient, // Non-zero recipient should revert
             address(0),
             fundsAmount,
             bytes("")
@@ -222,17 +234,19 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
     }
 
     /// @notice Test FUNDS native - msg.value must equal amount
     /// @dev Revert if msg.value != amount
-    function test_SendTxWithFunds_FUNDS_Native_RevertOn_MsgValueMismatch_TooLow() public {
+    function test_SendTxWithFunds_FUNDS_Native_RevertOn_MsgValueMismatch_TooLow()
+        public
+    {
         uint256 fundsAmount = 100 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             fundsAmount,
             bytes("")
@@ -240,7 +254,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 50 ether }(req);  // msg.value < amount
+        gatewayTemp.sendUniversalTx{value: 50 ether}(req); // msg.value < amount
     }
 
     /// @notice Test FUNDS native - zero amount reverts
@@ -248,34 +262,36 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
     function test_SendTxWithFunds_FUNDS_Native_RevertOn_ZeroAmount() public {
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
-            0,  // Zero amount
+            0, // Zero amount
             bytes("")
         );
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+        gatewayTemp.sendUniversalTx{value: 0}(req);
     }
 
     /// @notice Test FUNDS native - rate limit enforcement
     /// @dev Should revert when exceeding threshold
-    function test_SendTxWithFunds_FUNDS_Native_RevertOn_RateLimitExceeded() public {
+    function test_SendTxWithFunds_FUNDS_Native_RevertOn_RateLimitExceeded()
+        public
+    {
         // Set a low threshold for native token
         address[] memory tokens = new address[](1);
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(0);
-        thresholds[0] = 100 ether;  // Low threshold
-        
+        thresholds[0] = 100 ether; // Low threshold
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
-        uint256 fundsAmount = 150 ether;  // Exceeds threshold
-        
+        uint256 fundsAmount = 150 ether; // Exceeds threshold
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             fundsAmount,
             bytes("")
@@ -283,28 +299,29 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
     }
-
 
     /// @notice Test FUNDS native - cumulative rate limit exceeded
     /// @dev Third call should fail when cumulative exceeds threshold
-    function test_SendTxWithFunds_FUNDS_Native_RevertOn_CumulativeRateLimitExceeded() public {
+    function test_SendTxWithFunds_FUNDS_Native_RevertOn_CumulativeRateLimitExceeded()
+        public
+    {
         // Set threshold
         address[] memory tokens = new address[](1);
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(0);
         thresholds[0] = 200 ether;
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
         uint256 firstAmount = 120 ether;
-        uint256 secondAmount = 90 ether;  // Total 210 ether (exceeds 200)
-        
+        uint256 secondAmount = 90 ether; // Total 210 ether (exceeds 200)
+
         UniversalTxRequest memory req1 = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             firstAmount,
             bytes("")
@@ -312,7 +329,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         UniversalTxRequest memory req2 = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             secondAmount,
             bytes("")
@@ -320,31 +337,33 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         // First call succeeds
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: firstAmount }(req1);
+        gatewayTemp.sendUniversalTx{value: firstAmount}(req1);
 
         // Second call fails (cumulative 210 > 200)
         vm.expectRevert(Errors.RateLimitExceeded.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: secondAmount }(req2);
+        gatewayTemp.sendUniversalTx{value: secondAmount}(req2);
     }
 
     /// @notice Test FUNDS native - rate limit resets in new epoch
     /// @dev After epoch duration, rate limit should reset
-    function test_SendTxWithFunds_FUNDS_Native_RateLimitResetsInNewEpoch() public {
+    function test_SendTxWithFunds_FUNDS_Native_RateLimitResetsInNewEpoch()
+        public
+    {
         // Set threshold
         address[] memory tokens = new address[](1);
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(0);
         thresholds[0] = 100 ether;
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
         uint256 fundsAmount = 90 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             fundsAmount,
             bytes("")
@@ -352,10 +371,10 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         // First call in epoch 1
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
         // Verify usage
-        (uint256 usedEpoch1,) = gatewayTemp.currentTokenUsage(address(0));
+        (uint256 usedEpoch1, ) = gatewayTemp.currentTokenUsage(address(0));
         assertEq(usedEpoch1, fundsAmount, "Usage in epoch 1");
 
         // Advance time to next epoch (default epoch duration is 86400 seconds / 1 day)
@@ -363,21 +382,23 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         // Second call in epoch 2 (should succeed as limit reset)
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
         // Verify usage reset
-        (uint256 usedEpoch2,) = gatewayTemp.currentTokenUsage(address(0));
+        (uint256 usedEpoch2, ) = gatewayTemp.currentTokenUsage(address(0));
         assertEq(usedEpoch2, fundsAmount, "Usage should reset in new epoch");
     }
 
     /// @notice Test FUNDS native - gateway does not accumulate ETH
     /// @dev All native ETH should be forwarded to TSS
-    function test_SendTxWithFunds_FUNDS_Native_GatewayDoesNotAccumulate() public {
+    function test_SendTxWithFunds_FUNDS_Native_GatewayDoesNotAccumulate()
+        public
+    {
         uint256 fundsAmount = 100 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             fundsAmount,
             bytes("")
@@ -386,10 +407,14 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         uint256 gatewayBalanceBefore = address(gatewayTemp).balance;
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
         // Gateway balance should remain unchanged
-        assertEq(address(gatewayTemp).balance, gatewayBalanceBefore, "Gateway should not hold native ETH");
+        assertEq(
+            address(gatewayTemp).balance,
+            gatewayBalanceBefore,
+            "Gateway should not hold native ETH"
+        );
     }
 
     // =========================
@@ -404,22 +429,22 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
     ///      - Recipient must be address(0) for FUNDS type
     function test_SendTxWithFunds_FUNDS_ERC20_HappyPath() public {
         uint256 fundsAmount = 1000 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
-            address(tokenA),  // ERC20 token
+            address(0), // FUNDS requires recipient == address(0)
+            address(tokenA), // ERC20 token
             fundsAmount,
             bytes("")
         );
 
         uint256 vaultBalanceBefore = tokenA.balanceOf(address(this));
-        (uint256 usedBefore,) = gatewayTemp.currentTokenUsage(address(tokenA));
+        (uint256 usedBefore, ) = gatewayTemp.currentTokenUsage(address(tokenA));
 
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             sender: user1,
-            recipient: address(0),  // FUNDS always has recipient == address(0)
+            recipient: address(0), // FUNDS always has recipient == address(0)
             token: address(tokenA),
             amount: fundsAmount,
             payload: bytes(""),
@@ -429,22 +454,32 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);  // No native value for ERC20
+        gatewayTemp.sendUniversalTx{value: 0}(req); // No native value for ERC20
 
-        assertEq(tokenA.balanceOf(address(this)), vaultBalanceBefore + fundsAmount, "Vault should receive ERC20");
-        
-        (uint256 usedAfter,) = gatewayTemp.currentTokenUsage(address(tokenA));
-        assertEq(usedAfter, usedBefore + fundsAmount, "Rate limit should be consumed");
+        assertEq(
+            tokenA.balanceOf(address(this)),
+            vaultBalanceBefore + fundsAmount,
+            "Vault should receive ERC20"
+        );
+
+        (uint256 usedAfter, ) = gatewayTemp.currentTokenUsage(address(tokenA));
+        assertEq(
+            usedAfter,
+            usedBefore + fundsAmount,
+            "Rate limit should be consumed"
+        );
     }
 
     /// @notice Test FUNDS with ERC20 - msg.value must be zero
     /// @dev Revert if msg.value > 0 for ERC20 transfers
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroMsgValue() public {
+    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroMsgValue()
+        public
+    {
         uint256 fundsAmount = 1000 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(tokenA),
             fundsAmount,
             bytes("")
@@ -452,24 +487,31 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 1 ether }(req);  // msg.value > 0 not allowed for ERC20
+        gatewayTemp.sendUniversalTx{value: 1 ether}(req); // msg.value > 0 not allowed for ERC20
     }
 
     /// @notice Test FUNDS with ERC20 - unsupported token reverts
     /// @dev Token with threshold=0 should revert with NotSupported
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_UnsupportedToken() public {
+    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_UnsupportedToken()
+        public
+    {
         // Deploy a new token that's not configured
-        MockERC20 unsupportedToken = new MockERC20("Unsupported", "UNSUP", 18, 0);
+        MockERC20 unsupportedToken = new MockERC20(
+            "Unsupported",
+            "UNSUP",
+            18,
+            0
+        );
         unsupportedToken.mint(user1, 1000 ether);
-        
+
         vm.prank(user1);
         unsupportedToken.approve(address(gatewayTemp), type(uint256).max);
 
         uint256 fundsAmount = 100 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(unsupportedToken),
             fundsAmount,
             bytes("")
@@ -477,22 +519,24 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(Errors.NotSupported.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+        gatewayTemp.sendUniversalTx{value: 0}(req);
     }
 
     /// @notice Test FUNDS with ERC20 - insufficient allowance reverts
     /// @dev Should revert with ERC20InsufficientAllowance
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientAllowance() public {
+    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientAllowance()
+        public
+    {
         uint256 fundsAmount = 1000 ether;
-        
+
         // Create a user with no approval
         address userNoApproval = address(0x7777);
         tokenA.mint(userNoApproval, fundsAmount);
         // No approval given
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(tokenA),
             fundsAmount,
             bytes("")
@@ -500,24 +544,26 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(); // ERC20InsufficientAllowance
         vm.prank(userNoApproval);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+        gatewayTemp.sendUniversalTx{value: 0}(req);
     }
 
     /// @notice Test FUNDS with ERC20 - insufficient balance reverts
     /// @dev Should revert with ERC20InsufficientBalance
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientBalance() public {
+    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientBalance()
+        public
+    {
         uint256 fundsAmount = 1000 ether;
-        
+
         // Create a user with approval but no balance
         address userNoBalance = address(0x8888);
         // No tokens minted
-        
+
         vm.prank(userNoBalance);
         tokenA.approve(address(gatewayTemp), type(uint256).max);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(tokenA),
             fundsAmount,
             bytes("")
@@ -525,18 +571,20 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(); // ERC20InsufficientBalance
         vm.prank(userNoBalance);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+        gatewayTemp.sendUniversalTx{value: 0}(req);
     }
 
     /// @notice Test FUNDS with ERC20 - recipient MUST be zero
     /// @dev FUNDS tx type requires recipient == address(0) (funds go to caller's UEA)
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroRecipient() public {
+    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroRecipient()
+        public
+    {
         uint256 fundsAmount = 1000 ether;
         address explicitRecipient = address(0x999);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            explicitRecipient,  // Non-zero recipient should revert
+            explicitRecipient, // Non-zero recipient should revert
             address(tokenA),
             fundsAmount,
             bytes("")
@@ -544,26 +592,28 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+        gatewayTemp.sendUniversalTx{value: 0}(req);
     }
 
     /// @notice Test FUNDS with ERC20 - rate limit enforcement
     /// @dev Should revert when exceeding threshold
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_RateLimitExceeded() public {
+    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_RateLimitExceeded()
+        public
+    {
         // Set a low threshold for tokenA
         address[] memory tokens = new address[](1);
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(tokenA);
-        thresholds[0] = 500 ether;  // Low threshold
-        
+        thresholds[0] = 500 ether; // Low threshold
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
-        uint256 fundsAmount = 600 ether;  // Exceeds threshold
-        
+        uint256 fundsAmount = 600 ether; // Exceeds threshold
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(tokenA),
             fundsAmount,
             bytes("")
@@ -571,29 +621,31 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+        gatewayTemp.sendUniversalTx{value: 0}(req);
     }
 
     /// @notice Test FUNDS with ERC20 - different tokens have separate rate limits
     /// @dev tokenA and usdc should have independent rate limits
-    function test_SendTxWithFunds_FUNDS_ERC20_SeparateRateLimitsPerToken() public {
+    function test_SendTxWithFunds_FUNDS_ERC20_SeparateRateLimitsPerToken()
+        public
+    {
         // Set thresholds
         address[] memory tokens = new address[](2);
         uint256[] memory thresholds = new uint256[](2);
         tokens[0] = address(tokenA);
         tokens[1] = address(usdc);
         thresholds[0] = 500 ether;
-        thresholds[1] = 500e6;  // USDC has 6 decimals
-        
+        thresholds[1] = 500e6; // USDC has 6 decimals
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
         uint256 tokenAAmount = 400 ether;
         uint256 usdcAmount = 400e6;
-        
+
         UniversalTxRequest memory reqA = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(tokenA),
             tokenAAmount,
             bytes("")
@@ -601,7 +653,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         UniversalTxRequest memory reqU = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(usdc),
             usdcAmount,
             bytes("")
@@ -609,15 +661,15 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         // Send tokenA
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(reqA);
+        gatewayTemp.sendUniversalTx{value: 0}(reqA);
 
         // Send usdc (should succeed - separate limit)
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(reqU);
+        gatewayTemp.sendUniversalTx{value: 0}(reqU);
 
         // Verify separate usage tracking
-        (uint256 usedA,) = gatewayTemp.currentTokenUsage(address(tokenA));
-        (uint256 usedU,) = gatewayTemp.currentTokenUsage(address(usdc));
+        (uint256 usedA, ) = gatewayTemp.currentTokenUsage(address(tokenA));
+        (uint256 usedU, ) = gatewayTemp.currentTokenUsage(address(usdc));
         assertEq(usedA, tokenAAmount, "TokenA usage");
         assertEq(usedU, usdcAmount, "USDC usage");
     }
@@ -631,51 +683,51 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
     function test_SendTxWithFunds_FUNDS_RevertOn_NonEmptyPayload() public {
         uint256 fundsAmount = 100 ether;
         bytes memory nonEmptyPayload = abi.encode(buildDefaultPayload());
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             fundsAmount,
-            nonEmptyPayload  // Should be empty for FUNDS
+            nonEmptyPayload // Should be empty for FUNDS
         );
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
     }
 
     /// @notice Test FUNDS - revertInstruction.fundRecipient must be non-zero
     /// @dev Zero fundRecipient should revert
     function test_SendTxWithFunds_FUNDS_RevertOn_ZeroFundRecipient() public {
         uint256 fundsAmount = 100 ether;
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
             txType: TX_TYPE.FUNDS,
-            recipient: address(0),  // FUNDS requires recipient == address(0)
+            recipient: address(0), // FUNDS requires recipient == address(0)
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0),  // Zero address not allowed
-                revertContext: bytes("") 
+            revertInstruction: RevertInstructions({
+                fundRecipient: address(0), // Zero address not allowed
+                revertMsg: bytes("")
             }),
             signatureData: bytes("")
         });
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
     }
 
     /// @notice Test FUNDS - multiple users can send independently
     /// @dev Different users should be able to send funds independently
     function test_SendTxWithFunds_FUNDS_MultipleUsersIndependent() public {
         uint256 fundsAmount = 50 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             TX_TYPE.FUNDS,
-            address(0),       // FUNDS requires recipient == address(0)
+            address(0), // FUNDS requires recipient == address(0)
             address(0),
             fundsAmount,
             bytes("")
@@ -685,34 +737,41 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         // user1 sends
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
         // user2 sends
         vm.prank(user2);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
         // user3 sends
         vm.prank(user3);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
 
         // Assert: All succeeded
-        assertEq(tss.balance, tssBalanceBefore + (fundsAmount * 3), "All users should succeed");
+        assertEq(
+            tss.balance,
+            tssBalanceBefore + (fundsAmount * 3),
+            "All users should succeed"
+        );
     }
 
-    /// @notice Test FUNDS - event preserves revertContext
+    /// @notice Test FUNDS - event preserves revertMsg
     /// @dev RevertContext should be emitted correctly
     function test_SendTxWithFunds_FUNDS_EventPreservesRevertContext() public {
         uint256 fundsAmount = 100 ether;
-        bytes memory revertContext = abi.encodePacked("custom revert data", uint256(12345));
-        
-        RevertInstructions memory revertInst = RevertInstructions({ 
-            fundRecipient: address(0x999), 
-            revertContext: revertContext
+        bytes memory revertMsg = abi.encodePacked(
+            "custom revert data",
+            uint256(12345)
+        );
+
+        RevertInstructions memory revertInst = RevertInstructions({
+            fundRecipient: address(0x999),
+            revertMsg: revertMsg
         });
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
             txType: TX_TYPE.FUNDS,
-            recipient: address(0),  // FUNDS requires recipient == address(0)
+            recipient: address(0), // FUNDS requires recipient == address(0)
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
@@ -723,16 +782,16 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             sender: user1,
-            recipient: address(0),  // FUNDS always has recipient == address(0)
+            recipient: address(0), // FUNDS always has recipient == address(0)
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: revertInst,  // Full struct with revertContext
+            revertInstruction: revertInst, // Full struct with revertMsg
             txType: TX_TYPE.FUNDS,
             signatureData: bytes("")
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
+        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
     }
 }

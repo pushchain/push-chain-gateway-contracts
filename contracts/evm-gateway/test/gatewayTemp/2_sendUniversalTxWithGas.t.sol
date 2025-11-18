@@ -129,7 +129,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: bytes("")
         });
     }
@@ -275,7 +275,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             payload: bytes(""),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0),  // ❌ Zero address
-                revertContext: bytes("") 
+                revertMsg: bytes("") 
             }),
             signatureData: bytes("")
         });
@@ -299,7 +299,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             payload: payload,
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0),  
-                revertContext: bytes("") 
+                revertMsg: bytes("") 
             }),
             signatureData: bytes("")
         });
@@ -550,7 +550,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         uint256 gasAmount = 0.002 ether;
         RevertInstructions memory revertInst = RevertInstructions({ 
             fundRecipient: address(0x789), 
-            revertContext: bytes("test context") 
+            revertMsg: bytes("test context") 
         });
         bytes memory sigData = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)));
         
@@ -590,7 +590,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         
         RevertInstructions memory revertInst = RevertInstructions({ 
             fundRecipient: address(0xABC), 
-            revertContext: bytes("payload context") 
+            revertMsg: bytes("payload context") 
         });
         bytes memory sigData = abi.encodePacked(bytes32(uint256(3)), bytes32(uint256(4)));
         
