@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {BaseTest} from "../BaseTest.t.sol";
-import {UniversalGatewayTemp} from "../../src/UniversalGatewayTemp.sol";
-import {TX_TYPE, RevertInstructions, UniversalPayload, UniversalTxRequest} from "../../src/libraries/Types.sol";
-import {Errors} from "../../src/libraries/Errors.sol";
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import { BaseTest } from "../BaseTest.t.sol";
+import { UniversalGatewayTemp } from "../../src/UniversalGatewayTemp.sol";
+import { TX_TYPE, RevertInstructions, UniversalPayload, UniversalTxRequest } from "../../src/libraries/Types.sol";
+import { Errors } from "../../src/libraries/Errors.sol";
+import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 /**
  * @title GatewaySendUniversalTx Test Suite
@@ -98,11 +98,8 @@ contract GatewaySendUniversalTxTest is BaseTest {
             address(weth)
         );
 
-        TransparentUpgradeableProxy tempProxy = new TransparentUpgradeableProxy(
-            address(implementation),
-            address(proxyAdmin),
-            initData
-        );
+        TransparentUpgradeableProxy tempProxy =
+            new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
 
         // Cast proxy to UniversalGatewayTemp
         gatewayTemp = UniversalGatewayTemp(payable(address(tempProxy)));
@@ -118,19 +115,15 @@ contract GatewaySendUniversalTxTest is BaseTest {
         uint256 amount,
         bytes memory payload
     ) internal pure returns (UniversalTxRequest memory) {
-        return
-            UniversalTxRequest({
-                txType: txType,
-                recipient: recipient_,
-                token: token,
-                amount: amount,
-                payload: payload,
-                revertInstruction: RevertInstructions({
-                    fundRecipient: address(0x456),
-                    revertMsg: bytes("")
-                }),
-                signatureData: bytes("")
-            });
+        return UniversalTxRequest({
+            txType: txType,
+            recipient: recipient_,
+            token: token,
+            amount: amount,
+            payload: payload,
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            signatureData: bytes("")
+        });
     }
 
     // =========================
@@ -170,14 +163,10 @@ contract GatewaySendUniversalTxTest is BaseTest {
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: gasAmount}(req);
+        gatewayTemp.sendUniversalTx{ value: gasAmount }(req);
 
         // Assert: TSS received the native ETH
-        assertEq(
-            tss.balance,
-            tssBalanceBefore + gasAmount,
-            "TSS should receive gas amount"
-        );
+        assertEq(tss.balance, tssBalanceBefore + gasAmount, "TSS should receive gas amount");
     }
 
     /// @notice Test sendUniversalTx with TX_TYPE.GAS_AND_PAYLOAD routes correctly
@@ -216,14 +205,10 @@ contract GatewaySendUniversalTxTest is BaseTest {
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: gasAmount}(req);
+        gatewayTemp.sendUniversalTx{ value: gasAmount }(req);
 
         // Assert: TSS received the native ETH
-        assertEq(
-            tss.balance,
-            tssBalanceBefore + gasAmount,
-            "TSS should receive gas amount"
-        );
+        assertEq(tss.balance, tssBalanceBefore + gasAmount, "TSS should receive gas amount");
     }
 
     // =========================
@@ -263,14 +248,10 @@ contract GatewaySendUniversalTxTest is BaseTest {
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
+        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
 
         // Assert: TSS received the native ETH
-        assertEq(
-            tss.balance,
-            tssBalanceBefore + fundsAmount,
-            "TSS should receive funds amount"
-        );
+        assertEq(tss.balance, tssBalanceBefore + fundsAmount, "TSS should receive funds amount");
     }
 
     /// @notice Test sendUniversalTx with TX_TYPE.FUNDS (ERC20) routes correctly
@@ -294,14 +275,10 @@ contract GatewaySendUniversalTxTest is BaseTest {
 
         // Act
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: 0}(req); // No native value for ERC20
+        gatewayTemp.sendUniversalTx{ value: 0 }(req); // No native value for ERC20
 
         // Assert: VAULT received the ERC20
-        assertEq(
-            tokenA.balanceOf(address(this)),
-            vaultBalanceBefore + fundsAmount,
-            "VAULT should receive ERC20"
-        );
+        assertEq(tokenA.balanceOf(address(this)), vaultBalanceBefore + fundsAmount, "VAULT should receive ERC20");
     }
 
     /// @notice Test sendUniversalTx with TX_TYPE.FUNDS_AND_PAYLOAD (no batching) routes correctly
@@ -310,9 +287,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
     ///      - Routes to standard route (_sendTxWithFunds)
     ///      - Emits correct UniversalTx event with payload
     ///      - ERC20 transferred to VAULT
-    function test_SendUniversalTx_FUNDS_AND_PAYLOAD_NoBatching_HappyPath()
-        public
-    {
+    function test_SendUniversalTx_FUNDS_AND_PAYLOAD_NoBatching_HappyPath() public {
         // Arrange: tokenA already enabled in setUp()
         uint256 fundsAmount = 500 ether;
         UniversalPayload memory payload = buildDefaultPayload();
@@ -330,13 +305,9 @@ contract GatewaySendUniversalTxTest is BaseTest {
 
         // Act
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: 0}(req); // No native value (no batching)
+        gatewayTemp.sendUniversalTx{ value: 0 }(req); // No native value (no batching)
 
         // Assert: VAULT received the ERC20
-        assertEq(
-            tokenA.balanceOf(address(this)),
-            vaultBalanceBefore + fundsAmount,
-            "VAULT should receive ERC20"
-        );
+        assertEq(tokenA.balanceOf(address(this)), vaultBalanceBefore + fundsAmount, "VAULT should receive ERC20");
     }
 }
