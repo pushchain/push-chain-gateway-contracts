@@ -18,7 +18,6 @@ contract GatewaySendUniversalTxTest is BaseTest {
     // UniversalGatewayTemp instance (overrides BaseTest's gateway)
     UniversalGatewayTemp public gatewayTemp;
 
-
     // =========================
     //      EVENTS
     // =========================
