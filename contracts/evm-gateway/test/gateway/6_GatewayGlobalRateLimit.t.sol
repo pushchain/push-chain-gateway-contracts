@@ -603,7 +603,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
 
-        uint256 firstEpochAmount = TOKEN_A_THRESHOLD * 3 / 4; // Use 75% of the threshold
+        uint256 firstEpochAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
         // Send in first epoch
         gateway.sendFunds(recipient, address(tokenA), firstEpochAmount, revertInstructions);
@@ -944,7 +944,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Create revert instructions
         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
 
-        uint256 firstAmount = TOKEN_A_THRESHOLD * 3 / 4; // Use 75% of the threshold
+        uint256 firstAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
         // First transaction
         gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
@@ -999,7 +999,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Create revert instructions
         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
 
-        uint256 firstAmount = TOKEN_A_THRESHOLD * 3 / 4; // Use 75% of the threshold
+        uint256 firstAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
         // First transaction
         gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
@@ -1352,11 +1352,11 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.sendFunds(recipient, address(tokenA), tokenAAmount, revertInstructions);
 
         // Send tokenB (75% of threshold)
-        uint256 tokenBAmount = TOKEN_B_THRESHOLD * 3 / 4;
+        uint256 tokenBAmount = (TOKEN_B_THRESHOLD * 3) / 4;
         gateway.sendFunds(recipient, address(tokenB), tokenBAmount, revertInstructions);
 
         // Send native token (90% of threshold)
-        uint256 nativeAmount = NATIVE_THRESHOLD * 9 / 10;
+        uint256 nativeAmount = (NATIVE_THRESHOLD * 9) / 10;
         gateway.sendFunds{ value: nativeAmount }(recipient, address(0), nativeAmount, revertInstructions);
 
         // Verify usage for each token

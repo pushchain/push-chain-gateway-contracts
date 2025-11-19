@@ -402,7 +402,7 @@ contract UniversalGatewayV0 is
 
         // Check and initiate Universal TX 
         _handleDeposits(bridgeToken, bridgeAmount);
-        _sendTxWithFunds_old( //@audit - USES Old internal _sendTxWithFunds() 
+        _sendTxWithFunds_old( 
             _msgSender(),
             address(0),
             bridgeToken,
@@ -437,7 +437,7 @@ contract UniversalGatewayV0 is
         _addFunds(bytes32(0), nativeGasAmount);
 
         _handleDeposits(bridgeToken, bridgeAmount);
-        _sendTxWithFunds_old( //@audit - USES Old internal _sendTxWithFunds() 
+        _sendTxWithFunds_old(
             _msgSender(),
             address(0),
             bridgeToken,
@@ -1333,14 +1333,6 @@ contract UniversalGatewayV0 is
         if (gasAmount == 0 && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
             revert Errors.InvalidAmount();
         }
-        /// NOTE: REMOVED STRICT REQUIREMENTS FOR TESTNET 
-        // if (tx_type == TX_TYPE.GAS_AND_PAYLOAD && payload.length == 0) {
-        //     revert Errors.InvalidInput();
-        // }
-
-        // if(tx_type == TX_TYPE.GAS && payload.length != 0) {
-        //     revert Errors.InvalidInput();
-        // }
         
         if (revertInstruction.fundRecipient == address(0)) {
             revert Errors.InvalidRecipient();
@@ -1377,15 +1369,15 @@ contract UniversalGatewayV0 is
         if (amount == 0) {
             revert Errors.InvalidAmount();
         }
-
-        if( tx_type == TX_TYPE.FUNDS && recipient != address(0)) {
-            revert Errors.InvalidRecipient();
-        }
+        // Note: For Testnet, FUNDS TX TYPE can accept non-zero address 
+        // if( tx_type == TX_TYPE.FUNDS && recipient != address(0)) {
+        //     revert Errors.InvalidRecipient();
+        // }
     }
 
     /// @notice Validation helper for fee abstraction parameters used by the token-gas overload.
     /// @dev    Does not involve any amount checks. Only validates the arguments passed.
-    function _validateFeeAbstractionParams(  //@audit - CHECK IF FUNDS allows ZERO GAS for TOKEN-AS-GAS Route
+    function _validateFeeAbstractionParams(  
         address gasToken,
         uint256 gasAmount,
         uint256 amountOutMinETH,

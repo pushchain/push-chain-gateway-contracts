@@ -62,8 +62,8 @@ contract UpgradeGatewayNewImpl is Script {
         console.log("\n--- Deploying New Implementation ---");
 
         // Deploy new implementation
-        UniversalGatewayV0 newImplementation = new UniversalGatewayV0();
-        newImplementationAddress = address(newImplementation);
+        // UniversalGatewayV0 newImplementation = new UniversalGatewayV0();
+        newImplementationAddress = 0xa594c32593eD1E0Fce83fa1b3A56870b4a1b4ec1;
 
         console.log("New implementation deployed at:", newImplementationAddress);
     }
