@@ -123,7 +123,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         );
     }
 
-    function testUpdateTokenLimitThreshold() public {
+    function testSetTokenLimitThresholdsAllowsUpdating() public {
         // First set initial thresholds
         address[] memory tokens = new address[](1);
         uint256[] memory thresholds = new uint256[](1);
@@ -142,7 +142,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         emit TokenLimitThresholdUpdated(address(tokenA), newThreshold);
 
         vm.prank(admin);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Verify threshold was updated
         assertEq(gateway.tokenToLimitThreshold(address(tokenA)), newThreshold, "TokenA threshold not updated correctly");
@@ -175,18 +175,6 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.setTokenLimitThresholds(tokens, thresholds);
     }
 
-    function testUpdateTokenLimitThresholdArrayMismatch() public {
-        address[] memory tokens = new address[](2);
-        uint256[] memory thresholds = new uint256[](1); // Mismatch
-
-        tokens[0] = address(tokenA);
-        tokens[1] = address(tokenB);
-        thresholds[0] = TOKEN_A_THRESHOLD;
-
-        vm.prank(admin);
-        vm.expectRevert(Errors.InvalidInput.selector);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
-    }
 
     function testOnlyAdminCanSetThresholds() public {
         address[] memory tokens = new address[](1);
@@ -205,22 +193,6 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.setTokenLimitThresholds(tokens, thresholds);
     }
 
-    function testOnlyAdminCanUpdateThresholds() public {
-        address[] memory tokens = new address[](1);
-        uint256[] memory thresholds = new uint256[](1);
-
-        tokens[0] = address(tokenA);
-        thresholds[0] = TOKEN_A_THRESHOLD;
-
-        // Non-admin should not be able to update thresholds
-        vm.prank(user1);
-        vm.expectRevert();
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
-
-        // Admin should be able to update thresholds
-        vm.prank(admin);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
-    }
 
     function testOnlyAdminCanUpdateEpochDuration() public {
         uint256 newDuration = 12 hours;
@@ -1014,7 +986,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         thresholds[0] = newThreshold;
 
         vm.prank(admin);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
 
         (uint256 usedAfterUpdate, uint256 remainingAfterUpdate) = gateway.currentTokenUsage(address(tokenA));
         assertEq(usedAfterUpdate, firstAmount, "Used amount should not change after threshold increase");
@@ -1087,7 +1059,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Admin should be able to update threshold while paused
         vm.prank(admin);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Verify threshold was updated
         assertEq(
@@ -1097,7 +1069,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Non-admin should still not be able to update threshold
         vm.prank(user1);
         vm.expectRevert();
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Unpause the contract
         vm.prank(admin);
@@ -1308,7 +1280,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         thresholds[0] = 0;
 
         vm.prank(admin);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Verify token is now unsupported
         (uint256 usedAfter, uint256 remainingAfter) = gateway.currentTokenUsage(address(tokenA));
@@ -1462,7 +1434,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         thresholds[0] = TOKEN_A_THRESHOLD / 4; // 25% of original
 
         vm.prank(admin);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Continue sending funds
         vm.startPrank(user1);
@@ -1652,7 +1624,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Call the function that should emit the event
         vm.prank(admin);
-        gateway.updateTokenLimitThreshold(tokens, thresholds);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
     }
 
     function testEpochDurationUpdatedEvent() public {
