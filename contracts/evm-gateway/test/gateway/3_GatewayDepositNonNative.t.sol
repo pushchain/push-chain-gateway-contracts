@@ -272,11 +272,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         assertEq(mainnetUSDC.balanceOf(user1), initialUserTokenBalance - bridgeAmount, "User should pay ERC20 tokens");
 
         // Verify VAULT's token balance increased (tokens are now transferred to VAULT)
-        assertEq(
-            mainnetUSDC.balanceOf(gateway.VAULT()),
-            bridgeAmount,
-            "VAULT should receive ERC20 tokens"
-        );
+        assertEq(mainnetUSDC.balanceOf(gateway.VAULT()), bridgeAmount, "VAULT should receive ERC20 tokens");
     }
 
     /// @notice Test sendTxWithFunds (ERC20 gas + ERC20 bridging) with valid parameters
@@ -351,11 +347,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         );
 
         // Verify gateway's token balance increased
-        assertEq(
-            mainnetUSDC.balanceOf(gateway.VAULT()),
-            bridgeAmount,
-            "VAULT should receive USDC for bridging"
-        );
+        assertEq(mainnetUSDC.balanceOf(gateway.VAULT()), bridgeAmount, "VAULT should receive USDC for bridging");
     }
 
     /// @notice Test all ERC20 functions with minimum valid amounts
@@ -381,11 +373,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
         gateway.sendFunds{ value: 0 }(recipient, MAINNET_USDC, minAmount, revertCfg_);
 
         // Test passes if no revert occurs
-        assertEq(
-            IERC20(MAINNET_USDC).balanceOf(gateway.VAULT()),
-            minAmount,
-            "VAULT should receive USDC"
-        );
+        assertEq(IERC20(MAINNET_USDC).balanceOf(gateway.VAULT()), minAmount, "VAULT should receive USDC");
     }
 
     /// @notice Test all ERC20 functions with maximum valid amounts
@@ -572,7 +560,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             revertCfg_,
             bytes("")
         );
-    }   
+    }
 
     /// @notice Test sendFunds (ERC20) with zero bridge amount
     function testSendFunds_ERC20_ZeroBridgeAmount_Reverts() public {
@@ -777,11 +765,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             "User balance should remain unchanged (tokens transferred to gateway)"
         );
 
-        assertEq(
-            mainnetUSDC.balanceOf(gateway.VAULT()),
-            tokenAmount,
-            "VAULT should receive the tokens"
-        );
+        assertEq(mainnetUSDC.balanceOf(gateway.VAULT()), tokenAmount, "VAULT should receive the tokens");
     }
 
     /// @notice Test that ERC20 gas tokens are actually transferred to gateway
@@ -828,11 +812,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             "User balance should remain unchanged (tokens transferred to gateway)"
         );
 
-        assertEq(
-            mainnetUSDC.balanceOf(gateway.VAULT()),
-            bridgeAmount,
-            "VAULT should receive the bridge tokens"
-        );
+        assertEq(mainnetUSDC.balanceOf(gateway.VAULT()), bridgeAmount, "VAULT should receive the bridge tokens");
 
         assertApproxEqAbs(
             tss.balance, initialTSSEthBalance + gasAmountInETH, 1e15, "TSS should receive ETH from gas tokens"

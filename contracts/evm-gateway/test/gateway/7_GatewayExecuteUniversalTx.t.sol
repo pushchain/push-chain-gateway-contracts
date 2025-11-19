@@ -166,9 +166,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         emit UniversalTxExecuted(TX_ID, ORIGIN_CALLER, address(target), ZERO_ADDRESS, AMOUNT, PAYLOAD);
 
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
-        gateway.executeUniversalTx{ value: AMOUNT }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
 
         assertTrue(gateway.isExecuted(TX_ID));
         assertEq(address(target).balance, initialBalance + AMOUNT);
@@ -178,16 +176,12 @@ contract GatewayExecuteUniversalTxTest is Test {
         vm.deal(tss, AMOUNT - 1);
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.executeUniversalTx{ value: AMOUNT - 1 }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT - 1 }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
 
         vm.deal(tss, AMOUNT + 1);
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.executeUniversalTx{ value: AMOUNT + 1 }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT + 1 }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
     }
 
     function testExecuteUniversalTx_NativePath_NonPayableTarget_Reverts() public {
@@ -207,9 +201,7 @@ contract GatewayExecuteUniversalTxTest is Test {
 
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
         vm.expectRevert(abi.encodeWithSelector(Errors.ExecutionFailed.selector));
-        gateway.executeUniversalTx{ value: AMOUNT }(
-            TX_ID, ORIGIN_CALLER, address(revertingTarget), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(revertingTarget), AMOUNT, PAYLOAD);
 
         assertFalse(gateway.isExecuted(TX_ID));
     }
@@ -277,7 +269,7 @@ contract GatewayExecuteUniversalTxTest is Test {
 
     function testExecuteUniversalTx_ERC20Path_SafeApproveFails_Reverts() public {
         approvalToken.setApprovalBehavior(MockTokenApprovalVariants.ApprovalBehavior.RETURN_FALSE);
-        
+
         // Transfer tokens from Vault (test contract) to Gateway
         approvalToken.transfer(address(gateway), AMOUNT);
 
@@ -563,9 +555,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         vm.deal(tss, AMOUNT);
 
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
-        gateway.executeUniversalTx{ value: AMOUNT }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
 
         assertEq(address(target).balance, initialBalance + AMOUNT);
         assertTrue(gateway.isExecuted(TX_ID));

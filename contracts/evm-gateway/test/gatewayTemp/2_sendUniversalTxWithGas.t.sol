@@ -3,12 +3,7 @@ pragma solidity 0.8.26;
 
 import { BaseTest } from "../BaseTest.t.sol";
 import { UniversalGatewayTemp } from "../../src/UniversalGatewayTemp.sol";
-import { 
-    TX_TYPE, 
-    RevertInstructions, 
-    UniversalPayload, 
-    UniversalTxRequest 
-} from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions, UniversalPayload, UniversalTxRequest } from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
@@ -23,10 +18,9 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
  *      - Event emission correctness
  */
 contract GatewaySendUniversalTxWithGasTest is BaseTest {
-    
     // UniversalGatewayTemp instance
     UniversalGatewayTemp public gatewayTemp;
-    
+
     // =========================
     //      EVENTS
     // =========================
@@ -46,29 +40,29 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     // =========================
     function setUp() public override {
         super.setUp();
-        
+
         // Deploy UniversalGatewayTemp
         _deployGatewayTemp();
-        
+
         // Wire oracle to the new gateway instance
         vm.prank(admin);
         gatewayTemp.setEthUsdFeed(address(ethUsdFeedMock));
-        
+
         // Setup token support on gatewayTemp (native + all mock ERC20s)
         address[] memory tokens = new address[](4);
         uint256[] memory thresholds = new uint256[](4);
-        tokens[0] = address(0);        // Native token
-        tokens[1] = address(tokenA);   // Mock ERC20 tokenA
-        tokens[2] = address(usdc);     // Mock ERC20 usdc
-        tokens[3] = address(weth);     // Mock WETH
+        tokens[0] = address(0); // Native token
+        tokens[1] = address(tokenA); // Mock ERC20 tokenA
+        tokens[2] = address(usdc); // Mock ERC20 usdc
+        tokens[3] = address(weth); // Mock WETH
         thresholds[0] = 1000000 ether; // Large threshold for native
         thresholds[1] = 1000000 ether; // Large threshold for tokenA
-        thresholds[2] = 1000000e6;     // Large threshold for usdc (6 decimals)
+        thresholds[2] = 1000000e6; // Large threshold for usdc (6 decimals)
         thresholds[3] = 1000000 ether; // Large threshold for weth
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
-        
+
         // Re-approve tokens to gatewayTemp
         address[] memory users = new address[](5);
         users[0] = user1;
@@ -76,23 +70,23 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         users[2] = user3;
         users[3] = user4;
         users[4] = attacker;
-        
+
         for (uint256 i = 0; i < users.length; i++) {
             vm.prank(users[i]);
             tokenA.approve(address(gatewayTemp), type(uint256).max);
-            
+
             vm.prank(users[i]);
             usdc.approve(address(gatewayTemp), type(uint256).max);
-            
+
             vm.prank(users[i]);
             weth.approve(address(gatewayTemp), type(uint256).max);
         }
     }
-    
+
     /// @notice Deploy UniversalGatewayTemp
     function _deployGatewayTemp() internal {
         UniversalGatewayTemp implementation = new UniversalGatewayTemp();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             UniversalGatewayTemp.initialize.selector,
             admin,
@@ -104,24 +98,20 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             uniV3Router,
             address(weth)
         );
-        
-        TransparentUpgradeableProxy tempProxy = new TransparentUpgradeableProxy(
-            address(implementation), 
-            address(proxyAdmin), 
-            initData
-        );
-        
+
+        TransparentUpgradeableProxy tempProxy =
+            new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
+
         gatewayTemp = UniversalGatewayTemp(payable(address(tempProxy)));
         vm.label(address(gatewayTemp), "UniversalGatewayTemp");
     }
-    
+
     /// @notice Helper to build UniversalTxRequest structs
-    function buildUniversalTxRequest(
-        address recipient_,
-        address token,
-        uint256 amount,
-        bytes memory payload
-    ) internal pure returns (UniversalTxRequest memory) {
+    function buildUniversalTxRequest(address recipient_, address token, uint256 amount, bytes memory payload)
+        internal
+        pure
+        returns (UniversalTxRequest memory)
+    {
         return UniversalTxRequest({
             recipient: recipient_,
             token: token,
@@ -142,12 +132,12 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         // Arrange
         uint256 gasAmount = 0.001 ether;
         bytes memory nonEmptyPayload = abi.encode(buildDefaultPayload());
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,               // amount must be 0 for GAS route (matrix requires !hasFunds)
-            nonEmptyPayload 
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
+            nonEmptyPayload
         );
 
         // Matrix will infer GAS_AND_PAYLOAD (hasPayload && !hasFunds && hasNativeValue)
@@ -161,12 +151,12 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_SucceedsWith_EmptyPayload() public {
         // Arrange
         uint256 gasAmount = 0.001 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
-            bytes("")  // ✅ Empty payload for GAS
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
+            bytes("") // ✅ Empty payload for GAS
         );
 
         uint256 tssBalanceBefore = tss.balance;
@@ -183,13 +173,13 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_AND_PAYLOAD_RevertOn_EmptyPayload() public {
         // Arrange
         uint256 gasAmount = 0.002 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-  // This field is ignored - matrix will infer GAS
+            // This field is ignored - matrix will infer GAS
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
-            bytes("") 
+            0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
+            bytes("")
         );
 
         // Should succeed - matrix routes to GAS
@@ -203,12 +193,12 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         // Arrange
         uint256 gasAmount = 0.002 ether;
         bytes memory nonEmptyPayload = abi.encode(buildDefaultPayload());
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,               // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
-            nonEmptyPayload  // ✅ Non-empty payload for GAS_AND_PAYLOAD
+            0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
+            nonEmptyPayload // ✅ Non-empty payload for GAS_AND_PAYLOAD
         );
 
         uint256 tssBalanceBefore = tss.balance;
@@ -227,14 +217,14 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_AND_PAYLOAD_AllowsZeroGas() public {
         // Arrange: Payload-only request (hasPayload=true, hasFunds=false, hasNativeValue=false)
         // _fetchTxType should infer TX_TYPE.GAS_AND_PAYLOAD for this combination
-        uint256 gasAmount = 0;  // No native value sent
+        uint256 gasAmount = 0; // No native value sent
         bytes memory nonEmptyPayload = abi.encode(buildDefaultPayload());
 
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,                         // No funds (amount = 0)
-            nonEmptyPayload            // Payload is present
+            0, // No funds (amount = 0)
+            nonEmptyPayload // Payload is present
         );
 
         uint256 tssBalanceBefore = tss.balance;
@@ -244,10 +234,10 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.GAS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),     // address(0) for UEA credit
-            token: address(0),         // Native token (even though amount is 0)
-            amount: gasAmount,         // Zero amount
-            payload: nonEmptyPayload,  // Payload is present
+            recipient: address(0), // address(0) for UEA credit
+            token: address(0), // Native token (even though amount is 0)
+            amount: gasAmount, // Zero amount
+            payload: nonEmptyPayload, // Payload is present
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
@@ -264,15 +254,15 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_RevertOn_ZeroFundRecipient() public {
         // Arrange
         uint256 gasAmount = 0.001 ether;
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0),
             token: address(0),
-            amount: 0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            amount: 0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             payload: bytes(""),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0),  // ❌ Zero address
-                revertMsg: bytes("") 
+            revertInstruction: RevertInstructions({
+                fundRecipient: address(0), // ❌ Zero address
+                revertMsg: bytes("")
             }),
             signatureData: bytes("")
         });
@@ -287,16 +277,13 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_AND_PAYLOAD_RevertOn_ZeroFundRecipient() public {
         uint256 gasAmount = 0.002 ether;
         bytes memory payload = abi.encode(buildDefaultPayload());
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0),
             token: address(0),
-            amount: 0,         // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
+            amount: 0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             payload: payload,
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0),  
-                revertMsg: bytes("") 
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0), revertMsg: bytes("") }),
             signatureData: bytes("")
         });
 
@@ -309,14 +296,9 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     /// @dev Zero amount results in 0 USD which is below MIN_CAP_UNIVERSAL_TX_USD
     function test_SendTxWithGas_GAS_RevertOn_ZeroAmount() public {
         // Arrange
-        UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),
-            address(0),
-            0,  
-            bytes("")
-        );
+        UniversalTxRequest memory req = buildUniversalTxRequest(address(0), address(0), 0, bytes(""));
 
-        vm.expectRevert(Errors.InvalidInput.selector);  // _fetchTxType throws InvalidInput for zero native value
+        vm.expectRevert(Errors.InvalidInput.selector); // _fetchTxType throws InvalidInput for zero native value
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
@@ -330,11 +312,11 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_RevertOn_BelowMinCap() public {
         // Arrange: At $2000/ETH, 0.0004 ETH = $0.80 (below $1 min)
         uint256 gasAmount = 0.0004 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -348,11 +330,11 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_RevertOn_AboveMaxCap() public {
         // Arrange: At $2000/ETH, 0.006 ETH = $12 (above $10 max)
         uint256 gasAmount = 0.006 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -366,11 +348,11 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_SucceedsAt_ExactMinCap() public {
         // Arrange: At $2000/ETH, 0.0005 ETH = exactly $1
         uint256 gasAmount = 0.0005 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -395,13 +377,13 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_BlockCap_Disabled_AllowsUnlimited() public {
         // Arrange: Ensure block cap is 0 (disabled by default)
         assertEq(gatewayTemp.BLOCK_USD_CAP(), 0, "Block cap should be 0 by default");
-        
+
         uint256 gasAmount = 0.002 ether; // $4 per call at $2000/ETH
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -423,14 +405,14 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         // Arrange: Set block cap to $5 (5e18)
         vm.prank(admin);
         gatewayTemp.setBlockUsdCap(5e18);
-        
+
         // At $2000/ETH, 0.003 ETH = $6 (exceeds $5 cap)
         uint256 gasAmount = 0.003 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -446,13 +428,13 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         // Arrange: Set block cap to $10 (10e18)
         vm.prank(admin);
         gatewayTemp.setBlockUsdCap(10e18);
-        
+
         // First call: 0.003 ETH = $6 at $2000/ETH (60% of cap)
         uint256 firstAmount = 0.003 ether;
         UniversalTxRequest memory req1 = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -461,7 +443,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         UniversalTxRequest memory req2 = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -475,7 +457,6 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         gatewayTemp.sendUniversalTx{ value: secondAmount }(req2);
     }
 
-    
     // =========================
     //      C4: NATIVE FORWARDING & EVENT
     // =========================
@@ -487,7 +468,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -498,7 +479,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         gatewayTemp.sendUniversalTx{ value: gasAmount }(req);
 
         assertEq(tss.balance, tssBalanceBefore + gasAmount, "TSS should receive exact gas amount");
-        
+
         assertEq(address(gatewayTemp).balance, gatewayBalanceBefore, "Gateway should not hold funds");
     }
 
@@ -507,11 +488,11 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_AND_PAYLOAD_ForwardsNative_ToTSS() public {
         uint256 gasAmount = 0.003 ether;
         bytes memory payload = abi.encode(buildDefaultPayload());
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             payload
         );
 
@@ -524,7 +505,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
 
         // Assert: TSS received funds
         assertEq(tss.balance, tssBalanceBefore + gasAmount, "TSS should receive exact gas amount");
-        
+
         // Assert: Gateway balance unchanged
         assertEq(address(gatewayTemp).balance, gatewayBalanceBefore, "Gateway should not hold funds");
     }
@@ -534,16 +515,14 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_EmitsCorrect_UniversalTxEvent() public {
         // Arrange
         uint256 gasAmount = 0.002 ether;
-        RevertInstructions memory revertInst = RevertInstructions({ 
-            fundRecipient: address(0x789), 
-            revertMsg: bytes("test context") 
-        });
+        RevertInstructions memory revertInst =
+            RevertInstructions({ fundRecipient: address(0x789), revertMsg: bytes("test context") });
         bytes memory sigData = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)));
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0),
             token: address(0),
-            amount: 0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            amount: 0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             payload: bytes(""),
             revertInstruction: revertInst,
             signatureData: sigData
@@ -554,10 +533,10 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.GAS,
             sender: user1,
-            recipient: address(0),  // Always address(0) for gas routes (UEA credit)
-            token: address(0),      // Native token
+            recipient: address(0), // Always address(0) for gas routes (UEA credit)
+            token: address(0), // Native token
             amount: gasAmount,
-            payload: bytes(""),     // Empty for GAS
+            payload: bytes(""), // Empty for GAS
             revertInstruction: revertInst,
             signatureData: sigData
         });
@@ -572,17 +551,15 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         uint256 gasAmount = 0.003 ether;
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
-        RevertInstructions memory revertInst = RevertInstructions({ 
-            fundRecipient: address(0xABC), 
-            revertMsg: bytes("payload context") 
-        });
+
+        RevertInstructions memory revertInst =
+            RevertInstructions({ fundRecipient: address(0xABC), revertMsg: bytes("payload context") });
         bytes memory sigData = abi.encodePacked(bytes32(uint256(3)), bytes32(uint256(4)));
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0),
             token: address(0),
-            amount: 0,         // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
+            amount: 0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             payload: encodedPayload,
             revertInstruction: revertInst,
             signatureData: sigData
@@ -592,10 +569,10 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.GAS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // Always address(0) for gas routes (UEA credit)
-            token: address(0),      // Native token
+            recipient: address(0), // Always address(0) for gas routes (UEA credit)
+            token: address(0), // Native token
             amount: gasAmount,
-            payload: encodedPayload,  // Non-empty for GAS_AND_PAYLOAD
+            payload: encodedPayload, // Non-empty for GAS_AND_PAYLOAD
             revertInstruction: revertInst,
             signatureData: sigData
         });
@@ -608,11 +585,11 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     /// @dev Verify empty signature data is acceptable
     function test_SendTxWithGas_Event_WithEmpty_SignatureData() public {
         uint256 gasAmount = 0.001 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
         // signatureData is already empty
@@ -626,13 +603,12 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             amount: gasAmount,
             payload: bytes(""),
             revertInstruction: req.revertInstruction,
-            signatureData: bytes("")  // Empty
-        });
+            signatureData: bytes("") // Empty
+         });
 
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: gasAmount }(req);
     }
-
 
     // =========================
     //      ADDITIONAL EDGE CASES
@@ -644,14 +620,14 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         // Arrange: Set block cap to $10
         vm.prank(admin);
         gatewayTemp.setBlockUsdCap(10e18);
-        
+
         // Each user sends $3 worth
         uint256 gasAmount = 0.0015 ether; // $3 at $2000/ETH
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -684,13 +660,13 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         // Arrange: Set block cap to $10
         vm.prank(admin);
         gatewayTemp.setBlockUsdCap(10e18);
-        
+
         // GAS call: $6
         uint256 gasAmount1 = 0.003 ether;
         UniversalTxRequest memory req1 = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -698,7 +674,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         uint256 gasAmount2 = 0.0025 ether;
         bytes memory payload = abi.encode(buildDefaultPayload());
         UniversalTxRequest memory req2 = buildUniversalTxRequest(
-            address(0),         // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
+            address(0), // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             address(0),
             0,
             payload
@@ -722,13 +698,13 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             largePayload[i] = bytes1(uint8(i % 256));
         }
         bytes memory encodedPayload = abi.encode(largePayload);
-        
+
         uint256 gasAmount = 0.002 ether; // $4 at $2000/ETH (within caps)
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,         // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             encodedPayload
         );
 
@@ -749,7 +725,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0),
             address(0),
-            0,               // amount must be 0 for GAS route (matrix requires !hasFunds)
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("")
         );
 
@@ -762,5 +738,4 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         // Assert: Gateway balance should be 0
         assertEq(address(gatewayTemp).balance, 0, "Gateway should not hold any native ETH");
     }
-
 }

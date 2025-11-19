@@ -3,12 +3,7 @@ pragma solidity 0.8.26;
 
 import { BaseTest } from "../BaseTest.t.sol";
 import { UniversalGatewayTemp } from "../../src/UniversalGatewayTemp.sol";
-import { 
-    TX_TYPE, 
-    RevertInstructions, 
-    UniversalPayload, 
-    UniversalTxRequest 
-} from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions, UniversalPayload, UniversalTxRequest } from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
@@ -23,11 +18,10 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
  *      - hasNativeValue (G): nativeValue > 0
  */
 contract GatewayFetchTxTypeTest is BaseTest {
-    
     UniversalGatewayTemp public gatewayTemp;
     address public erc20A;
     address public erc20B;
-    
+
     // =========================
     //      EVENTS
     // =========================
@@ -47,15 +41,15 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     function setUp() public override {
         super.setUp();
-        
+
         _deployGatewayTemp();
-        
+
         vm.prank(admin);
         gatewayTemp.setEthUsdFeed(address(ethUsdFeedMock));
-        
+
         erc20A = address(tokenA);
         erc20B = address(usdc);
-        
+
         // Setup token support
         address[] memory tokens = new address[](4);
         uint256[] memory thresholds = new uint256[](4);
@@ -67,20 +61,20 @@ contract GatewayFetchTxTypeTest is BaseTest {
         thresholds[1] = 1000000 ether;
         thresholds[2] = 1000000e6;
         thresholds[3] = 1000000 ether;
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
-        
+
         // Approve tokens
         vm.prank(user1);
         tokenA.approve(address(gatewayTemp), type(uint256).max);
         vm.prank(user1);
         usdc.approve(address(gatewayTemp), type(uint256).max);
     }
-    
+
     function _deployGatewayTemp() internal {
         UniversalGatewayTemp implementation = new UniversalGatewayTemp();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             UniversalGatewayTemp.initialize.selector,
             admin,
@@ -92,40 +86,34 @@ contract GatewayFetchTxTypeTest is BaseTest {
             uniV3Router,
             address(weth)
         );
-        
-        TransparentUpgradeableProxy tempProxy = new TransparentUpgradeableProxy(
-            address(implementation), 
-            address(proxyAdmin), 
-            initData
-        );
-        
+
+        TransparentUpgradeableProxy tempProxy =
+            new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
+
         gatewayTemp = UniversalGatewayTemp(payable(address(tempProxy)));
         vm.label(address(gatewayTemp), "UniversalGatewayTemp");
     }
-    
+
     // =========================
     //      HELPER FUNCTIONS
     // =========================
-    
+
     /// @notice Helper to build UniversalTxRequest
-    function makeReq(
-        bytes memory payloadBytes,
-        uint256 amount,
-        address token
-    ) internal pure returns (UniversalTxRequest memory) {
+    function makeReq(bytes memory payloadBytes, uint256 amount, address token)
+        internal
+        pure
+        returns (UniversalTxRequest memory)
+    {
         return UniversalTxRequest({
-            recipient: address(0),  // Always address(0) - funds go to caller's UEA on Push Chain
+            recipient: address(0), // Always address(0) - funds go to caller's UEA on Push Chain
             token: token,
             amount: amount,
             payload: payloadBytes,
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0x456), 
-                revertMsg: bytes("test") 
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("sig")
         });
     }
-    
+
     /// @notice Helper to get non-empty payload
     function nonEmptyPayload() internal view returns (bytes memory) {
         return abi.encode(buildDefaultPayload());
@@ -134,12 +122,12 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 1: TX_TYPE.GAS
     // =========================
-    
+
     /// @notice Test 1.1.1: Basic GAS with native token
     function test_GAS_basic_native() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 0, address(0));
-        uint256 nativeValue = 0.002 ether;  // $4 at $2000/ETH - within $1-$10 cap
-        
+        uint256 nativeValue = 0.002 ether; // $4 at $2000/ETH - within $1-$10 cap
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.GAS,
@@ -151,16 +139,16 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 1.1.2: GAS with non-native token (token field ignored)
     function test_GAS_basic_nonNativeToken_ignored() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 0, erc20A);
-        uint256 nativeValue = 0.002 ether;  // $4 at $2000/ETH - within $1-$10 cap
-        
+        uint256 nativeValue = 0.002 ether; // $4 at $2000/ETH - within $1-$10 cap
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.GAS,
@@ -172,16 +160,16 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 1.2.1: GAS mutation with funds becomes FUNDS
     function test_GAS_mutation_hasFunds_becomes_FUNDS_native() public {
-        uint256 amount = 100 ether;  // FUNDS route doesn't have USD cap restrictions
+        uint256 amount = 100 ether; // FUNDS route doesn't have USD cap restrictions
         UniversalTxRequest memory req = makeReq(bytes(""), amount, address(0));
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS,
@@ -193,16 +181,16 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: amount }(req);
     }
-    
+
     /// @notice Test 1.2.2: GAS mutation with payload becomes GAS_AND_PAYLOAD
     function test_GAS_mutation_hasPayload_becomes_GAS_AND_PAYLOAD() public {
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 0, address(0));
-        uint256 nativeValue = 0.002 ether;  // $4 at $2000/ETH - within $1-$10 cap
-        
+        uint256 nativeValue = 0.002 ether; // $4 at $2000/ETH - within $1-$10 cap
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.GAS_AND_PAYLOAD,
@@ -214,15 +202,15 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 1.2.3: GAS mutation with no native value reverts
     function test_GAS_mutation_noNativeValue_revert() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 0, address(0));
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
@@ -231,12 +219,12 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 2: TX_TYPE.GAS_AND_PAYLOAD
     // =========================
-    
+
     /// @notice Test 2.1.1: Basic GAS_AND_PAYLOAD
     function test_GAS_AND_PAYLOAD_basic() public {
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 0, address(0));
-        uint256 nativeValue = 0.003 ether;  // $6 at $2000/ETH - within $1-$10 cap
-        
+        uint256 nativeValue = 0.003 ether; // $6 at $2000/ETH - within $1-$10 cap
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.GAS_AND_PAYLOAD,
@@ -248,16 +236,16 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 2.1.2: GAS_AND_PAYLOAD with non-native token (ignored)
     function test_GAS_AND_PAYLOAD_nonNativeToken_ignored() public {
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 0, erc20A);
-        uint256 nativeValue = 0.003 ether;  // $6 at $2000/ETH - within $1-$10 cap
-        
+        uint256 nativeValue = 0.003 ether; // $6 at $2000/ETH - within $1-$10 cap
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.GAS_AND_PAYLOAD,
@@ -269,38 +257,38 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 2.2.1: GAS_AND_PAYLOAD mutation with funds becomes FUNDS_AND_PAYLOAD
     function test_GAS_AND_PAYLOAD_mutation_addFunds_native_becomes_FUNDS_AND_PAYLOAD() public {
-        uint256 amount = 100 ether;  // FUNDS_AND_PAYLOAD route doesn't have USD cap restrictions
+        uint256 amount = 100 ether; // FUNDS_AND_PAYLOAD route doesn't have USD cap restrictions
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), amount, address(0));
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // Always address(0) for UEA credit
+            recipient: address(0), // Always address(0) for UEA credit
             token: address(0),
             amount: amount,
             payload: nonEmptyPayload(),
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: amount }(req);
     }
-    
+
     /// @notice Test 2.2.2: GAS_AND_PAYLOAD with zero native value (payload-only)
     function test_GAS_AND_PAYLOAD_payload_only_native0() public {
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 0, address(0));
-        
+
         uint256 tssBalanceBefore = tss.balance;
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.GAS_AND_PAYLOAD,
@@ -312,22 +300,22 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
-        
+
         assertEq(tss.balance, tssBalanceBefore, "TSS balance should remain unchanged");
     }
 
     // =========================
     //      GROUP 3: TX_TYPE.FUNDS (Native)
     // =========================
-    
+
     /// @notice Test 3.1.1: Basic native FUNDS
     function test_FUNDS_native_basic() public {
-        uint256 amount = 100 ether;  // FUNDS route doesn't have USD cap restrictions
+        uint256 amount = 100 ether; // FUNDS route doesn't have USD cap restrictions
         UniversalTxRequest memory req = makeReq(bytes(""), amount, address(0));
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS,
@@ -339,15 +327,15 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: amount }(req);
     }
-    
+
     /// @notice Test 3.2.1: Native FUNDS missing native value reverts
     function test_FUNDS_native_missingNativeValue_revert() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 100 ether, address(0));
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
@@ -356,12 +344,12 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 4: TX_TYPE.FUNDS (ERC-20)
     // =========================
-    
+
     /// @notice Test 4.1.1: Basic ERC-20 FUNDS
     function test_FUNDS_erc20_basic() public {
         uint256 amount = 1000 ether;
         UniversalTxRequest memory req = makeReq(bytes(""), amount, erc20A);
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS,
@@ -373,24 +361,24 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
-    
+
     /// @notice Test 4.2.1: ERC-20 FUNDS with native value reverts
     function test_FUNDS_erc20_withNativeValue_revert() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 1000 ether, erc20A);
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 1 ether }(req);
     }
-    
+
     /// @notice Test 4.2.2: ERC-20 with no funds reverts
     function test_FUNDS_erc20_noFunds_revert() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 0, erc20A);
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
@@ -399,12 +387,12 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 5: TX_TYPE.FUNDS_AND_PAYLOAD (No batching - ERC-20 only)
     // =========================
-    
+
     /// @notice Test 5.1.1: FUNDS_AND_PAYLOAD no batching ERC-20
     function test_FAP_nobatching_erc20_basic() public {
         uint256 amount = 500 ether;
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), amount, erc20A);
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
@@ -416,26 +404,26 @@ contract GatewayFetchTxTypeTest is BaseTest {
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
-    
+
     /// @notice Test 5.2.1: FAP no batching with native value becomes ERC-20 + gas batching
     function test_FAP_nobatching_addNativeValue_becomes_FAP_erc20_plus_gas() public {
         uint256 amount = 500 ether;
-        uint256 nativeValue = 0.003 ether;  // $6 gas within $1-$10 cap
+        uint256 nativeValue = 0.003 ether; // $6 gas within $1-$10 cap
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), amount, erc20A);
-        
+
         // Should emit TWO events: one for GAS, one for FUNDS_AND_PAYLOAD
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 5.2.2: FAP no batching missing funds reverts
     function test_FAP_nobatching_missingFunds_revert() public {
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 0, erc20A);
-        
+
         // This routes to GAS_AND_PAYLOAD (payload-only)
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
@@ -444,43 +432,43 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 6: TX_TYPE.FUNDS_AND_PAYLOAD (Native + Gas batching)
     // =========================
-    
+
     /// @notice Test 6.1.1: FAP native batching basic
     function test_FAP_native_batching_basic() public {
-        uint256 amount = 100 ether;  // Bridge amount
-        uint256 nativeValue = 100.002 ether;  // Bridge + gas (0.002 = $4 gas within cap)
+        uint256 amount = 100 ether; // Bridge amount
+        uint256 nativeValue = 100.002 ether; // Bridge + gas (0.002 = $4 gas within cap)
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), amount, address(0));
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 6.1.2: FAP native batching with zero extra gas
     function test_FAP_native_batching_zeroExtraGas_ok() public {
         uint256 amount = 100 ether;
-        uint256 nativeValue = 100 ether;  // Exact amount, no extra gas
+        uint256 nativeValue = 100 ether; // Exact amount, no extra gas
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), amount, address(0));
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // Always address(0) for UEA credit
+            recipient: address(0), // Always address(0) for UEA credit
             token: address(0),
             amount: amount,
             payload: nonEmptyPayload(),
             revertInstruction: req.revertInstruction,
             signatureData: req.signatureData
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
-    
+
     /// @notice Test 6.2.1: FAP native batching missing native value reverts
     function test_FAP_native_batching_missingNativeValue_revert() public {
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 10 ether, address(0));
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
@@ -489,13 +477,13 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 7: TX_TYPE.FUNDS_AND_PAYLOAD (ERC-20 + Gas batching)
     // =========================
-    
+
     /// @notice Test 7.1.1: FAP ERC-20 plus gas basic
     function test_FAP_erc20_plus_gas_basic() public {
         uint256 amount = 1000 ether;
-        uint256 nativeValue = 0.003 ether;  // $6 gas within $1-$10 cap
+        uint256 nativeValue = 0.003 ether; // $6 gas within $1-$10 cap
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), amount, erc20A);
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req);
     }
@@ -503,38 +491,38 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 8: Invalid combinations
     // =========================
-    
+
     /// @notice Test 8.1: All zero reverts
     function test_Invalid_allZero() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 0, erc20A);
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
-    
+
     /// @notice Test 8.2: Payload only with no native (routes to GAS_AND_PAYLOAD)
     function test_Invalid_payload_only_noNative() public {
         UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 0, address(0));
-        
+
         // This is actually valid - routes to GAS_AND_PAYLOAD with zero gas
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
-    
+
     /// @notice Test 8.3: Native funds with no native value reverts
     function test_Invalid_nativeFunds_noNativeValue() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 7 ether, address(0));
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
-    
+
     /// @notice Test 8.4: ERC-20 funds with native value reverts
     function test_Invalid_erc20Funds_withNoPayload_andNativeValue() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 1000 ether, erc20A);
-        
+
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 1 ether }(req);
@@ -543,119 +531,103 @@ contract GatewayFetchTxTypeTest is BaseTest {
     // =========================
     //      GROUP 9: Invariance tests
     // =========================
-    
+
     /// @notice Test 9.1: Recipient field does not affect txType
     function test_Invariance_recipient_ignored() public {
         uint256 amount = 500 ether;
-        uint256 nativeValue = 0.003 ether;  // $6 gas within $1-$10 cap
-        
+        uint256 nativeValue = 0.003 ether; // $6 gas within $1-$10 cap
+
         // Test with recipient = address(0)
         UniversalTxRequest memory req1 = UniversalTxRequest({
             recipient: address(0),
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0x456), 
-                revertMsg: bytes("test") 
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("sig")
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req1);
-        
+
         // Test with recipient = non-zero (still routes the same way)
         UniversalTxRequest memory req2 = UniversalTxRequest({
             recipient: address(0x999),
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0x456), 
-                revertMsg: bytes("test") 
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("sig")
         });
-        
+
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req2);
     }
-    
+
     /// @notice Test 9.2: SignatureData does not affect txType
     function test_Invariance_signatureData_ignored() public {
         uint256 amount = 500 ether;
-        uint256 nativeValue = 0.003 ether;  // $6 gas within $1-$10 cap
-        
+        uint256 nativeValue = 0.003 ether; // $6 gas within $1-$10 cap
+
         // Test with empty signatureData
         UniversalTxRequest memory req1 = UniversalTxRequest({
             recipient: address(0),
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0x456), 
-                revertMsg: bytes("test") 
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("")
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req1);
-        
+
         // Test with non-empty signatureData
         UniversalTxRequest memory req2 = UniversalTxRequest({
             recipient: address(0),
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0x456), 
-                revertMsg: bytes("test") 
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("different signature data")
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req2);
     }
-    
+
     /// @notice Test 9.3: RevertInstruction context does not affect txType
     function test_Invariance_revertInstruction_onlyRecipientMatters() public {
         uint256 amount = 500 ether;
-        uint256 nativeValue = 0.003 ether;  // $6 gas within $1-$10 cap
-        
+        uint256 nativeValue = 0.003 ether; // $6 gas within $1-$10 cap
+
         // Test with different revertMsg
         UniversalTxRequest memory req1 = UniversalTxRequest({
             recipient: address(0),
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0x456), 
-                revertMsg: bytes("context1") 
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("context1") }),
             signatureData: bytes("sig")
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req1);
-        
+
         UniversalTxRequest memory req2 = UniversalTxRequest({
             recipient: address(0),
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0x456), 
-                revertMsg: bytes("completely different context") 
+            revertInstruction: RevertInstructions({
+                fundRecipient: address(0x456),
+                revertMsg: bytes("completely different context")
             }),
             signatureData: bytes("sig")
         });
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req2);
     }
 }
-

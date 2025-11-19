@@ -331,7 +331,7 @@ abstract contract BaseTest is Test {
     }
 
     function revertCfg(address fundRecipient_) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: fundRecipient_, revertMsg: bytes("") });    
+        return RevertInstructions({ fundRecipient: fundRecipient_, revertMsg: bytes("") });
     }
 
     /// @notice Build a default payload for testing (commonly used across test files)

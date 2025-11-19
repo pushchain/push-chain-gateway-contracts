@@ -3,10 +3,10 @@ pragma solidity 0.8.26;
 
 import { BaseTest } from "../BaseTest.t.sol";
 import { UniversalGatewayTemp } from "../../src/UniversalGatewayTemp.sol";
-import { 
-    TX_TYPE, 
-    RevertInstructions, 
-    UniversalPayload, 
+import {
+    TX_TYPE,
+    RevertInstructions,
+    UniversalPayload,
     UniversalTxRequest,
     VerificationType
 } from "../../src/libraries/Types.sol";
@@ -18,9 +18,9 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
  * @title GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3 Test Suite
  * @notice Comprehensive tests for _sendTxWithFunds (standard route) via sendUniversalTx
  * @dev Tests FUNDS_AND_PAYLOAD transaction type - Case 2.3: ERC20 + Native Batching
- * 
+ *
  * Phase 4 - TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.3 (ERC20 batching, msg.value > 0, token != native)
- * 
+ *
  * Case 2.3: Batching of Gas + Funds_and_Payload (msg.value > 0, token != native)
  * - User refills UEA's gas (native ETH) AND bridges ERC20 token in one transaction
  * - No Split Logic: gasAmount = msg.value (entire msg.value is gas)
@@ -33,21 +33,20 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
  *   4. Native ETH forwarded to TSS
  */
 contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
-    
     // UniversalGatewayTemp instance
     UniversalGatewayTemp public gatewayTemp;
-    
+
     // =========================
     //      EVENTS
     // =========================
-    event UniversalTx(
+    event UniversalTx( // Placeholder value - ignored by matrix inference but required for struct
         address indexed sender,
         address indexed recipient,
         address token,
         uint256 amount,
         bytes payload,
         RevertInstructions revertInstruction,
-        TX_TYPE txType, // Placeholder value - ignored by matrix inference but required for struct
+        TX_TYPE txType,
         bytes signatureData
     );
 
@@ -56,29 +55,29 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     // =========================
     function setUp() public override {
         super.setUp();
-        
+
         // Deploy UniversalGatewayTemp
         _deployGatewayTemp();
-        
+
         // Wire oracle to the new gateway instance
         vm.prank(admin);
         gatewayTemp.setEthUsdFeed(address(ethUsdFeedMock));
-        
+
         // Setup token support on gatewayTemp (native + all mock ERC20s)
         address[] memory tokens = new address[](4);
         uint256[] memory thresholds = new uint256[](4);
-        tokens[0] = address(0);        // Native token
-        tokens[1] = address(tokenA);   // Mock ERC20 tokenA
-        tokens[2] = address(usdc);     // Mock ERC20 usdc
-        tokens[3] = address(weth);     // Mock WETH
+        tokens[0] = address(0); // Native token
+        tokens[1] = address(tokenA); // Mock ERC20 tokenA
+        tokens[2] = address(usdc); // Mock ERC20 usdc
+        tokens[3] = address(weth); // Mock WETH
         thresholds[0] = 1000000 ether; // Large threshold for native
         thresholds[1] = 1000000 ether; // Large threshold for tokenA
-        thresholds[2] = 1000000e6;     // Large threshold for usdc (6 decimals)
+        thresholds[2] = 1000000e6; // Large threshold for usdc (6 decimals)
         thresholds[3] = 1000000 ether; // Large threshold for weth
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
-        
+
         // Re-approve tokens to gatewayTemp
         address[] memory users = new address[](5);
         users[0] = user1;
@@ -86,23 +85,23 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         users[2] = user3;
         users[3] = user4;
         users[4] = attacker;
-        
+
         for (uint256 i = 0; i < users.length; i++) {
             vm.prank(users[i]);
             tokenA.approve(address(gatewayTemp), type(uint256).max);
-            
+
             vm.prank(users[i]);
             usdc.approve(address(gatewayTemp), type(uint256).max);
-            
+
             vm.prank(users[i]);
             weth.approve(address(gatewayTemp), type(uint256).max);
         }
     }
-    
+
     /// @notice Deploy UniversalGatewayTemp
     function _deployGatewayTemp() internal {
         UniversalGatewayTemp implementation = new UniversalGatewayTemp();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             UniversalGatewayTemp.initialize.selector,
             admin,
@@ -114,24 +113,20 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             uniV3Router,
             address(weth)
         );
-        
-        TransparentUpgradeableProxy tempProxy = new TransparentUpgradeableProxy(
-            address(implementation), 
-            address(proxyAdmin), 
-            initData
-        );
-        
+
+        TransparentUpgradeableProxy tempProxy =
+            new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
+
         gatewayTemp = UniversalGatewayTemp(payable(address(tempProxy)));
         vm.label(address(gatewayTemp), "UniversalGatewayTemp");
     }
-    
+
     /// @notice Helper to build UniversalTxRequest structs
-    function buildUniversalTxRequest(
-        address recipient_,
-        address token,
-        uint256 amount,
-        bytes memory payload
-    ) internal pure returns (UniversalTxRequest memory) {
+    function buildUniversalTxRequest(address recipient_, address token, uint256 amount, bytes memory payload)
+        internal
+        pure
+        returns (UniversalTxRequest memory)
+    {
         return UniversalTxRequest({
             recipient: recipient_,
             token: token,
@@ -159,15 +154,15 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     ///      - ERC20 rate limit consumed
     ///      - Native rate limit NOT consumed
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_Batching_HappyPath() public {
-        uint256 msgValue = 0.002 ether;  // $4 for gas
-        uint256 erc20Amount = 100 ether;  // 100 tokenA
-        
+        uint256 msgValue = 0.002 ether; // $4 for gas
+        uint256 erc20Amount = 100 ether; // 100 tokenA
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
-            address(tokenA),  // ERC20 token
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(tokenA), // ERC20 token
             erc20Amount,
             encodedPayload
         );
@@ -183,10 +178,10 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.GAS,
             sender: user1,
-            recipient: address(0),  // Gas always credits UEA
-            token: address(0),      // Native token for gas
+            recipient: address(0), // Gas always credits UEA
+            token: address(0), // Native token for gas
             amount: msgValue,
-            payload: bytes(""),     // Gas event has empty payload
+            payload: bytes(""), // Gas event has empty payload
             revertInstruction: req.revertInstruction,
             signatureData: bytes("")
         });
@@ -196,10 +191,10 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // FUNDS_AND_PAYLOAD always has recipient == address(0)
+            recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
             token: address(tokenA), // ERC20 token for funds
             amount: erc20Amount,
-            payload: encodedPayload,  // Funds event has full payload
+            payload: encodedPayload, // Funds event has full payload
             revertInstruction: req.revertInstruction,
             signatureData: bytes("")
         });
@@ -208,12 +203,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         gatewayTemp.sendUniversalTx{ value: msgValue }(req);
 
         assertEq(tss.balance, tssBalanceBefore + msgValue, "TSS should receive native ETH");
-        
+
         assertEq(tokenA.balanceOf(address(this)), vaultBalanceBefore + erc20Amount, "Vault should receive ERC20");
-        
+
         (uint256 erc20UsedAfter,) = gatewayTemp.currentTokenUsage(address(tokenA));
         assertEq(erc20UsedAfter, erc20UsedBefore + erc20Amount, "ERC20 rate limit should be consumed");
-        
+
         (uint256 nativeUsedAfter,) = gatewayTemp.currentTokenUsage(address(0));
         assertEq(nativeUsedAfter, nativeUsedBefore, "Native rate limit should NOT be consumed");
     }
@@ -223,7 +218,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_PayloadPreserved() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         // Custom payload
         UniversalPayload memory customPayload = UniversalPayload({
             to: address(0xABCD),
@@ -237,9 +232,9 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             vType: VerificationType.signedVerification
         });
         bytes memory encodedPayload = abi.encode(customPayload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -253,7 +248,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             recipient: address(0),
             token: address(0),
             amount: msgValue,
-            payload: bytes(""),  // Empty for gas event
+            payload: bytes(""), // Empty for gas event
             revertInstruction: req.revertInstruction,
             signatureData: bytes("")
         });
@@ -263,10 +258,10 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // FUNDS_AND_PAYLOAD always has recipient == address(0)
+            recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
             token: address(tokenA),
             amount: erc20Amount,
-            payload: encodedPayload,  // Full payload preserved
+            payload: encodedPayload, // Full payload preserved
             revertInstruction: req.revertInstruction,
             signatureData: bytes("")
         });
@@ -278,14 +273,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @notice Test Case 2.3 - Small gas with large ERC20 funds
     /// @dev Verify independent amounts work correctly (opposite asymmetry)
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_SmallGasLargeFunds() public {
-        uint256 msgValue = 0.0005 ether;  // $1 for gas (at min cap)
-        uint256 erc20Amount = 10000 ether;  // Large ERC20 amount
-        
+        uint256 msgValue = 0.0005 ether; // $1 for gas (at min cap)
+        uint256 erc20Amount = 10000 ether; // Large ERC20 amount
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -304,14 +299,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @notice Test Case 2.3 - Minimal gas amount at min cap
     /// @dev gasAmount = 0.0005 ETH (exactly $1 at $2000/ETH)
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_MinimalGasAmount() public {
-        uint256 msgValue = 0.0005 ether;  // $1 (at min cap)
+        uint256 msgValue = 0.0005 ether; // $1 (at min cap)
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -330,12 +325,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_MultipleUsers() public {
         uint256 msgValue = 0.001 ether;
         uint256 erc20Amount = 50 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -358,7 +353,9 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         // Assert: All succeeded
         assertEq(tss.balance, tssBalanceBefore + (msgValue * 3), "All users should succeed - TSS");
-        assertEq(tokenA.balanceOf(address(this)), vaultBalanceBefore + (erc20Amount * 3), "All users should succeed - Vault");
+        assertEq(
+            tokenA.balanceOf(address(this)), vaultBalanceBefore + (erc20Amount * 3), "All users should succeed - Vault"
+        );
     }
 
     // =========================
@@ -369,12 +366,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @dev Ensures Case 2.3 is NOT triggered when msg.value == 0
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_ZeroMsgValue_RoutesToCase2_1() public {
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -395,12 +392,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_EmptyPayload() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
-            bytes("")  // Empty payload
+            bytes("") // Empty payload
         );
 
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -412,14 +409,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @dev With amount=0, payload non-empty, msg.value>0, matrix infers GAS_AND_PAYLOAD (not FUNDS_AND_PAYLOAD)
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_ZeroAmount() public {
         uint256 msgValue = 0.002 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
-            0,  // Zero amount
+            0, // Zero amount
             encodedPayload
         );
 
@@ -429,7 +426,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.GAS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // Gas routes always credit UEA
+            recipient: address(0), // Gas routes always credit UEA
             token: address(0),
             amount: msgValue,
             payload: encodedPayload,
@@ -446,18 +443,18 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_ZeroFundRecipient() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
-            recipient: address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            recipient: address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             token: address(tokenA),
             amount: erc20Amount,
             payload: encodedPayload,
-            revertInstruction: RevertInstructions({ 
-                fundRecipient: address(0),  // Zero address
-                revertMsg: bytes("") 
+            revertInstruction: RevertInstructions({
+                fundRecipient: address(0), // Zero address
+                revertMsg: bytes("")
             }),
             signatureData: bytes("")
         });
@@ -470,14 +467,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @notice Test Case 2.3 - Gas amount below min USD cap reverts
     /// @dev At $2000/ETH, min cap = $1 = 0.0005 ETH
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_GasAmountBelowMinUSDCap() public {
-        uint256 msgValue = 0.0004 ether;  // $0.80 (below $1 min)
+        uint256 msgValue = 0.0004 ether; // $0.80 (below $1 min)
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -491,14 +488,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @notice Test Case 2.3 - Gas amount above max USD cap reverts
     /// @dev At $2000/ETH, max cap = $10 = 0.005 ETH
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_GasAmountAboveMaxUSDCap() public {
-        uint256 msgValue = 0.006 ether;  // $12 (above $10 max)
+        uint256 msgValue = 0.006 ether; // $12 (above $10 max)
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -515,15 +512,15 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         // Set block cap to $5
         vm.prank(admin);
         gatewayTemp.setBlockUsdCap(5e18);
-        
-        uint256 msgValue = 0.003 ether;  // $6 (exceeds $5 block cap)
+
+        uint256 msgValue = 0.003 ether; // $6 (exceeds $5 block cap)
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -540,18 +537,18 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         // Deploy a new token that's not configured
         MockERC20 unsupportedToken = new MockERC20("Unsupported", "UNSUP", 18, 0);
         unsupportedToken.mint(user1, 1000 ether);
-        
+
         vm.prank(user1);
         unsupportedToken.approve(address(gatewayTemp), type(uint256).max);
 
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(unsupportedToken),
             erc20Amount,
             encodedPayload
@@ -567,18 +564,18 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_InsufficientAllowance() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 1000 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         // Create a user with no approval
         address userNoApproval = address(0x7777);
         tokenA.mint(userNoApproval, erc20Amount);
         vm.deal(userNoApproval, msgValue);
         // No approval given
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -594,20 +591,20 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_InsufficientBalance() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 1000 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         // Create a user with approval but no balance
         address userNoBalance = address(0x8888);
         vm.deal(userNoBalance, msgValue);
         // No tokens minted
-        
+
         vm.prank(userNoBalance);
         tokenA.approve(address(gatewayTemp), type(uint256).max);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -625,14 +622,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @notice Test Case 2.3 - Separate rate limits for gas and ERC20
     /// @dev Gas uses USD caps, ERC20 uses token rate limit - completely independent
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_SeparateRateLimits() public {
-        uint256 msgValue = 0.002 ether;  // $4 for gas
+        uint256 msgValue = 0.002 ether; // $4 for gas
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -647,7 +644,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         // Assert: ERC20 rate limit consumed
         (uint256 erc20UsedAfter,) = gatewayTemp.currentTokenUsage(address(tokenA));
         assertEq(erc20UsedAfter, erc20UsedBefore + erc20Amount, "ERC20 rate limit should be consumed");
-        
+
         // Assert: Native rate limit NOT consumed (gas uses USD caps)
         (uint256 nativeUsedAfter,) = gatewayTemp.currentTokenUsage(address(0));
         assertEq(nativeUsedAfter, nativeUsedBefore, "Native rate limit should NOT be consumed");
@@ -660,19 +657,19 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         address[] memory tokens = new address[](1);
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(tokenA);
-        thresholds[0] = 50 ether;  // Low threshold
-        
+        thresholds[0] = 50 ether; // Low threshold
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
-        uint256 msgValue = 0.002 ether;  // Gas is fine
-        uint256 erc20Amount = 60 ether;  // Exceeds ERC20 threshold
-        
+        uint256 msgValue = 0.002 ether; // Gas is fine
+        uint256 erc20Amount = 60 ether; // Exceeds ERC20 threshold
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -691,16 +688,16 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(tokenA);
         thresholds[0] = 200 ether;
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         // Call 1: 120 tokenA
         UniversalTxRequest memory req1 = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             120 ether,
             encodedPayload
@@ -708,7 +705,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         // Call 2: 70 tokenA (cumulative 190 < 200)
         UniversalTxRequest memory req2 = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             70 ether,
             encodedPayload
@@ -733,16 +730,16 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(tokenA);
         thresholds[0] = 200 ether;
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         // Call 1: 120 tokenA
         UniversalTxRequest memory req1 = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             120 ether,
             encodedPayload
@@ -750,7 +747,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         // Call 2: 90 tokenA (cumulative 210 > 200)
         UniversalTxRequest memory req2 = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             90 ether,
             encodedPayload
@@ -772,15 +769,15 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         uint256[] memory thresholds = new uint256[](1);
         tokens[0] = address(tokenA);
         thresholds[0] = 100 ether;
-        
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
 
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             90 ether,
             encodedPayload
@@ -794,7 +791,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         vm.warp(block.timestamp + 86401);
         // Also advance block number to ensure new epoch
         vm.roll(block.number + 1);
-        
+
         // Update oracle timestamp to prevent stale data error
         ethUsdFeedMock.setAnswer(2000e8, block.timestamp);
 
@@ -812,12 +809,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_NativeNotConsumedInRateLimit() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -845,12 +842,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_EmitsTwoEvents_Always() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -874,7 +871,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // FUNDS_AND_PAYLOAD always has recipient == address(0)
+            recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
             token: address(tokenA),
             amount: erc20Amount,
             payload: encodedPayload,
@@ -891,12 +888,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_GasEvent_HasEmptyPayload() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -910,7 +907,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             recipient: address(0),
             token: address(0),
             amount: msgValue,
-            payload: bytes(""),  // Empty
+            payload: bytes(""), // Empty
             revertInstruction: req.revertInstruction,
             signatureData: bytes("")
         });
@@ -925,12 +922,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
         address explicitRecipient = address(0x999);
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -941,7 +938,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.GAS,
             sender: user1,
-            recipient: address(0),  // Always zero for gas
+            recipient: address(0), // Always zero for gas
             token: address(0),
             amount: msgValue,
             payload: bytes(""),
@@ -954,7 +951,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // FUNDS_AND_PAYLOAD always has recipient == address(0)
+            recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
             token: address(tokenA),
             amount: erc20Amount,
             payload: encodedPayload,
@@ -971,12 +968,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_GasEvent_NativeToken_FundsEvent_ERC20Token() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -988,7 +985,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             txType: TX_TYPE.GAS,
             sender: user1,
             recipient: address(0),
-            token: address(0),  // Native token
+            token: address(0), // Native token
             amount: msgValue,
             payload: bytes(""),
             revertInstruction: req.revertInstruction,
@@ -1000,8 +997,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             sender: user1,
-            recipient: address(0),  // FUNDS_AND_PAYLOAD always has recipient == address(0)
-            token: address(tokenA),  // ERC20 token
+            recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
+            token: address(tokenA), // ERC20 token
             amount: erc20Amount,
             payload: encodedPayload,
             revertInstruction: req.revertInstruction,
@@ -1018,17 +1015,15 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
         bytes memory revertMsg = abi.encodePacked("custom revert", uint256(999));
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
-        RevertInstructions memory revertInst = RevertInstructions({
-            fundRecipient: address(0x456),
-            revertMsg: revertMsg
-        });
-        
+
+        RevertInstructions memory revertInst =
+            RevertInstructions({ fundRecipient: address(0x456), revertMsg: revertMsg });
+
         UniversalTxRequest memory req = UniversalTxRequest({
-            recipient: address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            recipient: address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             token: address(tokenA),
             amount: erc20Amount,
             payload: encodedPayload,
@@ -1047,12 +1042,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
         bytes memory sigData = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)));
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = UniversalTxRequest({
-            recipient: address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            recipient: address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             token: address(tokenA),
             amount: erc20Amount,
             payload: encodedPayload,
@@ -1074,12 +1069,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_NativeToTSS_ERC20ToVault() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1095,10 +1090,10 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         // Assert: TSS received native ETH
         assertEq(tss.balance, tssBalanceBefore + msgValue, "TSS should receive native ETH");
-        
+
         // Assert: Vault received ERC20
         assertEq(tokenA.balanceOf(address(this)), vaultBalanceBefore + erc20Amount, "Vault should receive ERC20");
-        
+
         // Assert: Gateway holds nothing
         assertEq(address(gatewayTemp).balance, gatewayNativeBefore, "Gateway should not hold native ETH");
         assertEq(tokenA.balanceOf(address(gatewayTemp)), gatewayERC20Before, "Gateway should not hold ERC20");
@@ -1109,12 +1104,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_Gateway_DoesNotAccumulate() public {
         uint256 msgValue = 0.001 ether;
         uint256 erc20Amount = 50 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1139,12 +1134,12 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_FullMsgValueToGasRoute() public {
         uint256 msgValue = 0.003 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1162,14 +1157,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @notice Test Case 2.3 - Independent amounts
     /// @dev Gas and funds amounts are completely independent
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_IndependentAmounts() public {
-        uint256 msgValue = 0.001 ether;  // Small gas
-        uint256 erc20Amount = 10000 ether;  // Large ERC20
-        
+        uint256 msgValue = 0.001 ether; // Small gas
+        uint256 erc20Amount = 10000 ether; // Large ERC20
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1190,13 +1185,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @dev Each ERC20 goes to vault correctly
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_DifferentTokensSameTx() public {
         uint256 msgValue = 0.001 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         // Send tokenA
         UniversalTxRequest memory reqA = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             50 ether,
             encodedPayload
@@ -1204,7 +1199,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         // Send usdc
         UniversalTxRequest memory reqU = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(usdc),
             50e6,
             encodedPayload
@@ -1215,7 +1210,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: msgValue }(reqA);
-        
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: msgValue }(reqU);
 
@@ -1231,14 +1226,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @notice Test Case 2.3 - Maximal gas amount at max cap
     /// @dev msg.value = 0.005 ETH (exactly $10 at $2000/ETH)
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_MaximalGasAmount_AtMaxCap() public {
-        uint256 msgValue = 0.005 ether;  // $10 (at max cap)
+        uint256 msgValue = 0.005 ether; // $10 (at max cap)
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1257,13 +1252,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_LargePayload_DoesNotAffectGasCaps() public {
         uint256 msgValue = 0.002 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         // Create large payload (10KB)
         bytes memory largeData = new bytes(10000);
         for (uint256 i = 0; i < 10000; i++) {
             largeData[i] = bytes1(uint8(i % 256));
         }
-        
+
         UniversalPayload memory largePayload = UniversalPayload({
             to: address(0xABCD),
             value: 0,
@@ -1276,9 +1271,9 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             vType: VerificationType.signedVerification
         });
         bytes memory encodedPayload = abi.encode(largePayload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1296,13 +1291,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     /// @dev Should handle large ERC20 amounts correctly
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_VeryLargeERC20Amount_WithinRateLimit() public {
         uint256 msgValue = 0.001 ether;
-        uint256 erc20Amount = 500000 ether;  // Large but within default threshold
-        
+        uint256 erc20Amount = 500000 ether; // Large but within default threshold
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1322,15 +1317,15 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         // Set block cap to $8
         vm.prank(admin);
         gatewayTemp.setBlockUsdCap(8e18);
-        
-        uint256 msgValue = 0.002 ether;  // $4 per call
+
+        uint256 msgValue = 0.002 ether; // $4 per call
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0),      // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1355,13 +1350,13 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
     function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_DifferentRecipients_Work() public {
         uint256 msgValue = 0.001 ether;
         uint256 erc20Amount = 100 ether;
-        
+
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         // Test with zero recipient
         UniversalTxRequest memory req1 = buildUniversalTxRequest(
-            address(0),  // Zero recipient (required)
+            address(0), // Zero recipient (required)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1372,7 +1367,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         // Test with zero recipient (non-zero not allowed for FUNDS_AND_PAYLOAD)
         UniversalTxRequest memory req2 = buildUniversalTxRequest(
-            address(0),  // Zero recipient (required)
+            address(0), // Zero recipient (required)
             address(tokenA),
             erc20Amount,
             encodedPayload
@@ -1380,8 +1375,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
 
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: msgValue }(req2);
-        
+
         // Both should succeed
     }
 }
-
