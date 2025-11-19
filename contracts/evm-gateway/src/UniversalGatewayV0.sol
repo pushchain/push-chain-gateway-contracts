@@ -133,53 +133,54 @@ contract UniversalGatewayV0 is
      * @param factory          UniswapV2 factory 
      * @param router           UniswapV2 router
      */
-    function initialize(
-        address admin,
-        address pauser,
-        address tss,
-        uint256 minCapUsd,
-        uint256 maxCapUsd,
-        address factory,
-        address router,
-        address _wethAddress,
-        address _usdtAddress,
-        address _usdtUsdPriceFeed,
-        address _ethUsdPriceFeed
-    ) external initializer {
-        if (admin == address(0) || 
-            pauser == address(0) || 
-            tss == address(0) ||
-            _wethAddress == address(0)) revert Errors.ZeroAddress();
+    ///@audit Commented for testnet Size LIMIT
+    // function initialize(
+    //     address admin,
+    //     address pauser,
+    //     address tss,
+    //     uint256 minCapUsd,
+    //     uint256 maxCapUsd,
+    //     address factory,
+    //     address router,
+    //     address _wethAddress,
+    //     address _usdtAddress,
+    //     address _usdtUsdPriceFeed,
+    //     address _ethUsdPriceFeed
+    // ) external initializer {
+    //     if (admin == address(0) || 
+    //         pauser == address(0) || 
+    //         tss == address(0) ||
+    //         _wethAddress == address(0)) revert Errors.ZeroAddress();
 
-        __Context_init();
-        __Pausable_init();
-        __ReentrancyGuard_init();
-        __AccessControl_init();
+    //     __Context_init();
+    //     __Pausable_init();
+    //     __ReentrancyGuard_init();
+    //     __AccessControl_init();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE,          pauser);
-        _grantRole(TSS_ROLE,             tss);
+    //     _grantRole(DEFAULT_ADMIN_ROLE, admin);
+    //     _grantRole(PAUSER_ROLE,          pauser);
+    //     _grantRole(TSS_ROLE,             tss);
 
-        TSS_ADDRESS = tss;
-        MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
-        MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
+    //     TSS_ADDRESS = tss;
+    //     MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
+    //     MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
         
-        WETH = _wethAddress;
-        if (factory != address(0) && router != address(0)) {
-            uniV3Factory = IUniswapV3Factory(factory);
-            uniV3Router  = ISwapRouterSepolia(router);
+    //     WETH = _wethAddress;
+    //     if (factory != address(0) && router != address(0)) {
+    //         uniV3Factory = IUniswapV3Factory(factory);
+    //         uniV3Router  = ISwapRouterSepolia(router);
 
-        }
-        // Default swap deadline window (industry common ~10 minutes)
-        defaultSwapDeadlineSec = 10 minutes;
+    //     }
+    //     // Default swap deadline window (industry common ~10 minutes)
+    //     defaultSwapDeadlineSec = 10 minutes;
 
-        // Set a sane default for Chainlink staleness (can be tuned by admin)
-        chainlinkStalePeriod = 1 hours;
-        usdtUsdPriceFeed = AggregatorV3Interface(_usdtUsdPriceFeed);
-        ethUsdFeed = AggregatorV3Interface(_ethUsdPriceFeed);
-        USDT = _usdtAddress;
+    //     // Set a sane default for Chainlink staleness (can be tuned by admin)
+    //     chainlinkStalePeriod = 1 hours;
+    //     usdtUsdPriceFeed = AggregatorV3Interface(_usdtUsdPriceFeed);
+    //     ethUsdFeed = AggregatorV3Interface(_ethUsdPriceFeed);
+    //     USDT = _usdtAddress;
 
-    }
+    // }
 
     /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.
     modifier onlyTSS() {
@@ -228,9 +229,10 @@ contract UniversalGatewayV0 is
     }
 
     /// @notice             Set the per-block USD cap for GAS routes (1e18 = $1). Set to 0 to disable.
-    function setBlockUsdCap(uint256 cap1e18) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
-        BLOCK_USD_CAP = cap1e18;
-    }
+    /// @audit Commented for testnet Size LIMIT
+    // function setBlockUsdCap(uint256 cap1e18) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+    //     BLOCK_USD_CAP = cap1e18;
+    // }
 
     /// @notice Set the default swap deadline window (used when a caller passes deadline = 0)
     /// @param deadlineSec Number of seconds to add to block.timestamp when defaulting the deadline
@@ -302,11 +304,12 @@ contract UniversalGatewayV0 is
 
     /// @notice               Update the epoch duration (hard reset schedule)
     /// @param newDurationSec new epoch duration
-    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 old = epochDurationSec;
-        epochDurationSec = newDurationSec;
-        emit EpochDurationUpdated(old, newDurationSec);
-    }
+    /// @audit Commented for testnet Size LIMIT
+    // function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    //     uint256 old = epochDurationSec;
+    //     epochDurationSec = newDurationSec;
+    //     emit EpochDurationUpdated(old, newDurationSec);
+    // }
 
     // =========================
     //           DEPOSITS - Fee Abstraction Route
@@ -1067,25 +1070,26 @@ contract UniversalGatewayV0 is
     ///                     - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.
     ///                     - Resets the window when a new block is observed.
     /// @param amountWei    native amount (in wei) to be accounted against the current block's USD budget
-    function _checkBlockUSDCap(uint256 amountWei) public {
-        uint256 cap = BLOCK_USD_CAP;
-        if (cap == 0) return; // disabled
+    /// @audit Commented for testnet Size LIMIT
+    // function _checkBlockUSDCap(uint256 amountWei) public {
+    //     uint256 cap = BLOCK_USD_CAP;
+    //     if (cap == 0) return; // disabled
 
-        if (block.number != _lastBlockNumber) {
-            _lastBlockNumber = block.number;
-            _consumedUSDinBlock = 0;
-        }
+    //     if (block.number != _lastBlockNumber) {
+    //         _lastBlockNumber = block.number;
+    //         _consumedUSDinBlock = 0;
+    //     }
 
-        uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
+    //     uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
 
-        if (usd1e18 > cap) revert Errors.BlockCapLimitExceeded();
+    //     if (usd1e18 > cap) revert Errors.BlockCapLimitExceeded();
 
-        unchecked {
-            uint256 newUsed = _consumedUSDinBlock + usd1e18;
-            if (newUsed > cap) revert Errors.BlockCapLimitExceeded();
-            _consumedUSDinBlock = newUsed;
-        }
-    }
+    //     unchecked {
+    //         uint256 newUsed = _consumedUSDinBlock + usd1e18;
+    //         if (newUsed > cap) revert Errors.BlockCapLimitExceeded();
+    //         _consumedUSDinBlock = newUsed;
+    //     }
+    // }
 
     /// @dev                Handle deposits of native ETH or ERC20 tokens
     ///                     If token is address(0): Forward native ETH to TSS
@@ -1109,46 +1113,48 @@ contract UniversalGatewayV0 is
     ///                     epoch.used is reset to 0 when a new epoch starts (no rollover).
     /// @param token        token address to consume rate limit
     /// @param amount       amount of token to consume rate limit
-    function _consumeRateLimit(address token, uint256 amount) internal {
-        uint256 threshold = tokenToLimitThreshold[token];
-        if (threshold == 0) revert Errors.NotSupported();
+    /// @audit Commented for testnet Size LIMIT
+    // function _consumeRateLimit(address token, uint256 amount) internal {
+    //     uint256 threshold = tokenToLimitThreshold[token];
+    //     if (threshold == 0) revert Errors.NotSupported();
 
-        uint256 _epochDuration = epochDurationSec;
-        if (_epochDuration == 0) revert Errors.InvalidData();
+    //     uint256 _epochDuration = epochDurationSec;
+    //     if (_epochDuration == 0) revert Errors.InvalidData();
 
-        uint64 current = uint64(block.timestamp / _epochDuration);
-        EpochUsage storage e = _usage[token];
+    //     uint64 current = uint64(block.timestamp / _epochDuration);
+    //     EpochUsage storage e = _usage[token];
 
-        if (e.epoch != current) {
-            e.epoch = current;
-            e.used = 0;
-        }
+    //     if (e.epoch != current) {
+    //         e.epoch = current;
+    //         e.used = 0;
+    //     }
 
-        unchecked {
-            uint256 newUsed = uint256(e.used) + amount; // natural units
-            if (newUsed > threshold) revert Errors.RateLimitExceeded();
-            e.used = uint192(newUsed);
-        }
-    }
+    //     unchecked {
+    //         uint256 newUsed = uint256(e.used) + amount; // natural units
+    //         if (newUsed > threshold) revert Errors.RateLimitExceeded();
+    //         e.used = uint192(newUsed);
+    //     }
+    // }
 
     /// @notice             Returns both the total token amount used and remaining in the current epoch.
     /// @param token        token address to query (use address(0) for native)
     /// @return used        amount already consumed in the current epoch (in token's natural units)
     /// @return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
-    function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining) {
-        uint256 thr = tokenToLimitThreshold[token];
-        if (thr == 0) return (0, 0);
+    /// @audit Commented for testnet Size LIMIT
+    // function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining) {
+    //     uint256 thr = tokenToLimitThreshold[token];
+    //     if (thr == 0) return (0, 0);
 
-        uint256 _epochDuration = epochDurationSec;
-        if (_epochDuration == 0) return (0, 0);
+    //     uint256 _epochDuration = epochDurationSec;
+    //     if (_epochDuration == 0) return (0, 0);
 
-        uint64 current = uint64(block.timestamp / _epochDuration);
-        EpochUsage storage e = _usage[token];
-        uint256 u = (e.epoch == current) ? uint256(e.used) : 0;
+    //     uint64 current = uint64(block.timestamp / _epochDuration);
+    //     EpochUsage storage e = _usage[token];
+    //     uint256 u = (e.epoch == current) ? uint256(e.used) : 0;
 
-        used = u;
-        remaining = u >= thr ? 0 : (thr - u);
-    }
+    //     used = u;
+    //     remaining = u >= thr ? 0 : (thr - u);
+    // }
 
 
     /// @dev Swap any ERC20 to the chain's native token via a direct Uniswap v3 pool to WETH.
