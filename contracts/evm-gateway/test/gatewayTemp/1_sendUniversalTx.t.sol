@@ -38,12 +38,15 @@ contract GatewaySendUniversalTxTest is BaseTest {
     function setUp() public override {
         super.setUp();
 
+
         // Deploy UniversalGatewayTemp instead of UniversalGateway
         _deployGatewayTemp();
+
 
         // Wire oracle to the new gateway instance
         vm.prank(admin);
         gatewayTemp.setEthUsdFeed(address(ethUsdFeedMock));
+
 
         // Setup token support on gatewayTemp (native + all mock ERC20s)
         address[] memory tokens = new address[](4);
@@ -57,8 +60,10 @@ contract GatewaySendUniversalTxTest is BaseTest {
         thresholds[2] = 1000000e6; // Large threshold for usdc (6 decimals)
         thresholds[3] = 1000000 ether; // Large threshold for weth
 
+
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
+
 
         // Re-approve tokens to gatewayTemp (BaseTest approved to old gateway)
         address[] memory users = new address[](5);
@@ -68,22 +73,27 @@ contract GatewaySendUniversalTxTest is BaseTest {
         users[3] = user4;
         users[4] = attacker;
 
+
         for (uint256 i = 0; i < users.length; i++) {
             vm.prank(users[i]);
             tokenA.approve(address(gatewayTemp), type(uint256).max);
 
+
             vm.prank(users[i]);
             usdc.approve(address(gatewayTemp), type(uint256).max);
+
 
             vm.prank(users[i]);
             weth.approve(address(gatewayTemp), type(uint256).max);
         }
     }
 
+
     /// @notice Deploy UniversalGatewayTemp (overrides BaseTest's UniversalGateway deployment)
     function _deployGatewayTemp() internal {
         // Deploy implementation
         UniversalGatewayTemp implementation = new UniversalGatewayTemp();
+
 
         // Deploy transparent upgradeable proxy
         bytes memory initData = abi.encodeWithSelector(
@@ -101,22 +111,22 @@ contract GatewaySendUniversalTxTest is BaseTest {
         TransparentUpgradeableProxy tempProxy =
             new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
 
+
         // Cast proxy to UniversalGatewayTemp
         gatewayTemp = UniversalGatewayTemp(payable(address(tempProxy)));
+
 
         vm.label(address(gatewayTemp), "UniversalGatewayTemp");
     }
 
+
     /// @notice Helper to build UniversalTxRequest structs
-    function buildUniversalTxRequest(
-        TX_TYPE txType,
-        address recipient_,
-        address token,
-        uint256 amount,
-        bytes memory payload
-    ) internal pure returns (UniversalTxRequest memory) {
+    function buildUniversalTxRequest(address recipient_, address token, uint256 amount, bytes memory payload)
+        internal
+        pure
+        returns (UniversalTxRequest memory)
+    {
         return UniversalTxRequest({
-            txType: txType,
             recipient: recipient_,
             token: token,
             amount: amount,
@@ -140,10 +150,9 @@ contract GatewaySendUniversalTxTest is BaseTest {
         // Arrange
         uint256 gasAmount = 0.001 ether; // Within USD caps at $2000/ETH: $2
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.GAS,
             address(0), // recipient (will be address(0) for gas route)
             address(0), // token (native)
-            gasAmount,
+            0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             bytes("") // empty payload for GAS type
         );
 
@@ -182,10 +191,9 @@ contract GatewaySendUniversalTxTest is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
 
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.GAS_AND_PAYLOAD,
             address(0), // recipient (will be address(0) for gas route)
             address(0), // token (native)
-            gasAmount,
+            0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             encodedPayload // non-empty payload required
         );
 
@@ -194,6 +202,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         // Act & Assert
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
+            
             sender: user1,
             recipient: address(0), // Gas always credits UEA (address(0))
             token: address(0), // Native token
@@ -225,7 +234,6 @@ contract GatewaySendUniversalTxTest is BaseTest {
         // Arrange
         uint256 fundsAmount = 100 ether; // Large amount (no USD caps on FUNDS route)
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS,
             address(0), // FUNDS requires recipient == address(0)
             address(0), // native token
             fundsAmount,
@@ -264,7 +272,6 @@ contract GatewaySendUniversalTxTest is BaseTest {
         // Arrange: tokenA already enabled in setUp()
         uint256 fundsAmount = 1000 ether; // Large amount
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS,
             address(0), // FUNDS requires recipient == address(0)
             address(tokenA), // ERC20 token
             fundsAmount,
@@ -294,8 +301,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
 
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            TX_TYPE.FUNDS_AND_PAYLOAD,
-            recipient, // explicit recipient
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA), // ERC20 token
             fundsAmount,
             encodedPayload // non-empty payload required

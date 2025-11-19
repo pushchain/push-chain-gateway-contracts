@@ -2,8 +2,8 @@
 pragma solidity 0.8.26;
 
 /**
- * @title UniversalGateway
- * @notice Universal Gateway for EVM chains.
+ * @title UniversalGatewayV0
+ * @notice Universal Gateway for EVM chains [TESTNETs Only]
  *         - Acts as a gateway for all supported external chains to bridge funds and payloads to Push Chain.
  *         - Users of external chains can deposit funds and payloads to Push Chain using the gateway.
  * 
@@ -19,10 +19,19 @@ pragma solidity 0.8.26;
  *         -    2. Token Support List: allowlist for ERC20 used as gas inputs on gas tx path.
  *         - Note: Fund management and access control is managed by TSS_ROLE.
  * 
- * @dev    - USD Cap Checks:
- *         -    TX Types like GAS_TX and GAS_AND_PAYLOAD_TX have require lower block confirmation for execution. 
- *         -    Therefore, these transactions have a USD cap checks for gas tx deposits via oracle. 
- *         - Note: Chainlink Oracle is used for ETH/USD price feed.
+ * @dev    - Rate-Limit Checks:
+ *         -    Universal Gateway includes rate-limit checks for both Fee Abstraction & Universal Transaction Routes.
+ *         -    For Fee Abstraction Route ( Low Block Confirmation Requirement ):
+ *               - Includes _checkUSDCaps: USD cap checks for the deposit amount. Must be within MIN_CAP_UNIVERSAL_TX_USD & MAX_CAP_UNIVERSAL_TX_USD.
+ *               - Includes _checkBlockUSDCap: Block-based USD cap checks. Must be within BLOCK_USD_CAP.
+ *         -    For Universal Transaction Route ( Standard Block Confirmation Requirement ):
+ *               - Includes _consumeRateLimit: Consume the per-token epoch rate limit.
+ *                     - Every supported token has a per-token epoch limit threshold.
+ *                     - New Epoch resets the usage limit threshold of a given token.
+ *               - Includes _checkUSDCaps and _checkBlockUSDCap for _sendTxWithGas function called internally.
+ *         - Note: Check the ./interfaces/IUniversalGateway.sol file for more details on rate-limit checks.
+ *
+ * @dev    - Chainlink Oracle is used for ETH/USD price feed.
  */
 
 import {Initializable}              from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -218,6 +227,11 @@ contract UniversalGatewayV0 is
         emit CapsUpdated(minCapUsd, maxCapUsd);
     }
 
+    /// @notice             Set the per-block USD cap for GAS routes (1e18 = $1). Set to 0 to disable.
+    function setBlockUsdCap(uint256 cap1e18) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        BLOCK_USD_CAP = cap1e18;
+    }
+
     /// @notice Set the default swap deadline window (used when a caller passes deadline = 0)
     /// @param deadlineSec Number of seconds to add to block.timestamp when defaulting the deadline
     function setDefaultSwapDeadline(uint256 deadlineSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
@@ -272,29 +286,10 @@ contract UniversalGatewayV0 is
         l2SequencerGracePeriodSec = gracePeriodSec;
     }
 
-    /// @notice             Set the per-block USD cap for GAS routes (1e18 = $1). Set to 0 to disable.
-    function setBlockUsdCap(uint256 cap1e18) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
-        BLOCK_USD_CAP = cap1e18;
-    }
-
     /// @notice             Set limit thresholds for a batch of tokens (0 disables support for that token)
     /// @param tokens       tokens to set limit thresholds for
     /// @param thresholds   limit thresholds for the tokens
     function setTokenLimitThresholds(address[] calldata tokens, uint256[] calldata thresholds)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (tokens.length != thresholds.length) revert Errors.InvalidInput();
-        for (uint256 i = 0; i < tokens.length; i++) {
-            tokenToLimitThreshold[tokens[i]] = thresholds[i];
-            emit TokenLimitThresholdUpdated(tokens[i], thresholds[i]);
-        }
-    }
-
-    /// @notice             Update limit thresholds for a batch of tokens
-    /// @param tokens       tokens to update limit thresholds for
-    /// @param thresholds   limit thresholds for the tokens
-    function updateTokenLimitThreshold(address[] calldata tokens, uint256[] calldata thresholds)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
@@ -382,7 +377,7 @@ contract UniversalGatewayV0 is
     //           DEPOSITS - Universal TX Route
     // =========================
 
-    
+
     /// @inheritdoc IUniversalGatewayV0
    // NOTE: This uses  the OLD Fee Abstraction Route ( PC MINTED ON Push Chain ) 
     function sendTxWithFunds(
@@ -413,7 +408,7 @@ contract UniversalGatewayV0 is
             signatureData
         );
     }
-
+  
     /// @inheritdoc IUniversalGatewayV0
     function sendTxWithFunds(
         address bridgeToken,
@@ -453,11 +448,11 @@ contract UniversalGatewayV0 is
         /// @notice                     Internal helper function to deposit for Universal TX.
     /// @dev                        Handles rate-limit checks for Universal Transaction Route
     function _sendTxWithFunds_old(
-        address _caller,
+        address _caller, 
         address _recipient,
         address _bridgeToken,
         uint256 _bridgeAmount,
-        bytes memory _payload,
+        bytes memory _payload, 
         RevertInstructions calldata _revertInstruction,
         TX_TYPE _txType,
         bytes memory _signatureData
@@ -481,24 +476,27 @@ contract UniversalGatewayV0 is
             signatureData: _signatureData
         });
     }
-
+   
     ///==============================
     ///      sendUniversalTx() function
     ///==============================
     function sendUniversalTx(UniversalTxRequest calldata req) external payable nonReentrant whenNotPaused {
-        _routeUniversalTx(req, _msgSender(), msg.value);
+        uint256 nativeValue = msg.value;
+        TX_TYPE txType = _fetchTxType(req, nativeValue);
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType);
     }
 
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable nonReentrant whenNotPaused {
-        // Validate token-as-gas parameters
-        _validateFeeAbstractionParams(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
+        if (reqToken.gasToken == address(0)) revert Errors.InvalidInput();
+        if (reqToken.gasAmount == 0) revert Errors.InvalidAmount();
+        if (reqToken.amountOutMinETH == 0) revert Errors.InvalidAmount();
+        if (reqToken.deadline != 0 && reqToken.deadline < block.timestamp) revert Errors.SlippageExceededOrExpired();
 
         // Swap token to native
-        uint256 nativeAmount = swapToNative(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
+        uint256 nativeValue = swapToNative(reqToken.gasToken, reqToken.gasAmount, reqToken.amountOutMinETH, reqToken.deadline);
 
         // Build UniversalTxRequest from token request
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: reqToken.txType,
             recipient: reqToken.recipient,
             token: reqToken.token,
             amount: reqToken.amount,
@@ -507,7 +505,8 @@ contract UniversalGatewayV0 is
             signatureData: reqToken.signatureData
         });
 
-        _routeUniversalTx(req, _msgSender(), nativeAmount);
+        TX_TYPE txType = _fetchTxType(req, nativeValue);
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType);
     }
 
         /// @notice                     Internal helper function to deposit for Instant TX.
@@ -520,7 +519,6 @@ contract UniversalGatewayV0 is
         RevertInstructions memory _revertInstruction,
         bytes memory _signatureData
     ) private {
-        _validateUniversalTxWithGas(_txType, _gasAmount, _payload, _revertInstruction);
         if (_gasAmount > 0) {
             // performs rate-limit checks and handle deposit
             //_checkUSDCaps(_gasAmount);
@@ -533,12 +531,10 @@ contract UniversalGatewayV0 is
     }
 
 
-    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue) private {
-        _validateUniversalTxWithFunds(_req.txType, _req.amount, _req.recipient, _req.payload, _req.revertInstruction);
-
+    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue, TX_TYPE txType) private {
         // Case 1: For TX_TYPE = FUNDS
 
-        if (_req.txType == TX_TYPE.FUNDS) {
+        if (txType == TX_TYPE.FUNDS) {
             address tokenForFunds;
             // Case 1.1: Token to bridge is Native Token -> address(0)
             if (_req.token == address(0)) {
@@ -555,13 +551,13 @@ contract UniversalGatewayV0 is
             _handleDeposits(tokenForFunds, _req.amount);
 
             _emitUniversalTx(
-                _msgSender(),
+            _msgSender(),
                 _req.recipient,
                 tokenForFunds,
                 _req.amount,
                 _req.payload,
                 _req.revertInstruction,
-                _req.txType,
+                txType,
                 _req.signatureData
             );
         }
@@ -581,7 +577,7 @@ contract UniversalGatewayV0 is
         //            -> No Split Needed: gasAmount is used via native_token, and bridgeAmount is used via ERC20 token.
         //            -> _sendTxWithGas is used to send gasAmount
         //            -> _sendTxWithFunds is used to send bridgeAmount
-        if (_req.txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
+        if (txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
             address tokenForFundsAndPayload;
             // Case 2.1: No Batching ( nativeValue == 0 ): user already has UEA with PC token ( gas ) on Push to execute payloads
             if (nativeValue == 0) {
@@ -622,7 +618,7 @@ contract UniversalGatewayV0 is
                 _req.amount,
                 _req.payload,
                 _req.revertInstruction,
-                _req.txType,
+                txType,
                 _req.signatureData
             );
         }
@@ -702,7 +698,6 @@ contract UniversalGatewayV0 is
     ) external payable nonReentrant whenNotPaused {
 
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS,
             recipient: recipient,
             token: bridgeToken,
             amount: bridgeAmount,
@@ -711,7 +706,7 @@ contract UniversalGatewayV0 is
             signatureData: bytes("")
         });
 
-        _routeUniversalTx(req, _msgSender(), msg.value);
+        _routeUniversalTx(req, _msgSender(), msg.value, TX_TYPE.FUNDS);
     }
 
     /// @notice Legacy: Send funds with payload (FUNDS_AND_PAYLOAD route)
@@ -729,7 +724,6 @@ contract UniversalGatewayV0 is
     ) external payable nonReentrant whenNotPaused {
 
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient: address(0),
             token: bridgeToken,
             amount: bridgeAmount,
@@ -738,7 +732,7 @@ contract UniversalGatewayV0 is
             signatureData: signatureData
         });
 
-        _routeUniversalTx(req, _msgSender(), msg.value);
+        _routeUniversalTx(req, _msgSender(), msg.value, TX_TYPE.FUNDS_AND_PAYLOAD);
     }
 
 
@@ -773,7 +767,6 @@ contract UniversalGatewayV0 is
         uint256 nativeGasAmount = swapToNative(gasToken, gasAmount, amountOutMinETH, deadline);
 
         UniversalTxRequest memory req = UniversalTxRequest({
-            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
             recipient: address(0),
             token: bridgeToken,
             amount: bridgeAmount,
@@ -782,14 +775,14 @@ contract UniversalGatewayV0 is
             signatureData: signatureData
         });
 
-        _routeUniversalTx(req, _msgSender(), nativeGasAmount);
+        _routeUniversalTx(req, _msgSender(), nativeGasAmount, TX_TYPE.FUNDS_AND_PAYLOAD);
     }
 
 
     ///==============================
     ///      REVERT UNIVERSAL TX
     ///==============================
-    
+
     /// @inheritdoc IUniversalGatewayV0
     function revertUniversalTx(
         bytes32 txID,
@@ -1042,9 +1035,15 @@ contract UniversalGatewayV0 is
     function _routeUniversalTx(
         UniversalTxRequest memory req,
         address caller,
-        uint256 nativeValue
+        uint256 nativeValue,
+        TX_TYPE _TX_TYPE
     ) internal {
-        TX_TYPE txType = req.txType;
+        TX_TYPE txType = _TX_TYPE;
+
+        // Sanity Check : fundRecipient is not address(0)
+        if (req.revertInstruction.fundRecipient == address(0)) {
+            revert Errors.InvalidRecipient();
+        }
 
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
@@ -1052,7 +1051,11 @@ contract UniversalGatewayV0 is
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
-            _sendTxWithFunds(req, nativeValue);
+            // // Sanity Check : recipient is address(0) // @audit - TBD , for now all recipients allowed for FUNDS
+            // if (req.recipient != address(0)) {
+            //     revert Errors.InvalidRecipient();
+            // }
+            _sendTxWithFunds(req, nativeValue, txType);
         }
         // Route 3: Invalid
         else {
@@ -1093,7 +1096,7 @@ contract UniversalGatewayV0 is
         if (token == address(0)) {
             // Handle native ETH deposit to TSS
             (bool ok,) = payable(TSS_ADDRESS).call{ value: amount }("");
-            if (!ok) revert Errors.DepositFailed();
+        if (!ok) revert Errors.DepositFailed();
         } else {
             // Handle ERC20 token deposit to gateway
             if (tokenToLimitThreshold[token] == 0) revert Errors.NotSupported();
@@ -1246,81 +1249,78 @@ contract UniversalGatewayV0 is
      
         revert Errors.InvalidInput();
     }
-        // =========================
-    //       VALIDATION HELPERS
+    // =========================
+    //       VALIDATION and Routers for sendUniversalTx()
     // =========================
 
-    /// @notice Validation helper for the native-gas route on UniversalTxRequest arguments
-    /// @dev    Does not involve any amount checks. Only validates the arguments passed
-    function _validateUniversalTxWithGas(
-        TX_TYPE tx_type,
-        uint256 gasAmount,
-        bytes memory payload,
-        RevertInstructions memory revertInstruction
-    )
-        internal
+    /**
+     * @notice Infers the TX_TYPE for an incoming universal request by inspecting only
+     *         the four decision variables we agreed on:
+     *         - hasPayload     := (req.payload.length > 0)
+     *         - hasFunds       := (req.amount > 0)
+     *         - fundsIsNative  := (req.token == address(0))
+     *         - hasNativeValue := (nativeValue > 0)  // nativeValue = msg.value (native-gas) OR swapped amount (token-gas)
+     *
+     * @param req          UniversalTxRequest (txType field is ignored here)
+     * @param nativeValue  Effective native value attached to the call path (msg.value or swapped amount)
+     * @return inferred    The inferred TX_TYPE for routing
+     */
+    function _fetchTxType(UniversalTxRequest memory req, uint256 nativeValue)
+        private
         pure
+        returns (TX_TYPE inferred)
     {
-        if (tx_type != TX_TYPE.GAS && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
-            revert Errors.InvalidTxType();
-        }
-        if (gasAmount == 0 && tx_type != TX_TYPE.GAS_AND_PAYLOAD) {
-            revert Errors.InvalidAmount();
-        }
-        
-        if (revertInstruction.fundRecipient == address(0)) {
-            revert Errors.InvalidRecipient();
-        }
-    }
+        bool hasPayload     = req.payload.length > 0;
+        bool hasFunds       = req.amount > 0;
+        bool fundsIsNative  = (req.token == address(0));
+        bool hasNativeValue = nativeValue > 0;
 
-    /// @notice Validation helper for the funds routes using UniversalTxRequest.
-    /// @dev    Does not involve any amount checks. Only validates the arguments passed.
-    /// @dev    Allows recipient == address(0): This is to credit the caller's UEA on Push Chain.
-        /// @notice Validation helper for the funds routes using UniversalTxRequest.
-    /// @dev    Does not involve any amount checks. Only validates the arguments passed.
-    /// @dev    Allows recipient == address(0): This is to credit the caller's UEA on Push Chain.
-    function _validateUniversalTxWithFunds(
-        TX_TYPE tx_type,
-        uint256 amount,
-        address recipient,
-        bytes memory payload,
-        RevertInstructions memory revertInstruction
-    ) internal view {
-        if (tx_type != TX_TYPE.FUNDS && tx_type != TX_TYPE.FUNDS_AND_PAYLOAD) {
-            revert Errors.InvalidTxType();
+        // For TX_TYPE.GAS:
+        //  - pure gas top-up (no payload, no funds, nativeValue > 0)
+        if (!hasPayload && !hasFunds && hasNativeValue) {
+            return TX_TYPE.GAS;
         }
-        if (tx_type == TX_TYPE.FUNDS && payload.length != 0) {
-            // Note: FUNDS-only must not carry a payload
+        // For TX_TYPE.GAS_AND_PAYLOAD:
+        //  - payload present
+        //  - no funds
+        //  - nativeValue MAY be 0 (payload-only) or > 0 (payload + gas)
+        if (hasPayload && !hasFunds) {
+            return TX_TYPE.GAS_AND_PAYLOAD;
+        }
+
+        // For TX_TYPE.FUNDS: Case 1: Native Funds
+        if (!hasPayload && hasFunds) {
+            // Case 1.1: Native Funds Only.
+            // FUNDS (native) — must come with native value 
+            if (fundsIsNative && hasNativeValue) {
+                return TX_TYPE.FUNDS;
+            }
+            // Case 1.2: ERC-20 Funds Only.
+            // FUNDS (ERC-20) — must NOT come with native value - Case 1.2
+            if (!fundsIsNative && !hasNativeValue) {
+                return TX_TYPE.FUNDS;
+            }
             revert Errors.InvalidInput();
         }
-        if (tx_type == TX_TYPE.FUNDS_AND_PAYLOAD && payload.length == 0) {
+
+        // For TX_TYPE.FUNDS_AND_PAYLOAD: Case 2: (Native/ERC20 Funds) + Payload
+        if (hasPayload && hasFunds) {
+            // Case 2.1: No batching (ERC-20 funds, user already has UEA gas)
+            if (!fundsIsNative && !hasNativeValue) {
+                return TX_TYPE.FUNDS_AND_PAYLOAD;
+            }
+            // Case 2.2: Batching: native funds + native gas (later we enforce nativeValue >= amount)
+            if (fundsIsNative && hasNativeValue) {
+                return TX_TYPE.FUNDS_AND_PAYLOAD;
+            }
+            // Case 2.3: Batching: ERC-20 funds + native gas
+            if (!fundsIsNative && hasNativeValue) {
+                return TX_TYPE.FUNDS_AND_PAYLOAD;
+            }
             revert Errors.InvalidInput();
         }
-        if (revertInstruction.fundRecipient == address(0)) {
-            revert Errors.InvalidRecipient();
-        }
 
-        if (amount == 0) {
-            revert Errors.InvalidAmount();
-        }
-        // Note: For Testnet, FUNDS TX TYPE can accept non-zero address 
-        // if( tx_type == TX_TYPE.FUNDS && recipient != address(0)) {
-        //     revert Errors.InvalidRecipient();
-        // }
-    }
-
-    /// @notice Validation helper for fee abstraction parameters used by the token-gas overload.
-    /// @dev    Does not involve any amount checks. Only validates the arguments passed.
-    function _validateFeeAbstractionParams(  
-        address gasToken,
-        uint256 gasAmount,
-        uint256 amountOutMinETH,
-        uint256 deadline
-    ) internal view {
-        if (gasToken == address(0)) revert Errors.InvalidInput();
-        if (gasAmount == 0) revert Errors.InvalidAmount();
-        if (amountOutMinETH == 0) revert Errors.InvalidAmount();
-        if (deadline != 0 && deadline < block.timestamp) revert Errors.SlippageExceededOrExpired();
+        revert Errors.InvalidInput();
     }
 
     // =========================

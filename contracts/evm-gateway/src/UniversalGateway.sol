@@ -244,20 +244,6 @@ contract UniversalGateway is
         }
     }
 
-    /// @notice             Update limit thresholds for a batch of tokens
-    /// @param tokens       tokens to update limit thresholds for
-    /// @param thresholds   limit thresholds for the tokens
-    function updateTokenLimitThreshold(address[] calldata tokens, uint256[] calldata thresholds)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (tokens.length != thresholds.length) revert Errors.InvalidInput();
-        for (uint256 i = 0; i < tokens.length; i++) {
-            tokenToLimitThreshold[tokens[i]] = thresholds[i];
-            emit TokenLimitThresholdUpdated(tokens[i], thresholds[i]);
-        }
-    }
-
     /// @notice               Update the epoch duration (hard reset schedule)
     /// @param newDurationSec new epoch duration
     function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
