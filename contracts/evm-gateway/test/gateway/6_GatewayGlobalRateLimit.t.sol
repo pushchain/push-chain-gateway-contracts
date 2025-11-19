@@ -56,7 +56,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
     // Use buildDefaultPayload() and buildDefaultRevertInstructions() from BaseTest
 
     function _buildDefaultRevertInstructions() internal view returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: user1, revertContext: bytes("") });
+        return RevertInstructions({ fundRecipient: user1, revertMsg: bytes("") });
     }
 
     function _getCurrentEpoch() internal view returns (uint256) {

@@ -120,7 +120,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: payloadBytes,
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0x456), 
-                revertContext: bytes("test") 
+                revertMsg: bytes("test") 
             }),
             signatureData: bytes("sig")
         });
@@ -557,7 +557,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0x456), 
-                revertContext: bytes("test") 
+                revertMsg: bytes("test") 
             }),
             signatureData: bytes("sig")
         });
@@ -573,7 +573,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0x456), 
-                revertContext: bytes("test") 
+                revertMsg: bytes("test") 
             }),
             signatureData: bytes("sig")
         });
@@ -596,7 +596,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0x456), 
-                revertContext: bytes("test") 
+                revertMsg: bytes("test") 
             }),
             signatureData: bytes("")
         });
@@ -612,7 +612,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0x456), 
-                revertContext: bytes("test") 
+                revertMsg: bytes("test") 
             }),
             signatureData: bytes("different signature data")
         });
@@ -626,7 +626,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
         uint256 amount = 500 ether;
         uint256 nativeValue = 0.003 ether;  // $6 gas within $1-$10 cap
         
-        // Test with different revertContext
+        // Test with different revertMsg
         UniversalTxRequest memory req1 = UniversalTxRequest({
             recipient: address(0),
             token: erc20A,
@@ -634,7 +634,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0x456), 
-                revertContext: bytes("context1") 
+                revertMsg: bytes("context1") 
             }),
             signatureData: bytes("sig")
         });
@@ -649,7 +649,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0x456), 
-                revertContext: bytes("completely different context") 
+                revertMsg: bytes("completely different context") 
             }),
             signatureData: bytes("sig")
         });

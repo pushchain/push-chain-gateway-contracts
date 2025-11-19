@@ -71,15 +71,15 @@ contract UniversalGatewayPCTest is Test {
     //      HELPER FUNCTIONS
     // =========================
     function buildRevertInstructions(address fundRecipient) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: fundRecipient, revertContext: bytes("") });
+        return RevertInstructions({ fundRecipient: fundRecipient, revertMsg: bytes("") });
     }
 
-    function buildRevertInstructionsWithMsg(address fundRecipient, string memory revertContext) 
+    function buildRevertInstructionsWithMsg(address fundRecipient, string memory revertMsg) 
         internal 
         pure 
         returns (RevertInstructions memory) 
     {
-        return RevertInstructions({ fundRecipient: fundRecipient, revertContext: bytes(revertContext) });
+        return RevertInstructions({ fundRecipient: fundRecipient, revertMsg: bytes(revertMsg) });
     }
 
     function calculateExpectedGasFee(uint256 gasLimit) internal view returns (uint256) {

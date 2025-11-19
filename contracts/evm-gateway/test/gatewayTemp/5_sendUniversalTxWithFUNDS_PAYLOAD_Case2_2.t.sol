@@ -134,7 +134,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: bytes("")
         });
     }
@@ -479,7 +479,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: encodedPayload,
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0),  // Zero address
-                revertContext: bytes("") 
+                revertMsg: bytes("") 
             }),
             signatureData: bytes("")
         });
@@ -910,20 +910,20 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
         gatewayTemp.sendUniversalTx{ value: msgValue }(req);
     }
 
-    /// @notice Test Case 2.2 - Events preserve revertContext
-    /// @dev Both events should preserve revertContext
-    function test_Case2_2_FUNDS_AND_PAYLOAD_Native_EventsPreserveRevertContext() public {
+    /// @notice Test Case 2.2 - Events preserve revertMsg
+    /// @dev Both events should preserve revertMsg
+    function test_Case2_2_FUNDS_AND_PAYLOAD_Native_EventsPreserverevertMsg() public {
         uint256 msgValue = 1.002 ether;
         uint256 fundsAmount = 1 ether;
         // gasAmount = 0.002 ETH = $4 (within caps)
-        bytes memory revertContext = abi.encodePacked("custom revert", uint256(999));
+        bytes memory revertMsg = abi.encodePacked("custom revert", uint256(999));
         
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
         
         RevertInstructions memory revertInst = RevertInstructions({
             fundRecipient: address(0x456),
-            revertContext: revertContext
+            revertMsg: revertMsg
         });
         
         UniversalTxRequest memory req = UniversalTxRequest({
@@ -937,7 +937,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
 
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: msgValue }(req);
-        // Both events should have preserved revertContext (verified implicitly)
+        // Both events should have preserved revertMsg (verified implicitly)
     }
 
     /// @notice Test Case 2.2 - Events preserve signatureData
@@ -956,7 +956,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: sigData
         });
 

@@ -129,7 +129,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: bytes("")
         });
     }
@@ -636,7 +636,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             payload: bytes(""),
             revertInstruction: RevertInstructions({ 
                 fundRecipient: address(0),  // Zero address not allowed
-                revertContext: bytes("") 
+                revertMsg: bytes("") 
             }),
             signatureData: bytes("")
         });
@@ -676,15 +676,15 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         assertEq(tss.balance, tssBalanceBefore + (fundsAmount * 3), "All users should succeed");
     }
 
-    /// @notice Test FUNDS - event preserves revertContext
-    /// @dev RevertContext should be emitted correctly
-    function test_SendTxWithFunds_FUNDS_EventPreservesRevertContext() public {
+    /// @notice Test FUNDS - event preserves revertMsg
+    /// @dev revertMsg should be emitted correctly
+    function test_SendTxWithFunds_FUNDS_EventPreservesrevertMsg() public {
         uint256 fundsAmount = 100 ether;
-        bytes memory revertContext = abi.encodePacked("custom revert data", uint256(12345));
+        bytes memory revertMsg = abi.encodePacked("custom revert data", uint256(12345));
         
         RevertInstructions memory revertInst = RevertInstructions({ 
             fundRecipient: address(0x999), 
-            revertContext: revertContext
+            revertMsg: revertMsg
         });
         
         UniversalTxRequest memory req = UniversalTxRequest({
@@ -704,7 +704,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: revertInst,  // Full struct with revertContext
+            revertInstruction: revertInst,  // Full struct with revertMsg
             signatureData: bytes("")
         });
 

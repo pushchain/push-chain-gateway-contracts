@@ -331,7 +331,7 @@ abstract contract BaseTest is Test {
     }
 
     function revertCfg(address fundRecipient_) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: fundRecipient_, revertContext: bytes("") });    
+        return RevertInstructions({ fundRecipient: fundRecipient_, revertMsg: bytes("") });    
     }
 
     /// @notice Build a default payload for testing (commonly used across test files)
@@ -353,7 +353,7 @@ abstract contract BaseTest is Test {
     /// @notice Build default revert instructions for testing (commonly used across test files)
     /// @dev Returns revert instructions with a default recipient
     function buildDefaultRevertInstructions() internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") });
+        return RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") });
     }
 
     // =========================
@@ -470,7 +470,7 @@ abstract contract BaseTest is Test {
             vType: VerificationType(0)
         });
 
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: to, revertContext: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: to, revertMsg: bytes("") });
 
         return (payload, revertCfg_);
     }

@@ -128,7 +128,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: bytes("")
         });
     }

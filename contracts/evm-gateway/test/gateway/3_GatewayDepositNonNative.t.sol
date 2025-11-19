@@ -240,7 +240,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendFunds (ERC20) with valid parameters
     function testSendFunds_ERC20_HappyPath() public {
         // Setup: Create revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         // Use USDC for bridging
         uint256 bridgeAmount = 1000e6; // 1000 USDC (6 decimals)
@@ -361,7 +361,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test all ERC20 functions with minimum valid amounts
     function testAllERC20Functions_MinimumAmounts_Success() public {
         // Test sendFunds with minimum amount (no Uniswap dependency)
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         uint256 minAmount = 1; // Minimum amount
 
@@ -391,7 +391,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test all ERC20 functions with maximum valid amounts
     function testAllERC20Functions_MaximumAmounts_Success() public {
         // Test sendFunds with maximum amount (no Uniswap dependency)
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         // Test sendFunds with maximum amount
         uint256 maxTokenAmount = 1000000e6; // Large token amount
@@ -577,7 +577,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test sendFunds (ERC20) with zero bridge amount
     function testSendFunds_ERC20_ZeroBridgeAmount_Reverts() public {
         // Setup: Create revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         // Note: ERC20 sendFunds doesn't explicitly check for zero amount
         // The _handleTokenDeposit function just calls safeTransferFrom with zero amount
@@ -753,7 +753,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test that ERC20 bridge tokens are actually transferred to gateway
     function testSendFunds_ERC20_TokenTransferToGateway_Success() public {
         // Setup: Create revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         uint256 tokenAmount = 1000e6; // 1000 USDC (6 decimals)
 
@@ -846,7 +846,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
     /// @notice Test comprehensive edge cases for ERC20 functions
     function testERC20Functions_EdgeCases_Success() public {
         // Setup: Create payload and revert config
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertContext: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: recipient, revertMsg: bytes("") });
 
         uint256 amount = 1000e6; // 1000 USDC (6 decimals)
 
@@ -1009,7 +1009,7 @@ contract GatewayDepositNonNativeTest is BaseTest {
             vType: VerificationType.signedVerification
         });
 
-        RevertInstructions memory revertCfg = RevertInstructions({ fundRecipient: to, revertContext: bytes("") });
+        RevertInstructions memory revertCfg = RevertInstructions({ fundRecipient: to, revertMsg: bytes("") });
 
         return (payload, revertCfg);
     }
