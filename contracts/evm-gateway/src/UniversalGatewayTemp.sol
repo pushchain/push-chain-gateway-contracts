@@ -232,42 +232,6 @@ contract UniversalGatewayTemp is
         uniV3Router = ISwapRouterV3(router);
     }
 
-    /// @notice             Set limit thresholds for a batch of tokens (0 disables support for that token)
-    /// @param tokens       tokens to set limit thresholds for
-    /// @param thresholds   limit thresholds for the tokens
-    function setTokenLimitThresholds(address[] calldata tokens, uint256[] calldata thresholds)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (tokens.length != thresholds.length) revert Errors.InvalidInput();
-        for (uint256 i = 0; i < tokens.length; i++) {
-            tokenToLimitThreshold[tokens[i]] = thresholds[i];
-            emit TokenLimitThresholdUpdated(tokens[i], thresholds[i]);
-        }
-    }
-
-    /// @notice             Update limit thresholds for a batch of tokens
-    /// @param tokens       tokens to update limit thresholds for
-    /// @param thresholds   limit thresholds for the tokens
-    function updateTokenLimitThreshold(address[] calldata tokens, uint256[] calldata thresholds)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (tokens.length != thresholds.length) revert Errors.InvalidInput();
-        for (uint256 i = 0; i < tokens.length; i++) {
-            tokenToLimitThreshold[tokens[i]] = thresholds[i];
-            emit TokenLimitThresholdUpdated(tokens[i], thresholds[i]);
-        }
-    }
-
-    /// @notice               Update the epoch duration (hard reset schedule)
-    /// @param newDurationSec new epoch duration
-    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 old = epochDurationSec;
-        epochDurationSec = newDurationSec;
-        emit EpochDurationUpdated(old, newDurationSec);
-    }
-
     /// @notice             Allows the admin to set the fee order for the Uniswap V3 router
     /// @param a            new fee order
     /// @param b            new fee order
@@ -304,6 +268,28 @@ contract UniversalGatewayTemp is
     /// @param gracePeriodSec if > 0, require `block.timestamp - sequencer.updatedAt > gracePeriodSec`
     function setL2SequencerGracePeriod(uint256 gracePeriodSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         l2SequencerGracePeriodSec = gracePeriodSec;
+    }
+
+        /// @notice             Set limit thresholds for a batch of tokens (0 disables support for that token)
+    /// @param tokens       tokens to set limit thresholds for
+    /// @param thresholds   limit thresholds for the tokens
+    function setTokenLimitThresholds(address[] calldata tokens, uint256[] calldata thresholds)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        if (tokens.length != thresholds.length) revert Errors.InvalidInput();
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokenToLimitThreshold[tokens[i]] = thresholds[i];
+            emit TokenLimitThresholdUpdated(tokens[i], thresholds[i]);
+        }
+    }
+
+    /// @notice               Update the epoch duration (hard reset schedule)
+    /// @param newDurationSec new epoch duration
+    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 old = epochDurationSec;
+        epochDurationSec = newDurationSec;
+        emit EpochDurationUpdated(old, newDurationSec);
     }
 
     // =========================
@@ -354,13 +340,13 @@ contract UniversalGatewayTemp is
 
         if (_gasAmount > 0) {
             // performs rate-limit checks and handle deposit when gasAmount > 0
-            _checkUSDCaps(_gasAmount);
-            _checkBlockUSDCap(_gasAmount);
-            _handleDeposits(address(0), _gasAmount);
+        _checkUSDCaps(_gasAmount);
+        _checkBlockUSDCap(_gasAmount);
+        _handleDeposits(address(0), _gasAmount);
         }
 
         _emitUniversalTx( // recipient as address(0) -> UEA.
-            _caller, address(0), address(0), _gasAmount, _payload, _revertInstruction, _txType, _signatureData);
+        _caller, address(0), address(0), _gasAmount, _payload, _revertInstruction, _txType, _signatureData);
     }
 
     
@@ -967,7 +953,7 @@ contract UniversalGatewayTemp is
             }
             revert Errors.InvalidInput();
         }
-
+        
         // For TX_TYPE.FUNDS_AND_PAYLOAD: Case 2: (Native/ERC20 Funds) + Payload
         if (hasPayload && hasFunds) {
             // Case 2.1: No batching (ERC-20 funds, user already has UEA gas)
@@ -985,8 +971,8 @@ contract UniversalGatewayTemp is
             revert Errors.InvalidInput();
         }
 
-        revert Errors.InvalidInput();
-    }
+            revert Errors.InvalidInput();
+        }
 
     /// @dev Internal router that dispatches to the appropriate handler based on TX_TYPE
     /// @param req The universal transaction request (memory for token-gas, can accept calldata too)
