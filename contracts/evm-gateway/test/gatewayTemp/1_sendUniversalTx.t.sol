@@ -55,13 +55,8 @@ contract GatewaySendUniversalTxTest is BaseTest {
         tokens[1] = address(tokenA); // Mock ERC20 tokenA
         tokens[2] = address(usdc); // Mock ERC20 usdc
         tokens[3] = address(weth); // Mock WETH
-        tokens[0] = address(0); // Native token
-        tokens[1] = address(tokenA); // Mock ERC20 tokenA
-        tokens[2] = address(usdc); // Mock ERC20 usdc
-        tokens[3] = address(weth); // Mock WETH
         thresholds[0] = 1000000 ether; // Large threshold for native
         thresholds[1] = 1000000 ether; // Large threshold for tokenA
-        thresholds[2] = 1000000e6; // Large threshold for usdc (6 decimals)
         thresholds[2] = 1000000e6; // Large threshold for usdc (6 decimals)
         thresholds[3] = 1000000 ether; // Large threshold for weth
 
