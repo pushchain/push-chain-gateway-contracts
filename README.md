@@ -131,7 +131,7 @@ Rate limiting protects the protocol across both routes. All USD values below are
 
 - Fee abstraction caps: `setCapsUSD(minCapUsd, maxCapUsd)`
 - Per-block budget: `setBlockUsdCap(cap1e18)`
-- Per-token epoch thresholds: `setTokenLimitThresholds(tokens[], thresholds[])`, `updateTokenLimitThreshold(tokens[], thresholds[])`
+- Per-token epoch thresholds: `setTokenLimitThresholds(tokens[], thresholds[])`
 - Epoch duration: `updateEpochDuration(newDurationSec)`
 
 ### Additional Safety
@@ -175,7 +175,7 @@ Administrative setters (all `onlyRole(DEFAULT_ADMIN_ROLE)` and `whenNotPaused` u
 - Caps: `setCapsUSD(min, max)`; block budget: `setBlockUsdCap(cap1e18)`
 - Uniswap: `setRouters(factory, router)`, `setV3FeeOrder(a, b, c)`, `setDefaultSwapDeadline(deadlineSec)`
 - Chainlink: `setEthUsdFeed(addr)`, `setChainlinkStalePeriod(sec)`, `setL2SequencerFeed(addr)`, `setL2SequencerGracePeriod(sec)`
-- Rate limits: `setTokenLimitThresholds(tokens[], thresholds[])`, `updateTokenLimitThreshold(tokens[], thresholds[])`, `updateEpochDuration(sec)`
+- Rate limits: `setTokenLimitThresholds(tokens[], thresholds[])`, `updateEpochDuration(sec)`
 
 Withdrawals (TSS only):
 - `withdrawFunds(recipient, token, amount)`
