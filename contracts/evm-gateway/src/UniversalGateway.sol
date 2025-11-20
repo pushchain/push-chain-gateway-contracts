@@ -40,7 +40,9 @@ import { IUniversalGateway } from "./interfaces/IUniversalGateway.sol";
 import { RevertInstructions, 
             UniversalPayload, 
                 TX_TYPE, 
-                    EpochUsage } from "./libraries/Types.sol";
+                    EpochUsage,
+                        UniversalTxRequest,
+                            UniversalTokenTxRequest } from "./libraries/Types.sol";
 
 import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import { IUniswapV3Factory } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -291,8 +293,11 @@ contract UniversalGateway is
     }
 
     // =========================
-    //     sendTxWithGas - Fee Abstraction Route
+    //     Send Universal Transaction
     // =========================
+
+
+    // LEGACY WRAPPER FUNCTIONS - TO-BE-REMOVED //
 
     /// @inheritdoc IUniversalGateway
     function sendTxWithGas(
@@ -513,6 +518,8 @@ contract UniversalGateway is
         
         emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
     }
+
+     // LEGACY WRAPPER FUNCTIONS - TO-BE-REMOVED //
     
     /// @inheritdoc IUniversalGateway
     function revertUniversalTx(
@@ -736,19 +743,6 @@ contract UniversalGateway is
         usd1e18 = (amountWei * px1e18) / 1e18;
     }
 
-    // =========================
-    //       INTERNAL HELPERS
-    // =========================
-
-    /// @dev                Check if the amount is within the USD cap range
-    ///                     Cap Ranges are defined in the constructor or can be updated by the admin.
-    /// @param amount       Amount to check
-    function _checkUSDCaps(uint256 amount) public view {
-        uint256 usdValue = quoteEthAmountInUsd1e18(amount);
-        if (usdValue < MIN_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
-        if (usdValue > MAX_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
-    }
-
     /// @dev                Enforce per-block USD budget for GAS routes using two-scalar accounting.
     ///                     - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.
     ///                     - Resets the window when a new block is observed.
@@ -773,6 +767,37 @@ contract UniversalGateway is
         }
     }
 
+    /// @notice             Returns both the total token amount used and remaining in the current epoch.
+    /// @param token        token address to query (use address(0) for native)
+    /// @return used        amount already consumed in the current epoch (in token's natural units)
+    /// @return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
+    function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining) {
+        uint256 thr = tokenToLimitThreshold[token];
+        if (thr == 0) return (0, 0);
+
+        uint256 _epochDuration = epochDurationSec;
+        if (_epochDuration == 0) return (0, 0);
+
+        uint64 current = uint64(block.timestamp / _epochDuration);
+        EpochUsage storage e = _usage[token];
+        uint256 u = (e.epoch == current) ? uint256(e.used) : 0;
+
+        used = u;
+        remaining = u >= thr ? 0 : (thr - u);
+    }
+
+    // =========================
+    //       INTERNAL HELPERS
+    // =========================
+
+    /// @dev                Check if the amount is within the USD cap range
+    ///                     Cap Ranges are defined in the constructor or can be updated by the admin.
+    /// @param amount       Amount to check
+    function _checkUSDCaps(uint256 amount) public view {
+        uint256 usdValue = quoteEthAmountInUsd1e18(amount);
+        if (usdValue < MIN_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
+        if (usdValue > MAX_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
+    }
     /// @dev                Handle deposits of native ETH or ERC20 tokens
     ///                     If token is address(0): Forward native ETH to TSS
     ///                     Otherwise: Lock ERC20 in the Vault contract for bridging
@@ -789,8 +814,6 @@ contract UniversalGateway is
             IERC20(token).safeTransferFrom(_msgSender(), VAULT, amount);
         }
     }
-
-    // _handleTokenWithdraw function removed as token withdrawals are now handled by the Vault
 
     /// @dev Safely reset approval to zero before granting any new allowance to target contract.
     function _resetApproval(address token, address spender) internal {
@@ -857,25 +880,6 @@ contract UniversalGateway is
             if (newUsed > threshold) revert Errors.RateLimitExceeded();
             e.used = uint192(newUsed);
         }
-    }
-
-    /// @notice             Returns both the total token amount used and remaining in the current epoch.
-    /// @param token        token address to query (use address(0) for native)
-    /// @return used        amount already consumed in the current epoch (in token's natural units)
-    /// @return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
-    function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining) {
-        uint256 thr = tokenToLimitThreshold[token];
-        if (thr == 0) return (0, 0);
-
-        uint256 _epochDuration = epochDurationSec;
-        if (_epochDuration == 0) return (0, 0);
-
-        uint64 current = uint64(block.timestamp / _epochDuration);
-        EpochUsage storage e = _usage[token];
-        uint256 u = (e.epoch == current) ? uint256(e.used) : 0;
-
-        used = u;
-        remaining = u >= thr ? 0 : (thr - u);
     }
 
     /// @dev                        Swap any ERC20 to the chain's native token via a direct Uniswap v3 pool to WETH.

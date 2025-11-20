@@ -133,54 +133,53 @@ contract UniversalGatewayV0 is
      * @param factory          UniswapV2 factory 
      * @param router           UniswapV2 router
      */
-    ///@audit Commented for testnet Size LIMIT
-    // function initialize(
-    //     address admin,
-    //     address pauser,
-    //     address tss,
-    //     uint256 minCapUsd,
-    //     uint256 maxCapUsd,
-    //     address factory,
-    //     address router,
-    //     address _wethAddress,
-    //     address _usdtAddress,
-    //     address _usdtUsdPriceFeed,
-    //     address _ethUsdPriceFeed
-    // ) external initializer {
-    //     if (admin == address(0) || 
-    //         pauser == address(0) || 
-    //         tss == address(0) ||
-    //         _wethAddress == address(0)) revert Errors.ZeroAddress();
+    function initialize( ///@audit Commented for testnet Size LIMIT
+        address admin,
+        address pauser,
+        address tss,
+        uint256 minCapUsd,
+        uint256 maxCapUsd,
+        address factory,
+        address router,
+        address _wethAddress,
+        address _usdtAddress,
+        address _usdtUsdPriceFeed,
+        address _ethUsdPriceFeed
+    ) external initializer {
+        if (admin == address(0) || 
+            pauser == address(0) || 
+            tss == address(0) ||
+            _wethAddress == address(0)) revert Errors.ZeroAddress();
 
-    //     __Context_init();
-    //     __Pausable_init();
-    //     __ReentrancyGuard_init();
-    //     __AccessControl_init();
+        __Context_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
+        __AccessControl_init();
 
-    //     _grantRole(DEFAULT_ADMIN_ROLE, admin);
-    //     _grantRole(PAUSER_ROLE,          pauser);
-    //     _grantRole(TSS_ROLE,             tss);
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(PAUSER_ROLE,          pauser);
+        _grantRole(TSS_ROLE,             tss);
 
-    //     TSS_ADDRESS = tss;
-    //     MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
-    //     MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
+        TSS_ADDRESS = tss;
+        MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
+        MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
         
-    //     WETH = _wethAddress;
-    //     if (factory != address(0) && router != address(0)) {
-    //         uniV3Factory = IUniswapV3Factory(factory);
-    //         uniV3Router  = ISwapRouterSepolia(router);
+        WETH = _wethAddress;
+        if (factory != address(0) && router != address(0)) {
+            uniV3Factory = IUniswapV3Factory(factory);
+            uniV3Router  = ISwapRouterSepolia(router);
 
-    //     }
-    //     // Default swap deadline window (industry common ~10 minutes)
-    //     defaultSwapDeadlineSec = 10 minutes;
+        }
+        // Default swap deadline window (industry common ~10 minutes)
+        defaultSwapDeadlineSec = 10 minutes;
 
-    //     // Set a sane default for Chainlink staleness (can be tuned by admin)
-    //     chainlinkStalePeriod = 1 hours;
-    //     usdtUsdPriceFeed = AggregatorV3Interface(_usdtUsdPriceFeed);
-    //     ethUsdFeed = AggregatorV3Interface(_ethUsdPriceFeed);
-    //     USDT = _usdtAddress;
+        // Set a sane default for Chainlink staleness (can be tuned by admin)
+        chainlinkStalePeriod = 1 hours;
+        usdtUsdPriceFeed = AggregatorV3Interface(_usdtUsdPriceFeed);
+        ethUsdFeed = AggregatorV3Interface(_ethUsdPriceFeed);
+        USDT = _usdtAddress;
 
-    // }
+    }
 
     /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.
     modifier onlyTSS() {
