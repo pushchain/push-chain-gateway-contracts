@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertInstructions, UniversalPayload, TX_TYPE } from "../libraries/Types.sol";
+import { RevertInstructions, 
+            UniversalPayload, 
+            TX_TYPE, 
+                UniversalTxRequest, 
+                    UniversalTokenTxRequest } from "../libraries/Types.sol";
 
 interface IUniversalGateway {
     // =========================
@@ -92,6 +96,14 @@ interface IUniversalGateway {
     event RevertUniversalTx(bytes32 indexed txID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
 
     
+    function sendUniversalTx(
+        UniversalTxRequest calldata req
+    ) external payable;
+
+    function sendUniversalTx(
+        UniversalTokenTxRequest calldata reqToken
+    ) external payable;
+
     // =========================
     //     sendTxWithGas - Fee Abstraction Route
     // =========================
