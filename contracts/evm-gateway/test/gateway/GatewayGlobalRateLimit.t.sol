@@ -5,7 +5,7 @@ import { Test, console2 } from "forge-std/Test.sol";
 import { BaseTest } from "../BaseTest.t.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
-import { RevertInstructions, UniversalPayload, TX_TYPE, VerificationType } from "../../src/libraries/Types.sol";
+import { RevertInstructions, UniversalPayload, TX_TYPE, VerificationType, UniversalTxRequest } from "../../src/libraries/Types.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
@@ -61,6 +61,18 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
     function _getCurrentEpoch() internal view returns (uint256) {
         return block.timestamp / gateway.epochDurationSec();
+    }
+
+    /// @notice Helper to build UniversalTxRequest for FUNDS transactions
+    function _buildFundsTxRequest(address token, uint256 amount) internal view returns (UniversalTxRequest memory) {
+        return UniversalTxRequest({
+            recipient: address(0), // FUNDS requires recipient == address(0)
+            token: token,
+            amount: amount,
+            payload: bytes(""), // Empty payload for FUNDS
+            revertInstruction: _buildDefaultRevertInstructions(),
+            signatureData: bytes("")
+        });
     }
 
     // ==========================================
@@ -218,15 +230,8 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Payload not needed for this test
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         vm.expectRevert(Errors.NotSupported.selector);
-        gateway.sendFunds(
-            recipient,
-            address(tokenA), // Unsupported token
-            10 ether,
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 10 ether));
 
         vm.stopPrank();
     }
@@ -250,10 +255,8 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Payload not needed for this test
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         vm.expectRevert(Errors.InvalidData.selector);
-        gateway.sendFunds(recipient, address(tokenA), 10 ether, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 10 ether));
 
         vm.stopPrank();
     }
@@ -271,15 +274,8 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         vm.startPrank(user1);
 
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(
-            recipient,
-            address(tokenA),
-            TOKEN_A_THRESHOLD + 1, // Exceeds threshold
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), TOKEN_A_THRESHOLD + 1));
 
         vm.stopPrank();
     }
@@ -296,14 +292,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         vm.startPrank(user1);
 
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
-        gateway.sendFunds(
-            recipient,
-            address(tokenA),
-            TOKEN_A_THRESHOLD, // Exactly the threshold
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), TOKEN_A_THRESHOLD));
 
         vm.stopPrank();
 
@@ -325,11 +314,9 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         vm.startPrank(user1);
 
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         uint256 sendAmount = TOKEN_A_THRESHOLD / 2;
 
-        gateway.sendFunds(recipient, address(tokenA), sendAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), sendAmount));
 
         vm.stopPrank();
 
@@ -351,13 +338,11 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         vm.startPrank(user1);
 
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         uint256 firstAmount = TOKEN_A_THRESHOLD / 3;
         uint256 secondAmount = TOKEN_A_THRESHOLD / 3;
         uint256 thirdAmount = TOKEN_A_THRESHOLD / 3;
 
-        gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstAmount));
 
         // Verify first usage
         (uint256 usedAfterFirst, uint256 remainingAfterFirst) = gateway.currentTokenUsage(address(tokenA));
@@ -365,7 +350,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         assertEq(remainingAfterFirst, TOKEN_A_THRESHOLD - firstAmount, "Remaining amount after first tx incorrect");
 
         // Second transaction
-        gateway.sendFunds(recipient, address(tokenA), secondAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondAmount));
 
         // Verify second usage
         (uint256 usedAfterSecond, uint256 remainingAfterSecond) = gateway.currentTokenUsage(address(tokenA));
@@ -377,7 +362,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         );
 
         // Third transaction
-        gateway.sendFunds(recipient, address(tokenA), thirdAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), thirdAmount));
 
         // Verify third usage
         (uint256 usedAfterThird, uint256 remainingAfterThird) = gateway.currentTokenUsage(address(tokenA));
@@ -391,7 +376,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 fourthAmount = TOKEN_A_THRESHOLD - firstAmount - secondAmount - thirdAmount + 1; // Just over the limit
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(recipient, address(tokenA), fourthAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), fourthAmount));
 
         vm.stopPrank();
     }
@@ -410,17 +395,9 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Send native token
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         // Send half the threshold
         uint256 firstAmount = NATIVE_THRESHOLD / 2;
-        gateway.sendFunds{ value: firstAmount }(
-            recipient,
-            address(0), // Native token
-            firstAmount,
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: firstAmount }(_buildFundsTxRequest(address(0), firstAmount));
 
         // Verify usage
         (uint256 used, uint256 remaining) = gateway.currentTokenUsage(address(0));
@@ -432,12 +409,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Expect revert with RateLimitExceeded
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds{ value: secondAmount }(
-            recipient,
-            address(0), // Native token
-            secondAmount,
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: secondAmount }(_buildFundsTxRequest(address(0), secondAmount));
 
         vm.stopPrank();
     }
@@ -462,17 +434,9 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Try to send funds with unsupported native token
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         // Expect revert with NotSupported
         vm.expectRevert(Errors.NotSupported.selector);
-        gateway.sendFunds{ value: 1 ether }(
-            recipient,
-            address(0), // Native token
-            1 ether,
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: 1 ether }(_buildFundsTxRequest(address(0), 1 ether));
 
         vm.stopPrank();
     }
@@ -497,11 +461,8 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         // First epoch - use full threshold
-        gateway.sendFunds(recipient, address(tokenA), TOKEN_A_THRESHOLD, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), TOKEN_A_THRESHOLD));
 
         // Verify first epoch usage
         (uint256 usedFirstEpoch, uint256 remainingFirstEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -550,7 +511,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         assertEq(remainingFarFuture, TOKEN_A_THRESHOLD, "Far future epoch remaining should be full threshold");
 
         // Send funds in far future epoch
-        gateway.sendFunds(recipient, address(tokenA), TOKEN_A_THRESHOLD, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), TOKEN_A_THRESHOLD));
 
         // Verify usage in far future epoch
         (uint256 usedAfterSend, uint256 remainingAfterSend) = gateway.currentTokenUsage(address(tokenA));
@@ -573,12 +534,10 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         vm.startPrank(user1);
 
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         uint256 firstEpochAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
         // Send in first epoch
-        gateway.sendFunds(recipient, address(tokenA), firstEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstEpochAmount));
 
         // Verify first epoch usage
         (uint256 usedFirstEpoch, uint256 remainingFirstEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -604,7 +563,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 secondEpochAmount = TOKEN_A_THRESHOLD; // Use 100% of threshold in new epoch
 
         // Send in second epoch
-        gateway.sendFunds(recipient, address(tokenA), secondEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondEpochAmount));
 
         // Verify second epoch usage after transaction
         (uint256 usedSecondEpoch, uint256 remainingSecondEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -616,7 +575,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Expect revert with RateLimitExceeded
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(recipient, address(tokenA), excessAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), excessAmount));
 
         vm.stopPrank();
     }
@@ -635,12 +594,9 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Send funds to consume part of the threshold
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         uint256 firstEpochAmount = TOKEN_A_THRESHOLD / 2; // Use 50% of the threshold
 
-        gateway.sendFunds(recipient, address(tokenA), firstEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstEpochAmount));
 
         // Verify first epoch usage
         (uint256 usedFirstEpoch, uint256 remainingFirstEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -657,7 +613,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         uint256 secondEpochFirstAmount = TOKEN_A_THRESHOLD / 2; // Use 50% of threshold in new epoch
 
-        gateway.sendFunds(recipient, address(tokenA), secondEpochFirstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondEpochFirstAmount));
 
         // Verify second epoch usage after first transaction
         (uint256 usedSecondEpochFirst, uint256 remainingSecondEpochFirst) = gateway.currentTokenUsage(address(tokenA));
@@ -670,7 +626,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         uint256 secondEpochSecondAmount = TOKEN_A_THRESHOLD / 2; // Use remaining 50%
 
-        gateway.sendFunds(recipient, address(tokenA), secondEpochSecondAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondEpochSecondAmount));
 
         (uint256 usedSecondEpochSecond, uint256 remainingSecondEpochSecond) = gateway.currentTokenUsage(address(tokenA));
         assertEq(
@@ -697,12 +653,9 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Send funds to consume part of the threshold
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         // First epoch
         uint256 firstEpochAmount = TOKEN_A_THRESHOLD;
-        gateway.sendFunds(recipient, address(tokenA), firstEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstEpochAmount));
 
         // Verify first epoch usage
         (uint256 usedFirstEpoch, uint256 remainingFirstEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -719,7 +672,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Second epoch
         uint256 secondEpochAmount = TOKEN_A_THRESHOLD / 2;
-        gateway.sendFunds(recipient, address(tokenA), secondEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondEpochAmount));
 
         // Verify second epoch usage
         (uint256 usedSecondEpoch, uint256 remainingSecondEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -736,7 +689,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Third epoch
         uint256 thirdEpochAmount = TOKEN_A_THRESHOLD / 4;
-        gateway.sendFunds(recipient, address(tokenA), thirdEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), thirdEpochAmount));
 
         // Verify third epoch usage
         (uint256 usedThirdEpoch, uint256 remainingThirdEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -757,7 +710,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // After multiple skipped epochs, should still be able to use full threshold
         uint256 finalEpochAmount = TOKEN_A_THRESHOLD;
-        gateway.sendFunds(recipient, address(tokenA), finalEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), finalEpochAmount));
 
         // Verify final epoch usage
         (uint256 usedFinalEpoch, uint256 remainingFinalEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -781,15 +734,12 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Send funds in first epoch
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         // Record current epoch
         uint256 firstEpoch = _getCurrentEpoch();
 
         // First epoch transaction
         uint256 firstEpochAmount = TOKEN_A_THRESHOLD / 2;
-        gateway.sendFunds(recipient, address(tokenA), firstEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstEpochAmount));
 
         // Verify first epoch usage
         (uint256 usedFirstEpoch, uint256 remainingFirstEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -810,7 +760,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Second epoch transaction
         uint256 secondEpochAmount = TOKEN_A_THRESHOLD / 3;
-        gateway.sendFunds(recipient, address(tokenA), secondEpochAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondEpochAmount));
 
         // Verify second epoch usage after transaction
         (uint256 usedSecondEpoch, uint256 remainingSecondEpoch) = gateway.currentTokenUsage(address(tokenA));
@@ -838,18 +788,10 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Send funds with native token
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         uint256 sendAmount = NATIVE_THRESHOLD / 2;
 
         // Send funds
-        gateway.sendFunds{ value: sendAmount }(
-            recipient,
-            address(0), // Native token
-            sendAmount,
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: sendAmount }(_buildFundsTxRequest(address(0), sendAmount));
 
         // Verify usage was recorded correctly
         (uint256 used, uint256 remaining) = gateway.currentTokenUsage(address(0));
@@ -882,19 +824,18 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         UniversalPayload memory payload = buildDefaultPayload();
 
         // Try to send funds with unsupported bridge token (tokenB)
-        // The error is InvalidInput() because tokenB is not supported in the gateway
-        vm.expectRevert(Errors.InvalidInput.selector);
-        gateway.sendTxWithFunds(
-            address(tokenB), // Unsupported bridge token
-            1 ether,
-            address(tokenA), // Gas token
-            1 ether,
-            0.01 ether, // amountOutMinETH
-            block.timestamp + 3600, // deadline
-            payload,
-            revertInstructions,
-            bytes("")
-        );
+        // The error is NotSupported() because tokenB is not supported in the gateway (no threshold set)
+        bytes memory encodedPayload = abi.encode(payload);
+        UniversalTxRequest memory req = UniversalTxRequest({
+            recipient: address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            token: address(tokenB), // Unsupported bridge token
+            amount: 1 ether,
+            payload: encodedPayload,
+            revertInstruction: revertInstructions,
+            signatureData: bytes("")
+        });
+        vm.expectRevert(Errors.NotSupported.selector);
+        gateway.sendUniversalTx{ value: 0 }(req);
 
         vm.stopPrank();
     }
@@ -919,12 +860,12 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 firstAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
         // First transaction
-        gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstAmount));
 
         uint256 secondAmount = TOKEN_A_THRESHOLD / 2;
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(recipient, address(tokenA), secondAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondAmount));
 
         vm.stopPrank();
     }
@@ -935,17 +876,9 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Try to send funds with an unsupported token
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         // Expect revert with NotSupported
         vm.expectRevert(Errors.NotSupported.selector);
-        gateway.sendFunds(
-            recipient,
-            address(tokenA), // Unsupported token
-            10 ether,
-            revertInstructions
-        );
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 10 ether));
 
         vm.stopPrank();
     }
@@ -974,7 +907,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 firstAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
         // First transaction
-        gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstAmount));
 
         (uint256 usedBefore, uint256 remainingBefore) = gateway.currentTokenUsage(address(tokenA));
         assertEq(usedBefore, firstAmount, "Used amount before update incorrect");
@@ -996,7 +929,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         uint256 secondAmount = TOKEN_A_THRESHOLD;
 
-        gateway.sendFunds(recipient, address(tokenA), secondAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondAmount));
 
         // Verify usage after second transaction
         (uint256 usedAfter, uint256 remainingAfter) = gateway.currentTokenUsage(address(tokenA));
@@ -1125,7 +1058,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Expect revert with EnforcedPause
         vm.expectRevert("EnforcedPause()");
-        gateway.sendFunds(recipient, address(tokenA), 1 ether, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether));
 
         vm.stopPrank();
 
@@ -1136,7 +1069,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Now sending funds should work
         vm.startPrank(user1);
 
-        gateway.sendFunds(recipient, address(tokenA), 1 ether, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether));
 
         vm.stopPrank();
     }
@@ -1163,7 +1096,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
 
         // Send exactly 1 wei (the threshold)
-        gateway.sendFunds(recipient, address(tokenA), 1, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1));
 
         // Verify usage was recorded correctly
         (uint256 used, uint256 remaining) = gateway.currentTokenUsage(address(tokenA));
@@ -1172,7 +1105,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Try to send 1 more wei, should revert
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(recipient, address(tokenA), 1, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1));
 
         vm.stopPrank();
     }
@@ -1195,7 +1128,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
 
         // Send exactly the threshold amount
-        gateway.sendFunds(recipient, address(tokenA), TOKEN_A_THRESHOLD, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), TOKEN_A_THRESHOLD));
 
         // Verify usage was recorded correctly
         (uint256 used, uint256 remaining) = gateway.currentTokenUsage(address(tokenA));
@@ -1204,7 +1137,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Try to send 1 more wei, should revert
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(recipient, address(tokenA), 1, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1));
 
         vm.stopPrank();
     }
@@ -1232,7 +1165,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Expect revert with InvalidData
         vm.expectRevert(Errors.InvalidData.selector);
-        gateway.sendFunds(recipient, address(tokenA), 1 ether, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether));
 
         // Set epoch duration back to a valid value
         vm.stopPrank();
@@ -1242,7 +1175,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Now sending funds should work
         vm.startPrank(user1);
 
-        gateway.sendFunds(recipient, address(tokenA), 1 ether, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether));
 
         vm.stopPrank();
     }
@@ -1267,7 +1200,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 firstAmount = TOKEN_A_THRESHOLD / 2;
 
         // First transaction
-        gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstAmount));
 
         // Verify usage
         (uint256 usedBefore, uint256 remainingBefore) = gateway.currentTokenUsage(address(tokenA));
@@ -1292,7 +1225,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Expect revert with NotSupported
         vm.expectRevert(Errors.NotSupported.selector);
-        gateway.sendFunds(recipient, address(tokenA), 1 ether, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether));
 
         vm.stopPrank();
     }
@@ -1325,11 +1258,11 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Send tokenB (75% of threshold)
         uint256 tokenBAmount = (TOKEN_B_THRESHOLD * 3) / 4;
-        gateway.sendFunds(recipient, address(tokenB), tokenBAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenB), tokenBAmount));
 
         // Send native token (90% of threshold)
         uint256 nativeAmount = (NATIVE_THRESHOLD * 9) / 10;
-        gateway.sendFunds{ value: nativeAmount }(recipient, address(0), nativeAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: nativeAmount }(_buildFundsTxRequest(address(0), nativeAmount));
 
         // Verify usage for each token
         (uint256 usedA, uint256 remainingA) = gateway.currentTokenUsage(address(tokenA));
@@ -1347,20 +1280,17 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Try to exceed threshold for tokenA
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(
-            recipient,
-            address(tokenA),
-            TOKEN_A_THRESHOLD - tokenAAmount + 1, // Just over the remaining limit
-            revertInstructions
+        gateway.sendUniversalTx{ value: 0 }(
+            _buildFundsTxRequest(address(tokenA), TOKEN_A_THRESHOLD - tokenAAmount + 1)
         );
 
         // But we should still be able to send more of tokenB and native
         // Send more tokenB (up to threshold)
-        gateway.sendFunds(recipient, address(tokenB), TOKEN_B_THRESHOLD - tokenBAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenB), TOKEN_B_THRESHOLD - tokenBAmount));
 
         // Send more native (up to threshold)
-        gateway.sendFunds{ value: NATIVE_THRESHOLD - nativeAmount }(
-            recipient, address(0), NATIVE_THRESHOLD - nativeAmount, revertInstructions
+        gateway.sendUniversalTx{ value: NATIVE_THRESHOLD - nativeAmount }(
+            _buildFundsTxRequest(address(0), NATIVE_THRESHOLD - nativeAmount)
         );
 
         // Verify final usage for each token
@@ -1421,7 +1351,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 firstAmount = TOKEN_A_THRESHOLD / 2; // Use 50% of the threshold
 
         // First transaction
-        gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstAmount));
 
         // Verify usage
         (uint256 usedBefore, uint256 remainingBefore) = gateway.currentTokenUsage(address(tokenA));
@@ -1444,7 +1374,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
         // Second transaction should revert
         vm.expectRevert(Errors.RateLimitExceeded.selector);
-        gateway.sendFunds(recipient, address(tokenA), secondAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondAmount));
 
         // Verify usage after update - should be unchanged
         (uint256 usedAfter, uint256 remainingAfter) = gateway.currentTokenUsage(address(tokenA));
@@ -1474,7 +1404,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 firstAmount = TOKEN_A_THRESHOLD / 2; // Use 50% of the threshold
 
         // First transaction
-        gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstAmount));
 
         // Store the current epoch
         uint256 currentEpoch = _getCurrentEpoch();
@@ -1501,7 +1431,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 secondAmount = TOKEN_A_THRESHOLD / 4; // Another 25%
 
         // Second transaction
-        gateway.sendFunds(recipient, address(tokenA), secondAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondAmount));
 
         // Verify usage after update
         (uint256 usedAfter, uint256 remainingAfter) = gateway.currentTokenUsage(address(tokenA));
@@ -1520,7 +1450,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 thirdAmount = TOKEN_A_THRESHOLD / 4; // Final 25%
 
         // Third transaction
-        gateway.sendFunds(recipient, address(tokenA), thirdAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), thirdAmount));
 
         // Warp time to the next epoch with the new duration
         vm.warp(block.timestamp + oldDuration); // Now we've warped by 2x the old duration = 1x new duration
@@ -1532,7 +1462,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 fourthAmount = TOKEN_A_THRESHOLD;
 
         // Fourth transaction in new epoch
-        gateway.sendFunds(recipient, address(tokenA), fourthAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), fourthAmount));
 
         vm.stopPrank();
     }
@@ -1562,7 +1492,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 firstAmount = TOKEN_A_THRESHOLD / 3; // Use 1/3 of the threshold
 
         // First transaction
-        gateway.sendFunds(recipient, address(tokenA), firstAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), firstAmount));
 
         // Verify state after first transaction
         (uint256 usedAfterFirst, uint256 remainingAfterFirst) = gateway.currentTokenUsage(address(tokenA));
@@ -1572,7 +1502,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Second transaction
         uint256 secondAmount = TOKEN_A_THRESHOLD / 3; // Use another 1/3
 
-        gateway.sendFunds(recipient, address(tokenA), secondAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), secondAmount));
 
         // Verify state after second transaction
         (uint256 usedAfterSecond, uint256 remainingAfterSecond) = gateway.currentTokenUsage(address(tokenA));
@@ -1694,7 +1624,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 sendAmount = TOKEN_A_THRESHOLD / 2;
 
         // Send funds
-        gateway.sendFunds(recipient, address(tokenA), sendAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), sendAmount));
 
         vm.stopPrank();
 
@@ -1729,7 +1659,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 sendAmount = TOKEN_A_THRESHOLD / 2;
 
         // Send funds
-        gateway.sendFunds(recipient, address(tokenA), sendAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), sendAmount));
 
         vm.stopPrank();
 
