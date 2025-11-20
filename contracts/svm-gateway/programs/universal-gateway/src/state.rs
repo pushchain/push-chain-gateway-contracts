@@ -61,6 +61,17 @@ pub struct RevertInstructions {
     pub revert_msg: Vec<u8>,
 }
 
+/// Universal transaction request (parity with EVM `UniversalTxRequest`).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct UniversalTxRequest {
+    pub recipient: [u8; 20], // [0u8; 20] => credit to UEA on Push
+    pub token: Pubkey,       // Pubkey::default() => native SOL
+    pub amount: u64,         // native or SPL amount for bridging - Funds
+    pub payload: Vec<u8>,    // serialized payload (may be empty)
+    pub revert_instruction: RevertInstructions,
+    pub signature_data: Vec<u8>,
+}
+
 /// Gateway configuration state (authorities, caps, oracle).
 /// PDA: `[b"config"]`. Holds USD caps (8 decimals) for gas-route deposits and oracle config.
 #[account]

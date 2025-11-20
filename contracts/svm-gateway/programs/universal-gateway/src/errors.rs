@@ -59,6 +59,12 @@ pub enum GatewayError {
     #[msg("Invalid input")]
     InvalidInput,
 
+    #[msg("Invalid transaction type")]
+    InvalidTxType,
+
+    #[msg("Invalid data")]
+    InvalidData,
+
     #[msg("Invalid mint")]
     InvalidMint,
 

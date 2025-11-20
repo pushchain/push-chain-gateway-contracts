@@ -17,6 +17,17 @@ pub mod universal_gateway {
     //           DEPOSITS
     // =========================
 
+    /// @notice Universal transaction entrypoint with internal routing (EVM parity).
+    /// @dev    Native amount parameter mirrors `msg.value` on EVM chains.
+    ///         All routing (gas / funds / batching) is handled inside the deposit module.
+    pub fn send_universal_tx(
+        ctx: Context<SendUniversalTx>,
+        req: UniversalTxRequest,
+        native_amount: u64,
+    ) -> Result<()> {
+        instructions::deposit::send_universal_tx(ctx, req, native_amount)
+    }
+
     /// @notice Allows initiating a TX for funding UEA with gas deposits from source chain.
     /// @dev    Supports only native SOL deposits for gas funding.
     ///         The route emits UniversalTx event - important for Instant TX Route.
@@ -172,6 +183,8 @@ pub mod universal_gateway {
     }
 
     /// @notice Set token-specific rate limit threshold
+    /// @dev For batch operations, call this function multiple times in a single transaction.
+    ///      This is the Solana-idiomatic approach and provides better type safety than using remaining_accounts.
     pub fn set_token_rate_limit(
         ctx: Context<TokenRateLimitAction>,
         limit_threshold: u128,
@@ -304,7 +317,7 @@ pub mod universal_gateway {
 pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
 };
-pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas};
+pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas, SendUniversalTx};
 pub use instructions::initialize::Initialize;
 pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
 pub use instructions::withdraw::{RevertWithdraw, RevertWithdrawSplToken};
@@ -320,6 +333,7 @@ pub use state::{
     TxType,
     UniversalPayload,
     UniversalTx,
+    UniversalTxRequest,
     VerificationType,
     WithdrawFunds,
     CONFIG_SEED,
