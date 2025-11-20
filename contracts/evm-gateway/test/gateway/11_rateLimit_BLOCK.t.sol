@@ -5,7 +5,7 @@ import "../BaseTest.t.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
-import { UniversalPayload, RevertInstructions, TX_TYPE } from "../../src/libraries/Types.sol";
+import { UniversalPayload, RevertInstructions, TX_TYPE, UniversalTxRequest } from "../../src/libraries/Types.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockAggregatorV3 } from "../mocks/MockAggregatorV3.sol";
@@ -97,13 +97,11 @@ contract GatewayBlockRateLimitTest is BaseTest {
         assertEq(gateway.BLOCK_USD_CAP(), 0, "Block USD cap not disabled");
 
         // Test that with cap disabled, multiple transactions can go through
-        uint256 totalAmount = ETH_FOR_5_USD * 5; // 5x the cap if it was enabled
+        // 5x the cap if it was enabled (ETH_FOR_5_USD * 5)
 
         for (uint256 i = 0; i < 5; i++) {
             vm.prank(user1);
-            gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-                buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-            );
+            gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
         }
 
         // If we got here without reverting, the test passed
@@ -126,7 +124,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Send tx that should fail due to per-tx cap, not block cap
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.sendTxWithGas{ value: ethAmount }(buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ethAmount }(_buildGasTxRequest());
     }
 
     function testSingleCallExceedsBlockCap() public {
@@ -141,9 +139,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Send tx worth $12 (exceeds block cap)
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_12_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_12_USD }(_buildGasTxRequest());
     }
 
     function testExactlyEqualToBlockCap() public {
@@ -153,9 +149,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Send tx worth exactly $10
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_10_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_10_USD }(_buildGasTxRequest());
     }
 
     // ===========================
@@ -172,30 +166,23 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Send first tx: $2
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD }(_buildGasTxRequest());
 
         // Verify we're still in the same block
         assertEq(block.number, startingBlockNumber, "Block number changed unexpectedly");
 
         // Send second tx: $3
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD + ETH_FOR_2_USD / 2 }( // $3
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD + ETH_FOR_2_USD / 2 }(_buildGasTxRequest()); // $3
 
         // Send third tx: $5
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Try to send a fourth tx that would exceed the cap - should revert
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD }(_buildGasTxRequest());
 
         // If we got here without reverting earlier and the final transaction reverted,
         // it proves that the accumulation worked correctly
@@ -211,8 +198,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Send first tx: $6
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD + ETH_FOR_2_USD / 2 }( // $6
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD + ETH_FOR_2_USD / 2 }(_buildGasTxRequest()); // $6
 
         // Verify we're still in the same block
         assertEq(block.number, startingBlockNumber, "Block number changed unexpectedly");
@@ -220,20 +206,16 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Send second tx: $5 (should revert as total would be $11)
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // We should be able to send a smaller tx that fits within the remaining cap
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD * 2 }( // $4
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD * 2 }(_buildGasTxRequest()); // $4
 
         // But trying to send even $1 more should fail
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD / 2 }( // $1
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD / 2 }(_buildGasTxRequest()); // $1
     }
 
     function testCrossSenderGlobalBudget() public {
@@ -246,8 +228,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // First user sends tx: $6
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD + ETH_FOR_2_USD / 2 }( // $6
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD + ETH_FOR_2_USD / 2 }(_buildGasTxRequest()); // $6
 
         // Verify we're still in the same block
         assertEq(block.number, startingBlockNumber, "Block number changed unexpectedly");
@@ -255,9 +236,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Second user sends tx: $5 (should revert as total would be $11)
         vm.prank(user2);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
     }
 
     // ===========================
@@ -271,18 +250,14 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Consume full cap in block N
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_10_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_10_USD }(_buildGasTxRequest());
 
         // Move to next block
         vm.roll(block.number + 1);
 
         // Should be able to send $10 again in the new block
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_10_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_10_USD }(_buildGasTxRequest());
 
         // If we got here without reverting, the test passed
     }
@@ -294,45 +269,36 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Use $5 in block N
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }( // $5
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest()); // $5
 
         // We should be able to send another $2 in the same block
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD }( // $2
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD }(_buildGasTxRequest()); // $2
 
         // And another $2
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD }( // $2
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD }(_buildGasTxRequest()); // $2
 
         // But trying to send even $2 more should fail as we've used $9 of $10
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD }( // $2
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD }(_buildGasTxRequest()); // $2
 
         // Move to next block
         vm.roll(block.number + 1);
 
         // Should be able to send $5 in the new block
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // And another $5
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // But trying to send even $1 more should fail
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD / 2 }( // $1
-        buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD / 2 }(_buildGasTxRequest()); // $1
     }
 
     // ===========================
@@ -390,9 +356,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Try to send tx - should revert due to TSS rejecting ETH
         vm.prank(user1);
         vm.expectRevert(Errors.DepositFailed.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Restore normal TSS
         vm.prank(admin);
@@ -400,22 +364,16 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Send same tx again - should succeed because usage wasn't recorded due to revert
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Send another tx to test that block cap is working normally
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Third tx should fail as we've now reached the cap
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD }(_buildGasTxRequest());
     }
 
     // ===========================
@@ -433,7 +391,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Just under should pass
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: justUnder }(buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: justUnder }(_buildGasTxRequest());
 
         // Reset for next test
         vm.roll(block.number + 1);
@@ -442,7 +400,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Note: The per-tx cap check happens before the block cap check
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.sendTxWithGas{ value: justOver }(buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: justOver }(_buildGasTxRequest());
     }
 
     // Note: sendFunds which is a non-gas route is unaffected by the block cap.
@@ -454,9 +412,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Consume full block cap with gas route
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_10_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_10_USD }(_buildGasTxRequest());
 
         // Funds-only route should still work
         vm.prank(user1);
@@ -484,9 +440,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Use $5 of the cap
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Pause the contract
         vm.prank(admin);
@@ -495,9 +449,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         // Try to send tx while paused - should revert due to pause
         vm.prank(user1);
         vm.expectRevert("EnforcedPause()");
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Unpause
         vm.prank(admin);
@@ -505,16 +457,12 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         // Should be able to use remaining $5 of cap
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: ETH_FOR_5_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Additional tx should fail due to cap
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithGas{ value: ETH_FOR_2_USD }(
-            buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
-        );
+        gateway.sendUniversalTx{ value: ETH_FOR_2_USD }(_buildGasTxRequest());
     }
 
     // ===========================
@@ -523,6 +471,21 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
     // Helper functions moved to BaseTest.t.sol for reusability
     // Use buildDefaultPayload() and buildDefaultRevertInstructions() from BaseTest
+
+    /// @notice Helper to build UniversalTxRequest for GAS_AND_PAYLOAD transactions
+    /// @dev Creates a request that will route to GAS_AND_PAYLOAD via _fetchTxType
+    ///      (hasPayload=true, hasFunds=false, hasNativeValue=true)
+    function _buildGasTxRequest() internal view returns (UniversalTxRequest memory) {
+        UniversalPayload memory payload = buildDefaultPayload();
+        return UniversalTxRequest({
+            recipient: address(0), // GAS routes always use address(0) for UEA credit
+            token: address(0), // Native token
+            amount: 0, // No funds (amount = 0) for GAS/GAS_AND_PAYLOAD routes
+            payload: abi.encode(payload), // Non-empty payload routes to GAS_AND_PAYLOAD
+            revertInstruction: buildDefaultRevertInstructions(),
+            signatureData: bytes("")
+        });
+    }
 
     function _getEthAmountFromUsd(uint256 usdAmount1e18) internal view returns (uint256) {
         // USD(1e18) / ETH_price(1e18) * 1e18 = ETH(wei)
