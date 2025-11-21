@@ -163,7 +163,7 @@ contract UniversalGateway is
     }
 
     // =========================
-    //           ADMIN ACTIONS
+    //    UG_1: ADMIN ACTIONS
     // =========================
     function pause() external whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
@@ -292,14 +292,17 @@ contract UniversalGateway is
     }
 
     // =========================
-    //     Send Universal Transaction
+    //  UG_2: UNIVERSAL TRANSACTION
     // =========================
+
+    /// @inheritdoc IUniversalGateway
     function sendUniversalTx(UniversalTxRequest calldata req) external payable nonReentrant whenNotPaused {
         uint256 nativeValue = msg.value;
         TX_TYPE txType = _fetchTxType(req, nativeValue);
         _routeUniversalTx(req, _msgSender(), nativeValue, txType);
     }
 
+    /// @inheritdoc IUniversalGateway
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable nonReentrant whenNotPaused {
         // Validate token-as-gas parameters
         if (reqToken.gasToken == address(0)) revert Errors.InvalidInput();
@@ -324,8 +327,20 @@ contract UniversalGateway is
         _routeUniversalTx(req, _msgSender(), nativeValue, txType);
     }
 
-    /// @notice                     Internal helper function to deposit for Instant TX.
-    /// @dev                        Handles rate-limit checks for Fee Abstraction Tx Route
+
+    // =========================
+    //  UG_2.1: UNIVERSAL TRANSACTION Internal Helpers
+    // =========================
+
+    /// @notice                     Internal helper function to deposit for TX_TYPE.GAS or TX_TYPE.GAS_AND_PAYLOAD
+    /// @dev                        Handles rate-limit checks for Instant Tx Route ( Lower Block Confirmations )
+    /// @dev                        Recipient address(0) indicates the funds are attributed to the caller's UEA on Push Chain.
+    /// @param _txType              TX_TYPE.GAS or TX_TYPE.GAS_AND_PAYLOAD
+    /// @param _caller              Caller address
+    /// @param _gasAmount           Gas amount
+    /// @param _payload             Payload
+    /// @param _revertInstruction   Revert instruction
+    /// @param _signatureData       Signature data
     function _sendTxWithGas(
         TX_TYPE _txType,
         address _caller,
@@ -336,17 +351,24 @@ contract UniversalGateway is
     ) private {
 
         if (_gasAmount > 0) {
-            // performs rate-limit checks and handle deposit when gasAmount > 0
+
         _checkUSDCaps(_gasAmount);
         _checkBlockUSDCap(_gasAmount);
         _handleDeposits(address(0), _gasAmount);
+
         }
 
-        _emitUniversalTx( // recipient as address(0) -> UEA.
+        _emitUniversalTx(
         _caller, address(0), address(0), _gasAmount, _payload, _revertInstruction, _txType, _signatureData);
     }
 
-        function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue, TX_TYPE txType) private {
+    /// @notice                     Internal helper function to deposit for TX_TYPE.FUNDS or TX_TYPE.FUNDS_AND_PAYLOAD
+    /// @dev                        Handles rate-limit checks for Universal Tx Route ( Higher Block Confirmations )
+    /// @dev                        Recipient address(0) indicates the funds are attributed to the caller's UEA on Push Chain.
+    /// @param _req                 UniversalTxRequest struct
+    /// @param nativeValue          Native value ( msg.value )
+    /// @param txType               TX_TYPE.FUNDS or TX_TYPE.FUNDS_AND_PAYLOAD
+    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue, TX_TYPE txType) private {
         // Case 1: For TX_TYPE = FUNDS
 
         if (txType == TX_TYPE.FUNDS) {
@@ -439,7 +461,15 @@ contract UniversalGateway is
         }
     }
 
-    /// @dev Minimal private helper to emit the canonical UniversalTx event from a single place.
+    /// @notice                    Internal helper function to emit the UniversalTx event
+    /// @param sender              Sender address
+    /// @param recipient           Recipient address
+    /// @param token               Token address
+    /// @param amount              Amount
+    /// @param payload             Payload
+    /// @param revertInstruction   Revert instruction
+    /// @param txType              TX_TYPE
+    /// @param signatureData       Signature data
     function _emitUniversalTx(
         address sender,
         address recipient,
@@ -462,6 +492,10 @@ contract UniversalGateway is
         });
     }
 
+
+    // =========================
+    //  UG_3: REVERT HANDLING PATHS
+    // =========================
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTxToken(
@@ -511,7 +545,7 @@ contract UniversalGateway is
     }
 
     // =========================
-    //       GATEWAY Withdraw and Payload Execution Paths
+    //  UG_4: WITHDRAW AND PAYLOAD EXECUTION PATHS
     // =========================
 
     /// @inheritdoc IUniversalGateway
@@ -626,7 +660,7 @@ contract UniversalGateway is
     }
 
     // =========================
-    //      PUBLIC HELPERS
+    //  UG_5: PUBLIC HELPERS
     // =========================
 
     /// @inheritdoc IUniversalGateway
@@ -708,35 +742,8 @@ contract UniversalGateway is
         usd1e18 = (amountWei * px1e18) / 1e18;
     }
 
-    /// @dev                Enforce per-block USD budget for GAS routes using two-scalar accounting.
-    ///                     - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.
-    ///                     - Resets the window when a new block is observed.
-    /// @param amountWei    native amount (in wei) to be accounted against the current block's USD budget
-    function _checkBlockUSDCap(uint256 amountWei) public {
-        uint256 cap = BLOCK_USD_CAP;
-        if (cap == 0) return;
-
-        if (block.number != _lastBlockNumber) {
-            _lastBlockNumber = block.number;
-            _consumedUSDinBlock = 0;
-        }
-
-        uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
-
-        if (usd1e18 > cap) revert Errors.BlockCapLimitExceeded();
-
-        unchecked {
-            uint256 newUsed = _consumedUSDinBlock + usd1e18;
-            if (newUsed > cap) revert Errors.BlockCapLimitExceeded();
-            _consumedUSDinBlock = newUsed;
-        }
-    }
-
-    /// @notice             Returns both the total token amount used and remaining in the current epoch.
-    /// @param token        token address to query (use address(0) for native)
-    /// @return used        amount already consumed in the current epoch (in token's natural units)
-    /// @return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
-    function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining) {
+    /// @inheritdoc IUniversalGateway
+    function currentTokenUsage(address token) public view returns (uint256 used, uint256 remaining) {
         uint256 thr = tokenToLimitThreshold[token];
         if (thr == 0) return (0, 0);
 
@@ -820,12 +827,36 @@ contract UniversalGateway is
         return ret;
     }
 
+    /// @dev                Enforce per-block USD budget for GAS routes using two-scalar accounting.
+    ///                     - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.
+    ///                     - Resets the window when a new block is observed.
+    /// @param amountWei    native amount (in wei) to be accounted against the current block's USD budget
+    function _checkBlockUSDCap(uint256 amountWei) private {
+        uint256 cap = BLOCK_USD_CAP;
+        if (cap == 0) return;
+
+        if (block.number != _lastBlockNumber) {
+            _lastBlockNumber = block.number;
+            _consumedUSDinBlock = 0;
+        }
+
+        uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
+
+        if (usd1e18 > cap) revert Errors.BlockCapLimitExceeded();
+
+        unchecked {
+            uint256 newUsed = _consumedUSDinBlock + usd1e18;
+            if (newUsed > cap) revert Errors.BlockCapLimitExceeded();
+            _consumedUSDinBlock = newUsed;
+        }
+    }
+
     /// @dev                Enforce and consume the per-token epoch rate limit. 
     ///                     For a token, if threshold is 0, it is unsupported.
     ///                     epoch.used is reset to 0 when a new epoch starts (no rollover).
     /// @param token        token address to consume rate limit
     /// @param amount       amount of token to consume rate limit
-    function _consumeRateLimit(address token, uint256 amount) internal {
+    function _consumeRateLimit(address token, uint256 amount) private {
         uint256 threshold = tokenToLimitThreshold[token];
         if (threshold == 0) revert Errors.NotSupported();
 
@@ -928,8 +959,8 @@ contract UniversalGateway is
         revert Errors.InvalidInput();
     }
 
-        // =========================
-    //       VALIDATION and Routers for sendUniversalTx()
+    // =========================
+    //  UG_6: VALIDATION & ROUTERS for sendUniversalTx()
     // =========================
 
     /**
@@ -1002,10 +1033,11 @@ contract UniversalGateway is
             revert Errors.InvalidInput();
         }
 
-    /// @dev Internal router that dispatches to the appropriate handler based on TX_TYPE
-    /// @param req The universal transaction request (memory for token-gas, can accept calldata too)
-    /// @param caller The original caller (msg.sender from the public function)
-    /// @param nativeValue The effective native value (msg.value for native-gas, swapped amount for token-gas)
+    /// @dev               Internal router that dispatches to the appropriate handler based on TX_TYPE
+    /// @param req         UniversalTxRequest struct
+    /// @param caller      Caller address
+    /// @param nativeValue Native value ( msg.value )
+    /// @param _TX_TYPE     TX_TYPE
     function _routeUniversalTx(
         UniversalTxRequest memory req,
         address caller,

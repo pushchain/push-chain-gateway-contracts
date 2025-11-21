@@ -25,17 +25,6 @@ interface IUniversalGateway {
     /// @param token                Token address
     /// @param newThreshold         New threshold
     event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
-    
-    /// @notice                     Checks if a token is supported by the gateway.
-    /// @param token                Token address to check
-    /// @return                     True if the token is supported, false otherwise
-    function isSupportedToken(address token) external view returns (bool);
-
-    /// @notice                     Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
-    /// @dev                        Uses the current ETH/USD price from {getEthUsdPrice}.
-    /// @return minValue            Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
-    /// @return maxValue            Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
-    function getMinMaxValueForNative() external view returns (uint256 minValue, uint256 maxValue);
 
     /// @notice                     Universal transaction event that originates from external chain.
     /// @param sender               Sender of the tx on external chain
@@ -94,7 +83,11 @@ interface IUniversalGateway {
     /// @param revertInstruction    Revert settings configuration
     event RevertUniversalTx(bytes32 indexed txID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
 
-        /**
+    
+    // =========================
+    //  UG_1: UNIVERSAL TRANSACTION
+    // =========================
+    /**
      * @notice                 Initiate a Universal Transaction using the chain's native token as gas (if any).
      *
      * @dev                    Primary entrypoint for all inbound universal transactions that:
@@ -163,7 +156,9 @@ interface IUniversalGateway {
         UniversalTokenTxRequest calldata reqToken
     ) external payable;
 
-    /// @notice Withdraw functions (TSS-only)
+    // =========================
+    //  UG_2: REVERT HANDLING PATHS
+    // =========================
 
     /// @notice             Revert universal transaction with tokens to the recipient specified in revertInstruction
     /// @param txID         unique transaction identifier (for replay protection)
@@ -180,7 +175,7 @@ interface IUniversalGateway {
 
     
     // =========================
-    //       Withdraw and Payload Execution Paths
+    //  UG_3: WITHDRAW AND PAYLOAD EXECUTION PATHS
     // =========================
 
     /// @notice             Withdraw native token from the gateway
@@ -227,4 +222,26 @@ interface IUniversalGateway {
         uint256 amount,
         bytes calldata payload
     ) external payable;
+
+
+    // =========================
+    //  UG_4: PUBLIC HELPERS
+    // =========================
+    
+    ///@notice                     Checks if a token is supported by the gateway.
+    ///@param token                Token address to check
+    ///@return                     True if the token is supported, false otherwise
+    function isSupportedToken(address token) external view returns (bool);
+
+    ///@notice                     Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
+    ///@dev                        Uses the current ETH/USD price from {getEthUsdPrice}.
+    ///@return minValue            Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
+    ///@return maxValue            Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
+    function getMinMaxValueForNative() external view returns (uint256 minValue, uint256 maxValue);
+
+    ///@notice             Returns both the total token amount used and remaining in the current epoch.
+    ///@param token        token address to query (use address(0) for native)
+    ///@return used        amount already consumed in the current epoch (in token's natural units)
+    ///@return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
+    function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining);
 }
