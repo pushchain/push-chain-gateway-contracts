@@ -19,7 +19,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
     let user2: Keypair;
     let configPda: PublicKey;
     let vaultPda: PublicKey;
-    let whitelistPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
     let mockPriceFeed: PublicKey;
     let solPrice: number;
@@ -79,7 +78,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
         [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
-        [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
         mockPriceFeed = sharedState.getMockPriceFeed();
@@ -175,7 +173,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda, // Dummy account for native SOL routes
                     gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
                     user: user1.publicKey,
@@ -192,41 +189,43 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
             expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
         });
 
-        it("Should reject GAS route with non-empty payload", async () => {
+        it("Should route GAS request with payload to GAS_AND_PAYLOAD (not reject)", async () => {
+            // NOTE: This test verifies the correct behavior - amount==0 + payload>0 routes to GAS_AND_PAYLOAD
+            // The payload validation is commented out in send_tx_with_gas_route (matching EVM V0)
             const gasAmount = calculateSolAmount(2.5, solPrice);
             const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
 
             const req = {
                 recipient: Array.from(Buffer.alloc(20, 0)),
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
-                payload: Buffer.from("invalid payload"),
+                payload: serializePayload(createPayload(99)), // Non-empty payload
                 revertInstruction: createRevertInstruction(user1.publicKey),
                 signatureData: Buffer.from("sig"),
             };
 
-            try {
-                await program.methods
-                    .sendUniversalTx(req, new anchor.BN(gasAmount))
-                    .accounts({
-                        config: configPda,
-                        vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
-                        userTokenAccount: PublicKey.default,
-                        gatewayTokenAccount: PublicKey.default,
-                        user: user1.publicKey,
-                        priceUpdate: mockPriceFeed,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: nativeSolTokenRateLimitPda,
-                        tokenProgram: spl.TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([user1])
-                    .rpc();
-                expect.fail("Should reject GAS with payload");
-            } catch (error: any) {
-                expect(error).to.exist;
-            }
+            // Should succeed and route to GAS_AND_PAYLOAD (fetchTxType logic)
+            await program.methods
+                .sendUniversalTx(req, new anchor.BN(gasAmount))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: vaultPda, // Correct: use vaultPda as dummy for native SOL
+                    gatewayTokenAccount: vaultPda, // Correct: use vaultPda as dummy for native SOL
+                    user: user1.publicKey,
+                    priceUpdate: mockPriceFeed,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: nativeSolTokenRateLimitPda,
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([user1])
+                .rpc();
+
+            // Verify transaction succeeded (vault balance increased)
+            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+            expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
         });
     });
 
@@ -250,7 +249,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda, // Dummy account for native SOL routes
                     gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
                     user: user1.publicKey,
@@ -285,7 +283,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda, // Dummy account for native SOL routes
                     gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
                     user: user1.publicKey,
@@ -320,7 +317,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda, // Dummy account for native SOL routes
                     gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
                     user: user1.publicKey,
@@ -356,7 +352,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -393,7 +388,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -441,7 +435,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: userTokenAccount,
                     gatewayTokenAccount: gatewayTokenAccount,
                     user: user1.publicKey,
@@ -483,7 +476,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: userTokenAccount,
                         gatewayTokenAccount: gatewayTokenAccount,
                         user: user1.publicKey,
@@ -538,7 +530,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda, // Dummy account for native SOL routes
                     gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
                     user: user1.publicKey,
@@ -576,7 +567,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -627,7 +617,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: userTokenAccount,
                     gatewayTokenAccount: gatewayTokenAccount,
                     user: user1.publicKey,
@@ -683,7 +672,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: userTokenAccount,
                     gatewayTokenAccount: gatewayTokenAccount,
                     user: user1.publicKey,
@@ -727,7 +715,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: userTokenAccount,
                         gatewayTokenAccount: gatewayTokenAccount,
                         user: user1.publicKey,
@@ -774,7 +761,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda, // Dummy account for native SOL routes
                         gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
                         user: user1.publicKey,
@@ -817,7 +803,6 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -887,4 +872,3 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
         }
     });
 });
-

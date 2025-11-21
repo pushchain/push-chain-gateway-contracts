@@ -99,7 +99,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             const gasAmountUsd = 3; // $3
             const gasAmount = calculateSolAmount(gasAmountUsd, solPrice);
 
-            // First transaction should succeed (consumes $3, under $4 cap)
             const req1 = {
                 recipient: Array.from(Buffer.alloc(20, 0)),
                 token: PublicKey.default,
@@ -111,6 +110,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
 
+            // First transaction should succeed (consumes $3, under $4 cap)
             await program.methods
                 .sendUniversalTx(req1, new anchor.BN(gasAmount))
                 .accounts({
@@ -129,14 +129,26 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .signers([user1])
                 .rpc();
 
-            // Check consumed amount and slot after first transaction
+            // Verify first transaction consumed $3
             const rateLimitConfigAfterFirst = await program.account.rateLimitConfig.fetch(rateLimitConfigPda);
             const consumedAfterFirst = rateLimitConfigAfterFirst.consumedUsdInBlock.toNumber();
             const slotAfterFirst = rateLimitConfigAfterFirst.lastSlot.toNumber();
 
+            // Verify consumed amount is approximately $3 (with some tolerance for price calculation)
+            // Note: calculate_usd_amount returns value in 8 decimals, so we need to account for price precision
+            // The actual consumed amount depends on the price calculation, so we just verify it's > 0
+            expect(consumedAfterFirst).to.be.greaterThan(0);
+            // Also verify it's reasonable (should be close to $3 * 1e8, but allow for price calculation differences)
+            const minExpected = (gasAmountUsd * 0.5) * 100_000_000; // At least 50% of expected
+            const maxExpected = (gasAmountUsd * 1.5) * 100_000_000; // At most 150% of expected
+            expect(consumedAfterFirst).to.be.within(minExpected, maxExpected);
+
             // Second transaction should fail if in same slot (would exceed $4 cap: $3 + $3 = $6)
-            // Note: In Solana, transactions might be in different slots. If they are, the consumed
-            // amount will reset. We'll check both the error and verify slot behavior.
+            // Send immediately to maximize chance of same slot
+            let secondTxSucceeded = false;
+            let slotAfterSecond: number;
+            let consumedAfterSecond: number;
+
             try {
                 await program.methods
                     .sendUniversalTx(req1, new anchor.BN(gasAmount))
@@ -156,36 +168,162 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .signers([user1])
                     .rpc();
 
-                // If transaction succeeded, check if it was in a new slot (consumed amount reset)
+                secondTxSucceeded = true;
                 const rateLimitConfigAfterSecond = await program.account.rateLimitConfig.fetch(rateLimitConfigPda);
-                const consumedAfterSecond = rateLimitConfigAfterSecond.consumedUsdInBlock.toNumber();
-                const slotAfterSecond = rateLimitConfigAfterSecond.lastSlot.toNumber();
-
-                if (slotAfterSecond > slotAfterFirst || consumedAfterSecond < consumedAfterFirst) {
-                    // New slot - consumed amount reset, so test is invalid
-                    // This is expected behavior in Solana, so we'll skip this assertion
-                    console.log("Transactions were in different slots - block cap reset. This is expected in Solana.");
-                    return;
-                } else {
-                    expect.fail("Should reject when block USD cap would be exceeded");
-                }
+                consumedAfterSecond = rateLimitConfigAfterSecond.consumedUsdInBlock.toNumber();
+                slotAfterSecond = rateLimitConfigAfterSecond.lastSlot.toNumber();
             } catch (error: any) {
-                // Extract error code with multiple fallbacks (same pattern as sol-deposit.test.ts)
+                // Transaction failed - check if it's the expected error
                 const errorNumber = error.error?.errorCode?.number || error.errorCode?.number;
-                if (errorNumber === 6019) {
-                    // Error number 6019 = BlockUsdCapExceeded
-                    return;
-                }
-
                 const errorCode = error.error?.errorCode?.code ||
                     error.errorCode?.code ||
                     error.code ||
                     error.error?.code;
 
-                expect(errorCode).to.equal("BlockUsdCapExceeded");
+                if (errorNumber === 6019 || errorCode === "BlockUsdCapExceeded") {
+                    // Expected error - verify it was in the same slot
+                    const rateLimitConfigAfterSecond = await program.account.rateLimitConfig.fetch(rateLimitConfigPda);
+                    slotAfterSecond = rateLimitConfigAfterSecond.lastSlot.toNumber();
+                    consumedAfterSecond = rateLimitConfigAfterSecond.consumedUsdInBlock.toNumber();
+
+                    // If same slot, consumed should still be $3 (second tx failed before adding)
+                    // If different slot, consumed would be reset to 0
+                    if (slotAfterSecond === slotAfterFirst) {
+                        // Same slot - verify consumed amount didn't increase (tx failed before adding)
+                        expect(consumedAfterSecond).to.be.closeTo(consumedAfterFirst, consumedAfterFirst * 0.1);
+                        return; // Test passed - same slot, correctly rejected
+                    } else {
+                        // Different slot - this test case is invalid, but verify reset happened
+                        expect(consumedAfterSecond).to.equal(0);
+                        expect.fail("Second transaction was in different slot - cannot test same-slot cap enforcement. This is expected in Solana's async model.");
+                    }
+                } else {
+                    throw error; // Unexpected error
+                }
+            }
+
+            // If we reach here, second transaction succeeded
+            if (secondTxSucceeded) {
+                // Check if it was in the same slot
+                if (slotAfterSecond === slotAfterFirst) {
+                    // Same slot - this is a bug! Should have been rejected
+                    expect.fail(`Block USD cap exceeded in same slot! Slot: ${slotAfterFirst}, Consumed: ${consumedAfterSecond} (should be <= ${blockCapUsd * 100_000_000})`);
+                } else {
+                    // Different slot - consumed should have reset
+                    const expectedConsumed = gasAmountUsd * 100_000_000;
+                    const minExpected = (gasAmountUsd * 0.5) * 100_000_000;
+                    const maxExpected = (gasAmountUsd * 1.5) * 100_000_000;
+                    expect(consumedAfterSecond).to.be.within(minExpected, maxExpected);
+                    expect(slotAfterSecond).to.be.greaterThan(slotAfterFirst);
+                    // This is expected behavior - slots advanced, cap reset
+                }
             }
 
             // Disable block cap for other tests
+            await program.methods
+                .setBlockUsdCap(new anchor.BN(0))
+                .accounts({
+                    admin: admin.publicKey,
+                    config: configPda,
+                    rateLimitConfig: rateLimitConfigPda,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        });
+
+        it("Should reset consumed amount when slot changes", async () => {
+            // Enable block USD cap: $10 per slot
+            const blockCapUsd = 10;
+            const blockCapLamports = new anchor.BN(blockCapUsd * 100_000_000);
+
+            await program.methods
+                .setBlockUsdCap(blockCapLamports)
+                .accounts({
+                    admin: admin.publicKey,
+                    config: configPda,
+                    rateLimitConfig: rateLimitConfigPda,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+
+            const gasAmountUsd = 2.5; // $2.5 (above $1 min cap, below $10 max cap)
+            const gasAmount = calculateSolAmount(gasAmountUsd, solPrice);
+
+            const req = {
+                recipient: Array.from(Buffer.alloc(20, 0)),
+                token: PublicKey.default,
+                amount: new anchor.BN(0),
+                payload: Buffer.from([]),
+                revertInstruction: createRevertInstruction(user1.publicKey),
+                signatureData: Buffer.from("sig"),
+            };
+
+            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+
+            // First transaction
+            await program.methods
+                .sendUniversalTx(req, new anchor.BN(gasAmount))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    tokenWhitelist: whitelistPda,
+                    userTokenAccount: vaultPda,
+                    gatewayTokenAccount: vaultPda,
+                    user: user1.publicKey,
+                    priceUpdate: mockPriceFeed,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: nativeSolTokenRateLimitPda,
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([user1])
+                .rpc();
+
+            const config1 = await program.account.rateLimitConfig.fetch(rateLimitConfigPda);
+            const slot1 = config1.lastSlot.toNumber();
+            const consumed1 = config1.consumedUsdInBlock.toNumber();
+
+            // Wait a bit to ensure next transaction is in a different slot
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Second transaction in new slot should reset consumed amount
+            await program.methods
+                .sendUniversalTx(req, new anchor.BN(gasAmount))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    tokenWhitelist: whitelistPda,
+                    userTokenAccount: vaultPda,
+                    gatewayTokenAccount: vaultPda,
+                    user: user1.publicKey,
+                    priceUpdate: mockPriceFeed,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: nativeSolTokenRateLimitPda,
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([user1])
+                .rpc();
+
+            const config2 = await program.account.rateLimitConfig.fetch(rateLimitConfigPda);
+            const slot2 = config2.lastSlot.toNumber();
+            const consumed2 = config2.consumedUsdInBlock.toNumber();
+
+            // If slots are different, consumed should have reset
+            if (slot2 !== slot1) {
+                // New slot - consumed should reset to ~$2.5 (not accumulate from previous slot)
+                const minExpected = (gasAmountUsd * 0.5) * 100_000_000;
+                const maxExpected = (gasAmountUsd * 1.5) * 100_000_000;
+                expect(consumed2).to.be.within(minExpected, maxExpected);
+                expect(consumed2).to.be.lessThan(consumed1 + maxExpected); // Should NOT accumulate from previous slot
+            } else {
+                // Same slot - consumed should accumulate
+                expect(consumed2).to.be.greaterThan(consumed1);
+            }
+
+            // Disable block cap
             await program.methods
                 .setBlockUsdCap(new anchor.BN(0))
                 .accounts({
@@ -503,8 +641,8 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             }
         });
 
-        it("Should skip token rate limit when limit_threshold is 0", async () => {
-            // Set limit_threshold to 0 (disabled)
+        it("Should reject when limit_threshold is 0 (token not supported)", async () => {
+            // Set limit_threshold to 0 - this means token is NOT supported (EVM v0 parity)
             const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
 
             await program.methods
@@ -520,7 +658,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .signers([admin])
                 .rpc();
 
-            // Should succeed even with large amounts (rate limit disabled)
+            // Should fail with NotSupported error (threshold = 0 means token not supported)
             const largeAmount = 10 * LAMPORTS_PER_SOL;
             const req = {
                 recipient: Array.from(Buffer.alloc(20, 0)),
@@ -531,23 +669,29 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 signatureData: Buffer.from("sig"),
             };
 
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(largeAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
-                    userTokenAccount: vaultPda,
-                    gatewayTokenAccount: vaultPda,
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
+            try {
+                await program.methods
+                    .sendUniversalTx(req, new anchor.BN(largeAmount))
+                    .accounts({
+                        config: configPda,
+                        vault: vaultPda,
+                        tokenWhitelist: whitelistPda,
+                        userTokenAccount: vaultPda,
+                        gatewayTokenAccount: vaultPda,
+                        user: user1.publicKey,
+                        priceUpdate: mockPriceFeed,
+                        rateLimitConfig: rateLimitConfigPda,
+                        tokenRateLimit: nativeSolTokenRateLimitPda,
+                        tokenProgram: spl.TOKEN_PROGRAM_ID,
+                        systemProgram: SystemProgram.programId,
+                    })
+                    .signers([user1])
+                    .rpc();
+                expect.fail("Should reject when limit_threshold is 0 (token not supported)");
+            } catch (error: any) {
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code;
+                expect(errorCode).to.equal("NotSupported");
+            }
         });
 
         it("Should skip token rate limit when epoch_duration is 0", async () => {
