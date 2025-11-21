@@ -471,57 +471,11 @@ contract GatewayBlockRateLimitTest is BaseTest {
     // HELPER FUNCTIONS
     // ===========================
 
-    // Helper functions moved to BaseTest.t.sol for reusability
-    // Use buildDefaultPayload() and buildDefaultRevertInstructions() from BaseTest
-
-    /// @notice Helper to build UniversalTxRequest for GAS_AND_PAYLOAD transactions
-    /// @dev Creates a request that will route to GAS_AND_PAYLOAD via _fetchTxType
-    ///      (hasPayload=true, hasFunds=false, hasNativeValue=true)
-    function _buildGasTxRequest() internal view returns (UniversalTxRequest memory) {
-        UniversalPayload memory payload = buildDefaultPayload();
-        return UniversalTxRequest({
-            recipient: address(0), // GAS routes always use address(0) for UEA credit
-            token: address(0), // Native token
-            amount: 0, // No funds (amount = 0) for GAS/GAS_AND_PAYLOAD routes
-            payload: abi.encode(payload), // Non-empty payload routes to GAS_AND_PAYLOAD
-            revertInstruction: buildDefaultRevertInstructions(),
-            signatureData: bytes("")
-        });
-    }
-
-    function _buildFundsTxRequest(address token, uint256 amount) internal view returns (UniversalTxRequest memory) {
-        return _buildFundsTxRequest(token, amount, buildDefaultRevertInstructions());
-    }
-
-    function _buildFundsTxRequest(address token, uint256 amount, RevertInstructions memory revertInstructions)
-        internal
-        pure
-        returns (UniversalTxRequest memory)
-    {
-        return UniversalTxRequest({
-            recipient: address(0),
-            token: token,
-            amount: amount,
-            payload: bytes(""),
-            revertInstruction: revertInstructions,
-            signatureData: bytes("")
-        });
-    }
-
-    function _buildFundsAndPayloadTxRequest(address token, uint256 amount, UniversalPayload memory payload)
-        internal
-        view
-        returns (UniversalTxRequest memory)
-    {
-        return UniversalTxRequest({
-            recipient: address(0),
-            token: token,
-            amount: amount,
-            payload: abi.encode(payload),
-            revertInstruction: buildDefaultRevertInstructions(),
-            signatureData: bytes("")
-        });
-    }
+    // Helper functions for building UniversalTxRequest are available in BaseTest.t.sol:
+    // - _buildGasTxRequest() - for GAS_AND_PAYLOAD transactions
+    // - _buildFundsTxRequest(address token, uint256 amount) - for FUNDS transactions
+    // - _buildFundsTxRequest(address token, uint256 amount, RevertInstructions) - with custom revert instructions
+    // - _buildFundsAndPayloadTxRequest(address token, uint256 amount, UniversalPayload) - for FUNDS_AND_PAYLOAD
 
     function _getEthAmountFromUsd(uint256 usdAmount1e18) internal view returns (uint256) {
         // USD(1e18) / ETH_price(1e18) * 1e18 = ETH(wei)

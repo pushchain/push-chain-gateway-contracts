@@ -16,8 +16,9 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
 
 /**
  * @title GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3 Test Suite
- * @notice Comprehensive tests for _sendTxWithFunds (standard route) via sendUniversalTx
+ * @notice Comprehensive tests for FUNDS_AND_PAYLOAD route (standard route) via sendUniversalTx
  * @dev Tests FUNDS_AND_PAYLOAD transaction type - Case 2.3: ERC20 + Native Batching
+ *      All paths are exercised through sendUniversalTx() which internally routes to both instant and standard routes.
  *
  * Phase 4 - TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.3 (ERC20 batching, msg.value > 0, token != native)
  *
@@ -27,7 +28,7 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
  * - Dual Token: Native for gas, ERC20 for funds
  * - Dual Destination: Native to TSS, ERC20 to Vault
  * - Dual Execution:
- *   1. _sendTxWithGas() ALWAYS called with full msg.value (gas route with USD caps)
+ *   1. Gas route ALWAYS triggered with full msg.value (instant route with USD caps)
  *   2. ERC20 rate limit consumed for _req.amount
  *   3. ERC20 transferred to vault
  *   4. Native ETH forwarded to TSS

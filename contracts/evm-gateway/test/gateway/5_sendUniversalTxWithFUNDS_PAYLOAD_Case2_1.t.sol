@@ -16,15 +16,16 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
 
 /**
  * @title GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1 Test Suite
- * @notice Comprehensive tests for _sendTxWithFunds (standard route) via sendUniversalTx
+ * @notice Comprehensive tests for FUNDS_AND_PAYLOAD route (standard route) via sendUniversalTx
  * @dev Tests FUNDS_AND_PAYLOAD transaction type - Case 2.1: No Batching
+ *      All paths are exercised through sendUniversalTx() which internally routes to the standard route.
  *
  * Phase 2 - TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.1 (No batching, msg.value == 0)
  *
  * Case 2.1: No Batching (msg.value == 0)
  * - User already has UEA with PC token (gas) on Push Chain to execute payloads
  * - User sends ERC20 token with payload
- * - No gas leg executed (no _sendTxWithGas call)
+ * - No gas leg executed (no gas route triggered)
  * - Only ERC20 transferred to vault with payload
  */
 contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
@@ -142,7 +143,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
 
     /// @notice Test FUNDS_AND_PAYLOAD Case 2.1 - ERC20 with payload, no batching - happy path
     /// @dev Verifies:
-    ///      - No gas leg executed (no call to _sendTxWithGas)
+    ///      - No gas leg executed (no gas route triggered)
     ///      - ERC20 transferred to vault
     ///      - Rate limit consumed for ERC20
     ///      - Event emitted with payload

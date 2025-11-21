@@ -15,8 +15,9 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 
 /**
  * @title GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2 Test Suite
- * @notice Comprehensive tests for _sendTxWithFunds (standard route) via sendUniversalTx
+ * @notice Comprehensive tests for FUNDS_AND_PAYLOAD route (standard route) via sendUniversalTx
  * @dev Tests FUNDS_AND_PAYLOAD transaction type - Case 2.2: Native Batching
+ *      All paths are exercised through sendUniversalTx() which internally routes to both instant and standard routes.
  *
  * Phase 3 - TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.2 (Native batching, msg.value > 0, token == native)
  *
@@ -25,7 +26,7 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
  * - Split Logic: msg.value is split between gasAmount and fundsAmount
  * - gasAmount = msg.value - _req.amount
  * - Dual Execution:
- *   1. _sendTxWithGas() called if gasAmount > 0 (gas route with USD caps)
+ *   1. Gas route triggered if gasAmount > 0 (instant route with USD caps)
  *   2. Native token rate limit consumed for _req.amount only
  *   3. All msg.value forwarded to TSS
  */

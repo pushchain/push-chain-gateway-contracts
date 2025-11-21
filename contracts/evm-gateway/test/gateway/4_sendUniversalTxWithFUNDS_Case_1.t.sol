@@ -10,8 +10,9 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
 
 /**
  * @title GatewaySendUniversalTxWithFunds Test Suite
- * @notice Comprehensive tests for _sendTxWithFunds (standard route) via sendUniversalTx
+ * @notice Comprehensive tests for FUNDS route (standard route) via sendUniversalTx
  * @dev Tests FUNDS and FUNDS_AND_PAYLOAD transaction types with focus on:
+ *      All paths are exercised through sendUniversalTx() which internally routes to the standard route.
  *      Phase 1: TX_TYPE.FUNDS (native and ERC20)
  *      Phase 2: TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.1 (No batching)
  *      Phase 3: TX_TYPE.FUNDS_AND_PAYLOAD - Case 2.2 (Native batching)
