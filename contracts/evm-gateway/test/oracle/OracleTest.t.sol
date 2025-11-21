@@ -10,8 +10,7 @@ import { Errors } from "../../src/libraries/Errors.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import { UniversalPayload } from "../../src/libraries/Types.sol";
-import { RevertInstructions } from "../../src/libraries/Types.sol";
+import { UniversalPayload, RevertInstructions, UniversalTxRequest } from "../../src/libraries/Types.sol";
 import { MockAggregatorV3 } from "../mocks/MockAggregatorV3.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
@@ -445,11 +444,26 @@ contract OracleTest is BaseTest {
     // =========================
 
     // Note: _findV3PoolWithNative is an internal function, so we test it indirectly
-    // through the public functions that use it (like sendTxWithGas)
+    // through the public functions that use it (like sendUniversalTx)
 
     // =========================
     // USD CAP BOUNDARY CONDITIONS TESTS
     // =========================
+
+    function _buildGasUniversalTxRequest(UniversalPayload memory payload, RevertInstructions memory revertCfg)
+        internal
+        pure
+        returns (UniversalTxRequest memory)
+    {
+        return UniversalTxRequest({
+            recipient: address(0),
+            token: address(0),
+            amount: 0,
+            payload: abi.encode(payload),
+            revertInstruction: revertCfg,
+            signatureData: bytes("")
+        });
+    }
 
     function testUSDCapBoundaries_ExactMinCap_Success() public {
         // Test with exact minimum cap
@@ -464,7 +478,7 @@ contract OracleTest is BaseTest {
 
         // Should not revert
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: testAmount }(payload, revertCfg, bytes(""));
+        gateway.sendUniversalTx{ value: testAmount }(_buildGasUniversalTxRequest(payload, revertCfg));
     }
 
     function testUSDCapBoundaries_ExactMaxCap_Success() public {
@@ -479,7 +493,7 @@ contract OracleTest is BaseTest {
 
         // Should not revert
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: maxEth }(payload, revertCfg, bytes(""));
+        gateway.sendUniversalTx{ value: maxEth }(_buildGasUniversalTxRequest(payload, revertCfg));
     }
 
     function testUSDCapBoundaries_JustBelowMinCap_Reverts() public {
@@ -494,7 +508,7 @@ contract OracleTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: belowMin }(payload, revertCfg, bytes(""));
+        gateway.sendUniversalTx{ value: belowMin }(_buildGasUniversalTxRequest(payload, revertCfg));
     }
 
     function testUSDCapBoundaries_JustAboveMaxCap_Reverts() public {
@@ -509,6 +523,6 @@ contract OracleTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
-        gateway.sendTxWithGas{ value: aboveMax }(payload, revertCfg, bytes(""));
+        gateway.sendUniversalTx{ value: aboveMax }(_buildGasUniversalTxRequest(payload, revertCfg));
     }
 }

@@ -324,9 +324,11 @@ contract GatewayBlockRateLimitTest is BaseTest {
         tokenA.approve(address(gateway), 1 ether);
 
         // Send tx with native gas worth $5 and token bridge
+        UniversalPayload memory payload = buildDefaultPayload();
+
         vm.prank(user1);
-        gateway.sendTxWithFunds{ value: ETH_FOR_5_USD }(
-            address(tokenA), 1 ether, buildDefaultPayload(), buildDefaultRevertInstructions(), bytes("")
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(
+            _buildFundsAndPayloadTxRequest(address(tokenA), 1 ether, payload)
         );
 
         // Send another tx with native gas worth $6 - should fail due to block cap
@@ -335,8 +337,9 @@ contract GatewayBlockRateLimitTest is BaseTest {
 
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
-        gateway.sendTxWithFunds{ value: ETH_FOR_5_USD + ETH_FOR_2_USD / 2 }( // $6
-        address(tokenA), 1 ether, buildDefaultPayload(), buildDefaultRevertInstructions(), bytes(""));
+        gateway.sendUniversalTx{ value: ETH_FOR_5_USD + ETH_FOR_2_USD / 2 }( // $6
+            _buildFundsAndPayloadTxRequest(address(tokenA), 1 ether, payload)
+        );
     }
 
     // ===========================
@@ -418,12 +421,11 @@ contract GatewayBlockRateLimitTest is BaseTest {
         vm.prank(user1);
         tokenA.approve(address(gateway), 1 ether);
 
+        RevertInstructions memory revertInstructions = RevertInstructions({ fundRecipient: user2, revertMsg: bytes("") });
+
         vm.prank(user1);
-        gateway.sendFunds(
-            user2, // recipient
-            address(tokenA),
-            1 ether,
-            buildDefaultRevertInstructions()
+        gateway.sendUniversalTx{ value: 0 }(
+            _buildFundsTxRequest(address(tokenA), 1 ether, revertInstructions)
         );
 
         // If we got here without reverting, the test passed
@@ -482,6 +484,40 @@ contract GatewayBlockRateLimitTest is BaseTest {
             token: address(0), // Native token
             amount: 0, // No funds (amount = 0) for GAS/GAS_AND_PAYLOAD routes
             payload: abi.encode(payload), // Non-empty payload routes to GAS_AND_PAYLOAD
+            revertInstruction: buildDefaultRevertInstructions(),
+            signatureData: bytes("")
+        });
+    }
+
+    function _buildFundsTxRequest(address token, uint256 amount) internal view returns (UniversalTxRequest memory) {
+        return _buildFundsTxRequest(token, amount, buildDefaultRevertInstructions());
+    }
+
+    function _buildFundsTxRequest(address token, uint256 amount, RevertInstructions memory revertInstructions)
+        internal
+        pure
+        returns (UniversalTxRequest memory)
+    {
+        return UniversalTxRequest({
+            recipient: address(0),
+            token: token,
+            amount: amount,
+            payload: bytes(""),
+            revertInstruction: revertInstructions,
+            signatureData: bytes("")
+        });
+    }
+
+    function _buildFundsAndPayloadTxRequest(address token, uint256 amount, UniversalPayload memory payload)
+        internal
+        view
+        returns (UniversalTxRequest memory)
+    {
+        return UniversalTxRequest({
+            recipient: address(0),
+            token: token,
+            amount: amount,
+            payload: abi.encode(payload),
             revertInstruction: buildDefaultRevertInstructions(),
             signatureData: bytes("")
         });

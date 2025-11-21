@@ -1249,12 +1249,9 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         // Send funds for each token
         vm.startPrank(user1);
 
-        // Create revert instructions
-        RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
-
         // Send tokenA (50% of threshold)
         uint256 tokenAAmount = TOKEN_A_THRESHOLD / 2;
-        gateway.sendFunds(recipient, address(tokenA), tokenAAmount, revertInstructions);
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), tokenAAmount));
 
         // Send tokenB (75% of threshold)
         uint256 tokenBAmount = (TOKEN_B_THRESHOLD * 3) / 4;
