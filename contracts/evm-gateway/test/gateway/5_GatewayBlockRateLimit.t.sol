@@ -489,7 +489,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         );
 
         // Pause the contract
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.pause();
 
         // Try to send tx while paused - should revert due to pause
@@ -500,7 +500,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         );
 
         // Unpause
-        vm.prank(pauser);
+        vm.prank(admin);
         gateway.unpause();
 
         // Should be able to use remaining $5 of cap

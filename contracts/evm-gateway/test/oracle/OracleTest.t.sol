@@ -331,6 +331,7 @@ contract OracleTest is BaseTest {
                 admin,
                 pauser,
                 tss,
+                address(this), // vault address
                 100e18, // minCapUsd
                 10000e18, // maxCapUsd
                 address(0x123), // factory
@@ -400,8 +401,8 @@ contract OracleTest is BaseTest {
         vm.prank(admin);
         newGateway.initialize(
             admin,
-            pauser,
             tss,
+            address(this), // vault address
             1e18, // minCapUsd
             10e18, // maxCapUsd
             address(0), // factory = address(0)

@@ -21,7 +21,7 @@ struct RevertInstructions {
     ///             where funds go in revert / refund cases
     address fundRecipient;
     ///             arbitrary message for relayers/UEA
-    bytes revertMsg;
+    bytes revertContext;
 }
 
 /// @notice         Packed per-token usage for the current epoch only (no on-chain history kept).
@@ -47,4 +47,30 @@ struct UniversalPayload {
     uint256 nonce;                  // Nonce for the transaction
     uint256 deadline;               // Timestamp after which this payload is invalid
     VerificationType vType;         // Type of verification (signedVerification or universalTxVerification)
+}
+
+/// @notice         Universal transaction request for native token as GAS
+struct UniversalTxRequest {
+    TX_TYPE txType;                         // indicates type of TX
+    address recipient;                      // address(0) => credit to UEA on Push
+    address token;                          // address(0) => native path (gas-only)
+    uint256 amount;                         // native amount or ERC20 amount
+    bytes   payload;                        // call data / memo = UNIVERSAL PAYLOAD
+    RevertInstructions revertInstruction;   // revert instructions
+    bytes   signatureData;                  // signature data for further verification
+}
+
+/// @notice         Universal transaction request for ERC20 token as GAS
+struct UniversalTokenTxRequest {
+    TX_TYPE txType;                         // indicates type of TX
+    address recipient;                      // address(0) => credit to UEA on Push
+    address token;                          // address(0) => native path (gas-only)
+    uint256 amount;                         // native amount or ERC20 amount
+    address gasToken;                       // token used for paying GAS
+    uint256 gasAmount;                      // amount of the token to be used as GAS.
+    bytes   payload;                        // call data / memo = UNIVERSAL PAYLOAD
+    RevertInstructions revertInstruction;   // revert instructions
+    bytes   signatureData;                  // signature data for further verification
+	uint256 amountOutMinETH;                // minimum amount of ETH to receive
+    uint256 deadline;                       // timestamp after which this request is invalid
 }

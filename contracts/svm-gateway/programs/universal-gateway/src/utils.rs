@@ -85,20 +85,34 @@ pub fn check_usd_caps(
 }
 
 /// Calculate USD amount from SOL amount using price data (matching EVM implementation)
+/// @dev Pyth price format: actual_price = price * 10^exponent
+///      For SOL/USD: price = 15025000000, exponent = -8 → actual_price = 150.25 USD
+///      Result is in 8 decimals (matching EVM's 18 decimals but scaled to 8 for consistency)
+///      Formula: USD_8dec = (lamports * price * 10^(exponent + 8)) / 1e9
 pub fn calculate_usd_amount(lamports: u64, price_data: &PriceData) -> Result<u128> {
-    // Convert lamports to SOL (1 SOL = 1e9 lamports)
-    let sol_amount = lamports as u128;
+    let lamports_u128 = lamports as u128;
+    let price_u128 = price_data.price as u128;
 
-    // Apply price with exponent
-    let price = if price_data.exponent >= 0 {
-        price_data.price as u128 * 10u128.pow(price_data.exponent as u32)
+    // Multiply first to preserve precision, then apply exponent adjustment
+    // For exponent = -8: we need to multiply by 10^(exponent + 8) = 10^0 = 1
+    let product = lamports_u128
+        .checked_mul(price_u128)
+        .ok_or(GatewayError::InvalidAmount)?;
+
+    // Apply exponent: multiply by 10^(exponent + 8) to get result in 8 decimals
+    let exponent_adjustment = (price_data.exponent + 8) as i32;
+
+    let usd_amount = if exponent_adjustment >= 0 {
+        product
+            .checked_mul(10u128.pow(exponent_adjustment as u32))
+            .and_then(|x| x.checked_div(1_000_000_000))
+            .ok_or(GatewayError::InvalidAmount)?
     } else {
-        price_data.price as u128 / 10u128.pow((-price_data.exponent) as u32)
+        product
+            .checked_div(10u128.pow((-exponent_adjustment) as u32))
+            .and_then(|x| x.checked_div(1_000_000_000))
+            .ok_or(GatewayError::InvalidAmount)?
     };
-
-    // Calculate USD amount: (SOL * price) / 1e9
-    // Price is in 8 decimals (Pyth format), so result is in 8 decimals
-    let usd_amount = (sol_amount * price) / 1_000_000_000;
 
     Ok(usd_amount)
 }
@@ -132,8 +146,10 @@ pub fn check_block_usd_cap(
     let clock = Clock::get()?;
     let current_slot = clock.slot;
 
-    // Reset if new block
-    if current_slot > rate_limit_config.last_slot {
+    // Reset if new slot (matching EVM: block.number != _lastBlockNumber)
+    // Note: Multiple transactions can execute in the same slot in Solana.
+    // Account serialization ensures writes are atomic, preventing race conditions.
+    if current_slot != rate_limit_config.last_slot {
         rate_limit_config.consumed_usd_in_block = 0;
         rate_limit_config.last_slot = current_slot;
     }
@@ -173,6 +189,37 @@ pub fn consume_rate_limit(
 
     // Update used amount
     token_rate_limit.epoch_usage.used += amount;
+
+    Ok(())
+}
+
+/// Validate token support and consume rate limit if enabled (EVM v0 parity)
+/// @dev Checks if token is supported (limit_threshold > 0) and optionally consumes rate limit
+///      if epoch_duration > 0. This consolidates the threshold check used in send_universal_tx routes.
+pub fn validate_token_and_consume_rate_limit(
+    token_rate_limit: &mut Account<TokenRateLimit>,
+    expected_token_mint: Pubkey,
+    amount: u128,
+    rate_limit_config: &Account<RateLimitConfig>,
+) -> Result<()> {
+    // Validate token_rate_limit account matches expected token
+    require!(
+        token_rate_limit.token_mint == expected_token_mint,
+        GatewayError::InvalidToken
+    );
+
+    // Threshold-based token support check (EVM v0 parity)
+    // If limit_threshold == 0, token is not supported
+    require!(
+        token_rate_limit.limit_threshold > 0,
+        GatewayError::NotSupported
+    );
+
+    // Epoch-based token rate limit (skip if disabled: epoch_duration == 0)
+    let epoch_duration = rate_limit_config.epoch_duration_sec;
+    if epoch_duration > 0 {
+        consume_rate_limit(token_rate_limit, amount, epoch_duration)?;
+    }
 
     Ok(())
 }
@@ -235,5 +282,36 @@ pub fn get_or_create_token_rate_limit<'info>(
     } else {
         // Account exists, load it
         Account::<TokenRateLimit>::try_from(rate_limit_account)
+    }
+}
+
+/// Get token rate limit account if it exists (optional, for backward compatibility)
+pub fn get_token_rate_limit_optional<'info>(
+    token_mint: Pubkey,
+    accounts: &'info [AccountInfo<'info>],
+    program_id: &Pubkey,
+) -> Result<Option<Account<'info, TokenRateLimit>>> {
+    let (rate_limit_pda, _bump) =
+        Pubkey::find_program_address(&[RATE_LIMIT_SEED, token_mint.as_ref()], program_id);
+
+    // Find the rate limit account in the accounts list
+    let rate_limit_account = accounts
+        .iter()
+        .find(|account| account.key() == rate_limit_pda);
+
+    match rate_limit_account {
+        Some(account) => {
+            if account.data_is_empty() {
+                // Account doesn't exist, rate limiting is disabled for this token
+                Ok(None)
+            } else {
+                // Account exists, load it
+                Ok(Some(Account::<TokenRateLimit>::try_from(account)?))
+            }
+        }
+        None => {
+            // Account not provided, rate limiting is disabled for this token
+            Ok(None)
+        }
     }
 }
