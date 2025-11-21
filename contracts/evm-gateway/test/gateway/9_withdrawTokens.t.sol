@@ -9,8 +9,8 @@ import { RevertInstructions, UniversalPayload, TX_TYPE } from "../../src/librari
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 
-/// @notice Test suite for missing TSS functions and sendTxWithFunds 4-parameter version
-/// @dev Tests revertNative, revertTokens, onlyTSS modifier, and sendTxWithFunds overload
+/// @notice Test suite for TSS withdrawal functions (revertUniversalTx, revertUniversalTxToken, withdraw)
+/// @dev Tests revertNative, revertTokens, onlyTSS modifier, and withdrawal functionality
 contract GatewayTSSFunctionsTest is BaseTest {
     // =========================
     //      SETUP
