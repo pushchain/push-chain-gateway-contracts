@@ -5,14 +5,15 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-# Use 9mBrgXgC6v5a6oBvs7amcCTkeDohadP8ZmP5CikV3qvT for local testing
-universal_gateway = "9mBrgXgC6v5a6oBvs7amcCTkeDohadP8ZmP5CikV3qvT"
+# Use DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp for local testing
+universal_gateway = "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+# cluster = "localnet"
+cluster = "https://api.devnet.solana.com"
 wallet = "./upgrade-keypair.json"
 
 [scripts]
