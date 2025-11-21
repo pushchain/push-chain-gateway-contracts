@@ -83,4 +83,7 @@ pub enum GatewayError {
 
     #[msg("Invalid account")]
     InvalidAccount,
+
+    #[msg("Token not supported")]
+    NotSupported,
 }

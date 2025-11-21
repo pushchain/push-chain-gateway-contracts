@@ -290,19 +290,13 @@ fn send_tx_with_funds_route(
                 // Case 1.1: Token to bridge is Native SOL → Pubkey::default()
                 require!(native_amount == req.amount, GatewayError::InvalidAmount);
 
-                // Epoch-based token rate limit (skip if disabled: epoch_duration == 0 or limit_threshold == 0)
-                let epoch_duration = ctx.accounts.rate_limit_config.epoch_duration_sec;
-                require!(
-                    ctx.accounts.token_rate_limit.token_mint == Pubkey::default(),
-                    GatewayError::InvalidToken
-                );
-                if epoch_duration > 0 && ctx.accounts.token_rate_limit.limit_threshold > 0 {
-                    consume_rate_limit(
-                        &mut ctx.accounts.token_rate_limit,
-                        req.amount as u128,
-                        epoch_duration,
-                    )?;
-                }
+                // Validate token support and consume rate limit if enabled
+                validate_token_and_consume_rate_limit(
+                    &mut ctx.accounts.token_rate_limit,
+                    Pubkey::default(),
+                    req.amount as u128,
+                    &ctx.accounts.rate_limit_config,
+                )?;
 
                 // Transfer SOL
                 let cpi_ctx = CpiContext::new(
@@ -317,28 +311,13 @@ fn send_tx_with_funds_route(
                 // Case 1.2: Token to bridge is SPL Token → req.token
                 require!(native_amount == 0, GatewayError::InvalidAmount);
 
-                // Epoch-based token rate limit (skip if disabled: epoch_duration == 0 or limit_threshold == 0)
-                let epoch_duration = ctx.accounts.rate_limit_config.epoch_duration_sec;
-                require!(
-                    ctx.accounts.token_rate_limit.token_mint == req.token,
-                    GatewayError::InvalidToken
-                );
-                if epoch_duration > 0 && ctx.accounts.token_rate_limit.limit_threshold > 0 {
-                    consume_rate_limit(
-                        &mut ctx.accounts.token_rate_limit,
-                        req.amount as u128,
-                        epoch_duration,
-                    )?;
-                }
-
-                // Check whitelist
-                let token_whitelist_data = ctx.accounts.token_whitelist.try_borrow_data()?;
-                let token_whitelist =
-                    TokenWhitelist::try_deserialize(&mut &token_whitelist_data[..])?;
-                require!(
-                    token_whitelist.tokens.contains(&req.token),
-                    GatewayError::TokenNotWhitelisted
-                );
+                // Validate token support and consume rate limit if enabled
+                validate_token_and_consume_rate_limit(
+                    &mut ctx.accounts.token_rate_limit,
+                    req.token,
+                    req.amount as u128,
+                    &ctx.accounts.rate_limit_config,
+                )?;
 
                 // Transfer SPL
                 let user_token_info = ctx.accounts.user_token_account.to_account_info();
@@ -384,19 +363,13 @@ fn send_tx_with_funds_route(
                     )?;
                 }
 
-                // Epoch-based token rate limit for funds (skip if disabled: epoch_duration == 0 or limit_threshold == 0)
-                let epoch_duration = ctx.accounts.rate_limit_config.epoch_duration_sec;
-                require!(
-                    ctx.accounts.token_rate_limit.token_mint == Pubkey::default(),
-                    GatewayError::InvalidToken
-                );
-                if epoch_duration > 0 && ctx.accounts.token_rate_limit.limit_threshold > 0 {
-                    consume_rate_limit(
-                        &mut ctx.accounts.token_rate_limit,
-                        req.amount as u128,
-                        epoch_duration,
-                    )?;
-                }
+                // Validate token support and consume rate limit if enabled
+                validate_token_and_consume_rate_limit(
+                    &mut ctx.accounts.token_rate_limit,
+                    Pubkey::default(),
+                    req.amount as u128,
+                    &ctx.accounts.rate_limit_config,
+                )?;
 
                 // Transfer funds
                 let cpi_ctx = CpiContext::new(
@@ -425,28 +398,13 @@ fn send_tx_with_funds_route(
                     )?;
                 }
 
-                // Epoch-based token rate limit for SPL (skip if disabled: epoch_duration == 0 or limit_threshold == 0)
-                let epoch_duration = ctx.accounts.rate_limit_config.epoch_duration_sec;
-                require!(
-                    ctx.accounts.token_rate_limit.token_mint == req.token,
-                    GatewayError::InvalidToken
-                );
-                if epoch_duration > 0 && ctx.accounts.token_rate_limit.limit_threshold > 0 {
-                    consume_rate_limit(
-                        &mut ctx.accounts.token_rate_limit,
-                        req.amount as u128,
-                        epoch_duration,
-                    )?;
-                }
-
-                // Check whitelist
-                let token_whitelist_data = ctx.accounts.token_whitelist.try_borrow_data()?;
-                let token_whitelist =
-                    TokenWhitelist::try_deserialize(&mut &token_whitelist_data[..])?;
-                require!(
-                    token_whitelist.tokens.contains(&req.token),
-                    GatewayError::TokenNotWhitelisted
-                );
+                // Validate token support and consume rate limit if enabled
+                validate_token_and_consume_rate_limit(
+                    &mut ctx.accounts.token_rate_limit,
+                    req.token,
+                    req.amount as u128,
+                    &ctx.accounts.rate_limit_config,
+                )?;
 
                 // Transfer SPL
                 let user_token_info = ctx.accounts.user_token_account.to_account_info();
@@ -741,10 +699,6 @@ pub struct SendUniversalTx<'info> {
         bump = config.vault_bump,
     )]
     pub vault: SystemAccount<'info>,
-
-    /// CHECK: Token whitelist PDA validated and deserialized at runtime for SPL transfers.
-    #[account(mut)]
-    pub token_whitelist: UncheckedAccount<'info>,
 
     /// CHECK: Only required for SPL token routes; validated at runtime.
     /// For native SOL routes, pass vault account as dummy (not used).
