@@ -1294,6 +1294,7 @@ async function run() {
                 .accounts({
                     tssPda: tssPda,
                     authority: admin,
+                    config: configPda,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([adminKeypair])
@@ -1309,6 +1310,7 @@ async function run() {
             .accounts({
                 tssPda: tssPda,
                 authority: admin,
+                config: configPda,
                 systemProgram: SystemProgram.programId,
             })
             .signers([adminKeypair])
@@ -1408,16 +1410,18 @@ async function run() {
         nonceBE_SPL.writeBigUInt64BE(BigInt(nonce + 1)); // Increment nonce for SPL withdraw
         const amountBE_SPL = Buffer.alloc(8);
         amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
-        const recipientBytesSPL = admin.toBuffer();
         const mintBytes = mint.toBuffer(); // 32 bytes for mint address
 
+        // Include both mint AND recipient in message hash (ZetaChain pattern - security fix)
+        const recipientBytesSPL = adminAta.address.toBuffer();
         const concatSPL = Buffer.concat([
             PREFIX_SPL,
             instructionIdSPL,
             chainIdBE_SPL,
             nonceBE_SPL,
             amountBE_SPL,
-            mintBytes, // Additional data for SPL withdraw (only mint, not recipient)
+            mintBytes,      // Token mint (32 bytes)
+            recipientBytesSPL, // Recipient token account (32 bytes)
         ]);
         const messageHashHexSPL = keccak_256(concatSPL);
         const messageHashSPL = Buffer.from(messageHashHexSPL, "hex");

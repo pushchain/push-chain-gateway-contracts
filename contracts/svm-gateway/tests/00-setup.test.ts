@@ -178,6 +178,7 @@ describe("Universal Gateway - Setup Tests", () => {
                 .accounts({
                     tssPda,
                     authority: admin.publicKey,
+                    config: configPda,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([admin])

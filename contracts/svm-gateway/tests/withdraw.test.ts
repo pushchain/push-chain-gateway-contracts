@@ -304,11 +304,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
             await setNonceOnChain(currentNonce);
 
+            // Include both mint AND recipient in message hash (ZetaChain pattern - security fix)
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.WithdrawSpl,
                 nonce: currentNonce,
                 amount: withdrawRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount)],
             });
 
             const initialVault = await mockUSDT.getBalance(vaultUsdtAccount);
@@ -348,11 +349,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
             await setNonceOnChain(currentNonce);
 
+            // Include both mint AND recipient in message hash (ZetaChain pattern - security fix)
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.WithdrawSpl,
                 nonce: currentNonce,
                 amount: withdrawRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount)],
             });
 
             const corrupted = [...signature.signature];
@@ -438,14 +440,16 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 revertMsg: Buffer.from("revert SPL"),
             };
 
+            // Create recipient account first (needed for message hash)
+            const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
+
+            // Include both mint AND fund_recipient in message hash (ZetaChain pattern - security fix)
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient)],
             });
-
-            const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
             const initialRecipientBalance = await mockUSDT.getBalance(recipientRevertAccount);
 
             await program.methods

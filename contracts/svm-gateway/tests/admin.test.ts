@@ -414,6 +414,70 @@ describe("Universal Gateway - Admin Functions Tests", () => {
     });
 
     describe("TSS Management", () => {
+        it("Rejects TSS initialization by non-admin", async () => {
+            // Use the correct TSS PDA seed (just "tss", not with extra bytes)
+            const [actualTssPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from("tss")],
+                program.programId
+            );
+
+            // Check if TSS already exists
+            let tssExists = false;
+            try {
+                await program.account.tssPda.fetch(actualTssPda);
+                tssExists = true;
+            } catch {
+                // TSS doesn't exist yet
+            }
+
+            if (tssExists) {
+                // TSS already exists, test that non-admin can't update it (also requires authority)
+                const newTssEthAddress = Array.from(Buffer.alloc(20, 99));
+                try {
+                    await program.methods
+                        .updateTss(newTssEthAddress, new anchor.BN(999))
+                        .accounts({
+                            authority: unauthorizedUser.publicKey,
+                            tssPda: actualTssPda,
+                        })
+                        .signers([unauthorizedUser])
+                        .rpc();
+
+                    expect.fail("Unauthorized TSS update should have failed");
+                } catch (error: any) {
+                    expect(error).to.exist;
+                    // Constraint returns ConstraintRaw when validation fails
+                    const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                    expect(errorCode).to.equal("ConstraintRaw");
+                }
+            } else {
+                // TSS doesn't exist, test that non-admin can't initialize it
+                // The constraint check happens during account validation, before init
+                const expectedTssEthAddress = getTssEthAddress();
+                const chainId = new anchor.BN(TSS_CHAIN_ID);
+
+                try {
+                    await program.methods
+                        .initTss(expectedTssEthAddress, chainId)
+                        .accounts({
+                            authority: unauthorizedUser.publicKey,
+                            tssPda: actualTssPda,
+                            config: configPda,
+                            systemProgram: SystemProgram.programId,
+                        })
+                        .signers([unauthorizedUser])
+                        .rpc();
+
+                    expect.fail("Unauthorized TSS initialization should have failed");
+                } catch (error: any) {
+                    expect(error).to.exist;
+                    // Constraint returns ConstraintRaw when validation fails
+                    const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                    expect(errorCode).to.equal("ConstraintRaw");
+                }
+            }
+        });
+
         it("Initializes TSS PDA if not already initialized", async () => {
             const expectedTssEthAddress = getTssEthAddress();
             const chainId = new anchor.BN(TSS_CHAIN_ID);
@@ -432,6 +496,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 .accounts({
                     authority: admin.publicKey,
                     tssPda: tssPda,
+                    config: configPda,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([admin])
@@ -456,6 +521,66 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             const tss = await program.account.tssPda.fetch(tssPda);
             expect(tss.chainId.toString()).to.equal(newChainId.toString());
+        });
+
+        it("Resets nonce when TSS address changes", async () => {
+            // Set nonce to a non-zero value first
+            await program.methods
+                .resetNonce(new anchor.BN(50))
+                .accounts({
+                    authority: admin.publicKey,
+                    tssPda: tssPda,
+                })
+                .signers([admin])
+                .rpc();
+
+            let tss = await program.account.tssPda.fetch(tssPda);
+            expect(tss.nonce.toString()).to.equal("50");
+
+            // Update TSS with a different address - should reset nonce to 0
+            const newTssEthAddress = Array.from(Buffer.alloc(20, 3));
+            await program.methods
+                .updateTss(newTssEthAddress, new anchor.BN(1))
+                .accounts({
+                    authority: admin.publicKey,
+                    tssPda: tssPda,
+                })
+                .signers([admin])
+                .rpc();
+
+            tss = await program.account.tssPda.fetch(tssPda);
+            expect(tss.nonce.toString()).to.equal("0");
+            expect(Buffer.from(tss.tssEthAddress).equals(Buffer.from(newTssEthAddress))).to.be.true;
+        });
+
+        it("Does not reset nonce when TSS address unchanged", async () => {
+            // Set nonce to a non-zero value
+            await program.methods
+                .resetNonce(new anchor.BN(100))
+                .accounts({
+                    authority: admin.publicKey,
+                    tssPda: tssPda,
+                })
+                .signers([admin])
+                .rpc();
+
+            let tss = await program.account.tssPda.fetch(tssPda);
+            const currentAddress = Array.from(tss.tssEthAddress);
+            const currentNonce = tss.nonce.toString();
+
+            // Update TSS with same address but different chain_id - nonce should NOT reset
+            await program.methods
+                .updateTss(currentAddress, new anchor.BN(999))
+                .accounts({
+                    authority: admin.publicKey,
+                    tssPda: tssPda,
+                })
+                .signers([admin])
+                .rpc();
+
+            tss = await program.account.tssPda.fetch(tssPda);
+            expect(tss.nonce.toString()).to.equal(currentNonce); // Nonce unchanged
+            expect(tss.chainId.toString()).to.equal("999");
         });
 
         it("Resets TSS nonce", async () => {
