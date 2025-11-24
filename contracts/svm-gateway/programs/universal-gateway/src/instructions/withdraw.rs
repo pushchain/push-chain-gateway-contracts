@@ -134,7 +134,9 @@ pub fn withdraw_spl_token_tss(
     let instruction_id: u8 = 2;
     let mut mint_bytes = [0u8; 32];
     mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
-    let additional: [&[u8]; 1] = [&mint_bytes[..]];
+    let recipient_bytes = ctx.accounts.recipient_token_account.key().to_bytes();
+    // Include both mint AND recipient in message hash (ZetaChain pattern)
+    let additional: [&[u8]; 2] = [&mint_bytes[..], &recipient_bytes[..]];
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
@@ -320,7 +322,9 @@ pub fn revert_withdraw_spl_token(
     let instruction_id: u8 = 4;
     let mut mint_bytes = [0u8; 32];
     mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
-    let additional: [&[u8]; 1] = [&mint_bytes[..]];
+    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
+    // Include both mint AND recipient in message hash (ZetaChain pattern)
+    let additional: [&[u8]; 2] = [&mint_bytes[..], &recipient_bytes[..]];
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,

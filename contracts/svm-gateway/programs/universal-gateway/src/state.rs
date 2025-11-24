@@ -77,7 +77,7 @@ pub struct UniversalTxRequest {
 #[account]
 pub struct Config {
     pub admin: Pubkey,
-    pub tss_address: Pubkey,
+    pub tss_address: Pubkey, // Not used - TODO: Remove
     pub pauser: Pubkey,
     pub min_cap_universal_tx_usd: u128, // 1e8 = $1 (Pyth format)
     pub max_cap_universal_tx_usd: u128, // 1e8 = $10 (Pyth format)
