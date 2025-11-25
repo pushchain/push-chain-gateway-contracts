@@ -338,8 +338,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         vm.prank(user1);
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
         gateway.sendUniversalTx{ value: ETH_FOR_5_USD + ETH_FOR_2_USD / 2 }( // $6
-            _buildFundsAndPayloadTxRequest(address(tokenA), 1 ether, payload)
-        );
+        _buildFundsAndPayloadTxRequest(address(tokenA), 1 ether, payload));
     }
 
     // ===========================
@@ -421,12 +420,11 @@ contract GatewayBlockRateLimitTest is BaseTest {
         vm.prank(user1);
         tokenA.approve(address(gateway), 1 ether);
 
-        RevertInstructions memory revertInstructions = RevertInstructions({ fundRecipient: user2, revertMsg: bytes("") });
+        RevertInstructions memory revertInstructions =
+            RevertInstructions({ fundRecipient: user2, revertMsg: bytes("") });
 
         vm.prank(user1);
-        gateway.sendUniversalTx{ value: 0 }(
-            _buildFundsTxRequest(address(tokenA), 1 ether, revertInstructions)
-        );
+        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether, revertInstructions));
 
         // If we got here without reverting, the test passed
     }

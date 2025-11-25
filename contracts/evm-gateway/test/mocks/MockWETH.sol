@@ -21,7 +21,7 @@ contract MockWETH is ERC20, IWETH {
     mapping(address => bool) public blacklisted;
 
     // Allow contract to receive ETH for withdraw functionality
-    receive() external payable {}
+    receive() external payable { }
 
     event DepositPaused(address account);
     event DepositUnpaused(address account);
@@ -72,7 +72,7 @@ contract MockWETH is ERC20, IWETH {
         emit MockWithdrawal(msg.sender, wad);
 
         // Transfer ETH to the caller (simulating real WETH behavior)
-        (bool success,) = payable(msg.sender).call{value: wad}("");
+        (bool success,) = payable(msg.sender).call{ value: wad }("");
         require(success, "MockWETH: ETH transfer failed");
     }
 

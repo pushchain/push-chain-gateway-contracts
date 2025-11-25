@@ -3,7 +3,13 @@ pragma solidity 0.8.26;
 
 import { BaseTest } from "../BaseTest.t.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
-import { TX_TYPE, RevertInstructions, UniversalPayload, UniversalTxRequest, UniversalTokenTxRequest } from "../../src/libraries/Types.sol";
+import {
+    TX_TYPE,
+    RevertInstructions,
+    UniversalPayload,
+    UniversalTxRequest,
+    UniversalTokenTxRequest
+} from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
@@ -23,7 +29,7 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
  *      - TX_TYPE inference when nativeValue comes from swap
  *      - msg.value semantics
  *      - Error paths (no pool, slippage, deadline, paused state)
- * 
+ *
  * @dev Note: This test suite focuses on the unique behavior of the token-as-gas entrypoint.
  *      Internal routing logic (_sendTxWithGas, _sendTxWithFunds, _fetchTxType) is already
  *      covered by existing tests. Here we test integration and surface-level semantics.
@@ -31,7 +37,7 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 contract GatewaySendUniversalTxTokenGasTest is BaseTest {
     // UniversalGateway instance
     UniversalGateway public gatewayTemp;
-    
+
     // Uniswap mocks
     MockUniswapV3Factory public mockFactory;
     MockUniswapV3Router public mockRouter;
@@ -121,7 +127,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
 
         // Fund mock router with ETH (it will convert to WETH as needed)
         vm.deal(address(mockRouter), 1000 ether);
-        
+
         // Fund WETH contract with ETH so it can transfer ETH on withdraw
         vm.deal(address(weth), 1000 ether);
     }
@@ -170,10 +176,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             gasToken: gasToken,
             gasAmount: gasAmount,
             payload: payload,
-            revertInstruction: RevertInstructions({
-                fundRecipient: address(0x456),
-                revertMsg: bytes("")
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: bytes(""),
             amountOutMinETH: amountOutMinETH,
             deadline: deadline
@@ -238,12 +241,12 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         uint256 gasAmount = 1 ether; // 1 tokenA = 0.001 ETH = $2, within caps
         uint256 expectedETH = (gasAmount * 1e15) / 1e18; // = 0.001 ETH
         uint256 amountOutMinETH = expectedETH - 1;
-        
+
         // Set deadline to past timestamp (must be non-zero to trigger the check)
         // First advance time to ensure deadline is definitely in the past
         vm.warp(block.timestamp + 1000);
         uint256 pastDeadline = block.timestamp - 100; // Definitely in the past
-        
+
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
             address(0),
             address(0),
@@ -293,7 +296,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0), // No router
             address(weth)
         );
-        TransparentUpgradeableProxy proxy2 = new TransparentUpgradeableProxy(address(implementation2), address(proxyAdmin), initData2);
+        TransparentUpgradeableProxy proxy2 =
+            new TransparentUpgradeableProxy(address(implementation2), address(proxyAdmin), initData2);
         UniversalGateway gatewayNoUniswap = UniversalGateway(payable(address(proxy2)));
 
         UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(address(tokenA), 1 ether, 0.001 ether);
@@ -310,19 +314,12 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         // Use smaller amount to stay within USD caps: 0.001 ETH = $2
         uint256 gasAmount = 0.001 ether; // 0.001 ETH = $2, within caps
         uint256 amountOutMinETH = (gasAmount * 99) / 100; // Allow 1% slippage
-        
+
         vm.prank(user1);
-        weth.deposit{value: gasAmount}();
+        weth.deposit{ value: gasAmount }();
 
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
-            address(0),
-            address(0),
-            0,
-            address(weth),
-            gasAmount,
-            bytes(""),
-            amountOutMinETH,
-            block.timestamp + 1 hours
+            address(0), address(0), 0, address(weth), gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
 
         uint256 tssBalanceBefore = tss.balance;
@@ -499,7 +496,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         );
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: fundsAmount}(req); // Send funds with msg.value
+        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req); // Send funds with msg.value
     }
 
     /// @notice Test that TX_TYPE.FUNDS_AND_PAYLOAD is correctly inferred when using token-as-gas with funds and payload
@@ -539,7 +536,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         );
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: fundsAmount}(req);
+        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
     }
 
     // =========================
@@ -556,11 +553,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         uint256 amountOutMinETH = expectedETH - 1;
         uint256 msgValue = 0.1 ether; // Extra ETH sent
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            address(tokenA),
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(address(tokenA), gasAmount, amountOutMinETH);
 
         // Act: Should succeed even with msg.value
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
@@ -576,7 +569,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         );
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: msgValue}(req);
+        gatewayTemp.sendUniversalTx{ value: msgValue }(req);
 
         // Assert: msg.value was accepted but not used (gateway balance increased)
         assertEq(address(gatewayTemp).balance, msgValue, "Gateway should receive msg.value");
@@ -590,11 +583,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         uint256 expectedETH = (gasAmount * 1e15) / 1e18; // = 0.001 ETH
         uint256 amountOutMinETH = expectedETH - 1;
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            address(tokenA),
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(address(tokenA), gasAmount, amountOutMinETH);
 
         uint256 tssBalanceBefore = tss.balance;
 
@@ -610,7 +599,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         tssBalanceBefore = tss.balance;
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{value: 1 ether}(req);
+        gatewayTemp.sendUniversalTx{ value: 1 ether }(req);
 
         uint256 tssBalanceAfterNonZero = tss.balance;
         uint256 ethReceivedNonZero = tssBalanceAfterNonZero - tssBalanceBefore;
@@ -621,7 +610,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
     }
 
     // =========================
-    //      INTEGRATION WITH ROUTING TESTS - PENDING 
+    //      INTEGRATION WITH ROUTING TESTS - PENDING
     // =========================
 
     /// @notice Test that UniversalTxRequest is correctly built from UniversalTokenTxRequest
@@ -648,7 +637,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         // Setup: User has no tokens
         uint256 gasAmount = 1 ether;
         uint256 userBalance = tokenA.balanceOf(user1);
-        
+
         // Ensure user has insufficient balance
         if (userBalance >= gasAmount) {
             vm.prank(user1);
@@ -659,7 +648,11 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
 
         // Should revert when swapToNative tries to transfer tokens
         // Will revert with ERC20InsufficientBalance when transferFrom fails
-        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, user1, tokenA.balanceOf(user1), gasAmount));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientBalance.selector, user1, tokenA.balanceOf(user1), gasAmount
+            )
+        );
         vm.prank(user1);
         gatewayTemp.sendUniversalTx(req);
     }
@@ -674,7 +667,9 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
 
         // Should revert when swapToNative tries to transfer tokens
         // Will revert with ERC20InsufficientAllowance when transferFrom fails
-        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(gatewayTemp), 0, 1 ether));
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(gatewayTemp), 0, 1 ether)
+        );
         vm.prank(user1);
         gatewayTemp.sendUniversalTx(req);
     }
@@ -701,14 +696,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         // Act: Should succeed with default deadline
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx(
-            user1,
-            address(0),
-            address(0),
-            expectedETH,
-            bytes(""),
-            req.revertInstruction,
-            TX_TYPE.GAS,
-            bytes("")
+            user1, address(0), address(0), expectedETH, bytes(""), req.revertInstruction, TX_TYPE.GAS, bytes("")
         );
 
         vm.prank(user1);
@@ -723,11 +711,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         uint256 expectedETH = (gasAmount * 1e15) / 1e18; // = 0.001 ETH
         uint256 amountOutMinETH = expectedETH + 1; // Higher than expected output
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            address(tokenA),
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(address(tokenA), gasAmount, amountOutMinETH);
 
         // Act & Assert: Should revert on slippage check
         vm.expectRevert(Errors.SlippageExceededOrExpired.selector);
@@ -749,14 +733,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         uint256 amountOutMinETH = expectedETH - 1;
 
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
-            address(0),
-            address(0),
-            0,
-            address(tokenA),
-            gasAmount,
-            bytes(""),
-            amountOutMinETH,
-            block.timestamp + 1 hours
+            address(0), address(0), 0, address(tokenA), gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
         req.revertInstruction.fundRecipient = address(0); // Invalid
 
@@ -775,14 +752,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         uint256 amountOutMinETH = expectedETH - 1;
 
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
-            address(0),
-            address(0),
-            0,
-            address(tokenA),
-            gasAmount,
-            bytes(""),
-            amountOutMinETH,
-            block.timestamp + 1 hours
+            address(0), address(0), 0, address(tokenA), gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
         req.signatureData = customSignature;
 
@@ -808,17 +778,17 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         uint256 maxGasAmount = type(uint256).max;
         uint256 maxAmountOutMinETH = type(uint256).max;
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            address(tokenA),
-            maxGasAmount,
-            maxAmountOutMinETH
-        );
+        UniversalTokenTxRequest memory req =
+            _buildMinimalTokenGasRequest(address(tokenA), maxGasAmount, maxAmountOutMinETH);
 
         // Should revert when swapToNative tries to transfer tokens
         // Will revert with ERC20InsufficientBalance (user doesn't have type(uint256).max tokens)
-        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, user1, tokenA.balanceOf(user1), maxGasAmount));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientBalance.selector, user1, tokenA.balanceOf(user1), maxGasAmount
+            )
+        );
         vm.prank(user1);
         gatewayTemp.sendUniversalTx(req);
     }
 }
-

@@ -38,15 +38,12 @@ contract GatewaySendUniversalTxTest is BaseTest {
     function setUp() public override {
         super.setUp();
 
-
         // Deploy UniversalGateway instead of UniversalGateway
         _deployGatewayTemp();
-
 
         // Wire oracle to the new gateway instance
         vm.prank(admin);
         gatewayTemp.setEthUsdFeed(address(ethUsdFeedMock));
-
 
         // Setup token support on gatewayTemp (native + all mock ERC20s)
         address[] memory tokens = new address[](4);
@@ -60,10 +57,8 @@ contract GatewaySendUniversalTxTest is BaseTest {
         thresholds[2] = 1000000e6; // Large threshold for usdc (6 decimals)
         thresholds[3] = 1000000 ether; // Large threshold for weth
 
-
         vm.prank(admin);
         gatewayTemp.setTokenLimitThresholds(tokens, thresholds);
-
 
         // Re-approve tokens to gatewayTemp (BaseTest approved to old gateway)
         address[] memory users = new address[](5);
@@ -73,27 +68,22 @@ contract GatewaySendUniversalTxTest is BaseTest {
         users[3] = user4;
         users[4] = attacker;
 
-
         for (uint256 i = 0; i < users.length; i++) {
             vm.prank(users[i]);
             tokenA.approve(address(gatewayTemp), type(uint256).max);
 
-
             vm.prank(users[i]);
             usdc.approve(address(gatewayTemp), type(uint256).max);
-
 
             vm.prank(users[i]);
             weth.approve(address(gatewayTemp), type(uint256).max);
         }
     }
 
-
     /// @notice Deploy UniversalGateway (overrides BaseTest's UniversalGateway deployment)
     function _deployGatewayTemp() internal {
         // Deploy implementation
         UniversalGateway implementation = new UniversalGateway();
-
 
         // Deploy transparent upgradeable proxy
         bytes memory initData = abi.encodeWithSelector(
@@ -111,14 +101,11 @@ contract GatewaySendUniversalTxTest is BaseTest {
         TransparentUpgradeableProxy tempProxy =
             new TransparentUpgradeableProxy(address(implementation), address(proxyAdmin), initData);
 
-
         // Cast proxy to UniversalGateway
         gatewayTemp = UniversalGateway(payable(address(tempProxy)));
 
-
         vm.label(address(gatewayTemp), "UniversalGateway");
     }
-
 
     /// @notice Helper to build UniversalTxRequest structs
     function buildUniversalTxRequest(address recipient_, address token, uint256 amount, bytes memory payload)
@@ -202,7 +189,6 @@ contract GatewaySendUniversalTxTest is BaseTest {
         // Act & Assert
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
-            
             sender: user1,
             recipient: address(0), // Gas always credits UEA (address(0))
             token: address(0), // Native token

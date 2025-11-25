@@ -75,7 +75,7 @@ contract MockUniswapV3Router is ISwapRouter {
         returns (uint256 amountOut)
     {
         require(params.tokenOut == weth, "MockRouter: tokenOut must be WETH");
-        
+
         // Calculate amount out based on swap rate (default 1:1 if not set)
         uint256 rate = swapRates[params.tokenIn];
         if (rate == 0) {
@@ -92,9 +92,9 @@ contract MockUniswapV3Router is ISwapRouter {
         if (wethBalance < amountOut) {
             uint256 ethNeeded = amountOut - wethBalance;
             // Mint WETH by depositing ETH (router should have ETH from setUp)
-            IWETH(weth).deposit{value: ethNeeded}();
+            IWETH(weth).deposit{ value: ethNeeded }();
         }
-        
+
         // Transfer WETH to gateway
         IERC20(weth).transfer(msg.sender, amountOut);
 
@@ -118,4 +118,3 @@ contract MockUniswapV3Router is ISwapRouter {
         revert("MockRouter: callback not used");
     }
 }
-

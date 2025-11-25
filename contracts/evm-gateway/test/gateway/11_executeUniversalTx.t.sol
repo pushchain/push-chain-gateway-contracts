@@ -940,13 +940,13 @@ contract GatewayExecuteUniversalTxTest is Test {
 
         // Get vault balance after transfer (before execution)
         uint256 vaultBalanceAfterTransfer = token.balanceOf(address(this));
-        
+
         // Verify gateway has the tokens
         assertEq(token.balanceOf(address(gateway)), totalAmount);
 
         // Use a payload that transfers tokens (receiveToken function)
         bytes memory tokenPayload = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), AMOUNT);
-        
+
         gateway.executeUniversalTx(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT, tokenPayload);
 
         // Remaining tokens should be returned to vault

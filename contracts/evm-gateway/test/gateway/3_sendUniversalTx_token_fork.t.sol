@@ -29,7 +29,7 @@ interface TetherToken {
  *      - TX_TYPE inference when nativeValue comes from swap
  *      - msg.value semantics
  *      - Error paths (no pool, slippage, deadline, paused state)
- * 
+ *
  * @dev Note: This test suite uses mainnet fork to test real-world integration.
  *      Uses real mainnet tokens (USDC, USDT, DAI, WETH) and real Uniswap V3 pools.
  */
@@ -218,10 +218,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             gasToken: gasToken,
             gasAmount: gasAmount,
             payload: payload,
-            revertInstruction: RevertInstructions({
-                fundRecipient: address(0x456),
-                revertMsg: bytes("")
-            }),
+            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: bytes(""),
             amountOutMinETH: amountOutMinETH,
             deadline: deadline
@@ -254,8 +251,8 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
     ///      This is approximate due to real market slippage
     function _calculateExpectedETH(address token, uint256 tokenAmount) internal view returns (uint256) {
         // Get current ETH/USD price
-        (uint256 ethUsdPrice, ) = gatewayFork.getEthUsdPrice();
-        
+        (uint256 ethUsdPrice,) = gatewayFork.getEthUsdPrice();
+
         // For stablecoins (USDC, USDT, DAI), assume 1:1 with USD
         // Calculate USD value, then convert to ETH
         uint256 usdValue;
@@ -269,7 +266,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             // For other tokens, assume 1:1 USD for simplicity
             usdValue = tokenAmount;
         }
-        
+
         // Convert USD to ETH: ethAmount = (usdValue * 1e18) / ethUsdPrice
         // Apply 5% slippage tolerance for real swaps
         return (usdValue * 95) / 100 / (ethUsdPrice / 1e18);
@@ -376,7 +373,8 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             address(0), // No router
             MAINNET_WETH
         );
-        TransparentUpgradeableProxy proxy2 = new TransparentUpgradeableProxy(address(implementation2), address(proxyAdmin), initData2);
+        TransparentUpgradeableProxy proxy2 =
+            new TransparentUpgradeableProxy(address(implementation2), address(proxyAdmin), initData2);
         UniversalGateway gatewayNoUniswap = UniversalGateway(payable(address(proxy2)));
 
         fundUserWithMainnetTokens(user1, MAINNET_USDC, 1000e6);
@@ -400,20 +398,13 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         // Fund user with ETH and convert to WETH
         vm.deal(user1, gasAmount);
         vm.prank(user1);
-        IWETH(MAINNET_WETH).deposit{value: gasAmount}();
+        IWETH(MAINNET_WETH).deposit{ value: gasAmount }();
 
         vm.prank(user1);
         mainnetWETH.approve(address(gatewayFork), gasAmount);
 
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
-            address(0),
-            address(0),
-            0,
-            MAINNET_WETH,
-            gasAmount,
-            bytes(""),
-            amountOutMinETH,
-            block.timestamp + 1 hours
+            address(0), address(0), 0, MAINNET_WETH, gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
 
         uint256 tssBalanceBefore = tss.balance;
@@ -452,14 +443,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         fakeToken.approve(address(gatewayFork), 1e18);
 
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
-            address(0),
-            address(0),
-            0,
-            address(fakeToken),
-            1e18,
-            bytes(""),
-            0.001 ether,
-            block.timestamp + 1 hours
+            address(0), address(0), 0, address(fakeToken), 1e18, bytes(""), 0.001 ether, block.timestamp + 1 hours
         );
 
         // Act & Assert: Should revert when pool is not found
@@ -575,7 +559,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         // The swap happens first, producing nativeValue, but then _sendTxWithFunds expects nativeValue == fundsAmount
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
-        gatewayFork.sendUniversalTx{value: fundsAmount}(req); // Send funds with msg.value
+        gatewayFork.sendUniversalTx{ value: fundsAmount }(req); // Send funds with msg.value
     }
 
     /// @notice Test that TX_TYPE.FUNDS_AND_PAYLOAD is correctly inferred when using token-as-gas with funds and payload
@@ -605,7 +589,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
 
         // Act: Call sendUniversalTx (don't check event as amount is unpredictable from real swap)
         vm.prank(user1);
-        gatewayFork.sendUniversalTx{value: fundsAmount}(req);
+        gatewayFork.sendUniversalTx{ value: fundsAmount }(req);
     }
 
     // =========================
@@ -624,17 +608,13 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         vm.prank(user1);
         mainnetUSDC.approve(address(gatewayFork), gasAmount);
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            MAINNET_USDC,
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(MAINNET_USDC, gasAmount, amountOutMinETH);
 
         uint256 gatewayBalanceBefore = address(gatewayFork).balance;
 
         // Act: Should succeed even with msg.value (don't check event as amount is unpredictable)
         vm.prank(user1);
-        gatewayFork.sendUniversalTx{value: msgValue}(req);
+        gatewayFork.sendUniversalTx{ value: msgValue }(req);
 
         // Assert: msg.value was accepted but not used (gateway balance increased)
         assertEq(address(gatewayFork).balance, gatewayBalanceBefore + msgValue, "Gateway should receive msg.value");
@@ -651,11 +631,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         vm.prank(user1);
         mainnetUSDC.approve(address(gatewayFork), gasAmount * 2);
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            MAINNET_USDC,
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(MAINNET_USDC, gasAmount, amountOutMinETH);
 
         uint256 tssBalanceBefore = tss.balance;
 
@@ -671,14 +647,16 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         tssBalanceBefore = tss.balance;
 
         vm.prank(user1);
-        gatewayFork.sendUniversalTx{value: 1 ether}(req);
+        gatewayFork.sendUniversalTx{ value: 1 ether }(req);
 
         uint256 tssBalanceAfterNonZero = tss.balance;
         uint256 ethReceivedNonZero = tssBalanceAfterNonZero - tssBalanceBefore;
 
         // Assert: nativeValue (sent to TSS) is approximately the same regardless of msg.value
         // Allow small tolerance due to real market conditions
-        assertApproxEqAbs(ethReceivedZero, ethReceivedNonZero, 1e15, "nativeValue should be same regardless of msg.value");
+        assertApproxEqAbs(
+            ethReceivedZero, ethReceivedNonZero, 1e15, "nativeValue should be same regardless of msg.value"
+        );
     }
 
     // =========================
@@ -758,11 +736,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         vm.prank(user1);
         mainnetUSDC.approve(address(gatewayFork), gasAmount);
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            MAINNET_USDC,
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(MAINNET_USDC, gasAmount, amountOutMinETH);
 
         // Act & Assert: Should revert on slippage check
         // Uniswap router reverts with "Too little received" string error when slippage is exceeded
@@ -787,14 +761,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         mainnetUSDC.approve(address(gatewayFork), gasAmount);
 
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
-            address(0),
-            address(0),
-            0,
-            MAINNET_USDC,
-            gasAmount,
-            bytes(""),
-            amountOutMinETH,
-            block.timestamp + 1 hours
+            address(0), address(0), 0, MAINNET_USDC, gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
         req.revertInstruction.fundRecipient = address(0); // Invalid
 
@@ -815,14 +782,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         mainnetUSDC.approve(address(gatewayFork), gasAmount);
 
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
-            address(0),
-            address(0),
-            0,
-            MAINNET_USDC,
-            gasAmount,
-            bytes(""),
-            amountOutMinETH,
-            block.timestamp + 1 hours
+            address(0), address(0), 0, MAINNET_USDC, gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
         req.signatureData = customSignature;
 
@@ -837,11 +797,8 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         uint256 maxGasAmount = type(uint256).max;
         uint256 maxAmountOutMinETH = type(uint256).max;
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            MAINNET_USDC,
-            maxGasAmount,
-            maxAmountOutMinETH
-        );
+        UniversalTokenTxRequest memory req =
+            _buildMinimalTokenGasRequest(MAINNET_USDC, maxGasAmount, maxAmountOutMinETH);
 
         // Should revert when swapToNative tries to transfer tokens
         // USDC uses old-style string errors, so we check for any revert
@@ -863,11 +820,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         vm.prank(user1);
         mainnetUSDC.approve(address(gatewayFork), gasAmount);
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            MAINNET_USDC,
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(MAINNET_USDC, gasAmount, amountOutMinETH);
 
         uint256 tssBalanceBefore = tss.balance;
         uint256 userBalanceBefore = mainnetUSDC.balanceOf(user1);
@@ -893,11 +846,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         // USDT approve returns void, not bool
         TetherToken(MAINNET_USDT).approve(address(gatewayFork), gasAmount);
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            MAINNET_USDT,
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(MAINNET_USDT, gasAmount, amountOutMinETH);
 
         uint256 tssBalanceBefore = tss.balance;
         uint256 userBalanceBefore = mainnetUSDT.balanceOf(user1);
@@ -921,11 +870,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         vm.prank(user1);
         mainnetDAI.approve(address(gatewayFork), gasAmount);
 
-        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(
-            MAINNET_DAI,
-            gasAmount,
-            amountOutMinETH
-        );
+        UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(MAINNET_DAI, gasAmount, amountOutMinETH);
 
         uint256 tssBalanceBefore = tss.balance;
         uint256 userBalanceBefore = mainnetDAI.balanceOf(user1);
@@ -940,4 +885,3 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         assertGt(tss.balance, tssBalanceBefore, "TSS should receive ETH from token swap");
     }
 }
-
