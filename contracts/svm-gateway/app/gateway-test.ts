@@ -1334,6 +1334,14 @@ async function run() {
         // If not initialized or IDL not exposed yet, keep default 0
     }
 
+    // Generate tx_id and origin_caller for withdraw
+    const txId = Array.from(Buffer.alloc(32, Math.floor(Math.random() * 256)));
+    const originCaller = Array.from(Buffer.alloc(20, Math.floor(Math.random() * 256)));
+    const [executedTxPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("executed_tx"), Buffer.from(txId)],
+        program.programId
+    );
+
     const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
     const instructionId = Buffer.from([1]); // 1 = SOL withdraw
     const chainIdBE = Buffer.alloc(8);
@@ -1344,13 +1352,16 @@ async function run() {
     amountBE.writeBigUInt64BE(BigInt(withdrawAmountTss));
     const recipientBytes = admin.toBuffer();
 
+    // Include tx_id, origin_caller, and recipient in message hash
     const concat = Buffer.concat([
         PREFIX,
         instructionId,
         chainIdBE,
         nonceBE,
         amountBE,
-        recipientBytes,
+        Buffer.from(txId),      // tx_id (32 bytes)
+        Buffer.from(originCaller), // origin_caller (20 bytes)
+        recipientBytes,         // recipient (32 bytes)
     ]);
     const messageHashHex = keccak_256(concat);
     const messageHash = Buffer.from(messageHashHex, "hex");
@@ -1362,9 +1373,11 @@ async function run() {
     const signature: Uint8Array = sig[0];
     let recoveryId: number = sig[1]; // 0 or 1
 
-    // 12.4 Call withdraw_tss
+    // 12.4 Call withdraw
     const tssWithdrawTx = await program.methods
-        .withdrawTss(
+        .withdraw(
+            txId,
+            originCaller,
             new anchor.BN(withdrawAmountTss),
             Array.from(signature) as any,
             recoveryId,
@@ -1376,6 +1389,8 @@ async function run() {
             vault: vaultPda,
             tssPda: tssPda,
             recipient: admin,
+            executedTx: executedTxPda,
+            caller: admin, // The caller/relayer who pays for the transaction
             systemProgram: SystemProgram.programId,
         })
         .signers([adminKeypair])
@@ -1401,6 +1416,14 @@ async function run() {
             admin
         );
 
+        // Generate tx_id and origin_caller for SPL withdraw
+        const txIdSPL = Array.from(Buffer.alloc(32, Math.floor(Math.random() * 256)));
+        const originCallerSPL = Array.from(Buffer.alloc(20, Math.floor(Math.random() * 256)));
+        const [executedTxPdaSPL] = PublicKey.findProgramAddressSync(
+            [Buffer.from("executed_tx"), Buffer.from(txIdSPL)],
+            program.programId
+        );
+
         // Build message for SPL withdraw using instruction_id=2
         const PREFIX_SPL = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdSPL = Buffer.from([2]); // 2 = SPL withdraw
@@ -1412,7 +1435,7 @@ async function run() {
         amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
         const mintBytes = mint.toBuffer(); // 32 bytes for mint address
 
-        // Include both mint AND recipient in message hash (ZetaChain pattern - security fix)
+        // Include tx_id, origin_caller, mint AND recipient in message hash
         const recipientBytesSPL = adminAta.address.toBuffer();
         const concatSPL = Buffer.concat([
             PREFIX_SPL,
@@ -1420,8 +1443,10 @@ async function run() {
             chainIdBE_SPL,
             nonceBE_SPL,
             amountBE_SPL,
-            mintBytes,      // Token mint (32 bytes)
-            recipientBytesSPL, // Recipient token account (32 bytes)
+            Buffer.from(txIdSPL),        // tx_id (32 bytes)
+            Buffer.from(originCallerSPL), // origin_caller (20 bytes)
+            mintBytes,                   // Token mint (32 bytes)
+            recipientBytesSPL,          // Recipient token account (32 bytes)
         ]);
         const messageHashHexSPL = keccak_256(concatSPL);
         const messageHashSPL = Buffer.from(messageHashHexSPL, "hex");
@@ -1431,9 +1456,11 @@ async function run() {
         const signatureSPL: Uint8Array = sigSPL[0];
         let recoveryIdSPL: number = sigSPL[1];
 
-        // Call withdraw_spl_token_tss
+        // Call withdraw_funds
         const tssSplWithdrawTx = await program.methods
-            .withdrawSplTokenTss(
+            .withdrawFunds(
+                txIdSPL,
+                originCallerSPL,
                 new anchor.BN(splWithdrawAmount),
                 Array.from(signatureSPL) as any,
                 recoveryIdSPL,
@@ -1448,7 +1475,10 @@ async function run() {
                 tokenMint: mint,
                 tssPda: tssPda,
                 recipientTokenAccount: adminAta.address,
+                executedTx: executedTxPdaSPL,
+                caller: admin, // The caller/relayer who pays for the transaction
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
             })
             .signers([adminKeypair])
             .rpc();
@@ -1520,13 +1550,20 @@ async function run() {
         console.log(`Current TSS nonce: ${currentNonce}`);
         console.log(`TSS chain ID: ${tssAccount.chainId}`);
 
+        // Generate tx_id for revert
+        const txIdRevert = Array.from(Buffer.alloc(32, Math.floor(Math.random() * 256)));
+        const [executedTxPdaRevert] = PublicKey.findProgramAddressSync(
+            [Buffer.from("executed_tx"), Buffer.from(txIdRevert)],
+            program.programId
+        );
+
         // Create real message hash for revert withdraw (instruction_id = 3)
         const instructionId = 3;
         const amount = 1000000; // 0.001 SOL
         const recipientBytes = admin.toBytes();
 
-        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + nonce + amount + recipient
-        // Use EXACT same format as working TSS withdrawal
+        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + nonce + amount + tx_id + recipient
+        // NO origin_caller for revert functions
         const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdBE = Buffer.from([instructionId]);
         const chainIdBE = Buffer.alloc(8);
@@ -1543,7 +1580,8 @@ async function run() {
             chainIdBE,
             nonceBE,
             amountBE,
-            recipientBytesBE,
+            Buffer.from(txIdRevert), // tx_id (32 bytes)
+            recipientBytesBE,        // recipient (32 bytes)
         ]);
 
         // Hash with keccak (same as program)
@@ -1561,11 +1599,12 @@ async function run() {
         let recoveryId: number = sig[1]; // 0 or 1
 
         await program.methods
-            .revertWithdraw(
+            .revertUniversalTx(
+                txIdRevert,
                 new anchor.BN(amount),
                 {
                     fundRecipient: admin,
-                    revertCause: "test_revert",
+                    revertMsg: Buffer.from("test_revert"),
                 },
                 Array.from(signature),
                 recoveryId,
@@ -1575,10 +1614,13 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
-                tss: tssPda,
+                tssPda: tssPda,
                 recipient: admin,
+                executedTx: executedTxPdaRevert,
+                caller: admin, // The caller/relayer who pays for the transaction
                 systemProgram: SystemProgram.programId,
             })
+            .signers([adminKeypair])
             .rpc();
 
         console.log("✅ revertWithdraw function working with real TSS signature!");

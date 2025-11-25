@@ -42,9 +42,11 @@ interface SignParams {
     amount?: bigint;
     additional: Uint8Array[];
     chainId?: number; // Use chain_id from TSS account, fallback to TSS_CHAIN_ID
+    txId?: Uint8Array; // Transaction ID (32 bytes) - required for withdraw/revert
+    originCaller?: Uint8Array; // Origin caller EVM address (20 bytes) - required for withdraw only
 }
 
-export async function signTssMessage({ instruction, nonce, amount, additional, chainId }: SignParams): Promise<TssSignature> {
+export async function signTssMessage({ instruction, nonce, amount, additional, chainId, txId, originCaller }: SignParams): Promise<TssSignature> {
     // Build message EXACTLY like gateway-test.ts
     // Use chain_id from TSS account (like Rust does) or fallback to TSS_CHAIN_ID
     const chainIdToUse = chainId ?? TSS_CHAIN_ID;
@@ -61,6 +63,15 @@ export async function signTssMessage({ instruction, nonce, amount, additional, c
         const amountBE = Buffer.alloc(8);
         amountBE.writeBigUInt64BE(amount);
         segments.push(amountBE);
+    }
+
+    // For withdraw functions: include tx_id and origin_caller
+    // For revert functions: include tx_id only
+    if (txId) {
+        segments.push(Buffer.from(txId));
+    }
+    if (originCaller && (instruction === TssInstruction.WithdrawSol || instruction === TssInstruction.WithdrawSpl)) {
+        segments.push(Buffer.from(originCaller));
     }
 
     additional.forEach((item) => {

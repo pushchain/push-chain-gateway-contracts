@@ -7,6 +7,7 @@ pub const WHITELIST_SEED: &[u8] = b"whitelist";
 pub const TSS_SEED: &[u8] = b"tss";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
+pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
 pub const FEED_ID: &str = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
@@ -151,6 +152,21 @@ impl TssPda {
     pub const LEN: usize = 8 + 20 + 8 + 8 + 32 + 1;
 }
 
+/// Executed transaction tracker (parity with EVM `isExecuted[txID]` mapping).
+/// PDA: `[b"executed_tx", tx_id]`.
+/// - `executed == false` => txID not yet executed (account may have been created by a failed attempt)
+/// - `executed == true`  => txID has been successfully executed
+#[account]
+pub struct ExecutedTx {
+    /// Whether this txID has been successfully executed.
+    pub executed: bool,
+}
+
+impl ExecutedTx {
+    // discriminator (8) + bool (1)
+    pub const LEN: usize = 8 + 1;
+}
+
 /// Universal transaction event (parity with EVM V0 `UniversalTx`).
 /// Single event for both gas funding and funds movement.
 #[event]
@@ -165,12 +181,24 @@ pub struct UniversalTx {
     pub signature_data: Vec<u8>,
 }
 
-/// Withdraw event (parity with EVM `WithdrawFunds`).
+/// Withdraw event (parity with EVM `WithdrawToken`).
 #[event]
-pub struct WithdrawFunds {
-    pub recipient: Pubkey,
-    pub amount: u64,
-    pub token: Pubkey,
+pub struct WithdrawToken {
+    pub tx_id: [u8; 32],         // Transaction ID
+    pub origin_caller: [u8; 20], // Original caller on source chain (EVM address)
+    pub token: Pubkey,           // Token address (Pubkey::default() for native SOL)
+    pub to: Pubkey,              // Recipient address
+    pub amount: u64,             // Amount
+}
+
+/// Revert withdraw event (parity with EVM `RevertUniversalTx`).
+#[event]
+pub struct RevertUniversalTx {
+    pub tx_id: [u8; 32],        // Transaction ID
+    pub fund_recipient: Pubkey, // Recipient of reverted funds
+    pub token: Pubkey,          // Token address (Pubkey::default() for native SOL)
+    pub amount: u64,            // Amount
+    pub revert_instruction: RevertInstructions,
 }
 
 #[event]

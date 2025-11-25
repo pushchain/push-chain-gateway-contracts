@@ -211,17 +211,26 @@ pub mod universal_gateway {
         instructions::tss::reset_nonce(ctx, new_nonce)
     }
 
-    /// @notice TSS-verified withdraw of native SOL
-    pub fn withdraw_tss(
-        ctx: Context<WithdrawTss>,
+    // =========================
+    //        WITHDRAW
+    // =========================
+    /// @notice TSS-verified withdraw of native SOL (EVM parity: `withdraw`)
+    /// @param tx_id Transaction ID for tracking
+    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
+    pub fn withdraw(
+        ctx: Context<Withdraw>,
+        tx_id: [u8; 32],
+        origin_caller: [u8; 20],
         amount: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::withdraw_tss(
+        instructions::withdraw::withdraw(
             ctx,
+            tx_id,
+            origin_caller,
             amount,
             signature,
             recovery_id,
@@ -230,17 +239,23 @@ pub mod universal_gateway {
         )
     }
 
-    /// @notice TSS-verified withdraw of SPL tokens
-    pub fn withdraw_spl_token_tss(
-        ctx: Context<WithdrawSplTokenTss>,
+    /// @notice TSS-verified withdraw of SPL tokens (EVM parity: `withdrawFunds`)
+    /// @param tx_id Transaction ID for tracking
+    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
+    pub fn withdraw_funds(
+        ctx: Context<WithdrawFunds>,
+        tx_id: [u8; 32],
+        origin_caller: [u8; 20],
         amount: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::withdraw_spl_token_tss(
+        instructions::withdraw::withdraw_funds(
             ctx,
+            tx_id,
+            origin_caller,
             amount,
             signature,
             recovery_id,
@@ -250,11 +265,13 @@ pub mod universal_gateway {
     }
 
     // =========================
-    //        REVERT WITHDRAW
+    //        REVERT
     // =========================
-    /// @notice TSS-verified revert withdraw for SOL
-    pub fn revert_withdraw(
-        ctx: Context<RevertWithdraw>,
+    /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
+    /// @param tx_id Transaction ID for tracking
+    pub fn revert_universal_tx(
+        ctx: Context<RevertUniversalTx>,
+        tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
         signature: [u8; 64],
@@ -262,8 +279,9 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_withdraw(
+        instructions::withdraw::revert_universal_tx(
             ctx,
+            tx_id,
             amount,
             revert_instruction,
             signature,
@@ -273,9 +291,11 @@ pub mod universal_gateway {
         )
     }
 
-    /// @notice TSS-verified revert withdraw for SPL tokens
-    pub fn revert_withdraw_spl_token(
-        ctx: Context<RevertWithdrawSplToken>,
+    /// @notice TSS-verified revert withdraw for SPL tokens (EVM parity: `revertUniversalTxToken`)
+    /// @param tx_id Transaction ID for tracking
+    pub fn revert_universal_tx_token(
+        ctx: Context<RevertUniversalTxToken>,
+        tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
         signature: [u8; 64],
@@ -283,8 +303,9 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_withdraw_spl_token(
+        instructions::withdraw::revert_universal_tx_token(
             ctx,
+            tx_id,
             amount,
             revert_instruction,
             signature,
@@ -320,13 +341,16 @@ pub use instructions::admin::{
 pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas, SendUniversalTx};
 pub use instructions::initialize::Initialize;
 pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
-pub use instructions::withdraw::{RevertWithdraw, RevertWithdrawSplToken};
+pub use instructions::withdraw::{
+    RevertUniversalTx, RevertUniversalTxToken, Withdraw, WithdrawFunds,
+};
 pub use utils::PriceData;
 
 pub use state::{
     // Events
     CapsUpdated,
     Config,
+    ExecutedTx,
     RevertInstructions,
     TSSAddressUpdated,
     TokenWhitelist,
@@ -335,8 +359,9 @@ pub use state::{
     UniversalTx,
     UniversalTxRequest,
     VerificationType,
-    WithdrawFunds,
+    WithdrawToken,
     CONFIG_SEED,
+    EXECUTED_TX_SEED,
     FEED_ID,
     VAULT_SEED,
     WHITELIST_SEED,

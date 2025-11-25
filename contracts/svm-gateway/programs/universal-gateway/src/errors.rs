@@ -86,4 +86,7 @@ pub enum GatewayError {
 
     #[msg("Token not supported")]
     NotSupported,
+
+    #[msg("Payload already executed")]
+    PayloadExecuted,
 }
