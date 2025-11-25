@@ -341,6 +341,17 @@ fn send_tx_with_funds_route(
                 );
                 token::transfer(cpi_ctx, req.amount)?;
             }
+            // Emit event
+            emit!(UniversalTx {
+                sender: ctx.accounts.user.key(),
+                recipient: req.recipient,
+                token: req.token,
+                amount: req.amount,
+                payload: req.payload,
+                revert_instruction: req.revert_instruction,
+                tx_type,
+                signature_data: req.signature_data,
+            });
         }
         TxType::FundsAndPayload => {
             if req.token == Pubkey::default() {
@@ -428,21 +439,20 @@ fn send_tx_with_funds_route(
                 );
                 token::transfer(cpi_ctx, req.amount)?;
             }
+            // Emit event
+            emit!(UniversalTx {
+                sender: ctx.accounts.user.key(),
+                recipient: [0u8; 20],
+                token: req.token,
+                amount: req.amount,
+                payload: req.payload,
+                revert_instruction: req.revert_instruction,
+                tx_type,
+                signature_data: req.signature_data,
+            });
         }
         _ => return Err(error!(GatewayError::InvalidTxType)),
     }
-
-    // Emit event
-    emit!(UniversalTx {
-        sender: ctx.accounts.user.key(),
-        recipient: req.recipient,
-        token: req.token,
-        amount: req.amount,
-        payload: req.payload,
-        revert_instruction: req.revert_instruction,
-        tx_type,
-        signature_data: req.signature_data,
-    });
 
     Ok(())
 }
