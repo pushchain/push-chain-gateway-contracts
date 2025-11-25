@@ -7,7 +7,7 @@ pub mod utils;
 
 use instructions::*;
 
-declare_id!("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+declare_id!("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
 
 #[program]
 pub mod universal_gateway {
@@ -17,6 +17,17 @@ pub mod universal_gateway {
     //           DEPOSITS
     // =========================
 
+    /// @notice Universal transaction entrypoint with internal routing (EVM parity).
+    /// @dev    Native amount parameter mirrors `msg.value` on EVM chains.
+    ///         All routing (gas / funds / batching) is handled inside the deposit module.
+    pub fn send_universal_tx(
+        ctx: Context<SendUniversalTx>,
+        req: UniversalTxRequest,
+        native_amount: u64,
+    ) -> Result<()> {
+        instructions::deposit::send_universal_tx(ctx, req, native_amount)
+    }
+
     /// @notice Allows initiating a TX for funding UEA with gas deposits from source chain.
     /// @dev    Supports only native SOL deposits for gas funding.
     ///         The route emits UniversalTx event - important for Instant TX Route.
@@ -25,8 +36,15 @@ pub mod universal_gateway {
         payload: UniversalPayload,
         revert_instruction: RevertInstructions,
         amount: u64,
+        signature_data: Vec<u8>,
     ) -> Result<()> {
-        instructions::deposit::send_tx_with_gas(ctx, payload, revert_instruction, amount)
+        instructions::deposit::send_tx_with_gas(
+            ctx,
+            payload,
+            revert_instruction,
+            amount,
+            signature_data,
+        )
     }
 
     /// @notice Allows initiating a TX for movement of funds from source chain to Push Chain.
@@ -149,16 +167,24 @@ pub mod universal_gateway {
     // =========================
 
     /// @notice Set block-based USD cap for rate limiting
-    pub fn set_block_usd_cap(ctx: Context<RateLimitConfigAction>, block_usd_cap: u128) -> Result<()> {
+    pub fn set_block_usd_cap(
+        ctx: Context<RateLimitConfigAction>,
+        block_usd_cap: u128,
+    ) -> Result<()> {
         instructions::admin::set_block_usd_cap(ctx, block_usd_cap)
     }
 
     /// @notice Update epoch duration for rate limiting
-    pub fn update_epoch_duration(ctx: Context<RateLimitConfigAction>, epoch_duration_sec: u64) -> Result<()> {
+    pub fn update_epoch_duration(
+        ctx: Context<RateLimitConfigAction>,
+        epoch_duration_sec: u64,
+    ) -> Result<()> {
         instructions::admin::update_epoch_duration(ctx, epoch_duration_sec)
     }
 
     /// @notice Set token-specific rate limit threshold
+    /// @dev For batch operations, call this function multiple times in a single transaction.
+    ///      This is the Solana-idiomatic approach and provides better type safety than using remaining_accounts.
     pub fn set_token_rate_limit(
         ctx: Context<TokenRateLimitAction>,
         limit_threshold: u128,
@@ -288,8 +314,10 @@ pub mod universal_gateway {
 }
 
 // Re-export account structs and types
-pub use instructions::admin::{AdminAction, PauseAction, WhitelistAction, TokenRateLimitAction, RateLimitConfigAction};
-pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas};
+pub use instructions::admin::{
+    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
+};
+pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas, SendUniversalTx};
 pub use instructions::initialize::Initialize;
 pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
 pub use instructions::withdraw::{RevertWithdraw, RevertWithdrawSplToken};
@@ -301,12 +329,11 @@ pub use state::{
     Config,
     RevertInstructions,
     TSSAddressUpdated,
-    TokenRemovedFromWhitelist,
     TokenWhitelist,
-    TokenWhitelisted,
     TxType,
     UniversalPayload,
     UniversalTx,
+    UniversalTxRequest,
     VerificationType,
     WithdrawFunds,
     CONFIG_SEED,

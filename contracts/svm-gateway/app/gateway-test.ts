@@ -8,13 +8,14 @@ import {
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
-import type { Pushsolanagateway } from "../target/types/pushsolanagateway";
+import type { UniversalGateway } from "../target/types/universal_gateway";
 import * as spl from "@solana/spl-token";
-import { keccak_256 } from "js-sha3";
+import pkg from 'js-sha3';
+const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
 import { assert } from "chai";
 
-const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
@@ -40,9 +41,9 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 anchor.setProvider(adminProvider);
 
 // Load IDL
-const idl = JSON.parse(fs.readFileSync("./target/idl/pushsolanagateway.json", "utf8"));
-const program = new Program(idl as Pushsolanagateway, adminProvider);
-const userProgram = new Program(idl as Pushsolanagateway, userProvider);
+const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
+const program = new Program(idl, adminProvider);
+const userProgram = new Program(idl, userProvider);
 
 // Helper: Get dynamic gas amount based on current SOL price
 async function getDynamicGasAmount(targetUsd: number, fallbackSol: number = 0.01): Promise<anchor.BN> {
@@ -127,9 +128,50 @@ async function run() {
         [Buffer.from("tss")],
         PROGRAM_ID
     );
+    const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("rate_limit_config")],
+        PROGRAM_ID
+    );
+    const [whitelistPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(WHITELIST_SEED)],
+        PROGRAM_ID
+    );
 
     const admin = adminKeypair.publicKey;
     const user = userKeypair.publicKey;
+
+    // Helper to get token rate limit PDA
+    const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
+        const [pda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit"), tokenMint.toBuffer()],
+            PROGRAM_ID
+        );
+        return pda;
+    };
+
+    // Helper to create payload
+    const createPayload = (to: number, vType: any = { signedVerification: {} }) => ({
+        to: Array.from(Buffer.alloc(20, to)),
+        value: new anchor.BN(0),
+        data: Buffer.from([]),
+        gasLimit: new anchor.BN(21000),
+        maxFeePerGas: new anchor.BN(20000000000),
+        maxPriorityFeePerGas: new anchor.BN(1000000000),
+        nonce: new anchor.BN(0),
+        deadline: new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
+        vType,
+    });
+
+    // Helper to serialize payload to bytes
+    const serializePayload = (payload: any): Buffer => {
+        return Buffer.from(JSON.stringify(payload));
+    };
+
+    // Helper to create revert instruction
+    const createRevertInstruction = (recipient: PublicKey, msg: string = "test") => ({
+        fundRecipient: recipient,
+        revertMsg: Buffer.from(msg),
+    });
 
     console.log(`Program ID: ${PROGRAM_ID.toString()}`);
     console.log(`Admin: ${admin.toString()}`);
@@ -161,6 +203,50 @@ async function run() {
         console.log(`Gateway initialized: ${tx}\n`);
     } else {
         console.log("Gateway already initialized\n");
+    }
+
+    // Step 1.5: Initialize Rate Limit Config and Token Rate Limits
+    console.log("1.5. Setting up Rate Limits...");
+    const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
+
+    // Initialize rate limit config by calling setBlockUsdCap (uses init_if_needed)
+    try {
+        await (program.account as any).rateLimitConfig.fetch(rateLimitConfigPda);
+        console.log("Rate limit config already initialized");
+    } catch {
+        // Initialize by setting block USD cap to 0 (disabled, but creates the account)
+        await program.methods
+            .setBlockUsdCap(new anchor.BN(0))
+            .accounts({
+                admin: admin,
+                config: configPda,
+                rateLimitConfig: rateLimitConfigPda,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([adminKeypair])
+            .rpc();
+        console.log("✅ Rate limit config initialized");
+    }
+
+    // Initialize native SOL rate limit
+    const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+    try {
+        await (program.account as any).tokenRateLimit.fetch(nativeSolTokenRateLimitPda);
+        console.log("Native SOL rate limit already initialized");
+    } catch {
+        await program.methods
+            .setTokenRateLimit(veryLargeThreshold)
+            .accounts({
+                admin: admin,
+                config: configPda,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenMint: PublicKey.default,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([adminKeypair])
+            .rpc();
+        console.log("✅ Native SOL rate limit initialized");
     }
 
     // Step 2: Test Admin Functions
@@ -245,10 +331,6 @@ async function run() {
 
     // Step 4: Whitelist SPL Token
     console.log("4. Whitelisting SPL Token...");
-    const [whitelistPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(WHITELIST_SEED)],
-        PROGRAM_ID
-    );
 
     try {
         const whitelistTx = await program.methods
@@ -269,7 +351,541 @@ async function run() {
         }
     }
 
-    // Step 5: Test send_tx_with_gas (SOL deposit with payload)
+    // Initialize SPL token rate limit if needed
+    if (tokenLoaded) {
+        const splTokenRateLimitPda = getTokenRateLimitPda(mint);
+        try {
+            await (program.account as any).tokenRateLimit.fetch(splTokenRateLimitPda);
+            console.log("SPL token rate limit already initialized");
+        } catch {
+            await program.methods
+                .setTokenRateLimit(veryLargeThreshold)
+                .accounts({
+                    admin: admin,
+                    config: configPda,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: splTokenRateLimitPda,
+                    tokenMint: mint,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([adminKeypair])
+                .rpc();
+            console.log("✅ SPL token rate limit initialized");
+        }
+    }
+
+    // =========================
+    // NEW: sendUniversalTx Tests
+    // =========================
+    console.log("\n=== 4.5. Testing sendUniversalTx (New Universal Entrypoint) ===\n");
+
+    // Test 4.5.1: GAS Route (TxType.GAS)
+    console.log("4.5.1. Testing GAS Route (TxType.GAS)...");
+    const universalGasAmount = await getDynamicGasAmount(2.5, 0.01);
+    const initialVaultBalanceGas = await connection.getBalance(vaultPda);
+
+    const gasReq = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("gas_sig"),
+    };
+
+    const gasUniversalTx = await userProgram.methods
+        .sendUniversalTx(gasReq, universalGasAmount)
+        .accounts({
+            config: configPda,
+            vault: vaultPda,
+            userTokenAccount: vaultPda,
+            gatewayTokenAccount: vaultPda,
+            user: user,
+            priceUpdate: PRICE_ACCOUNT,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+    console.log(`✅ GAS route transaction: ${gasUniversalTx}`);
+    await parseAndPrintEvents(gasUniversalTx, "GAS route events");
+    const finalVaultBalanceGas = await connection.getBalance(vaultPda);
+    const balanceIncrease = finalVaultBalanceGas - initialVaultBalanceGas;
+    assert.equal(balanceIncrease, universalGasAmount.toNumber(), "Vault should receive exact gas amount");
+    console.log(`💰 Vault balance increased by: ${balanceIncrease / LAMPORTS_PER_SOL} SOL (verified)\n`);
+
+    // Test 4.5.2: GAS_AND_PAYLOAD Route
+    console.log("4.5.2. Testing GAS_AND_PAYLOAD Route...");
+    const universalGasPayloadAmount = await getDynamicGasAmount(2.5, 0.01);
+    const gasPayloadReq = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: serializePayload(createPayload(1)),
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("gas_payload_sig"),
+    };
+
+    const initialVaultBalanceGasPayload = await connection.getBalance(vaultPda);
+    const gasPayloadTx = await userProgram.methods
+        .sendUniversalTx(gasPayloadReq, universalGasPayloadAmount)
+        .accounts({
+            config: configPda,
+            vault: vaultPda,
+            userTokenAccount: vaultPda,
+            gatewayTokenAccount: vaultPda,
+            user: user,
+            priceUpdate: PRICE_ACCOUNT,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+    console.log(`✅ GAS_AND_PAYLOAD route transaction: ${gasPayloadTx}`);
+    await parseAndPrintEvents(gasPayloadTx, "GAS_AND_PAYLOAD route events");
+    const finalVaultBalanceGasPayload = await connection.getBalance(vaultPda);
+    const balanceIncreaseGasPayload = finalVaultBalanceGasPayload - initialVaultBalanceGasPayload;
+    assert.equal(balanceIncreaseGasPayload, universalGasPayloadAmount.toNumber(), "Vault should receive exact gas amount");
+    console.log(`💰 Vault balance increased by: ${balanceIncreaseGasPayload / LAMPORTS_PER_SOL} SOL (verified)\n`);
+
+    // Test 4.5.3: FUNDS Route (Native SOL)
+    console.log("4.5.3. Testing FUNDS Route (Native SOL)...");
+    const fundsAmount = new anchor.BN(0.005 * LAMPORTS_PER_SOL);
+    const fundsRecipient = Array.from(Buffer.from("1111111111111111111111111111111111111111", "hex").subarray(0, 20));
+    const initialVaultBalanceFunds = await connection.getBalance(vaultPda);
+
+    const fundsReq = {
+        recipient: fundsRecipient,
+        token: PublicKey.default,
+        amount: fundsAmount,
+        payload: Buffer.from([]),
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("funds_sig"),
+    };
+
+    const fundsTx = await userProgram.methods
+        .sendUniversalTx(fundsReq, fundsAmount) // native_amount == amount for native FUNDS
+        .accounts({
+            config: configPda,
+            vault: vaultPda,
+            userTokenAccount: vaultPda,
+            gatewayTokenAccount: vaultPda,
+            user: user,
+            priceUpdate: PRICE_ACCOUNT,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+    console.log(`✅ FUNDS route (native SOL) transaction: ${fundsTx}`);
+    await parseAndPrintEvents(fundsTx, "FUNDS route events");
+    const finalVaultBalanceFunds = await connection.getBalance(vaultPda);
+    const balanceIncreaseFunds = finalVaultBalanceFunds - initialVaultBalanceFunds;
+    assert.equal(balanceIncreaseFunds, fundsAmount.toNumber(), "Vault should receive exact funds amount");
+    console.log(`💰 Vault balance increased by: ${balanceIncreaseFunds / LAMPORTS_PER_SOL} SOL (verified)\n`);
+
+    // Test 4.5.4: FUNDS Route (SPL Token) - if token is loaded
+    if (tokenLoaded) {
+        console.log("4.5.4. Testing FUNDS Route (SPL Token)...");
+        // Create vault ATA if needed
+        const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
+            adminProvider.connection as any,
+            adminKeypair,
+            mint,
+            vaultPda,
+            true
+        );
+
+        const splFundsAmount = new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals));
+        const splFundsRecipient = Array.from(Buffer.from("2222222222222222222222222222222222222222", "hex").subarray(0, 20));
+        const userTokenBalanceBeforeSplFunds = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
+        const vaultTokenBalanceBeforeSplFunds = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
+
+        const splFundsReq = {
+            recipient: splFundsRecipient,
+            token: mint,
+            amount: splFundsAmount,
+            payload: Buffer.from([]),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("spl_funds_sig"),
+        };
+
+        const splTokenRateLimitPda = getTokenRateLimitPda(mint);
+        const splFundsTx = await userProgram.methods
+            .sendUniversalTx(splFundsReq, new anchor.BN(0)) // No native SOL for SPL funds
+            .accounts({
+                config: configPda,
+                vault: vaultPda,
+                userTokenAccount: tokenAccount,
+                gatewayTokenAccount: vaultAta.address,
+                user: user,
+                priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: splTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([userKeypair])
+            .rpc();
+
+        console.log(`✅ FUNDS route (SPL token) transaction: ${splFundsTx}`);
+        await parseAndPrintEvents(splFundsTx, "FUNDS route (SPL) events");
+        const userTokenBalanceAfterSplFunds = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
+        const vaultTokenBalanceAfterSplFunds = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
+        const userBalanceChange = Number(userTokenBalanceAfterSplFunds) - Number(userTokenBalanceBeforeSplFunds);
+        const vaultBalanceChange = Number(vaultTokenBalanceAfterSplFunds) - Number(vaultTokenBalanceBeforeSplFunds);
+        assert.equal(userBalanceChange, -splFundsAmount.toNumber(), "User should lose exact SPL amount");
+        assert.equal(vaultBalanceChange, splFundsAmount.toNumber(), "Vault should gain exact SPL amount");
+        console.log(`📊 User SPL balance: ${userTokenBalanceBeforeSplFunds.toString()} → ${userTokenBalanceAfterSplFunds.toString()} (verified)`);
+        console.log(`📊 Vault SPL balance: ${vaultTokenBalanceBeforeSplFunds.toString()} → ${vaultTokenBalanceAfterSplFunds.toString()} (verified)\n`);
+    }
+
+    // Test 4.5.5: FUNDS_AND_PAYLOAD Route (Native SOL)
+    console.log("4.5.5. Testing FUNDS_AND_PAYLOAD Route (Native SOL)...");
+    const fundsPayloadBridgeAmount = new anchor.BN(0.01 * LAMPORTS_PER_SOL);
+    const fundsPayloadGasAmount = await getDynamicGasAmount(1.5, 0.01);
+    const totalNativeAmount = fundsPayloadBridgeAmount.add(fundsPayloadGasAmount);
+    const fundsPayloadRecipient = Array.from(Buffer.from("3333333333333333333333333333333333333333", "hex").subarray(0, 20));
+
+    const fundsPayloadReq = {
+        recipient: fundsPayloadRecipient,
+        token: PublicKey.default,
+        amount: fundsPayloadBridgeAmount,
+        payload: serializePayload(createPayload(2)),
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("funds_payload_sig"),
+    };
+
+    const initialVaultBalanceFundsPayload = await connection.getBalance(vaultPda);
+    const fundsPayloadTx = await userProgram.methods
+        .sendUniversalTx(fundsPayloadReq, totalNativeAmount) // native_amount = bridge + gas
+        .accounts({
+            config: configPda,
+            vault: vaultPda,
+            userTokenAccount: vaultPda,
+            gatewayTokenAccount: vaultPda,
+            user: user,
+            priceUpdate: PRICE_ACCOUNT,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+    console.log(`✅ FUNDS_AND_PAYLOAD route (native SOL) transaction: ${fundsPayloadTx}`);
+    await parseAndPrintEvents(fundsPayloadTx, "FUNDS_AND_PAYLOAD route events");
+    const finalVaultBalanceFundsPayload = await connection.getBalance(vaultPda);
+    const balanceIncreaseFundsPayload = finalVaultBalanceFundsPayload - initialVaultBalanceFundsPayload;
+    assert.equal(balanceIncreaseFundsPayload, totalNativeAmount.toNumber(), "Vault should receive bridge + gas amount");
+    console.log(`💰 Vault balance increased by: ${balanceIncreaseFundsPayload / LAMPORTS_PER_SOL} SOL (verified)\n`);
+
+    // Test 4.5.6: FUNDS_AND_PAYLOAD Route (SPL Token) - if token is loaded
+    if (tokenLoaded) {
+        console.log("4.5.6. Testing FUNDS_AND_PAYLOAD Route (SPL Token)...");
+        // Ensure vault ATA exists
+        const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
+            adminProvider.connection as any,
+            adminKeypair,
+            mint,
+            vaultPda,
+            true
+        );
+
+        const splFundsPayloadBridgeAmount = new anchor.BN(500 * Math.pow(10, tokenInfo.decimals));
+        const splFundsPayloadGasAmount = await getDynamicGasAmount(1.5, 0.01);
+        const splFundsPayloadRecipient = Array.from(Buffer.from("4444444444444444444444444444444444444444", "hex").subarray(0, 20));
+
+        const splFundsPayloadReq = {
+            recipient: splFundsPayloadRecipient,
+            token: mint,
+            amount: splFundsPayloadBridgeAmount,
+            payload: serializePayload(createPayload(3)),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("spl_funds_payload_sig"),
+        };
+
+        const initialVaultBalanceSplFundsPayload = await connection.getBalance(vaultPda);
+        const userTokenBalanceBeforeSplFundsPayload = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
+        const vaultTokenBalanceBeforeSplFundsPayload = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
+        const splTokenRateLimitPda = getTokenRateLimitPda(mint);
+        const splFundsPayloadTx = await userProgram.methods
+            .sendUniversalTx(splFundsPayloadReq, splFundsPayloadGasAmount) // Only gas amount in native SOL
+            .accounts({
+                config: configPda,
+                vault: vaultPda,
+                userTokenAccount: tokenAccount,
+                gatewayTokenAccount: vaultAta.address,
+                user: user,
+                priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: splTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([userKeypair])
+            .rpc();
+
+        console.log(`✅ FUNDS_AND_PAYLOAD route (SPL token) transaction: ${splFundsPayloadTx}`);
+        await parseAndPrintEvents(splFundsPayloadTx, "FUNDS_AND_PAYLOAD route (SPL) events");
+        const finalVaultBalanceSplFundsPayload = await connection.getBalance(vaultPda);
+        const userTokenBalanceAfterSplFundsPayload = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
+        const vaultTokenBalanceAfterSplFundsPayload = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
+        const vaultSolIncrease = finalVaultBalanceSplFundsPayload - initialVaultBalanceSplFundsPayload;
+        const userTokenChange = Number(userTokenBalanceAfterSplFundsPayload) - Number(userTokenBalanceBeforeSplFundsPayload);
+        const vaultTokenChange = Number(vaultTokenBalanceAfterSplFundsPayload) - Number(vaultTokenBalanceBeforeSplFundsPayload);
+        assert.equal(vaultSolIncrease, splFundsPayloadGasAmount.toNumber(), "Vault should receive exact gas amount");
+        assert.equal(userTokenChange, -splFundsPayloadBridgeAmount.toNumber(), "User should lose exact SPL bridge amount");
+        assert.equal(vaultTokenChange, splFundsPayloadBridgeAmount.toNumber(), "Vault should gain exact SPL bridge amount");
+        console.log(`💰 Vault SOL increased by: ${vaultSolIncrease / LAMPORTS_PER_SOL} SOL (verified)`);
+        console.log(`📊 User SPL: ${userTokenBalanceBeforeSplFundsPayload.toString()} → ${userTokenBalanceAfterSplFundsPayload.toString()} (verified)`);
+        console.log(`📊 Vault SPL: ${vaultTokenBalanceBeforeSplFundsPayload.toString()} → ${vaultTokenBalanceAfterSplFundsPayload.toString()} (verified)\n`);
+    }
+
+    // Test 4.5.7: Edge Cases and Negative Tests
+    console.log("4.5.7. Testing Edge Cases and Negative Tests...");
+
+    // Edge Case: Payload-only execution (GAS_AND_PAYLOAD with native_amount == 0)
+    console.log("  - Testing payload-only execution (GAS_AND_PAYLOAD with 0 gas)...");
+    const payloadOnlyReq = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: serializePayload(createPayload(5)),
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("payload_only_sig"),
+    };
+
+    const initialVaultBalancePayloadOnly = await connection.getBalance(vaultPda);
+    try {
+        const payloadOnlyTx = await userProgram.methods
+            .sendUniversalTx(payloadOnlyReq, new anchor.BN(0)) // 0 native amount
+            .accounts({
+                config: configPda,
+                vault: vaultPda,
+                userTokenAccount: vaultPda,
+                gatewayTokenAccount: vaultPda,
+                user: user,
+                priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([userKeypair])
+            .rpc();
+        const finalVaultBalancePayloadOnly = await connection.getBalance(vaultPda);
+        assert.equal(finalVaultBalancePayloadOnly, initialVaultBalancePayloadOnly, "Vault balance should not change for payload-only execution");
+        console.log(`  ✅ Payload-only execution succeeded: ${payloadOnlyTx} (no balance change verified)`);
+    } catch (error: any) {
+        console.log(`  ⚠️  Payload-only execution failed: ${error.message}`);
+        throw error; // Re-throw to fail the script if this should succeed
+    }
+
+
+    // Negative Test: FUNDS native with mismatched amounts (should fail)
+    console.log("  - Testing negative case: FUNDS native with mismatched amounts (should fail)...");
+    const mismatchedFundsReq = {
+        recipient: Array.from(Buffer.from("5555555555555555555555555555555555555555", "hex").subarray(0, 20)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0.01 * LAMPORTS_PER_SOL),
+        payload: Buffer.from([]),
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("mismatched_sig"),
+    };
+
+    try {
+        await userProgram.methods
+            .sendUniversalTx(mismatchedFundsReq, new anchor.BN(0.005 * LAMPORTS_PER_SOL)) // Different amount
+            .accounts({
+                config: configPda,
+                vault: vaultPda,
+                userTokenAccount: vaultPda,
+                gatewayTokenAccount: vaultPda,
+                user: user,
+                priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([userKeypair])
+            .rpc();
+        assert.fail("Should have rejected mismatched amounts");
+    } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        assert.equal(errorCode, "InvalidAmount", `Expected InvalidAmount but got: ${errorCode}`);
+        console.log(`  ✅ Correctly rejected mismatched amounts with InvalidAmount error`);
+    }
+
+    // Negative Test: FUNDS SPL with native SOL provided (should fail)
+    if (tokenLoaded) {
+        console.log("  - Testing negative case: FUNDS SPL with native SOL (should fail)...");
+        // Ensure vault ATA exists for the test
+        const testVaultAta = await spl.getOrCreateAssociatedTokenAccount(
+            adminProvider.connection as any,
+            adminKeypair,
+            mint,
+            vaultPda,
+            true
+        );
+
+        const invalidSplFundsReq = {
+            recipient: Array.from(Buffer.from("6666666666666666666666666666666666666666", "hex").subarray(0, 20)),
+            token: mint,
+            amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
+            payload: Buffer.from([]),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("invalid_spl_sig"),
+        };
+
+        try {
+            await userProgram.methods
+                .sendUniversalTx(invalidSplFundsReq, new anchor.BN(0.001 * LAMPORTS_PER_SOL)) // Native SOL provided
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: tokenAccount,
+                    gatewayTokenAccount: testVaultAta.address,
+                    user: user,
+                    priceUpdate: PRICE_ACCOUNT,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: getTokenRateLimitPda(mint),
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([userKeypair])
+                .rpc();
+            assert.fail("Should have rejected SPL FUNDS with native SOL");
+        } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            assert.equal(errorCode, "InvalidAmount", `Expected InvalidAmount but got: ${errorCode}`);
+            console.log(`  ✅ Correctly rejected SPL FUNDS with native SOL (InvalidAmount error)`);
+        }
+    }
+
+    // Negative Test: Invalid revert recipient (should fail with InvalidRecipient)
+    console.log("  - Testing negative case: Invalid revert recipient (should fail)...");
+    const invalidRecipientReq = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertInstruction: createRevertInstruction(PublicKey.default), // Invalid: default pubkey
+        signatureData: Buffer.from("invalid_recipient_sig"),
+    };
+
+    try {
+        await userProgram.methods
+            .sendUniversalTx(invalidRecipientReq, await getDynamicGasAmount(2.5, 0.01))
+            .accounts({
+                config: configPda,
+                vault: vaultPda,
+                userTokenAccount: vaultPda,
+                gatewayTokenAccount: vaultPda,
+                user: user,
+                priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([userKeypair])
+            .rpc();
+        assert.fail("Should have rejected invalid revert recipient");
+    } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        assert.equal(errorCode, "InvalidRecipient", `Expected InvalidRecipient but got: ${errorCode}`);
+        console.log(`  ✅ Correctly rejected invalid revert recipient (InvalidRecipient error)`);
+    }
+
+    // Negative Test: FUNDS with mismatched native amount (should fail with InvalidAmount)
+    // NOTE: When payload is empty and amount > 0, fetchTxType routes to TxType::Funds (not FundsAndPayload)
+    // The validation happens in fetchTxType before routing, so we get InvalidAmount, not InvalidInput
+    console.log("  - Testing negative case: FUNDS with mismatched native amount (should fail)...");
+    const mismatchedNativeReq = {
+        recipient: Array.from(Buffer.from("7777777777777777777777777777777777777777", "hex").subarray(0, 20)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0.01 * LAMPORTS_PER_SOL),
+        payload: Buffer.from([]), // Empty payload routes to FUNDS, not FUNDS_AND_PAYLOAD
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("mismatched_native_sig"),
+    };
+
+    try {
+        await userProgram.methods
+            .sendUniversalTx(mismatchedNativeReq, new anchor.BN(0.02 * LAMPORTS_PER_SOL)) // native != amount
+            .accounts({
+                config: configPda,
+                vault: vaultPda,
+                userTokenAccount: vaultPda,
+                gatewayTokenAccount: vaultPda,
+                user: user,
+                priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([userKeypair])
+            .rpc();
+        assert.fail("Should have rejected FUNDS with mismatched native amount");
+    } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        assert.equal(errorCode, "InvalidAmount", `Expected InvalidAmount but got: ${errorCode}`);
+        console.log(`  ✅ Correctly rejected FUNDS with mismatched native amount (InvalidAmount error)`);
+    }
+
+    // Negative Test: FUNDS_AND_PAYLOAD native with insufficient native amount (should fail)
+    console.log("  - Testing negative case: FUNDS_AND_PAYLOAD native with insufficient amount (should fail)...");
+    const insufficientNativeReq = {
+        recipient: Array.from(Buffer.from("8888888888888888888888888888888888888888", "hex").subarray(0, 20)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0.01 * LAMPORTS_PER_SOL),
+        payload: serializePayload(createPayload(4)),
+        revertInstruction: createRevertInstruction(user),
+        signatureData: Buffer.from("insufficient_native_sig"),
+    };
+
+    try {
+        await userProgram.methods
+            .sendUniversalTx(insufficientNativeReq, new anchor.BN(0.005 * LAMPORTS_PER_SOL)) // native < amount
+            .accounts({
+                config: configPda,
+                vault: vaultPda,
+                userTokenAccount: vaultPda,
+                gatewayTokenAccount: vaultPda,
+                user: user,
+                priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([userKeypair])
+            .rpc();
+        assert.fail("Should have rejected insufficient native amount");
+    } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        assert.equal(errorCode, "InvalidAmount", `Expected InvalidAmount but got: ${errorCode}`);
+        console.log(`  ✅ Correctly rejected insufficient native amount (InvalidAmount error)`);
+    }
+
+    console.log("✅ Edge cases and negative tests completed!\n");
+
+    console.log("✅ All sendUniversalTx tests completed!\n");
+
+    // Step 5: Test send_tx_with_gas (SOL deposit with payload) - LEGACY FUNCTION
     console.log("5. Testing send_tx_with_gas...");
     const userBalanceBefore = await connection.getBalance(user);
     const vaultBalanceBefore = await connection.getBalance(vaultPda);
@@ -282,12 +898,12 @@ async function run() {
         to: Array.from(Buffer.from("1234567890123456789012345678901234567890", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
         value: new anchor.BN(0), // Value to send
         data: Buffer.from("test payload data"),
-        gas_limit: new anchor.BN(100000),
-        max_fee_per_gas: new anchor.BN(20000000000), // 20 gwei
-        max_priority_fee_per_gas: new anchor.BN(1000000000), // 1 gwei
+        gasLimit: new anchor.BN(100000),
+        maxFeePerGas: new anchor.BN(20000000000), // 20 gwei
+        maxPriorityFeePerGas: new anchor.BN(1000000000), // 1 gwei
         nonce: new anchor.BN(0),
         deadline: new anchor.BN(Date.now() + 3600000), // 1 hour from now
-        v_type: { signedVerification: {} }, // VerificationType enum
+        vType: { signedVerification: {} }, // VerificationType enum
     };
 
     const revertInstructions = {
@@ -299,8 +915,11 @@ async function run() {
     // Get dynamic gas amount for USD cap compliance
     const gasAmount = await getDynamicGasAmount(1.20, 0.01); // Target $1.20, fallback 0.01 SOL
 
+    // Generate signature data for send_tx_with_gas
+    const gasSignatureData = Buffer.from("test_signature_data_for_send_tx_with_gas", "utf8");
+
     const gasTx = await userProgram.methods
-        .sendTxWithGas(payload, revertInstructions, gasAmount)
+        .sendTxWithGas(payload, revertInstructions, gasAmount, gasSignatureData)
         .accounts({
             config: configPda,
             vault: vaultPda,
@@ -315,8 +934,10 @@ async function run() {
 
     const userBalanceAfter = await connection.getBalance(user);
     const vaultBalanceAfter = await connection.getBalance(vaultPda);
+    const vaultBalanceIncrease = vaultBalanceAfter - vaultBalanceBefore;
+    assert.equal(vaultBalanceIncrease, gasAmount.toNumber(), "Vault should receive exact gas amount");
     console.log(`User balance AFTER: ${userBalanceAfter / LAMPORTS_PER_SOL} SOL`);
-    console.log(`Vault balance AFTER: ${vaultBalanceAfter / LAMPORTS_PER_SOL} SOL\n`);
+    console.log(`Vault balance AFTER: ${vaultBalanceAfter / LAMPORTS_PER_SOL} SOL (verified: +${vaultBalanceIncrease / LAMPORTS_PER_SOL} SOL)\n`);
 
     // Step 5a: Legacy add_funds (locker-compatible)
     console.log("5a. Legacy add_funds (locker-compatible)...");
@@ -371,8 +992,10 @@ async function run() {
 
     const userBalanceAfterFunds = await connection.getBalance(user);
     const vaultBalanceAfterFunds = await connection.getBalance(vaultPda);
+    const vaultBalanceIncreaseFunds = vaultBalanceAfterFunds - vaultBalanceBeforeFunds;
+    assert.equal(vaultBalanceIncreaseFunds, fundAmount.toNumber(), "Vault should receive exact funds amount");
     console.log(`💳 User balance AFTER send_funds (native): ${userBalanceAfterFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault balance AFTER send_funds (native): ${vaultBalanceAfterFunds / LAMPORTS_PER_SOL} SOL\n`);
+    console.log(`🏦 Vault balance AFTER send_funds (native): ${vaultBalanceAfterFunds / LAMPORTS_PER_SOL} SOL (verified: +${vaultBalanceIncreaseFunds / LAMPORTS_PER_SOL} SOL)\n`);
 
     // Step 7: Test SPL token functions
     console.log("7. Testing SPL Token Functions...");
@@ -427,9 +1050,12 @@ async function run() {
     // Get SPL balances after
     const userTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
     const vaultTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
-
-    console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfter.toString()} tokens`);
-    console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfter.toString()} tokens\n`);
+    const userTokenChange = Number(userTokenBalanceAfter) - Number(userTokenBalanceBefore);
+    const vaultTokenChange = Number(vaultTokenBalanceAfter) - Number(vaultTokenBalanceBefore);
+    assert.equal(userTokenChange, -splAmount.toNumber(), "User should lose exact SPL amount");
+    assert.equal(vaultTokenChange, splAmount.toNumber(), "Vault should gain exact SPL amount");
+    console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfter.toString()} tokens (verified: ${userTokenChange < 0 ? '-' : '+'}${Math.abs(userTokenChange)})`);
+    console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfter.toString()} tokens (verified: +${vaultTokenChange})\n`);
 
     // Step 8: Test send_tx_with_funds (SPL + payload + gas)
     console.log("8. Testing send_tx_with_funds (SPL + payload + gas)...");
@@ -445,12 +1071,12 @@ async function run() {
         to: Array.from(Buffer.from("abcdefabcdefabcdefabcdefabcdefabcdefabcd", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
         value: new anchor.BN(0), // Value to send
         data: Buffer.from("test payload for funds+gas"),
-        gas_limit: new anchor.BN(120000),
-        max_fee_per_gas: new anchor.BN(20000000000), // 20 gwei
-        max_priority_fee_per_gas: new anchor.BN(1000000000), // 1 gwei
+        gasLimit: new anchor.BN(120000),
+        maxFeePerGas: new anchor.BN(20000000000), // 20 gwei
+        maxPriorityFeePerGas: new anchor.BN(1000000000), // 1 gwei
         nonce: new anchor.BN(1),
         deadline: new anchor.BN(Date.now() + 3600000), // 1 hour from now
-        v_type: { signedVerification: {} }, // VerificationType enum
+        vType: { signedVerification: {} }, // VerificationType enum
     };
 
     console.log(`🚀 Testing combined SPL + Gas transaction...`);
@@ -503,11 +1129,16 @@ async function run() {
     const vaultBalanceAfterTxWithFunds = await connection.getBalance(vaultPda);
     const userTokenBalanceAfterTx = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
     const vaultTokenBalanceAfterTx = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
-
+    const vaultSolIncreaseTx = vaultBalanceAfterTxWithFunds - vaultBalanceBeforeTxWithFunds;
+    const userTokenChangeTx = Number(userTokenBalanceAfterTx) - Number(userTokenBalanceBeforeTx);
+    const vaultTokenChangeTx = Number(vaultTokenBalanceAfterTx) - Number(vaultTokenBalanceBeforeTx);
+    assert.equal(vaultSolIncreaseTx, txWithFundsGasAmount.toNumber(), "Vault should receive exact gas amount");
+    assert.equal(userTokenChangeTx, -txWithFundsSplAmount.toNumber(), "User should lose exact SPL amount");
+    assert.equal(vaultTokenChangeTx, txWithFundsSplAmount.toNumber(), "Vault should gain exact SPL amount");
     console.log(`💳 User SOL balance AFTER: ${userBalanceAfterTxWithFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault SOL balance AFTER: ${vaultBalanceAfterTxWithFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfterTx.toString()} tokens`);
-    console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfterTx.toString()} tokens\n`);
+    console.log(`🏦 Vault SOL balance AFTER: ${vaultBalanceAfterTxWithFunds / LAMPORTS_PER_SOL} SOL (verified: +${vaultSolIncreaseTx / LAMPORTS_PER_SOL} SOL)`);
+    console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfterTx.toString()} tokens (verified: ${userTokenChangeTx < 0 ? '-' : '+'}${Math.abs(userTokenChangeTx)})`);
+    console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfterTx.toString()} tokens (verified: +${vaultTokenChangeTx})\n`);
 
     // Step 9.5: Test send_tx_with_funds with native SOL as both bridge token and gas
     console.log("9.5. Testing send_tx_with_funds with native SOL (bridge + gas)...");
@@ -608,9 +1239,10 @@ async function run() {
     }
 
     // Try to send funds while paused (should fail)
+    const signatureNew = Buffer.from("test_signature_data_for_gas", "utf8");
     try {
         await userProgram.methods
-            .sendTxWithGas(payload, revertInstructions, gasAmount)
+            .sendTxWithGas(payload, revertInstructions, gasAmount, signatureNew)
             .accounts({
                 config: configPda,
                 vault: vaultPda,
@@ -619,9 +1251,11 @@ async function run() {
                 systemProgram: SystemProgram.programId,
             })
             .rpc();
-        console.log("❌ Transaction should have failed while paused!");
-    } catch (error) {
-        console.log("✅ Transaction correctly failed while paused");
+        assert.fail("Transaction should have failed while paused");
+    } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        assert.equal(errorCode, "Paused", `Expected Paused but got: ${errorCode}`);
+        console.log("✅ Transaction correctly failed while paused (Paused error verified)");
     }
 
     try {
@@ -660,6 +1294,7 @@ async function run() {
                 .accounts({
                     tssPda: tssPda,
                     authority: admin,
+                    config: configPda,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([adminKeypair])
@@ -675,6 +1310,7 @@ async function run() {
             .accounts({
                 tssPda: tssPda,
                 authority: admin,
+                config: configPda,
                 systemProgram: SystemProgram.programId,
             })
             .signers([adminKeypair])
@@ -774,16 +1410,18 @@ async function run() {
         nonceBE_SPL.writeBigUInt64BE(BigInt(nonce + 1)); // Increment nonce for SPL withdraw
         const amountBE_SPL = Buffer.alloc(8);
         amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
-        const recipientBytesSPL = admin.toBuffer();
         const mintBytes = mint.toBuffer(); // 32 bytes for mint address
 
+        // Include both mint AND recipient in message hash (ZetaChain pattern - security fix)
+        const recipientBytesSPL = adminAta.address.toBuffer();
         const concatSPL = Buffer.concat([
             PREFIX_SPL,
             instructionIdSPL,
             chainIdBE_SPL,
             nonceBE_SPL,
             amountBE_SPL,
-            mintBytes, // Additional data for SPL withdraw (only mint, not recipient)
+            mintBytes,      // Token mint (32 bytes)
+            recipientBytesSPL, // Recipient token account (32 bytes)
         ]);
         const messageHashHexSPL = keccak_256(concatSPL);
         const messageHashSPL = Buffer.from(messageHashHexSPL, "hex");

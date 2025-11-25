@@ -1,3 +1,4 @@
+use crate::errors::GatewayError;
 use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{keccak::hash, secp256k1_recover::secp256k1_recover};
@@ -13,6 +14,13 @@ pub struct InitTss<'info> {
         space = TssPda::LEN,
     )]
     pub tss_pda: Account<'info, TssPda>,
+
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == authority.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -46,8 +54,18 @@ pub struct UpdateTss<'info> {
 
 pub fn update_tss(ctx: Context<UpdateTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
     let tss = &mut ctx.accounts.tss_pda;
+
+    // If TSS address changes, reset nonce to 0 for clarity and security
+    // (Old signatures won't work anyway due to address mismatch, but resetting is cleaner)
+    let address_changed = tss.tss_eth_address != tss_eth_address;
+
     tss.tss_eth_address = tss_eth_address;
     tss.chain_id = chain_id;
+
+    if address_changed {
+        tss.nonce = 0;
+    }
+
     Ok(())
 }
 
