@@ -138,9 +138,7 @@ interface IUniversalGateway {
      *
      * @param req              UniversalTxRequest struct
      */
-    function sendUniversalTx(
-        UniversalTxRequest calldata req
-    ) external payable;
+    function sendUniversalTx(UniversalTxRequest calldata req) external payable;
 
     /**
      * @notice                 Initiate a Universal Transaction using an ERC20 token as gas input.
@@ -152,9 +150,7 @@ interface IUniversalGateway {
      *
      * @param reqToken        UniversalTokenTxRequest struct
      */
-    function sendUniversalTx(
-        UniversalTokenTxRequest calldata reqToken
-    ) external payable;
+    function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable;
 
     // =========================
     //  UG_2: REVERT HANDLING PATHS

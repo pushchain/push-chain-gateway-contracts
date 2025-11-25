@@ -363,7 +363,6 @@ Ran 21 tests for test/gateway/5_sendUniversalTx_FundsTxType_Case_1.t.sol:Gateway
 [PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientAllowance() (gas: 124592)
 [PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientBalance() (gas: 120682)
 [PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroMsgValue() (gas: 45994)
-[PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroRecipient() (gas: 44074)
 [PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_RateLimitExceeded() (gas: 73313)
 [PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_UnsupportedToken() (gas: 2184487)
 [PASS] test_SendTxWithFunds_FUNDS_ERC20_SeparateRateLimitsPerToken() (gas: 282888)
@@ -375,7 +374,6 @@ Ran 21 tests for test/gateway/5_sendUniversalTx_FundsTxType_Case_1.t.sol:Gateway
 [PASS] test_SendTxWithFunds_FUNDS_Native_RateLimitResetsInNewEpoch() (gas: 174776)
 [PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_CumulativeRateLimitExceeded() (gas: 143807)
 [PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_MsgValueMismatch_TooLow() (gas: 48426)
-[PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_NonZeroRecipient() (gas: 48767)
 [PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_RateLimitExceeded() (gas: 76123)
 [PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_ZeroAmount() (gas: 37032)
 [PASS] test_SendTxWithFunds_FUNDS_RevertOn_NonEmptyPayload() (gas: 102381)
@@ -430,7 +428,6 @@ Ran 44 tests for test/gateway/13_rateLimit_EpochBased.t.sol:GatewayGlobalRateLim
 Suite result: ok. 44 passed; 0 failed; 0 skipped; finished in 53.43ms (48.36ms CPU time)
 
 Ran 18 tests for test/gateway/6_sendUniversalTxWithFUNDS_FundsTxType_Case2_1.t.sol:GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test
-[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_AllowsNonZeroRecipient() (gas: 48413)
 [PASS] test_Case2_1_FUNDS_AND_PAYLOAD_AllowsZeroRecipient() (gas: 146225)
 [PASS] test_Case2_1_FUNDS_AND_PAYLOAD_CumulativeRateLimit() (gas: 214317)
 [PASS] test_Case2_1_FUNDS_AND_PAYLOAD_ERC20_NoBatching_HappyPath() (gas: 180294)
@@ -598,7 +595,6 @@ Ran 28 tests for test/gateway/9_sendUniversalTxFetchTxType.t.sol:GatewayFetchTxT
 [PASS] test_Invalid_erc20Funds_withNoPayload_andNativeValue() (gas: 46439)
 [PASS] test_Invalid_nativeFunds_noNativeValue() (gas: 37690)
 [PASS] test_Invalid_payload_only_noNative() (gas: 53558)
-[PASS] test_Invariance_recipient_ignored() (gas: 226809)
 [PASS] test_Invariance_revertInstruction_onlyRecipientMatters() (gas: 278299)
 [PASS] test_Invariance_signatureData_ignored() (gas: 277647)
 Suite result: ok. 28 passed; 0 failed; 0 skipped; finished in 84.32ms (13.52ms CPU time)

@@ -193,24 +193,6 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         assertEq(tss.balance, tssBalanceBefore + fundsAmount, "TSS should receive funds even with zero recipient");
     }
 
-    /// @notice Test FUNDS with native token - recipient MUST be zero
-    /// @dev FUNDS tx type requires recipient == address(0) (funds go to caller's UEA)
-    function test_SendTxWithFunds_FUNDS_Native_RevertOn_NonZeroRecipient() public {
-        uint256 fundsAmount = 75 ether;
-        address explicitRecipient = address(0x999);
-
-        UniversalTxRequest memory req = buildUniversalTxRequest(
-            explicitRecipient, // Non-zero recipient should revert
-            address(0),
-            fundsAmount,
-            bytes("")
-        );
-
-        vm.expectRevert(Errors.InvalidRecipient.selector);
-        vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
-    }
-
     /// @notice Test FUNDS native - msg.value must equal amount
     /// @dev Revert if msg.value != amount
     function test_SendTxWithFunds_FUNDS_Native_RevertOn_MsgValueMismatch_TooLow() public {
@@ -498,24 +480,6 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
 
         vm.expectRevert(); // ERC20InsufficientBalance
         vm.prank(userNoBalance);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
-    }
-
-    /// @notice Test FUNDS with ERC20 - recipient MUST be zero
-    /// @dev FUNDS tx type requires recipient == address(0) (funds go to caller's UEA)
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroRecipient() public {
-        uint256 fundsAmount = 1000 ether;
-        address explicitRecipient = address(0x999);
-
-        UniversalTxRequest memory req = buildUniversalTxRequest(
-            explicitRecipient, // Non-zero recipient should revert
-            address(tokenA),
-            fundsAmount,
-            bytes("")
-        );
-
-        vm.expectRevert(Errors.InvalidRecipient.selector);
-        vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
 

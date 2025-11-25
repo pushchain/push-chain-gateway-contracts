@@ -532,39 +532,6 @@ contract GatewayFetchTxTypeTest is BaseTest {
     //      GROUP 9: Invariance tests
     // =========================
 
-    /// @notice Test 9.1: Recipient field does not affect txType
-    function test_Invariance_recipient_ignored() public {
-        uint256 amount = 500 ether;
-        uint256 nativeValue = 0.003 ether; // $6 gas within $1-$10 cap
-
-        // Test with recipient = address(0)
-        UniversalTxRequest memory req1 = UniversalTxRequest({
-            recipient: address(0),
-            token: erc20A,
-            amount: amount,
-            payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
-            signatureData: bytes("sig")
-        });
-
-        vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: nativeValue }(req1);
-
-        // Test with recipient = non-zero (still routes the same way)
-        UniversalTxRequest memory req2 = UniversalTxRequest({
-            recipient: address(0x999),
-            token: erc20A,
-            amount: amount,
-            payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
-            signatureData: bytes("sig")
-        });
-
-        vm.expectRevert(Errors.InvalidRecipient.selector);
-        vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: nativeValue }(req2);
-    }
-
     /// @notice Test 9.2: SignatureData does not affect txType
     function test_Invariance_signatureData_ignored() public {
         uint256 amount = 500 ether;

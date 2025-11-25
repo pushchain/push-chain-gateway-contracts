@@ -445,9 +445,10 @@ contract UniversalGateway is
 
             _consumeRateLimit(tokenForFundsAndPayload, _req.amount);
             _handleDeposits(tokenForFundsAndPayload, _req.amount);
+            // Recipient for FUNDS_AND_PAYLOAD is address(0) -> UEA.
             _emitUniversalTx(
                 _msgSender(),
-                _req.recipient,
+                address(0),
                 tokenForFundsAndPayload,
                 _req.amount,
                 _req.payload,
@@ -1054,10 +1055,6 @@ contract UniversalGateway is
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
-            // Sanity Check : recipient is address(0)
-            if (req.recipient != address(0)) {
-                revert Errors.InvalidRecipient();
-            }
             _sendTxWithFunds(req, nativeValue, txType);
         }
         // Route 3: Invalid

@@ -671,22 +671,30 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
 
     /// @notice Test Case 2.1 - Non-zero recipient reverts
     /// @dev FUNDS_AND_PAYLOAD requires recipient == address(0)
-    function test_Case2_1_FUNDS_AND_PAYLOAD_AllowsNonZeroRecipient() public {
+    function test_Case2_1_FUNDS_AND_PAYLOAD_RecipientEmittedAlwaysZero() public {
         uint256 fundsAmount = 500 ether;
-        address explicitRecipient = address(0x999);
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
+        
+        vm.expectEmit(true, true, false, true, address(gatewayTemp));
+        emit UniversalTx({
+            txType: TX_TYPE.FUNDS_AND_PAYLOAD,
+            sender: user1,
+            recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
+            token: address(tokenA),
+            amount: fundsAmount,
+            payload: encodedPayload,
+            revertInstruction: buildDefaultRevertInstructions(),
+            signatureData: bytes("")
+        });
 
-        UniversalTxRequest memory req = buildUniversalTxRequest(
-            explicitRecipient, // Non-zero recipient should revert
+        vm.prank(user1);
+        gatewayTemp.sendUniversalTx{ value: 0 }(buildUniversalTxRequest(
+            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             address(tokenA),
             fundsAmount,
             encodedPayload
-        );
-
-        vm.expectRevert(Errors.InvalidRecipient.selector);
-        vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+        ));
     }
 
     /// @notice Test Case 2.1 - Gateway does not accumulate ETH
