@@ -90,10 +90,7 @@ contract UniversalGateway is
     ISwapRouterV3 public uniV3Router;                           // Uniswap V3 router.
     IUniswapV3Factory public uniV3Factory;                      // Uniswap V3 factory.
     uint256 public defaultSwapDeadlineSec;                      // Default swap deadline window (industry common ~10 minutes).
-    uint24[3] public v3FeeOrder =                               // Fee order for Uniswap V3 router.
-        [uint24(500), 
-            uint24(3000),
-                 uint24(10000)];                               
+    uint24[3] public v3FeeOrder;                                // Fee order for Uniswap V3 router.                            
 
     /// @notice Chainlink Oracle Configs
     uint256 public chainlinkStalePeriod;                        // Chainlink stale period.
