@@ -26,12 +26,6 @@ pub enum GatewayError {
     #[msg("Invalid cap range")]
     InvalidCapRange,
 
-    #[msg("Invalid payload")]
-    InvalidPayload,
-
-    #[msg("Deadline exceeded")]
-    DeadlineExceeded,
-
     #[msg("Invalid price data")]
     InvalidPrice,
 
@@ -41,17 +35,9 @@ pub enum GatewayError {
     #[msg("Token not whitelisted")]
     TokenNotWhitelisted,
 
-    #[msg("Token transfer failed")]
-    TokenTransferFailed,
-
-    #[msg("Invalid token vault")]
-    InvalidTokenVault,
 
     #[msg("Invalid owner")]
     InvalidOwner,
-
-    #[msg("Slippage exceeded or expired")]
-    SlippageExceededOrExpired,
 
     #[msg("Contract is paused")]
     Paused,
@@ -61,9 +47,6 @@ pub enum GatewayError {
 
     #[msg("Invalid transaction type")]
     InvalidTxType,
-
-    #[msg("Invalid data")]
-    InvalidData,
 
     #[msg("Invalid mint")]
     InvalidMint,
@@ -86,7 +69,4 @@ pub enum GatewayError {
 
     #[msg("Token not supported")]
     NotSupported,
-
-    #[msg("Payload already executed")]
-    PayloadExecuted,
 }
