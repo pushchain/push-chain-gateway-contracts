@@ -1473,15 +1473,13 @@ async function run() {
         const mintBytes = mint.toBuffer(); // 32 bytes for mint address
 
         // Include both mint AND recipient in message hash (ZetaChain pattern - security fix)
-        const recipientBytesSPL = adminAta.address.toBuffer();
         const concatSPL = Buffer.concat([
             PREFIX_SPL,
             instructionIdSPL,
             chainIdBE_SPL,
             nonceBE_SPL,
             amountBE_SPL,
-            mintBytes,      // Token mint (32 bytes)
-            recipientBytesSPL, // Recipient token account (32 bytes)
+            mintBytes      // Token mint (32 bytes)
         ]);
         const messageHashHexSPL = keccak_256(concatSPL);
         const messageHashSPL = Buffer.from(messageHashHexSPL, "hex");
