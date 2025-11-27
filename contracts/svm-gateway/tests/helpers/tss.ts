@@ -11,7 +11,8 @@ export enum TssInstruction {
     RevertWithdrawSpl = 4,
 }
 
-export const TSS_CHAIN_ID = Number(process.env.TSS_CHAIN_ID ?? "1");
+// Default to Devnet cluster pubkey if not specified
+export const TSS_CHAIN_ID = process.env.TSS_CHAIN_ID ?? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 
 function getTssPrivateKey(): string {
     const priv = (process.env.TSS_PRIVKEY || process.env.ETH_PRIVATE_KEY || process.env.PRIVATE_KEY || "f1c05d6c46a4a2b06c4d679f7f6ed15c93dffa50e1399c049b58289f6a1e33ad").replace(/^0x/, "");
@@ -41,23 +42,22 @@ interface SignParams {
     nonce: number;
     amount?: bigint;
     additional: Uint8Array[];
-    chainId?: number; // Use chain_id from TSS account, fallback to TSS_CHAIN_ID
+    chainId?: string; // Use chain_id from TSS account (Solana cluster pubkey string), fallback to TSS_CHAIN_ID
     txId?: Uint8Array; // Transaction ID (32 bytes) - required for withdraw/revert
     originCaller?: Uint8Array; // Origin caller EVM address (20 bytes) - required for withdraw only
 }
 
 export async function signTssMessage({ instruction, nonce, amount, additional, chainId, txId, originCaller }: SignParams): Promise<TssSignature> {
-    // Build message EXACTLY like gateway-test.ts
-    // Use chain_id from TSS account (like Rust does) or fallback to TSS_CHAIN_ID
+    // Build message EXACTLY like Rust program
+    // Use chain_id from TSS account (Solana cluster pubkey string) or fallback to TSS_CHAIN_ID
     const chainIdToUse = chainId ?? TSS_CHAIN_ID;
     const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
     const instructionId = Buffer.from([instruction]);
-    const chainIdBE = Buffer.alloc(8);
-    chainIdBE.writeBigUInt64BE(BigInt(chainIdToUse));
+    const chainIdBytes = Buffer.from(chainIdToUse, 'utf8'); // UTF-8 bytes of cluster pubkey string
     const nonceBE = Buffer.alloc(8);
     nonceBE.writeBigUInt64BE(BigInt(nonce));
 
-    const segments: Buffer[] = [PREFIX, instructionId, chainIdBE, nonceBE];
+    const segments: Buffer[] = [PREFIX, instructionId, chainIdBytes, nonceBE];
 
     if (typeof amount === "bigint") {
         const amountBE = Buffer.alloc(8);

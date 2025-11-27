@@ -81,7 +81,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         originCaller?: Uint8Array;
     }) => {
         const tssAccount = await program.account.tssPda.fetch(tssPda);
-        return signTssMessage({ ...params, chainId: tssAccount.chainId.toNumber() });
+        return signTssMessage({ ...params, chainId: tssAccount.chainId });
     };
 
     const setNonceOnChain = async (value: number) => {
@@ -145,7 +145,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
         [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
-        [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tss")], program.programId);
+        [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], program.programId);
         [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
 
         user1UsdtAccount = await mockUSDT.createTokenAccount(user1.publicKey);

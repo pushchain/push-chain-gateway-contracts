@@ -132,11 +132,6 @@ pub mod universal_gateway {
         instructions::admin::unpause(ctx)
     }
 
-    /// @notice Set TSS address
-    pub fn set_tss_address(ctx: Context<AdminAction>, new_tss: Pubkey) -> Result<()> {
-        instructions::admin::set_tss_address(ctx, new_tss)
-    }
-
     /// @notice Set USD caps
     pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap: u128, max_cap: u128) -> Result<()> {
         instructions::admin::set_caps_usd(ctx, min_cap, max_cap)
@@ -195,14 +190,18 @@ pub mod universal_gateway {
     // =========================
     //             TSS
     // =========================
-    pub fn init_tss(ctx: Context<InitTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
+    pub fn init_tss(
+        ctx: Context<InitTss>,
+        tss_eth_address: [u8; 20],
+        chain_id: String,
+    ) -> Result<()> {
         instructions::tss::init_tss(ctx, tss_eth_address, chain_id)
     }
 
     pub fn update_tss(
         ctx: Context<UpdateTss>,
         tss_eth_address: [u8; 20],
-        chain_id: u64,
+        chain_id: String,
     ) -> Result<()> {
         instructions::tss::update_tss(ctx, tss_eth_address, chain_id)
     }

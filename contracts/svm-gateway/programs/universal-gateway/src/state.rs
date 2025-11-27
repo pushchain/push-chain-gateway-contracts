@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const VAULT_SEED: &[u8] = b"vault";
 pub const WHITELIST_SEED: &[u8] = b"whitelist";
-pub const TSS_SEED: &[u8] = b"tss";
+pub const TSS_SEED: &[u8] = b"tsspda";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
 pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
@@ -138,18 +138,20 @@ impl TokenRateLimit {
 }
 
 /// TSS state PDA for ECDSA verification (Ethereum-style secp256k1).
-/// Stores 20-byte ETH address, chain id, and replay-protection nonce.
+/// Stores 20-byte ETH address, chain id (Solana cluster pubkey as String), and replay-protection nonce.
 #[account]
 pub struct TssPda {
     pub tss_eth_address: [u8; 20],
-    pub chain_id: u64,
+    pub chain_id: String, // Solana cluster pubkey (e.g., "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" for mainnet)
     pub nonce: u64,
     pub authority: Pubkey,
     pub bump: u8,
 }
 
 impl TssPda {
-    pub const LEN: usize = 8 + 20 + 8 + 8 + 32 + 1;
+    // discriminator (8) + tss_eth_address (20) + chain_id String (4 + 64 max) + nonce (8) + authority (32) + bump (1)
+    // String: 4 bytes length prefix + up to 64 bytes for cluster pubkey (base58, max ~44 chars, but allow buffer)
+    pub const LEN: usize = 8 + 20 + 4 + 64 + 8 + 32 + 1;
 }
 
 /// Executed transaction tracker (parity with EVM `isExecuted[txID]` mapping).

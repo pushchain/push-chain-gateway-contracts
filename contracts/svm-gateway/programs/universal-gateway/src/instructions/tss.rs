@@ -28,7 +28,10 @@ pub struct InitTss<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn init_tss(ctx: Context<InitTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
+pub fn init_tss(ctx: Context<InitTss>, tss_eth_address: [u8; 20], chain_id: String) -> Result<()> {
+    require!(!chain_id.is_empty(), GatewayError::InvalidInput);
+    require!(chain_id.len() <= 64, GatewayError::InvalidInput); // Max 64 bytes for cluster pubkey
+
     let tss = &mut ctx.accounts.tss_pda;
     tss.tss_eth_address = tss_eth_address;
     tss.chain_id = chain_id;
@@ -52,7 +55,14 @@ pub struct UpdateTss<'info> {
     pub authority: Signer<'info>,
 }
 
-pub fn update_tss(ctx: Context<UpdateTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
+pub fn update_tss(
+    ctx: Context<UpdateTss>,
+    tss_eth_address: [u8; 20],
+    chain_id: String,
+) -> Result<()> {
+    require!(!chain_id.is_empty(), GatewayError::InvalidInput);
+    require!(chain_id.len() <= 64, GatewayError::InvalidInput); // Max 64 bytes for cluster pubkey
+
     let tss = &mut ctx.accounts.tss_pda;
 
     // If TSS address changes, reset nonce to 0 for clarity and security
@@ -108,7 +118,7 @@ pub fn validate_message(
     const PREFIX: &[u8] = b"PUSH_CHAIN_SVM";
     buf.extend_from_slice(PREFIX);
     buf.push(instruction_id);
-    buf.extend_from_slice(&tss.chain_id.to_be_bytes());
+    buf.extend_from_slice(tss.chain_id.as_bytes()); // Use UTF-8 bytes of chain_id string directly
     buf.extend_from_slice(&nonce.to_be_bytes());
     if let Some(val) = amount {
         buf.extend_from_slice(&val.to_be_bytes());
