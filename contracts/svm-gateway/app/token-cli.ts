@@ -10,7 +10,7 @@ import {
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
-import type { Pushsolanagateway } from "../target/types/pushsolanagateway";
+import type { UniversalGateway } from "../target/types/universal_gateway";
 import * as spl from "@solana/spl-token";
 import {
     createCreateMetadataAccountV3Instruction,
@@ -22,6 +22,7 @@ const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS")
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
+const RATE_LIMIT_SEED = "rate_limit";
 
 // Load keypairs
 const adminKeypair = Keypair.fromSecretKey(
@@ -43,9 +44,9 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 anchor.setProvider(adminProvider);
 
 // Load IDL
-const idl = JSON.parse(fs.readFileSync("./target/idl/pushsolanagateway.json", "utf8"));
-const program = new Program(idl as Pushsolanagateway, adminProvider);
-const userProgram = new Program(idl as Pushsolanagateway, userProvider);
+const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
+const program = new Program(idl as UniversalGateway, adminProvider);
+const userProgram = new Program(idl as UniversalGateway, userProvider);
 
 // Helper function to create SPL token with metadata
 async function createSPLToken(
@@ -305,6 +306,40 @@ async function whitelistToken(mintAddress: string): Promise<void> {
             console.log(`✅ Token already whitelisted (skipping)`);
         } else {
             throw error;
+        }
+    }
+
+    // Set token rate limit with a very large threshold to enable token (bypass rate limiting)
+    // Since epoch_duration is 0, rate limiting is disabled, but threshold > 0 makes token valid
+    console.log(`⚙️  Setting token rate limit (large threshold to enable token)...`);
+    const [tokenRateLimitPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(RATE_LIMIT_SEED), mint.toBuffer()],
+        PROGRAM_ID
+    );
+
+    // Use a very large threshold (effectively unlimited) - u128 max is 2^128 - 1
+    // Using a large but reasonable number: 10^30 (1 followed by 30 zeros)
+    const largeThreshold = new anchor.BN("1000000000000000000000000000000"); // 10^30
+
+    try {
+        const rateLimitTx = await program.methods
+            .setTokenRateLimit(largeThreshold)
+            .accounts({
+                config: configPda,
+                tokenRateLimit: tokenRateLimitPda,
+                tokenMint: mint,
+                admin: admin,
+                systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+        console.log(`✅ Token rate limit set successfully: ${rateLimitTx}`);
+    } catch (error) {
+        // If it already exists, that's fine - it might have been set before
+        if (error.message.includes("already in use") || error.message.includes("already exists")) {
+            console.log(`✅ Token rate limit already set (skipping)`);
+        } else {
+            console.log(`⚠️  Warning: Could not set token rate limit: ${error.message}`);
+            // Don't throw - whitelisting might still work if rate limit was set manually
         }
     }
 
