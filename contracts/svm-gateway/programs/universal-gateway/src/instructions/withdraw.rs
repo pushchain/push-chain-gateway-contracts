@@ -37,7 +37,7 @@ pub struct Withdraw<'info> {
     /// PDA: [b"executed_tx", tx_id] - account existence = transaction executed
     /// Standard Solana pattern (equivalent to Solidity mapping(bytes32 => bool))
     #[account(
-        init_if_needed,
+        init,
         payer = caller,
         space = ExecutedTx::LEN,
         seeds = [EXECUTED_TX_SEED, &tx_id],
@@ -64,13 +64,8 @@ pub fn withdraw(
 ) -> Result<()> {
     // EVM parity: Replay protection via Anchor's init constraint
     // If account already exists, init fails (transaction already executed)
-    // If account doesn't exist, init creates it (marking as executed)
-
-    // Equivalent to `require(!isExecuted[txID], PayloadExecuted)` in EVM
-    require!(
-        !ctx.accounts.executed_tx.executed,
-        GatewayError::PayloadExecuted
-    );
+    // If account doesn't exist, init creates it (transaction succeeds)
+    // Account existence = transaction executed (atomic transaction ensures this)
 
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(origin_caller != [0u8; 20], GatewayError::InvalidInput);
@@ -115,8 +110,8 @@ pub fn withdraw(
         amount,
     });
 
-    // Mark txID as executed only after all checks and transfers succeed
-    ctx.accounts.executed_tx.executed = true;
+    // Account creation via `init` constraint marks txID as executed
+    // (atomic transaction ensures account only exists if execution succeeded)
 
     Ok(())
 }
@@ -159,7 +154,7 @@ pub struct WithdrawFunds<'info> {
 
     /// Executed transaction tracker (EVM parity: isExecuted[txID])
     #[account(
-        init_if_needed,
+        init,
         payer = caller,
         space = ExecutedTx::LEN,
         seeds = [EXECUTED_TX_SEED, &tx_id],
@@ -187,13 +182,8 @@ pub fn withdraw_funds(
 ) -> Result<()> {
     // EVM parity: Replay protection via Anchor's init constraint
     // If account already exists, init fails (transaction already executed)
-    // If account doesn't exist, init creates it (marking as executed)
-
-    // Equivalent to `require(!isExecuted[txID], PayloadExecuted)` in EVM
-    require!(
-        !ctx.accounts.executed_tx.executed,
-        GatewayError::PayloadExecuted
-    );
+    // If account doesn't exist, init creates it (transaction succeeds)
+    // Account existence = transaction executed (atomic transaction ensures this)
 
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(origin_caller != [0u8; 20], GatewayError::InvalidInput);
@@ -245,8 +235,8 @@ pub fn withdraw_funds(
         amount,
     });
 
-    // Mark txID as executed only after all checks and transfers succeed
-    ctx.accounts.executed_tx.executed = true;
+    // Account creation via `init` constraint marks txID as executed
+    // (atomic transaction ensures account only exists if execution succeeded)
 
     Ok(())
 }
@@ -286,7 +276,7 @@ pub struct RevertUniversalTx<'info> {
 
     /// Executed transaction tracker (EVM parity: isExecuted[txID])
     #[account(
-        init_if_needed,
+        init,
         payer = caller,
         space = ExecutedTx::LEN,
         seeds = [EXECUTED_TX_SEED, &tx_id],
@@ -313,13 +303,8 @@ pub fn revert_universal_tx(
 ) -> Result<()> {
     // EVM parity: Replay protection via Anchor's init constraint
     // If account already exists, init fails (transaction already executed)
-    // If account doesn't exist, init creates it (marking as executed)
-
-    // Equivalent to `require(!isExecuted[txID], PayloadExecuted)` in EVM
-    require!(
-        !ctx.accounts.executed_tx.executed,
-        GatewayError::PayloadExecuted
-    );
+    // If account doesn't exist, init creates it (transaction succeeds)
+    // Account existence = transaction executed (atomic transaction ensures this)
 
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
@@ -373,8 +358,8 @@ pub fn revert_universal_tx(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Mark txID as executed only after all checks and transfers succeed
-    ctx.accounts.executed_tx.executed = true;
+    // Account creation via `init` constraint marks txID as executed
+    // (atomic transaction ensures account only exists if execution succeeded)
 
     Ok(())
 }
@@ -418,7 +403,7 @@ pub struct RevertUniversalTxToken<'info> {
 
     /// Executed transaction tracker (EVM parity: isExecuted[txID])
     #[account(
-        init_if_needed,
+        init,
         payer = caller,
         space = ExecutedTx::LEN,
         seeds = [EXECUTED_TX_SEED, &tx_id],
@@ -446,13 +431,8 @@ pub fn revert_universal_tx_token(
 ) -> Result<()> {
     // EVM parity: Replay protection via Anchor's init constraint
     // If account already exists, init fails (transaction already executed)
-    // If account doesn't exist, init creates it (marking as executed)
-
-    // Equivalent to `require(!isExecuted[txID], PayloadExecuted)` in EVM
-    require!(
-        !ctx.accounts.executed_tx.executed,
-        GatewayError::PayloadExecuted
-    );
+    // If account doesn't exist, init creates it (transaction succeeds)
+    // Account existence = transaction executed (atomic transaction ensures this)
 
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
@@ -512,8 +492,8 @@ pub fn revert_universal_tx_token(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Mark txID as executed only after all checks and transfers succeed
-    ctx.accounts.executed_tx.executed = true;
+    // Account creation via `init` constraint marks txID as executed
+    // (atomic transaction ensures account only exists if execution succeeded)
 
     Ok(())
 }

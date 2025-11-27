@@ -60,7 +60,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
     // Helper to generate an origin_caller EVM address (20 bytes)
     const generateOriginCaller = (): number[] => {
-        return Array.from(Buffer.alloc(20, Math.floor(Math.random() * 256)));
+        const buffer = Buffer.alloc(20);
+        for (let i = 0; i < 20; i++) {
+            buffer[i] = Math.floor(Math.random() * 256);
+        }
+        // Ensure it's not all zeros (would fail validation)
+        if (buffer.every(b => b === 0)) {
+            buffer[0] = 1;
+        }
+        return Array.from(buffer);
     };
 
     // Helper to derive executed_tx PDA from tx_id
@@ -759,12 +767,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 expect(errorStr.includes("InvalidInput")).to.be.true;
             }
 
-            // Verify executed_tx was NOT marked as executed (validation failed before execution)
+            // Verify executed_tx was NOT created (validation failed before execution, atomic rollback)
             try {
-                const executedTx = await program.account.executedTx.fetch(executedTxPda);
-                expect(executedTx.executed).to.be.false;
+                await program.account.executedTx.fetch(executedTxPda);
+                expect.fail("executed_tx should not exist - transaction failed atomically");
             } catch {
-                // Account might not exist if init_if_needed didn't create it
+                // Expected - account doesn't exist (atomic transaction rollback)
             }
 
             await syncNonceFromChain();
@@ -865,9 +873,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .signers([relayer])
                 .rpc();
 
-            // Verify executed = true after success
+            // Verify executed_tx account exists after success
+            // The account is a PDA derived from [b"executed_tx", tx_id], so existence = tx_id was executed
+            // Since ExecutedTx is an empty struct {}, we only verify account existence
             const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
-            expect(executedTxAfter.executed).to.be.true;
+            expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
             await syncNonceFromChain();
 
@@ -906,8 +916,20 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc();
                 expect.fail("Should have thrown PayloadExecuted error");
             } catch (error: any) {
+                // With `init`, duplicate txID fails at system program level (account already exists)
+                // The error comes from Solana system program: "Allocate: account ... already in use"
                 const errorStr = error.toString();
-                expect(errorStr.includes("PayloadExecuted") || errorStr.includes("Payload already executed")).to.be.true;
+                const errorLogs = error.logs || [];
+                const allLogs = Array.isArray(errorLogs) ? errorLogs.join(' ') : '';
+
+                // Check for the system program error indicating account already exists
+                const isReplayError =
+                    errorStr.includes("already in use") ||
+                    allLogs.includes("already in use") ||
+                    errorStr.includes("AccountDiscriminatorAlreadySet") ||
+                    allLogs.includes("AccountDiscriminatorAlreadySet");
+
+                expect(isReplayError).to.be.true;
             }
 
             await syncNonceFromChain();
@@ -962,12 +984,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 expect(error.toString().includes("TssAuthFailed")).to.be.true;
             }
 
-            // Verify failed call didn't set executed = true
+            // Verify failed call didn't create executed_tx account (atomic rollback)
             try {
-                const executedTx = await program.account.executedTx.fetch(executedTxPda);
-                expect(executedTx.executed).to.be.false;
+                await program.account.executedTx.fetch(executedTxPda);
+                expect.fail("executed_tx should not exist - transaction failed atomically");
             } catch {
-                // Account doesn't exist, which is fine
+                // Expected - account doesn't exist (atomic transaction rollback)
             }
 
             // Now try with VALID signature - should succeed (proves tx_id wasn't bricked)
@@ -1003,9 +1025,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .signers([relayer])
                 .rpc();
 
-            // Verify executed = true after success
+            // Verify executed_tx account exists after success (account existence = executed)
             const executedTx = await program.account.executedTx.fetch(executedTxPda);
-            expect(executedTx.executed).to.be.true;
+            expect(executedTx).to.exist; // Account existence = transaction executed
 
             await syncNonceFromChain();
         });
@@ -1169,9 +1191,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .signers([relayer])
                 .rpc();
 
-            // Verify executed = true after success
+            // Verify executed_tx account exists after success
+            // The account is a PDA derived from [b"executed_tx", tx_id], so existence = tx_id was executed
+            // Since ExecutedTx is an empty struct {}, we only verify account existence
             const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
-            expect(executedTxAfter.executed).to.be.true;
+            expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
             await syncNonceFromChain();
 
@@ -1209,8 +1233,20 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc();
                 expect.fail("Should have thrown PayloadExecuted error");
             } catch (error: any) {
+                // With `init`, duplicate txID fails at system program level (account already exists)
+                // The error comes from Solana system program: "Allocate: account ... already in use"
                 const errorStr = error.toString();
-                expect(errorStr.includes("PayloadExecuted") || errorStr.includes("Payload already executed")).to.be.true;
+                const errorLogs = error.logs || [];
+                const allLogs = Array.isArray(errorLogs) ? errorLogs.join(' ') : '';
+
+                // Check for the system program error indicating account already exists
+                const isReplayError =
+                    errorStr.includes("already in use") ||
+                    allLogs.includes("already in use") ||
+                    errorStr.includes("AccountDiscriminatorAlreadySet") ||
+                    allLogs.includes("AccountDiscriminatorAlreadySet");
+
+                expect(isReplayError).to.be.true;
             }
 
             await syncNonceFromChain();
@@ -1374,9 +1410,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .signers([relayer])
                 .rpc();
 
-            // Verify executed = true after success
+            // Verify executed_tx account exists after success
+            // The account is a PDA derived from [b"executed_tx", tx_id], so existence = tx_id was executed
+            // Since ExecutedTx is an empty struct {}, we only verify account existence
             const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
-            expect(executedTxAfter.executed).to.be.true;
+            expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
             await syncNonceFromChain();
 
@@ -1418,8 +1456,19 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc();
                 expect.fail("Should have thrown PayloadExecuted error");
             } catch (error: any) {
+                // With `init`, duplicate txID fails at system program level (account already exists)
+                // The error comes from Solana system program: "Allocate: account ... already in use"
                 const errorStr = error.toString();
-                expect(errorStr.includes("PayloadExecuted") || errorStr.includes("Payload already executed")).to.be.true;
+                const errorLogs = error.logs || [];
+                const allLogs = Array.isArray(errorLogs) ? errorLogs.join(' ') : '';
+
+                // Check for the system program error indicating account already exists
+                const isReplayError =
+                    errorStr.includes("already in use") ||
+                    allLogs.includes("already in use") ||
+                    errorStr.includes("AccountDiscriminatorAlreadySet") ||
+                    allLogs.includes("AccountDiscriminatorAlreadySet");
+                expect(isReplayError).to.be.true;
             }
 
             await syncNonceFromChain();

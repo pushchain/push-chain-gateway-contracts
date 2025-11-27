@@ -156,17 +156,13 @@ impl TssPda {
 
 /// Executed transaction tracker (parity with EVM `isExecuted[txID]` mapping).
 /// PDA: `[b"executed_tx", tx_id]`.
-/// - `executed == false` => txID not yet executed (account may have been created by a failed attempt)
-/// - `executed == true`  => txID has been successfully executed
+/// Account existence = transaction executed (replay protection via `init` constraint).
 #[account]
-pub struct ExecutedTx {
-    /// Whether this txID has been successfully executed.
-    pub executed: bool,
-}
+pub struct ExecutedTx {}
 
 impl ExecutedTx {
-    // discriminator (8) + bool (1)
-    pub const LEN: usize = 8 + 1;
+    // discriminator (8) only - account existence is the flag
+    pub const LEN: usize = 8;
 }
 
 /// Universal transaction event (parity with EVM V0 `UniversalTx`).
