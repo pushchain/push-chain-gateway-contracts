@@ -1380,18 +1380,22 @@ async function run() {
 
     // 12.2 Build message for SOL withdraw to admin using instruction_id=1
     const withdrawAmountTss = new anchor.BN(0.0005 * LAMPORTS_PER_SOL).toNumber();
-    const chainId = 1; // Ethereum mainnet id for domain separation
-    // Fetch current nonce by reading TssPda account (optional). We'll pass a rolling nonce = 0 on first run.
-    // For simplicity here, use a small local nonce and retry if mismatch.
+    // Fetch chain_id and nonce from TSS account (chain_id is now a String - Solana cluster pubkey)
     let nonce = 0; // default
+    let chainId = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"; // Default to Devnet cluster pubkey
     try {
-        // Attempt to read current nonce from on-chain TSS PDA
+        // Attempt to read current nonce and chain_id from on-chain TSS PDA
         const tssAcc: any = await (program.account as any).tssPda.fetch(tssPda);
-        if (tssAcc && typeof tssAcc.nonce !== "undefined") {
-            nonce = Number(tssAcc.nonce);
+        if (tssAcc) {
+            if (typeof tssAcc.nonce !== "undefined") {
+                nonce = Number(tssAcc.nonce);
+            }
+            if (typeof tssAcc.chainId !== "undefined") {
+                chainId = tssAcc.chainId; // String: Solana cluster pubkey
+            }
         }
     } catch (e) {
-        // If not initialized or IDL not exposed yet, keep default 0
+        // If not initialized or IDL not exposed yet, keep defaults
     }
 
     // Generate tx_id and origin_caller for withdraw
@@ -1404,8 +1408,7 @@ async function run() {
 
     const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
     const instructionId = Buffer.from([1]); // 1 = SOL withdraw
-    const chainIdBE = Buffer.alloc(8);
-    chainIdBE.writeBigUInt64BE(BigInt(chainId));
+    const chainIdBytes = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
     const nonceBE = Buffer.alloc(8);
     nonceBE.writeBigUInt64BE(BigInt(nonce));
     const amountBE = Buffer.alloc(8);
@@ -1416,7 +1419,7 @@ async function run() {
     const concat = Buffer.concat([
         PREFIX,
         instructionId,
-        chainIdBE,
+        chainIdBytes,          // UTF-8 bytes of chain_id string
         nonceBE,
         amountBE,
         Buffer.from(txId),      // tx_id (32 bytes)
@@ -1487,8 +1490,7 @@ async function run() {
         // Build message for SPL withdraw using instruction_id=2
         const PREFIX_SPL = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdSPL = Buffer.from([2]); // 2 = SPL withdraw
-        const chainIdBE_SPL = Buffer.alloc(8);
-        chainIdBE_SPL.writeBigUInt64BE(BigInt(chainId));
+        const chainIdBytesSPL = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
         const nonceBE_SPL = Buffer.alloc(8);
         nonceBE_SPL.writeBigUInt64BE(BigInt(nonce + 1)); // Increment nonce for SPL withdraw
         const amountBE_SPL = Buffer.alloc(8);
@@ -1500,7 +1502,7 @@ async function run() {
         const concatSPL = Buffer.concat([
             PREFIX_SPL,
             instructionIdSPL,
-            chainIdBE_SPL,
+            chainIdBytesSPL,            // UTF-8 bytes of chain_id string
             nonceBE_SPL,
             amountBE_SPL,
             Buffer.from(txIdSPL),        // tx_id (32 bytes)
@@ -1621,13 +1623,13 @@ async function run() {
         const instructionId = 3;
         const amount = 1000000; // 0.001 SOL
         const recipientBytes = admin.toBytes();
+        const chainIdString = tssAccount.chainId; // String: Solana cluster pubkey
 
         // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + nonce + amount + tx_id + recipient
         // NO origin_caller for revert functions
         const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdBE = Buffer.from([instructionId]);
-        const chainIdBE = Buffer.alloc(8);
-        chainIdBE.writeBigUInt64BE(BigInt(1));
+        const chainIdBytes = Buffer.from(chainIdString, 'utf8'); // UTF-8 bytes of cluster pubkey string
         const nonceBE = Buffer.alloc(8);
         nonceBE.writeBigUInt64BE(BigInt(currentNonce));
         const amountBE = Buffer.alloc(8);
@@ -1637,7 +1639,7 @@ async function run() {
         const messageData = Buffer.concat([
             PREFIX,
             instructionIdBE,
-            chainIdBE,
+            chainIdBytes,          // UTF-8 bytes of chain_id string
             nonceBE,
             amountBE,
             Buffer.from(txIdRevert), // tx_id (32 bytes)
