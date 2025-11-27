@@ -15,7 +15,7 @@ const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
 import { assert } from "chai";
 
-const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
+const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
@@ -162,9 +162,69 @@ async function run() {
         vType,
     });
 
-    // Helper to serialize payload to bytes
+    // Helper to serialize payload to bytes using Borsh (matching Rust's try_to_vec)
+    // UniversalPayload structure: to: [u8; 20], value: u64, data: Vec<u8>, gasLimit: u64, 
+    // maxFeePerGas: u64, maxPriorityFeePerGas: u64, nonce: u64, deadline: i64, vType: VerificationType
     const serializePayload = (payload: any): Buffer => {
-        return Buffer.from(JSON.stringify(payload));
+        // Helper to write u64 (little-endian)
+        const writeU64 = (val: anchor.BN): Buffer => {
+            const b = Buffer.alloc(8);
+            b.writeBigUInt64LE(BigInt(val.toString()), 0);
+            return b;
+        };
+        
+        // Helper to write i64 (little-endian)
+        const writeI64 = (val: anchor.BN): Buffer => {
+            const b = Buffer.alloc(8);
+            b.writeBigInt64LE(BigInt(val.toString()), 0);
+            return b;
+        };
+        
+        // Helper to write Vec<u8> (length as u32 LE, then bytes)
+        const writeVecU8 = (val: Buffer | number[]): Buffer => {
+            const bytes = Buffer.isBuffer(val) ? val : Buffer.from(val);
+            const len = Buffer.alloc(4);
+            len.writeUInt32LE(bytes.length, 0);
+            return Buffer.concat([len, bytes]);
+        };
+        
+        // Helper to write u8
+        const writeU8 = (val: number): Buffer => {
+            return Buffer.from([val]);
+        };
+        
+        // Serialize UniversalPayload in Borsh format:
+        // 1. to: [u8; 20] - 20 bytes
+        const toBytes = Buffer.from(payload.to);
+        // 2. value: u64 - 8 bytes
+        const valueBytes = writeU64(payload.value);
+        // 3. data: Vec<u8> - 4 bytes (length) + data
+        const dataBytes = writeVecU8(payload.data);
+        // 4. gasLimit: u64 - 8 bytes
+        const gasLimitBytes = writeU64(payload.gasLimit);
+        // 5. maxFeePerGas: u64 - 8 bytes
+        const maxFeePerGasBytes = writeU64(payload.maxFeePerGas);
+        // 6. maxPriorityFeePerGas: u64 - 8 bytes
+        const maxPriorityFeePerGasBytes = writeU64(payload.maxPriorityFeePerGas);
+        // 7. nonce: u64 - 8 bytes
+        const nonceBytes = writeU64(payload.nonce);
+        // 8. deadline: i64 - 8 bytes
+        const deadlineBytes = writeI64(payload.deadline);
+        // 9. vType: VerificationType enum - 1 byte (0 = SignedVerification, 1 = UniversalTxVerification)
+        const vTypeVal = payload.vType.signedVerification !== undefined ? 0 : 1;
+        const vTypeBytes = writeU8(vTypeVal);
+        
+        return Buffer.concat([
+            toBytes,
+            valueBytes,
+            dataBytes,
+            gasLimitBytes,
+            maxFeePerGasBytes,
+            maxPriorityFeePerGasBytes,
+            nonceBytes,
+            deadlineBytes,
+            vTypeBytes,
+        ]);
     };
 
     // Helper to create revert instruction
