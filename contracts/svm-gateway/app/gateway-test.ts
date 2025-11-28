@@ -5,6 +5,8 @@ import {
     LAMPORTS_PER_SOL,
     Keypair,
     SystemProgram,
+    TransactionMessage,
+    VersionedTransaction,
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
@@ -20,6 +22,7 @@ const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
 const PRICE_ACCOUNT = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"); // Pyth SOL/USD price feed
+const ALT_ADDRESS = new PublicKey("EWXJ1ERkMwizmSovjtQ2qBTDpm1vxrZZ4Y2RjEujbqBo"); // Universal Gateway ALT
 
 // Load keypairs
 const adminKeypair = Keypair.fromSecretKey(
@@ -172,14 +175,14 @@ async function run() {
             b.writeBigUInt64LE(BigInt(val.toString()), 0);
             return b;
         };
-        
+
         // Helper to write i64 (little-endian)
         const writeI64 = (val: anchor.BN): Buffer => {
             const b = Buffer.alloc(8);
             b.writeBigInt64LE(BigInt(val.toString()), 0);
             return b;
         };
-        
+
         // Helper to write Vec<u8> (length as u32 LE, then bytes)
         const writeVecU8 = (val: Buffer | number[]): Buffer => {
             const bytes = Buffer.isBuffer(val) ? val : Buffer.from(val);
@@ -187,12 +190,12 @@ async function run() {
             len.writeUInt32LE(bytes.length, 0);
             return Buffer.concat([len, bytes]);
         };
-        
+
         // Helper to write u8
         const writeU8 = (val: number): Buffer => {
             return Buffer.from([val]);
         };
-        
+
         // Serialize UniversalPayload in Borsh format:
         // 1. to: [u8; 20] - 20 bytes
         const toBytes = Buffer.from(payload.to);
@@ -213,7 +216,7 @@ async function run() {
         // 9. vType: VerificationType enum - 1 byte (0 = SignedVerification, 1 = UniversalTxVerification)
         const vTypeVal = payload.vType.signedVerification !== undefined ? 0 : 1;
         const vTypeBytes = writeU8(vTypeVal);
-        
+
         return Buffer.concat([
             toBytes,
             valueBytes,
@@ -666,21 +669,40 @@ async function run() {
         const splFundsPayloadGasAmount = await getDynamicGasAmount(1.5, 0.01);
         const splFundsPayloadRecipient = Array.from(Buffer.from("4444444444444444444444444444444444444444", "hex").subarray(0, 20));
 
+        // Use a very large payload to intentionally stress Solana's 1232-byte tx limit
+        // so we can observe the legacy (no ALT) transaction failing with "transaction too large".
+        const largePayloadData = Buffer.alloc(600, 1); // 600 bytes of non-zero data
+        const largePayloadStruct = {
+            ...createPayload(3),
+            data: largePayloadData,
+        };
+
         const splFundsPayloadReq = {
             recipient: splFundsPayloadRecipient,
             token: mint,
             amount: splFundsPayloadBridgeAmount,
-            payload: serializePayload(createPayload(3)),
+            payload: serializePayload(largePayloadStruct),
             revertInstruction: createRevertInstruction(user),
             signatureData: Buffer.from("spl_funds_payload_sig"),
         };
 
         const initialVaultBalanceSplFundsPayload = await connection.getBalance(vaultPda);
         const userTokenBalanceBeforeSplFundsPayload = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
-        const vaultTokenBalanceBeforeSplFundsPayload = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
+        const vaultTokenBalanceBeforeSplFundsPayload = (await spl.getAccount(
+            userProvider.connection as any,
+            vaultAta.address,
+        )).amount;
         const splTokenRateLimitPda = getTokenRateLimitPda(mint);
-        const splFundsPayloadTx = await userProgram.methods
-            .sendUniversalTx(splFundsPayloadReq, splFundsPayloadGasAmount) // Only gas amount in native SOL
+
+        // --- Legacy path (without ALT) would now fail with Transaction too large.
+        // Instead, build a v0 tx using the ALT created by create-universal-alt.ts.
+        const { value: alt } = await connection.getAddressLookupTable(ALT_ADDRESS);
+        if (!alt) {
+            throw new Error(`Lookup table ${ALT_ADDRESS.toBase58()} not found on chain`);
+        }
+
+        const ix = await userProgram.methods
+            .sendUniversalTx(splFundsPayloadReq, splFundsPayloadGasAmount)
             .accounts({
                 config: configPda,
                 vault: vaultPda,
@@ -693,11 +715,28 @@ async function run() {
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
             })
-            .signers([userKeypair])
-            .rpc();
+            .instruction();
 
-        console.log(`✅ FUNDS_AND_PAYLOAD route (SPL token) transaction: ${splFundsPayloadTx}`);
-        await parseAndPrintEvents(splFundsPayloadTx, "FUNDS_AND_PAYLOAD route (SPL) events");
+        const recent = await connection.getLatestBlockhash();
+        const message = new TransactionMessage({
+            payerKey: user,
+            recentBlockhash: recent.blockhash,
+            instructions: [ix],
+        }).compileToV0Message([alt]);
+
+        const vtx = new VersionedTransaction(message);
+        vtx.sign([userKeypair]);
+        const vtxBytes = vtx.serialize().length;
+        console.log(`  ALT v0 tx size: ${vtxBytes} bytes`);
+
+        const splFundsPayloadTx = await connection.sendTransaction(vtx, {
+            maxRetries: 3,
+        });
+        // Wait for confirmation so balances / events reflect this tx (sendTransaction alone is fire-and-forget).
+        await connection.confirmTransaction(splFundsPayloadTx, "confirmed");
+
+        console.log(`✅ FUNDS_AND_PAYLOAD route (SPL token, ALT v0) transaction: ${splFundsPayloadTx}`);
+        await parseAndPrintEvents(splFundsPayloadTx, "FUNDS_AND_PAYLOAD route (SPL, ALT) events");
         const finalVaultBalanceSplFundsPayload = await connection.getBalance(vaultPda);
         const userTokenBalanceAfterSplFundsPayload = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
         const vaultTokenBalanceAfterSplFundsPayload = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
