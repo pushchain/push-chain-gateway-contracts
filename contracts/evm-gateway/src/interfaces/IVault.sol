@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertInstructions } from "../libraries/Types.sol";
+import { RevertInstructions, ExecutionType } from "../libraries/Types.sol";
 /**
  * @title IVault
  * @notice Interface for ERC20 custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
@@ -30,11 +30,11 @@ interface IVault {
 
     /// @notice             Vault withdraw event
     /// @param txID         Unique transaction identifier
-    /// @param originCaller Original caller/user on source chain
+    /// @param ueaAddress Original caller/user on source chain
     /// @param token        Token address
     /// @param to           Recipient address
     /// @param amount       Amount of token
-    event VaultWithdraw(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
+    event VaultWithdraw(bytes32 indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount);
 
     /// @notice             Vault revert event
     /// @param token        Token address
@@ -50,24 +50,14 @@ interface IVault {
      * @notice              TSS-only withdraw to an external recipient on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
      * @param txID          unique transaction identifier on external chain
-     * @param originCaller  original caller/user on source chain ( Push Chain)
+     * @param ueaAddress  original caller/user on source chain ( Push Chain)
      * @param token         ERC20 token to transfer (must be supported by gateway) on external chain
      * @param to            recipient address on external chain
      * @param amount        amount of token to transfer on external chain
      */
-    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdraw(bytes32 txID, address ueaAddress, address token, address to, uint256 amount) external;
 
-    /**
-     * @notice              TSS-only withdraw and execute transaction via gateway on external chains
-     * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
-     * @param txID          unique transaction identifier on external chain     
-     * @param originCaller  original caller/user on source chain ( Push Chain)
-     * @param token         ERC20 token to transfer (must be supported by gateway) on external chain
-     * @param target        contract to call via gateway on external chain
-     * @param amount        token amount to transfer and use in execution on external chain
-     * @param data          calldata for the target execution on external chain
-     */
-    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data) external;
+    function handleOutboundExecution(ExecutionType executionType, bytes32 txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data) external payable;
 
     /**
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains

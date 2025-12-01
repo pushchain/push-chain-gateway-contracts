@@ -47,7 +47,7 @@ interface IUniversalGatewayV0 {
     /// @notice         Withdraw token event (native token is represented with token = address(0))
     event WithdrawToken(
         bytes32 indexed txID,
-        address indexed originCaller,
+        address indexed ueaAddress,
         address indexed token,
         address to,
         uint256 amount
@@ -149,7 +149,7 @@ interface IUniversalGatewayV0 {
     function revertUniversalTxToken(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
         external;
 
-    function withdraw(bytes32 txID, address originCaller, address to, uint256 amount) external payable;
+    function withdraw(bytes32 txID, address ueaAddress, address to, uint256 amount) external payable;
 
-    function withdrawTokens(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawTokens(bytes32 txID, address ueaAddress, address token, address to, uint256 amount) external;
 }

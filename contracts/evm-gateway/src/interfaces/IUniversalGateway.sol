@@ -48,14 +48,14 @@ interface IUniversalGateway {
 
     /// @notice                     Universal tx execution event that is executed on External Chains.
     /// @param txID                 Unique transaction identifier
-    /// @param originCaller         Original caller/user on source chain ( Push Chain)
+    /// @param ueaAddress         Original caller/user on source chain ( Push Chain)
     /// @param target               Target contract address to execute call
     /// @param token                Token address being sent
     /// @param amount               Amount of token being sent
     /// @param data                 Calldata to be executed on target contract on external chain
     event UniversalTxExecuted(
         bytes32 indexed txID,
-        address indexed originCaller,
+        address indexed ueaAddress,
         address indexed target,
         address token,
         uint256 amount,
@@ -69,11 +69,11 @@ interface IUniversalGateway {
 
     /// @notice         W           Withdraw token event
     /// @param txID                 Unique transaction identifier
-    /// @param originCaller         Original caller/user on source chain ( Push Chain)
+    /// @param ueaAddress         Original caller/user on source chain ( Push Chain)
     /// @param token                Token address being sent
     /// @param to                   Recipient address on Push Chain
     /// @param amount               Amount of token being sent
-    event WithdrawToken(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
+    event WithdrawToken(bytes32 indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount);
 
     /// @notice                     Revert withdraw event: For withdrwals/actions during a revert
     /// @param txID                 Unique transaction identifier
@@ -176,29 +176,29 @@ interface IUniversalGateway {
 
     /// @notice             Withdraw native token from the gateway
     /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
+    /// @param ueaAddress original caller/user on source chain
     /// @param to           recipient address
     /// @param amount       amount of native token to withdraw
-    function withdraw(bytes32 txID, address originCaller, address to, uint256 amount) external payable;
+    function withdraw(bytes32 txID, address ueaAddress, address to, uint256 amount) external payable;
 
     /// @notice             Withdraw ERC20 token from the gateway
     /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
+    /// @param ueaAddress original caller/user on source chain
     /// @param token        token address (ERC20 token)
     /// @param to           recipient address
     /// @param amount       amount of token to withdraw
-    function withdrawTokens(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawTokens(bytes32 txID, address ueaAddress, address token, address to, uint256 amount) external;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
+    /// @param ueaAddress original caller/user on source chain
     /// @param token        token address (ERC20 token)
     /// @param target       target contract address to execute call
     /// @param amount       amount of token to send along
     /// @param payload      calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
-        address originCaller,
+        address ueaAddress,
         address token,
         address target,
         uint256 amount,
@@ -207,13 +207,13 @@ interface IUniversalGateway {
     
     /// @notice             Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
     /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
+    /// @param ueaAddress original caller/user on source chain
     /// @param target       target contract address to execute call
     /// @param amount       amount of native token to send along
     /// @param payload      calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
-        address originCaller,
+        address ueaAddress,
         address target,
         uint256 amount,
         bytes calldata payload
