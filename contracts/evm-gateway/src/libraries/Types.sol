@@ -36,6 +36,11 @@ enum VerificationType {
     universalTxVerification
 }
 
+enum ExecutionType {
+    GATEWAY,
+    CEA
+}
+
 /// @notice         Universal payload for execution on Push Chain
 struct UniversalPayload {
     address to;                     // Target contract address to call
