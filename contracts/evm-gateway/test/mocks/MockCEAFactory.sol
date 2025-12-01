@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import { ICEAFactory } from "../../src/interfaces/ICEAFactory.sol";
+import { MockCEA } from "./MockCEA.sol";
 
 /**
  * @title MockCEAFactory
@@ -11,6 +12,7 @@ import { ICEAFactory } from "../../src/interfaces/ICEAFactory.sol";
  *      - Deterministic address computation using salt
  *      - Bidirectional mappings (UEA_to_CEA and CEA_to_UEA)
  *      - Already deployed checks
+ *      - Actually deploys MockCEA instances
  */
 contract MockCEAFactory is ICEAFactory {
     // =========================
@@ -27,6 +29,9 @@ contract MockCEAFactory is ICEAFactory {
 
     /// @notice Tracks which CEAs have been deployed (have code)
     mapping(address => bool) private _deployed;
+
+    /// @notice Stores deployed MockCEA instances
+    mapping(address => MockCEA) private _deployedCEAs;
 
     // =========================
     //          Errors
@@ -87,17 +92,25 @@ contract MockCEAFactory is ICEAFactory {
             revert CEAAlreadyDeployed();
         }
 
-        // Compute deterministic address
-        cea = _computeCEAInternal(ueaOnPush);
+        // Deploy a new MockCEA instance
+        MockCEA newCEA = new MockCEA();
+        cea = address(newCEA);
 
-        // Mark as deployed (in mock, we just set the flag since we don't actually deploy)
+        // Mark as deployed
         _deployed[cea] = true;
+        _deployedCEAs[cea] = newCEA;
 
         // Store mappings
         UEA_to_CEA[ueaOnPush] = cea;
         CEA_to_UEA[cea] = ueaOnPush;
 
         // Note: Real CEAFactory emits CEADeployed event, but we skip it in mock
+    }
+
+    /// @notice Get the MockCEA instance for a given address (test helper)
+    /// @dev This is a test helper, not part of the real CEAFactory
+    function getMockCEA(address cea) external view returns (MockCEA) {
+        return _deployedCEAs[cea];
     }
 
     // =========================
@@ -136,7 +149,8 @@ contract MockCEAFactory is ICEAFactory {
     function _hasCode(address addr) internal view returns (bool) {
         // In mock, check our _deployed mapping
         // In real contract, this checks extcodesize
-        return _deployed[addr];
+        // Also check if we have a deployed MockCEA instance
+        return _deployed[addr] && address(_deployedCEAs[addr]) != address(0);
     }
 }
 

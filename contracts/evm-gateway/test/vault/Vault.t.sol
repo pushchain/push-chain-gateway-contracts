@@ -8,6 +8,7 @@ import { Errors } from "../../src/libraries/Errors.sol";
 import { RevertInstructions, ExecutionType } from "../../src/libraries/Types.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
+import { MockCEA } from "../mocks/MockCEA.sol";
 import { MockTokenApprovalVariants } from "../mocks/MockTokenApprovalVariants.sol";
 import { MockTarget } from "../mocks/MockTarget.sol";
 import { MockRevertingTarget } from "../mocks/MockRevertingTarget.sol";
@@ -106,16 +107,18 @@ contract VaultTest is Test {
         reentrantAttacker.setVault(address(vault));
         mockTarget = new MockTarget();
 
-        // Setup: support tokens in gateway
-        address[] memory tokens = new address[](3);
+        // Setup: support tokens in gateway (including native token address(0))
+        address[] memory tokens = new address[](4);
         tokens[0] = address(token);
         tokens[1] = address(token2);
         tokens[2] = address(variantToken);
+        tokens[3] = address(0); // Native token
 
-        uint256[] memory thresholds = new uint256[](3);
+        uint256[] memory thresholds = new uint256[](4);
         thresholds[0] = 1_000_000e18;
         thresholds[1] = 1_000_000e6;
         thresholds[2] = 1_000_000e18;
+        thresholds[3] = 1_000_000e18; // Native token threshold
 
         vm.prank(admin);
         gateway.setTokenLimitThresholds(tokens, thresholds);
@@ -929,5 +932,335 @@ contract VaultTest is Test {
         // Verify initialization succeeded by checking state
         assertEq(address(newVault.gateway()), address(gateway));
         assertEq(newVault.TSS_ADDRESS(), tss);
+    }
+
+    // ============================================================================
+    // NEW OUTBOUND EXECUTION TESTS (NATIVE & CEA PATHS)
+    // ============================================================================
+
+    function test_HandleOutboundExecution_NativeViaGateway_Success() public {
+        uint256 amount = 1 ether;
+        bytes memory callData = abi.encodeWithSignature("receiveFunds()");
+        bytes32 testTxID = bytes32(uint256(300));
+        address ueaAddr = user1;
+
+        uint256 initialTargetBalance = address(mockTarget).balance;
+
+        // TSS calls handleOutboundExecution with native tokens via GATEWAY
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vault.handleOutboundExecution{value: amount}(
+            ExecutionType.GATEWAY,
+            testTxID,
+            ueaAddr,
+            address(0), // native token
+            address(mockTarget),
+            amount,
+            callData
+        );
+
+        // Verify target received ETH
+        assertEq(address(mockTarget).balance, initialTargetBalance + amount);
+        assertEq(mockTarget.lastCaller(), address(gateway));
+        assertEq(mockTarget.lastAmount(), amount);
+    }
+
+    function test_HandleOutboundExecution_NativeViaGateway_EmitsEvent() public {
+        uint256 amount = 1 ether;
+        bytes memory callData = abi.encodeWithSignature("receiveFunds()");
+        bytes32 testTxID = bytes32(uint256(301));
+        address ueaAddr = user1;
+
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vm.expectEmit(true, true, false, true);
+        emit VaultWithdrawAndExecute(address(0), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution{value: amount}(
+            ExecutionType.GATEWAY,
+            testTxID,
+            ueaAddr,
+            address(0),
+            address(mockTarget),
+            amount,
+            callData
+        );
+    }
+
+    function test_HandleOutboundExecution_NativeViaGateway_InvalidValueReverts() public {
+        uint256 amount = 1 ether;
+        bytes memory callData = "";
+        bytes32 testTxID = bytes32(uint256(302));
+        address ueaAddr = user1;
+
+        // Send wrong amount of ETH
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.handleOutboundExecution{value: amount / 2}(
+            ExecutionType.GATEWAY,
+            testTxID,
+            ueaAddr,
+            address(0),
+            address(mockTarget),
+            amount,
+            callData
+        );
+    }
+
+    function test_HandleOutboundExecution_NativeViaCEA_Success() public {
+        uint256 amount = 1 ether;
+        bytes memory callData = abi.encodeWithSignature("receiveFunds()");
+        bytes32 testTxID = bytes32(uint256(303));
+        address ueaAddr = user1;
+
+        uint256 initialTargetBalance = address(mockTarget).balance;
+
+        // TSS calls handleOutboundExecution with native tokens via CEA
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vault.handleOutboundExecution{value: amount}(
+            ExecutionType.CEA,
+            testTxID,
+            ueaAddr,
+            address(0), // native token
+            address(mockTarget),
+            amount,
+            callData
+        );
+
+        // Verify CEA was deployed
+        (address cea, bool isDeployed) = ceaFactory.getCEAForUEA(ueaAddr);
+        assertTrue(isDeployed);
+        assertTrue(cea != address(0));
+
+        // Verify target received ETH from CEA
+        assertEq(address(mockTarget).balance, initialTargetBalance + amount);
+        assertEq(mockTarget.lastCaller(), cea);
+        assertEq(mockTarget.lastAmount(), amount);
+
+        // Verify MockCEA tracked the call
+        MockCEA mockCEA = ceaFactory.getMockCEA(cea);
+        assertEq(mockCEA.lastTxID(), testTxID);
+        assertEq(mockCEA.lastUEA(), ueaAddr);
+        assertEq(mockCEA.lastTarget(), address(mockTarget));
+        assertEq(mockCEA.lastAmount(), amount);
+    }
+
+    function test_HandleOutboundExecution_NativeViaCEA_DeploysCEA() public {
+        uint256 amount = 1 ether;
+        bytes memory callData = "";
+        bytes32 testTxID = bytes32(uint256(304));
+        address ueaAddr = user2;
+
+        // Verify CEA doesn't exist yet
+        (, bool deployedBefore) = ceaFactory.getCEAForUEA(ueaAddr);
+        assertFalse(deployedBefore);
+
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vault.handleOutboundExecution{value: amount}(
+            ExecutionType.CEA,
+            testTxID,
+            ueaAddr,
+            address(0),
+            address(mockTarget),
+            amount,
+            callData
+        );
+
+        // Verify CEA was deployed
+        (address ceaAfter, bool deployedAfter) = ceaFactory.getCEAForUEA(ueaAddr);
+        assertTrue(deployedAfter);
+        assertTrue(ceaAfter != address(0));
+        assertEq(ceaFactory.UEA_to_CEA(ueaAddr), ceaAfter);
+        assertEq(ceaFactory.CEA_to_UEA(ceaAfter), ueaAddr);
+    }
+
+    function test_HandleOutboundExecution_NativeViaCEA_ReusesExistingCEA() public {
+        uint256 amount = 1 ether;
+        bytes memory callData = "";
+        bytes32 testTxID1 = bytes32(uint256(305));
+        bytes32 testTxID2 = bytes32(uint256(306));
+        address ueaAddr = user1;
+
+        // First call - deploys CEA
+        vm.deal(tss, amount * 2);
+        vm.prank(tss);
+        vault.handleOutboundExecution{value: amount}(
+            ExecutionType.CEA,
+            testTxID1,
+            ueaAddr,
+            address(0),
+            address(mockTarget),
+            amount,
+            callData
+        );
+
+        (address cea1, bool deployed1) = ceaFactory.getCEAForUEA(ueaAddr);
+        assertTrue(deployed1);
+
+        // Second call - reuses existing CEA
+        vm.prank(tss);
+        vault.handleOutboundExecution{value: amount}(
+            ExecutionType.CEA,
+            testTxID2,
+            ueaAddr,
+            address(0),
+            address(mockTarget),
+            amount,
+            callData
+        );
+
+        (address cea2, bool deployed2) = ceaFactory.getCEAForUEA(ueaAddr);
+        assertTrue(deployed2);
+        assertEq(cea1, cea2); // Same CEA address
+    }
+
+    function test_HandleOutboundExecution_ERC20ViaCEA_Success() public {
+        uint256 amount = 100e18;
+        bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
+        bytes32 testTxID = bytes32(uint256(307));
+        address ueaAddr = user1;
+
+        uint256 initialVaultBalance = token.balanceOf(address(vault));
+        uint256 initialTargetBalance = token.balanceOf(address(mockTarget));
+
+        // TSS calls handleOutboundExecution with ERC20 tokens via CEA
+        vm.prank(tss);
+        vault.handleOutboundExecution(
+            ExecutionType.CEA,
+            testTxID,
+            ueaAddr,
+            address(token),
+            address(mockTarget),
+            amount,
+            callData
+        );
+
+        // Verify CEA was deployed
+        (address cea, bool isDeployed) = ceaFactory.getCEAForUEA(ueaAddr);
+        assertTrue(isDeployed);
+
+        // Verify tokens were transferred from Vault to CEA
+        assertEq(token.balanceOf(address(vault)), initialVaultBalance - amount);
+        assertEq(token.balanceOf(cea), 0); // CEA should have transferred tokens to target
+
+        // Verify target received tokens
+        assertEq(token.balanceOf(address(mockTarget)), initialTargetBalance + amount);
+        assertEq(mockTarget.lastCaller(), cea);
+        assertEq(mockTarget.lastToken(), address(token));
+        assertEq(mockTarget.lastTokenAmount(), amount);
+
+        // Verify MockCEA tracked the call
+        MockCEA mockCEA = ceaFactory.getMockCEA(cea);
+        assertEq(mockCEA.lastTxID(), testTxID);
+        assertEq(mockCEA.lastUEA(), ueaAddr);
+        assertEq(mockCEA.lastToken(), address(token));
+        assertEq(mockCEA.lastTarget(), address(mockTarget));
+        assertEq(mockCEA.lastAmount(), amount);
+    }
+
+    function test_HandleOutboundExecution_ERC20ViaCEA_EmitsEvent() public {
+        uint256 amount = 100e18;
+        bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
+        bytes32 testTxID = bytes32(uint256(308));
+        address ueaAddr = user1;
+
+        vm.prank(tss);
+        vm.expectEmit(true, true, false, true);
+        emit VaultWithdrawAndExecute(address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(
+            ExecutionType.CEA,
+            testTxID,
+            ueaAddr,
+            address(token),
+            address(mockTarget),
+            amount,
+            callData
+        );
+    }
+
+    function test_HandleOutboundExecution_ERC20ViaCEA_WithValueReverts() public {
+        uint256 amount = 100e18;
+        bytes memory callData = "";
+        bytes32 testTxID = bytes32(uint256(309));
+        address ueaAddr = user1;
+
+        // ERC20 path should not accept msg.value
+        vm.deal(tss, 1 ether);
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.handleOutboundExecution{value: 1 ether}(
+            ExecutionType.CEA,
+            testTxID,
+            ueaAddr,
+            address(token),
+            address(mockTarget),
+            amount,
+            callData
+        );
+    }
+
+    function test_HandleOutboundExecution_ERC20ViaCEA_InsufficientBalanceReverts() public {
+        uint256 vaultBalance = token.balanceOf(address(vault));
+        uint256 amount = vaultBalance + 1;
+        bytes memory callData = "";
+        bytes32 testTxID = bytes32(uint256(310));
+        address ueaAddr = user1;
+
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.handleOutboundExecution(
+            ExecutionType.CEA,
+            testTxID,
+            ueaAddr,
+            address(token),
+            address(mockTarget),
+            amount,
+            callData
+        );
+    }
+
+    function test_HandleOutboundExecution_ERC20ViaCEA_DifferentTokens() public {
+        uint256 amount1 = 50e18;
+        uint256 amount2 = 25e6;
+        bytes memory callData1 = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount1);
+        bytes memory callData2 = abi.encodeWithSignature("receiveToken(address,uint256)", address(token2), amount2);
+        bytes32 testTxID1 = bytes32(uint256(311));
+        bytes32 testTxID2 = bytes32(uint256(312));
+        address ueaAddr = user1;
+
+        // First call with token
+        vm.prank(tss);
+        vault.handleOutboundExecution(
+            ExecutionType.CEA,
+            testTxID1,
+            ueaAddr,
+            address(token),
+            address(mockTarget),
+            amount1,
+            callData1
+        );
+
+        // Second call with token2
+        vm.prank(tss);
+        vault.handleOutboundExecution(
+            ExecutionType.CEA,
+            testTxID2,
+            ueaAddr,
+            address(token2),
+            address(mockTarget),
+            amount2,
+            callData2
+        );
+
+        // Verify both calls used the same CEA
+        (address cea1, ) = ceaFactory.getCEAForUEA(ueaAddr);
+        (address cea2, ) = ceaFactory.getCEAForUEA(ueaAddr);
+        assertEq(cea1, cea2);
+
+        // Verify both tokens were received
+        assertEq(token.balanceOf(address(mockTarget)), amount1);
+        assertEq(token2.balanceOf(address(mockTarget)), amount2);
     }
 }
