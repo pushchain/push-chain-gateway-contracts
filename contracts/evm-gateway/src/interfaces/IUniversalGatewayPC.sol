@@ -24,7 +24,7 @@ interface IUniversalGatewayPC {
     /// @param protocolFee  Flat protocol fee portion (as defined by PRC20), included inside gasFee on external chain
     event UniversalTxWithdraw(
         address indexed sender,
-        string indexed chainId,
+        string chainId,
         address indexed token,
         bytes target,
         uint256 amount,
