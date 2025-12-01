@@ -61,12 +61,23 @@ pub struct RevertInstructions {
     pub revert_msg: Vec<u8>,
 }
 
+/// Universal transaction request (parity with EVM `UniversalTxRequest`).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct UniversalTxRequest {
+    pub recipient: [u8; 20], // [0u8; 20] => credit to UEA on Push
+    pub token: Pubkey,       // Pubkey::default() => native SOL
+    pub amount: u64,         // native or SPL amount for bridging - Funds
+    pub payload: Vec<u8>,    // serialized payload (may be empty)
+    pub revert_instruction: RevertInstructions,
+    pub signature_data: Vec<u8>,
+}
+
 /// Gateway configuration state (authorities, caps, oracle).
 /// PDA: `[b"config"]`. Holds USD caps (8 decimals) for gas-route deposits and oracle config.
 #[account]
 pub struct Config {
     pub admin: Pubkey,
-    pub tss_address: Pubkey,
+    pub tss_address: Pubkey, // Not used - TODO: Remove
     pub pauser: Pubkey,
     pub min_cap_universal_tx_usd: u128, // 1e8 = $1 (Pyth format)
     pub max_cap_universal_tx_usd: u128, // 1e8 = $10 (Pyth format)
@@ -166,16 +177,6 @@ pub struct WithdrawFunds {
 pub struct TSSAddressUpdated {
     pub old_tss: Pubkey,
     pub new_tss: Pubkey,
-}
-
-#[event]
-pub struct TokenWhitelisted {
-    pub token_address: Pubkey,
-}
-
-#[event]
-pub struct TokenRemovedFromWhitelist {
-    pub token_address: Pubkey,
 }
 
 #[event]

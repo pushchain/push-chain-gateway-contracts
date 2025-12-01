@@ -497,4 +497,191 @@ contract GatewayAdminSettersTest is BaseTest {
         vm.expectRevert();
         gateway.revertUniversalTx(txID, 1, RevertInstructions(user2, ""));
     }
+
+    // =========================
+    //      VAULT UPDATE TESTS
+    // =========================
+
+    function testUpdateVault() public {
+        address newVault = address(0x999);
+        address oldVault = gateway.VAULT();
+
+        // Must be paused to update vault
+        vm.prank(admin);
+        gateway.pause();
+
+        // Expect VaultUpdated event
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGateway.VaultUpdated(oldVault, newVault);
+
+        vm.prank(admin);
+        gateway.updateVault(newVault);
+
+        assertEq(gateway.VAULT(), newVault);
+        assertTrue(gateway.hasRole(gateway.VAULT_ROLE(), newVault));
+        assertFalse(gateway.hasRole(gateway.VAULT_ROLE(), oldVault));
+    }
+
+    function testUpdateVaultOnlyAdmin() public {
+        address newVault = address(0x999);
+
+        // Pause first
+        vm.prank(admin);
+        gateway.pause();
+
+        // Non-admin should not be able to update vault
+        vm.prank(user1);
+        vm.expectRevert();
+        gateway.updateVault(newVault);
+
+        // Admin should be able to update vault
+        vm.prank(admin);
+        gateway.updateVault(newVault);
+        assertEq(gateway.VAULT(), newVault);
+    }
+
+    function testUpdateVaultRequiresPaused() public {
+        address newVault = address(0x999);
+
+        // Should revert when not paused (whenPaused modifier checks for paused state)
+        vm.prank(admin);
+        vm.expectRevert("ExpectedPause()");
+        gateway.updateVault(newVault);
+
+        // Should work when paused
+        vm.prank(admin);
+        gateway.pause();
+
+        vm.prank(admin);
+        gateway.updateVault(newVault);
+        assertEq(gateway.VAULT(), newVault);
+    }
+
+    function testUpdateVaultZeroAddressReverts() public {
+        // Pause first
+        vm.prank(admin);
+        gateway.pause();
+
+        vm.prank(admin);
+        vm.expectRevert(Errors.ZeroAddress.selector);
+        gateway.updateVault(address(0));
+    }
+
+    function testUpdateVaultRoleTransfer() public {
+        address newVault1 = address(0x888);
+        address newVault2 = address(0x999);
+        address oldVault = gateway.VAULT();
+
+        // Pause first
+        vm.prank(admin);
+        gateway.pause();
+
+        // First update
+        vm.prank(admin);
+        gateway.updateVault(newVault1);
+        assertTrue(gateway.hasRole(gateway.VAULT_ROLE(), newVault1));
+        assertFalse(gateway.hasRole(gateway.VAULT_ROLE(), oldVault));
+
+        // Second update - should transfer role from newVault1 to newVault2
+        vm.prank(admin);
+        gateway.updateVault(newVault2);
+        assertTrue(gateway.hasRole(gateway.VAULT_ROLE(), newVault2));
+        assertFalse(gateway.hasRole(gateway.VAULT_ROLE(), newVault1));
+        assertFalse(gateway.hasRole(gateway.VAULT_ROLE(), oldVault));
+    }
+
+    // =========================
+    //      EPOCH DURATION TESTS
+    // =========================
+
+    function testUpdateEpochDuration() public {
+        uint256 newDuration = 12 hours;
+        uint256 oldDuration = gateway.epochDurationSec();
+
+        // Expect EpochDurationUpdated event
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGateway.EpochDurationUpdated(oldDuration, newDuration);
+
+        vm.prank(admin);
+        gateway.updateEpochDuration(newDuration);
+
+        assertEq(gateway.epochDurationSec(), newDuration);
+    }
+
+    function testUpdateEpochDurationOnlyAdmin() public {
+        uint256 newDuration = 12 hours;
+
+        // Non-admin should not be able to update epoch duration
+        vm.prank(user1);
+        vm.expectRevert();
+        gateway.updateEpochDuration(newDuration);
+
+        // Admin should be able to update epoch duration
+        vm.prank(admin);
+        gateway.updateEpochDuration(newDuration);
+        assertEq(gateway.epochDurationSec(), newDuration);
+    }
+
+    function testUpdateEpochDurationCanBeCalledWhenPaused() public {
+        uint256 newDuration = 12 hours;
+
+        // Pause the contract
+        vm.prank(admin);
+        gateway.pause();
+
+        // Should still be able to update epoch duration when paused
+        vm.prank(admin);
+        gateway.updateEpochDuration(newDuration);
+        assertEq(gateway.epochDurationSec(), newDuration);
+    }
+
+    function testUpdateEpochDurationZeroDuration() public {
+        // Zero duration is allowed (though may not be practical)
+        vm.prank(admin);
+        gateway.updateEpochDuration(0);
+        assertEq(gateway.epochDurationSec(), 0);
+    }
+
+    function testUpdateEpochDurationMultipleUpdates() public {
+        uint256 duration1 = 6 hours;
+        uint256 duration2 = 12 hours;
+        uint256 duration3 = 24 hours;
+
+        vm.prank(admin);
+        gateway.updateEpochDuration(duration1);
+        assertEq(gateway.epochDurationSec(), duration1);
+
+        vm.prank(admin);
+        gateway.updateEpochDuration(duration2);
+        assertEq(gateway.epochDurationSec(), duration2);
+
+        vm.prank(admin);
+        gateway.updateEpochDuration(duration3);
+        assertEq(gateway.epochDurationSec(), duration3);
+    }
+
+    // =========================
+    //      ENHANCED TESTS FOR EXISTING FUNCTIONS
+    // =========================
+
+    function testSetL2SequencerGracePeriodZeroAllowed() public {
+        // Zero grace period is allowed (disables grace period check)
+        vm.prank(admin);
+        gateway.setL2SequencerGracePeriod(0);
+        assertEq(gateway.l2SequencerGracePeriodSec(), 0);
+    }
+
+    function testSetL2SequencerGracePeriodMultipleUpdates() public {
+        vm.prank(admin);
+        gateway.setL2SequencerGracePeriod(300);
+        assertEq(gateway.l2SequencerGracePeriodSec(), 300);
+
+        vm.prank(admin);
+        gateway.setL2SequencerGracePeriod(600);
+        assertEq(gateway.l2SequencerGracePeriodSec(), 600);
+
+        vm.prank(admin);
+        gateway.setL2SequencerGracePeriod(0);
+        assertEq(gateway.l2SequencerGracePeriodSec(), 0);
+    }
 }

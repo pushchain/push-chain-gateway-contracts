@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import { Test } from "forge-std/Test.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
+import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockTarget } from "../mocks/MockTarget.sol";
@@ -166,9 +167,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         emit UniversalTxExecuted(TX_ID, ORIGIN_CALLER, address(target), ZERO_ADDRESS, AMOUNT, PAYLOAD);
 
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
-        gateway.executeUniversalTx{ value: AMOUNT }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
 
         assertTrue(gateway.isExecuted(TX_ID));
         assertEq(address(target).balance, initialBalance + AMOUNT);
@@ -178,16 +177,12 @@ contract GatewayExecuteUniversalTxTest is Test {
         vm.deal(tss, AMOUNT - 1);
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.executeUniversalTx{ value: AMOUNT - 1 }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT - 1 }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
 
         vm.deal(tss, AMOUNT + 1);
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.executeUniversalTx{ value: AMOUNT + 1 }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT + 1 }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
     }
 
     function testExecuteUniversalTx_NativePath_NonPayableTarget_Reverts() public {
@@ -207,9 +202,7 @@ contract GatewayExecuteUniversalTxTest is Test {
 
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
         vm.expectRevert(abi.encodeWithSelector(Errors.ExecutionFailed.selector));
-        gateway.executeUniversalTx{ value: AMOUNT }(
-            TX_ID, ORIGIN_CALLER, address(revertingTarget), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(revertingTarget), AMOUNT, PAYLOAD);
 
         assertFalse(gateway.isExecuted(TX_ID));
     }
@@ -277,7 +270,7 @@ contract GatewayExecuteUniversalTxTest is Test {
 
     function testExecuteUniversalTx_ERC20Path_SafeApproveFails_Reverts() public {
         approvalToken.setApprovalBehavior(MockTokenApprovalVariants.ApprovalBehavior.RETURN_FALSE);
-        
+
         // Transfer tokens from Vault (test contract) to Gateway
         approvalToken.transfer(address(gateway), AMOUNT);
 
@@ -563,9 +556,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         vm.deal(tss, AMOUNT);
 
         vm.prank(tss); // Native token executeUniversalTx requires TSS_ROLE
-        gateway.executeUniversalTx{ value: AMOUNT }(
-            TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD
-        );
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
 
         assertEq(address(target).balance, initialBalance + AMOUNT);
         assertTrue(gateway.isExecuted(TX_ID));
@@ -641,6 +632,356 @@ contract GatewayExecuteUniversalTxTest is Test {
 
         gateway.executeUniversalTx(TX_ID, ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
 
+        assertTrue(gateway.isExecuted(TX_ID));
+    }
+
+    // =========================
+    //   ENHANCED NATIVE TOKEN EXECUTION TESTS
+    // =========================
+
+    function testExecuteUniversalTx_NativePath_OnlyTSS_Reverts() public {
+        vm.deal(user, AMOUNT);
+
+        // Non-TSS user should not be able to execute native token transactions
+        vm.prank(user);
+        vm.expectRevert();
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
+
+        // TSS should be able to execute
+        vm.deal(tss, AMOUNT);
+        vm.prank(tss);
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
+        assertTrue(gateway.isExecuted(TX_ID));
+    }
+
+    function testExecuteUniversalTx_NativePath_EventEmission_Complete() public {
+        vm.deal(tss, AMOUNT);
+
+        // Expect complete event emission with all parameters
+        vm.expectEmit(true, true, true, true);
+        emit UniversalTxExecuted(TX_ID, ORIGIN_CALLER, address(target), ZERO_ADDRESS, AMOUNT, PAYLOAD);
+
+        vm.prank(tss);
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
+    }
+
+    function testExecuteUniversalTx_NativePath_EmptyPayload_Succeeds() public {
+        vm.deal(tss, AMOUNT);
+        uint256 initialBalance = address(target).balance;
+
+        vm.prank(tss);
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, EMPTY_PAYLOAD);
+
+        assertTrue(gateway.isExecuted(TX_ID));
+        assertEq(address(target).balance, initialBalance + AMOUNT);
+    }
+
+    function testExecuteUniversalTx_NativePath_ZeroOriginCaller_Reverts() public {
+        vm.deal(tss, AMOUNT);
+
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ZERO_ADDRESS, address(target), AMOUNT, PAYLOAD);
+    }
+
+    function testExecuteUniversalTx_NativePath_ZeroTarget_Reverts() public {
+        vm.deal(tss, AMOUNT);
+
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, ZERO_ADDRESS, AMOUNT, PAYLOAD);
+    }
+
+    function testExecuteUniversalTx_NativePath_ZeroAmount_Reverts() public {
+        vm.deal(tss, 1);
+
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        gateway.executeUniversalTx{ value: 1 }(TX_ID, ORIGIN_CALLER, address(target), 0, PAYLOAD);
+    }
+
+    function testExecuteUniversalTx_NativePath_DuplicateTxID_Reverts() public {
+        vm.deal(tss, AMOUNT * 2);
+
+        // First execution succeeds
+        vm.prank(tss);
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
+
+        // Second execution with same txID reverts
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
+    }
+
+    function testExecuteUniversalTx_NativePath_ComplexPayload_Succeeds() public {
+        vm.deal(tss, AMOUNT);
+        // Use a payload that works with native ETH (receiveFunds or any payable function)
+        bytes memory complexPayload = abi.encodeWithSignature("receiveFunds()");
+
+        vm.prank(tss);
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, complexPayload);
+
+        assertTrue(gateway.isExecuted(TX_ID));
+        assertEq(target.lastCaller(), address(gateway));
+        assertEq(target.lastAmount(), AMOUNT);
+    }
+
+    function testExecuteUniversalTx_NativePath_WhenPaused_Reverts() public {
+        vm.deal(tss, AMOUNT);
+
+        vm.prank(admin);
+        gateway.pause();
+
+        vm.prank(tss);
+        vm.expectRevert();
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
+    }
+
+    function testExecuteUniversalTx_NativePath_StateNotUpdatedOnRevert() public {
+        vm.deal(tss, AMOUNT);
+
+        // Try to execute with reverting target
+        vm.prank(tss);
+        vm.expectRevert(abi.encodeWithSelector(Errors.ExecutionFailed.selector));
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(revertingTarget), AMOUNT, PAYLOAD);
+
+        // State should not be updated
+        assertFalse(gateway.isExecuted(TX_ID));
+
+        // Should be able to retry with valid target
+        vm.prank(tss);
+        gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
+        assertTrue(gateway.isExecuted(TX_ID));
+    }
+
+    // =========================
+    //   WITHDRAW FUNDS (ERC20) TESTS
+    // =========================
+
+    function testWithdrawFunds_Success() public {
+        bytes32 txID = keccak256("withdraw-funds-1");
+        address recipient = address(0x999);
+        uint256 withdrawAmount = 500e18;
+
+        // Transfer tokens to gateway
+        token.transfer(address(gateway), withdrawAmount);
+
+        uint256 initialRecipientBalance = token.balanceOf(recipient);
+        uint256 initialGatewayBalance = token.balanceOf(address(gateway));
+
+        // Expect WithdrawToken event
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGateway.WithdrawToken(txID, ORIGIN_CALLER, address(token), recipient, withdrawAmount);
+
+        // Execute as Vault (this contract has VAULT_ROLE)
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), recipient, withdrawAmount);
+
+        assertTrue(gateway.isExecuted(txID));
+        assertEq(token.balanceOf(recipient), initialRecipientBalance + withdrawAmount);
+        assertEq(token.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
+    }
+
+    function testWithdrawFunds_OnlyVault_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-2");
+        token.transfer(address(gateway), AMOUNT);
+
+        // Non-Vault user should not be able to withdraw funds
+        vm.prank(user);
+        vm.expectRevert();
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT);
+
+        // Vault should be able to withdraw
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        assertTrue(gateway.isExecuted(txID));
+    }
+
+    function testWithdrawFunds_WhenPaused_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-3");
+        token.transfer(address(gateway), AMOUNT);
+
+        vm.prank(admin);
+        gateway.pause();
+
+        vm.expectRevert();
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT);
+    }
+
+    function testWithdrawFunds_DuplicateTxID_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-4");
+        token.transfer(address(gateway), AMOUNT * 2);
+
+        // First withdrawal succeeds
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT);
+
+        // Second withdrawal with same txID reverts
+        vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT);
+    }
+
+    function testWithdrawFunds_ZeroOriginCaller_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-5");
+        token.transfer(address(gateway), AMOUNT);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        gateway.withdrawFunds(txID, ZERO_ADDRESS, address(token), address(target), AMOUNT);
+    }
+
+    function testWithdrawFunds_ZeroRecipient_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-6");
+        token.transfer(address(gateway), AMOUNT);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), ZERO_ADDRESS, AMOUNT);
+    }
+
+    function testWithdrawFunds_ZeroAmount_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-7");
+        token.transfer(address(gateway), AMOUNT);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), 0);
+    }
+
+    function testWithdrawFunds_ZeroToken_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-8");
+        token.transfer(address(gateway), AMOUNT);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, ZERO_ADDRESS, address(target), AMOUNT);
+    }
+
+    function testWithdrawFunds_InsufficientBalance_Reverts() public {
+        bytes32 txID = keccak256("withdraw-funds-9");
+        uint256 largeAmount = AMOUNT * 2;
+
+        // Transfer only a small amount
+        token.transfer(address(gateway), AMOUNT);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), largeAmount);
+    }
+
+    function testWithdrawFunds_MultipleTokens_Success() public {
+        bytes32 txID1 = keccak256("withdraw-funds-10");
+        bytes32 txID2 = keccak256("withdraw-funds-11");
+
+        // Transfer both tokens
+        token.transfer(address(gateway), AMOUNT);
+        usdtToken.transfer(address(gateway), 1000e6);
+
+        // Withdraw tokenA
+        gateway.withdrawFunds(txID1, ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        assertTrue(gateway.isExecuted(txID1));
+
+        // Withdraw USDT
+        gateway.withdrawFunds(txID2, ORIGIN_CALLER, address(usdtToken), address(target), 1000e6);
+        assertTrue(gateway.isExecuted(txID2));
+    }
+
+    function testWithdrawFunds_EventEmission_Complete() public {
+        bytes32 txID = keccak256("withdraw-funds-12");
+        address recipient = address(0x888);
+        token.transfer(address(gateway), AMOUNT);
+
+        // Expect complete event emission
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGateway.WithdrawToken(txID, ORIGIN_CALLER, address(token), recipient, AMOUNT);
+
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), recipient, AMOUNT);
+    }
+
+    function testWithdrawFunds_PartialWithdrawal_Success() public {
+        bytes32 txID = keccak256("withdraw-funds-13");
+        uint256 totalAmount = AMOUNT * 2;
+        uint256 withdrawAmount = AMOUNT;
+
+        token.transfer(address(gateway), totalAmount);
+
+        uint256 initialGatewayBalance = token.balanceOf(address(gateway));
+        uint256 initialRecipientBalance = token.balanceOf(address(target));
+
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), withdrawAmount);
+
+        assertEq(token.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
+        assertEq(token.balanceOf(address(target)), initialRecipientBalance + withdrawAmount);
+        assertTrue(gateway.isExecuted(txID));
+    }
+
+    function testWithdrawFunds_StateNotUpdatedOnRevert() public {
+        bytes32 txID = keccak256("withdraw-funds-14");
+        uint256 largeAmount = AMOUNT * 2;
+
+        // Transfer only a small amount
+        token.transfer(address(gateway), AMOUNT);
+
+        // Try to withdraw more than available
+        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), largeAmount);
+
+        // State should not be updated
+        assertFalse(gateway.isExecuted(txID));
+
+        // Should be able to withdraw the available amount
+        gateway.withdrawFunds(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        assertTrue(gateway.isExecuted(txID));
+    }
+
+    // =========================
+    //   ENHANCED ERC20 EXECUTION TESTS
+    // =========================
+
+    function testExecuteUniversalTx_ERC20Path_RemainingTokensReturnedToVault() public {
+        bytes32 txID = keccak256("remaining-tokens");
+        uint256 extraAmount = 100e18;
+        uint256 totalAmount = AMOUNT + extraAmount;
+
+        // Transfer more tokens than needed to gateway
+        token.transfer(address(gateway), totalAmount);
+
+        // Get vault balance after transfer (before execution)
+        uint256 vaultBalanceAfterTransfer = token.balanceOf(address(this));
+
+        // Verify gateway has the tokens
+        assertEq(token.balanceOf(address(gateway)), totalAmount);
+
+        // Use a payload that transfers tokens (receiveToken function)
+        bytes memory tokenPayload = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), AMOUNT);
+
+        gateway.executeUniversalTx(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT, tokenPayload);
+
+        // Remaining tokens should be returned to vault
+        // Gateway should have 0 balance after execution (target received AMOUNT, vault received extraAmount)
+        assertEq(token.balanceOf(address(gateway)), 0);
+        // Vault should have received the extra tokens back (balance increased by extraAmount)
+        assertEq(token.balanceOf(address(this)), vaultBalanceAfterTransfer + extraAmount);
+        // Target should have received AMOUNT
+        assertEq(token.balanceOf(address(target)), AMOUNT);
+    }
+
+    function testExecuteUniversalTx_ERC20Path_NoRemainingTokens() public {
+        bytes32 txID = keccak256("no-remaining");
+        uint256 vaultBalanceBefore = token.balanceOf(address(this));
+
+        // Transfer exact amount needed
+        token.transfer(address(gateway), AMOUNT);
+
+        gateway.executeUniversalTx(txID, ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
+
+        // No tokens should be returned (gateway balance is 0)
+        assertEq(token.balanceOf(address(gateway)), 0);
+        assertEq(token.balanceOf(address(this)), vaultBalanceBefore);
+    }
+
+    function testExecuteUniversalTx_ERC20Path_OnlyVault_Reverts() public {
+        token.transfer(address(gateway), AMOUNT);
+
+        // Non-Vault user should not be able to execute
+        vm.prank(user);
+        vm.expectRevert();
+        gateway.executeUniversalTx(TX_ID, ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
+
+        // Vault should be able to execute
+        gateway.executeUniversalTx(TX_ID, ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
         assertTrue(gateway.isExecuted(TX_ID));
     }
 }
