@@ -840,13 +840,13 @@ contract UniversalGatewayV0 is
     /// @inheritdoc IUniversalGatewayV0
     function withdraw(
         bytes32 txID,
-        address originCaller,
+        address ueaAddress,
         address to,
         uint256 amount
     ) external payable nonReentrant whenNotPaused onlyTSS {
         if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
-        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
         
@@ -854,19 +854,19 @@ contract UniversalGatewayV0 is
         (bool ok,) = payable(to).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit WithdrawToken(txID, originCaller, address(0), to, amount);
+        emit WithdrawToken(txID, ueaAddress, address(0), to, amount);
     }
     //@inheritdocs IUniversalGatewayV0
     function withdrawTokens(
         bytes32 txID,
-        address originCaller,
+        address ueaAddress,
         address token,
         address to,
         uint256 amount
     ) external nonReentrant whenNotPaused onlyTSS {
         if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
-        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
+        if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (token == address(0)) revert Errors.InvalidInput();
         
@@ -874,7 +874,7 @@ contract UniversalGatewayV0 is
 
         isExecuted[txID] = true;
         IERC20(token).safeTransfer(to, amount);
-        emit WithdrawToken(txID, originCaller, token, to, amount);
+        emit WithdrawToken(txID, ueaAddress, token, to, amount);
     }
 
     
