@@ -336,16 +336,16 @@ contract GatewayTSSFunctionsTest is BaseTest {
     function testWithdraw_Native_Success() public {
         bytes32 txID = bytes32(uint256(24));
         uint256 amount = 5 ether;
-        address originCaller = user2;
+        address ueaAddress = user2;
 
         uint256 initialBalance = user1.balance;
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, originCaller, address(0), user1, amount);
+        emit IUniversalGateway.WithdrawToken(txID, ueaAddress, address(0), user1, amount);
 
         vm.deal(tss, amount);
         vm.prank(tss);
-        gateway.withdraw{ value: amount }(txID, originCaller, user1, amount);
+        gateway.withdraw{ value: amount }(txID, ueaAddress, user1, amount);
 
         assertEq(user1.balance, initialBalance + amount);
     }
@@ -386,7 +386,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         gateway.withdraw{ value: amount }(txID, user1, address(0), amount);
     }
 
-    function testWithdraw_Native_ZeroOriginCaller_Reverts() public {
+    function testWithdraw_Native_ZeroueaAddress_Reverts() public {
         bytes32 txID = bytes32(uint256(28));
         uint256 amount = 1 ether;
 
@@ -431,15 +431,15 @@ contract GatewayTSSFunctionsTest is BaseTest {
     function testWithdraw_Native_EmitsCorrectEvent() public {
         bytes32 txID = bytes32(uint256(32));
         uint256 amount = 3 ether;
-        address originCaller = user2;
+        address ueaAddress = user2;
         address recipient = user1;
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, originCaller, address(0), recipient, amount);
+        emit IUniversalGateway.WithdrawToken(txID, ueaAddress, address(0), recipient, amount);
 
         vm.deal(tss, amount);
         vm.prank(tss);
-        gateway.withdraw{ value: amount }(txID, originCaller, recipient, amount);
+        gateway.withdraw{ value: amount }(txID, ueaAddress, recipient, amount);
     }
 
     function testWithdraw_Native_MultipleSequentialWithdrawals() public {
