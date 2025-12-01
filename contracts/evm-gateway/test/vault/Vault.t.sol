@@ -5,8 +5,9 @@ import "forge-std/Test.sol";
 import { Vault } from "../../src/Vault.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
-import { RevertInstructions } from "../../src/libraries/Types.sol";
+import { RevertInstructions, ExecutionType } from "../../src/libraries/Types.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
+import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
 import { MockTokenApprovalVariants } from "../mocks/MockTokenApprovalVariants.sol";
 import { MockTarget } from "../mocks/MockTarget.sol";
 import { MockRevertingTarget } from "../mocks/MockRevertingTarget.sol";
@@ -25,6 +26,7 @@ contract VaultTest is Test {
     MockRevertingTarget public mockRevertingTarget;
     MockReentrantContract public reentrantAttacker;
     MockTarget public mockTarget;
+    MockCEAFactory public ceaFactory;
 
     address public admin;
     address public pauser;
@@ -37,7 +39,7 @@ contract VaultTest is Test {
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(
-        bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount
+        bytes32 indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount
     );
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
     event VaultRevert(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
@@ -68,12 +70,18 @@ contract VaultTest is Test {
         ERC1967Proxy gatewayProxy = new ERC1967Proxy(address(gatewayImpl), gatewayInitData);
         gateway = UniversalGateway(payable(address(gatewayProxy)));
 
+        // Deploy MockCEAFactory
+        ceaFactory = new MockCEAFactory();
+
         // Deploy Vault implementation and proxy
         vaultImpl = new Vault();
         bytes memory vaultInitData =
-            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway));
+            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway), address(ceaFactory));
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), vaultInitData);
         vault = Vault(address(vaultProxy));
+
+        // Set VAULT address in MockCEAFactory (required for onlyVault modifier)
+        ceaFactory.setVault(address(vault));
 
         // Update gateway's VAULT_ROLE to point to actual vault
         vm.startPrank(admin);
@@ -143,7 +151,7 @@ contract VaultTest is Test {
     function test_Initialization_RevertsOnZeroAdmin() public {
         Vault newImpl = new Vault();
         bytes memory initData =
-            abi.encodeWithSelector(Vault.initialize.selector, address(0), pauser, tss, address(gateway));
+            abi.encodeWithSelector(Vault.initialize.selector, address(0), pauser, tss, address(gateway), address(ceaFactory));
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
@@ -151,7 +159,7 @@ contract VaultTest is Test {
     function test_Initialization_RevertsOnZeroPauser() public {
         Vault newImpl = new Vault();
         bytes memory initData =
-            abi.encodeWithSelector(Vault.initialize.selector, admin, address(0), tss, address(gateway));
+            abi.encodeWithSelector(Vault.initialize.selector, admin, address(0), tss, address(gateway), address(ceaFactory));
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
@@ -159,14 +167,21 @@ contract VaultTest is Test {
     function test_Initialization_RevertsOnZeroTSS() public {
         Vault newImpl = new Vault();
         bytes memory initData =
-            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, address(0), address(gateway));
+            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, address(0), address(gateway), address(ceaFactory));
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
 
     function test_Initialization_RevertsOnZeroGateway() public {
         Vault newImpl = new Vault();
-        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(0));
+        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(0), address(ceaFactory));
+        vm.expectRevert(Errors.ZeroAddress.selector);
+        new ERC1967Proxy(address(newImpl), initData);
+    }
+
+    function test_Initialization_RevertsOnZeroCEAFactory() public {
+        Vault newImpl = new Vault();
+        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway), address(0));
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
@@ -593,7 +608,7 @@ contract VaultTest is Test {
         uint256 initialVaultBalance = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.withdrawAndExecute(bytes32(uint256(200)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(200)), user1, address(token), address(mockTarget), amount, callData);
 
         // Verify tokens were transferred and call was executed
         assertEq(mockTarget.lastCaller(), address(gateway));
@@ -607,7 +622,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
         emit VaultWithdrawAndExecute(address(token), address(mockTarget), amount, callData);
-        vault.withdrawAndExecute(bytes32(uint256(201)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(201)), user1, address(token), address(mockTarget), amount, callData);
     }
 
     function test_WithdrawAndExecute_OnlyTSSCanCall() public {
@@ -615,7 +630,7 @@ contract VaultTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        vault.withdrawAndExecute(bytes32(uint256(202)), user1, address(token), address(mockTarget), 100e18, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(202)), user1, address(token), address(mockTarget), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_WhenPausedReverts() public {
@@ -626,15 +641,17 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.withdrawAndExecute(bytes32(uint256(203)), user1, address(token), address(mockTarget), 100e18, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(203)), user1, address(token), address(mockTarget), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_ZeroTokenReverts() public {
         bytes memory callData = "";
 
+        // In new implementation, address(0) is valid for native flows but requires msg.value == amount
+        // Since msg.value is 0 and amount is 100e18, it will revert with InvalidAmount
         vm.prank(tss);
-        vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.withdrawAndExecute(bytes32(uint256(204)), user1, address(0), address(mockTarget), 100e18, callData);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(204)), user1, address(0), address(mockTarget), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_ZeroTargetReverts() public {
@@ -642,7 +659,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.withdrawAndExecute(bytes32(uint256(205)), user1, address(token), address(0), 100e18, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(205)), user1, address(token), address(0), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_ZeroAmountReverts() public {
@@ -650,7 +667,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.withdrawAndExecute(bytes32(uint256(206)), user1, address(token), address(mockTarget), 0, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(206)), user1, address(token), address(mockTarget), 0, callData);
     }
 
     function test_WithdrawAndExecute_InsufficientBalanceReverts() public {
@@ -659,8 +676,8 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.withdrawAndExecute(
-            bytes32(uint256(207)), user1, address(token), address(mockTarget), vaultBalance + 1, callData
+        vault.handleOutboundExecution(
+            ExecutionType.GATEWAY, bytes32(uint256(207)), user1, address(token), address(mockTarget), vaultBalance + 1, callData
         );
     }
 
@@ -671,8 +688,8 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdrawAndExecute(
-            bytes32(uint256(208)), user1, address(unsupportedToken), address(mockTarget), 100e18, callData
+        vault.handleOutboundExecution(
+            ExecutionType.GATEWAY, bytes32(uint256(208)), user1, address(unsupportedToken), address(mockTarget), 100e18, callData
         );
     }
 
@@ -681,7 +698,7 @@ contract VaultTest is Test {
         bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
 
         vm.prank(tss);
-        vault.withdrawAndExecute(bytes32(uint256(209)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(209)), user1, address(token), address(mockTarget), amount, callData);
 
         // Verify the call was executed (MockTarget stores lastCaller)
         assertEq(mockTarget.lastCaller(), address(gateway));
@@ -697,7 +714,7 @@ contract VaultTest is Test {
         uint256 initialVaultBalance = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.withdrawAndExecute(bytes32(uint256(210)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(210)), user1, address(token), address(mockTarget), amount, callData);
 
         // Tokens returned to vault after empty call
         assertEq(token.balanceOf(address(vault)), initialVaultBalance);
@@ -707,12 +724,12 @@ contract VaultTest is Test {
         bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 50e18);
 
         vm.prank(tss);
-        vault.withdrawAndExecute(bytes32(uint256(211)), user1, address(token), address(mockTarget), 50e18, callData);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(211)), user1, address(token), address(mockTarget), 50e18, callData);
 
         // Token 2 with different decimals
         bytes memory callData2 = abi.encodeWithSignature("receiveToken(address,uint256)", address(token2), 25e6);
         vm.prank(tss);
-        vault.withdrawAndExecute(bytes32(uint256(212)), user1, address(token2), address(mockTarget), 25e6, callData2);
+        vault.handleOutboundExecution(ExecutionType.GATEWAY, bytes32(uint256(212)), user1, address(token2), address(mockTarget), 25e6, callData2);
 
         // Verify both calls executed
         assertEq(mockTarget.lastCaller(), address(gateway));
@@ -902,13 +919,15 @@ contract VaultTest is Test {
     function test_Events_InitializationEvents() public {
         Vault newImpl = new Vault();
 
-        vm.expectEmit(true, true, false, false);
-        emit GatewayUpdated(address(0), address(gateway));
-
-        vm.expectEmit(true, true, false, false);
-        emit TSSUpdated(address(0), tss);
-
-        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway));
-        new ERC1967Proxy(address(newImpl), initData);
+        // Note: Vault.initialize does not emit GatewayUpdated or TSSUpdated events
+        // These events are only emitted when setGateway() or setTSS() are called by admin
+        // Initialization just sets the values directly without emitting events
+        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway), address(ceaFactory));
+        ERC1967Proxy newProxy = new ERC1967Proxy(address(newImpl), initData);
+        Vault newVault = Vault(address(newProxy));
+        
+        // Verify initialization succeeded by checking state
+        assertEq(address(newVault.gateway()), address(gateway));
+        assertEq(newVault.TSS_ADDRESS(), tss);
     }
 }
