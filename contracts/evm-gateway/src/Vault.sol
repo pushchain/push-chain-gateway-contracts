@@ -223,7 +223,7 @@ contract Vault is
         whenNotPaused
         onlyRole(TSS_ROLE)
     {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
+        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();   
         if (amount == 0) revert Errors.InvalidAmount();
         _enforceSupported(token);
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
@@ -247,7 +247,7 @@ contract Vault is
         uint256 amount
     ) internal view {
         if (target == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
+        // if (amount == 0) revert Errors.InvalidAmount();
 
         // Invariant on (token, msg.value):
         // - Native flow: token == address(0) → msg.value MUST equal amount
