@@ -941,6 +941,143 @@ async function run() {
         console.log(`  ✅ Correctly rejected insufficient native amount (InvalidAmount error)`);
     }
 
+    // Security Test: Attempt to redirect SPL tokens to user's own account (should fail)
+    if (tokenLoaded) {
+        console.log("  - Testing SECURITY: Attempt to redirect SPL tokens to user's own account (should fail)...");
+        const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
+            adminProvider.connection as any,
+            adminKeypair,
+            mint,
+            vaultPda,
+            true
+        );
+
+        // Try to pass user's own token account as gateway_token_account (the attack vector)
+        const maliciousSplFundsReq = {
+            recipient: Array.from(Buffer.from("9999999999999999999999999999999999999999", "hex").subarray(0, 20)),
+            token: mint,
+            amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
+            payload: Buffer.from([]),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("malicious_spl_sig"),
+        };
+
+        try {
+            await userProgram.methods
+                .sendUniversalTx(maliciousSplFundsReq, new anchor.BN(0))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: tokenAccount,
+                    gatewayTokenAccount: tokenAccount, // ⚠️ ATTACK: User's own account instead of vault ATA
+                    user: user,
+                    priceUpdate: PRICE_ACCOUNT,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: getTokenRateLimitPda(mint),
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([userKeypair])
+                .rpc();
+            assert.fail("Should have rejected user's own token account as gateway_token_account");
+        } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            assert(
+                errorCode === "InvalidOwner" || errorCode === "InvalidAccount",
+                `Expected InvalidOwner or InvalidAccount but got: ${errorCode}`
+            );
+            console.log(`  ✅ SECURITY: Correctly rejected user's own token account (${errorCode} error)`);
+        }
+
+        // Also test with FUNDS_AND_PAYLOAD route
+        console.log("  - Testing SECURITY: Attempt to redirect SPL tokens in FUNDS_AND_PAYLOAD route (should fail)...");
+        const maliciousSplFundsPayloadReq = {
+            recipient: Array.from(Buffer.from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "hex").subarray(0, 20)),
+            token: mint,
+            amount: new anchor.BN(500 * Math.pow(10, tokenInfo.decimals)),
+            payload: serializePayload(createPayload(99)),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("malicious_spl_payload_sig"),
+        };
+
+        try {
+            await userProgram.methods
+                .sendUniversalTx(maliciousSplFundsPayloadReq, await getDynamicGasAmount(1.5, 0.01))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: tokenAccount,
+                    gatewayTokenAccount: tokenAccount, // ⚠️ ATTACK: User's own account instead of vault ATA
+                    user: user,
+                    priceUpdate: PRICE_ACCOUNT,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: getTokenRateLimitPda(mint),
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([userKeypair])
+                .rpc();
+            assert.fail("Should have rejected user's own token account in FUNDS_AND_PAYLOAD route");
+        } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            assert(
+                errorCode === "InvalidOwner" || errorCode === "InvalidAccount",
+                `Expected InvalidOwner or InvalidAccount but got: ${errorCode}`
+            );
+            console.log(`  ✅ SECURITY: Correctly rejected user's own token account in FUNDS_AND_PAYLOAD (${errorCode} error)`);
+        }
+
+        // Test with wrong mint (correct owner, wrong token)
+        console.log("  - Testing SECURITY: Attempt to use vault ATA with wrong mint (should fail)...");
+        // Create a different token for this test (or use a dummy mint)
+        const wrongMint = Keypair.generate().publicKey; // Dummy mint that doesn't exist
+        const wrongMintVaultAta = PublicKey.findProgramAddressSync(
+            [
+                vaultPda.toBuffer(),
+                spl.TOKEN_PROGRAM_ID.toBuffer(),
+                wrongMint.toBuffer(),
+            ],
+            spl.ASSOCIATED_TOKEN_PROGRAM_ID
+        )[0];
+
+        const wrongMintReq = {
+            recipient: Array.from(Buffer.from("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "hex").subarray(0, 20)),
+            token: mint, // Correct mint
+            amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
+            payload: Buffer.from([]),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("wrong_mint_sig"),
+        };
+
+        try {
+            await userProgram.methods
+                .sendUniversalTx(wrongMintReq, new anchor.BN(0))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: tokenAccount,
+                    gatewayTokenAccount: wrongMintVaultAta, // ⚠️ ATTACK: Vault ATA but for wrong mint
+                    user: user,
+                    priceUpdate: PRICE_ACCOUNT,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: getTokenRateLimitPda(mint),
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([userKeypair])
+                .rpc();
+            assert.fail("Should have rejected vault ATA with wrong mint");
+        } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            // This might fail earlier (account doesn't exist) or with InvalidMint
+            assert(
+                errorCode === "InvalidMint" || errorCode === "InvalidAccount" || error.message.includes("AccountNotInitialized"),
+                `Expected InvalidMint, InvalidAccount, or AccountNotInitialized but got: ${errorCode}`
+            );
+            console.log(`  ✅ SECURITY: Correctly rejected vault ATA with wrong mint (${errorCode} error)`);
+        }
+    }
+
     console.log("✅ Edge cases and negative tests completed!\n");
 
     console.log("✅ All sendUniversalTx tests completed!\n");

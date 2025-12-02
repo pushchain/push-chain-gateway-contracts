@@ -3,10 +3,11 @@ use crate::instructions::legacy::process_add_funds;
 use crate::state::*;
 use crate::utils::*;
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::system_program;
-use anchor_spl::token::{self, spl_token, Token, Transfer};
+use anchor_spl::token::{self, spl_token, Token, TokenAccount, Transfer};
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
-
+use spl_token::state::Account as SplAccount;
 // =========================
 //           DEPOSITS
 // =========================
@@ -321,21 +322,31 @@ fn send_tx_with_funds_route(
 
                 // Transfer SPL
                 let user_token_info = ctx.accounts.user_token_account.to_account_info();
-                let gateway_token_info = ctx.accounts.gateway_token_account.to_account_info();
                 require!(
                     user_token_info.owner == &spl_token::ID,
                     GatewayError::InvalidOwner
                 );
+
+                // SECURITY: Validate gateway_token_account is the vault's ATA for this token
+                // This prevents users from providing their own token account and stealing funds
+                let data = ctx
+                    .accounts
+                    .gateway_token_account
+                    .try_borrow_data()?
+                    .to_vec();
+                let parsed =
+                    SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
                 require!(
-                    gateway_token_info.owner == &spl_token::ID,
+                    parsed.owner == ctx.accounts.vault.key(),
                     GatewayError::InvalidOwner
                 );
+                require!(parsed.mint == req.token, GatewayError::InvalidMint);
 
                 let cpi_ctx = CpiContext::new(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
                         from: user_token_info,
-                        to: gateway_token_info,
+                        to: ctx.accounts.gateway_token_account.to_account_info(),
                         authority: ctx.accounts.user.to_account_info(),
                     },
                 );
@@ -419,21 +430,31 @@ fn send_tx_with_funds_route(
 
                 // Transfer SPL
                 let user_token_info = ctx.accounts.user_token_account.to_account_info();
-                let gateway_token_info = ctx.accounts.gateway_token_account.to_account_info();
                 require!(
                     user_token_info.owner == &spl_token::ID,
                     GatewayError::InvalidOwner
                 );
+
+                // SECURITY: Validate gateway_token_account is the vault's ATA for this token
+                // This prevents users from providing their own token account and stealing funds
+                let data = ctx
+                    .accounts
+                    .gateway_token_account
+                    .try_borrow_data()?
+                    .to_vec();
+                let parsed =
+                    SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
                 require!(
-                    gateway_token_info.owner == &spl_token::ID,
+                    parsed.owner == ctx.accounts.vault.key(),
                     GatewayError::InvalidOwner
                 );
+                require!(parsed.mint == req.token, GatewayError::InvalidMint);
 
                 let cpi_ctx = CpiContext::new(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
                         from: user_token_info,
-                        to: gateway_token_info,
+                        to: ctx.accounts.gateway_token_account.to_account_info(),
                         authority: ctx.accounts.user.to_account_info(),
                     },
                 );
@@ -509,25 +530,24 @@ pub fn send_funds(
         );
 
         // For SPL tokens, ensure accounts are owned by token program
-        // (same pattern as send_tx_with_funds for consistency)
-        let user_token_account_info = &ctx.accounts.user_token_account.to_account_info();
-        let gateway_token_account_info = &ctx.accounts.gateway_token_account.to_account_info();
-
         require!(
-            user_token_account_info.owner == &spl_token::ID,
-            GatewayError::InvalidOwner
-        );
-        require!(
-            gateway_token_account_info.owner == &spl_token::ID,
+            ctx.accounts.user_token_account.to_account_info().owner == &spl_token::ID,
             GatewayError::InvalidOwner
         );
 
-        // Additional validation will happen in the token::transfer CPI below
-        // which will fail if mint doesn't match or accounts are invalid
-
-        // Note: Epoch-based rate limiting for SPL tokens would be implemented here
-        // For now, we're focusing on block-based USD cap limiting for SOL deposits
-        // SPL token rate limiting can be added in a future iteration with proper account handling
+        // SECURITY: Validate gateway_token_account is the vault's ATA for this token
+        // This prevents users from providing their own token account and stealing funds
+        let data = ctx
+            .accounts
+            .gateway_token_account
+            .try_borrow_data()?
+            .to_vec();
+        let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
+        require!(
+            parsed.owner == ctx.accounts.vault.key(),
+            GatewayError::InvalidOwner
+        );
+        require!(parsed.mint == bridge_token, GatewayError::InvalidMint);
 
         let cpi_context = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -638,27 +658,25 @@ pub fn send_tx_with_funds(
             GatewayError::TokenNotWhitelisted
         );
 
-        // For SPL tokens, validate basic account ownership - detailed validation
-        // happens in the transfer CPI which will fail if accounts are invalid
-        let user_token_account_info = &ctx.accounts.user_token_account.to_account_info();
-        let gateway_token_account_info = &ctx.accounts.gateway_token_account.to_account_info();
-
-        // Basic validation: ensure accounts are owned by token program
+        // For SPL tokens, validate basic account ownership
         require!(
-            user_token_account_info.owner == &spl_token::ID,
-            GatewayError::InvalidOwner
-        );
-        require!(
-            gateway_token_account_info.owner == &spl_token::ID,
+            ctx.accounts.user_token_account.to_account_info().owner == &spl_token::ID,
             GatewayError::InvalidOwner
         );
 
-        // Additional validation will happen in the token::transfer CPI below
-        // which will fail if mint doesn't match or accounts are invalid
-
-        // Note: Epoch-based rate limiting for SPL tokens would be implemented here
-        // For now, we're focusing on block-based USD cap limiting for SOL deposits
-        // SPL token rate limiting can be added in a future iteration with proper account handling
+        // SECURITY: Validate gateway_token_account is the vault's ATA for this token
+        // This prevents users from providing their own token account and stealing funds
+        let data = ctx
+            .accounts
+            .gateway_token_account
+            .try_borrow_data()?
+            .to_vec();
+        let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
+        require!(
+            parsed.owner == ctx.accounts.vault.key(),
+            GatewayError::InvalidOwner
+        );
+        require!(parsed.mint == bridge_token, GatewayError::InvalidMint);
 
         // Transfer SPL tokens to gateway vault
         let cpi_context = CpiContext::new(
