@@ -1535,13 +1535,24 @@ async function run() {
         // If not initialized or IDL not exposed yet, keep defaults
     }
 
-    // Generate tx_id and origin_caller for withdraw
-    const txId = Array.from(Buffer.alloc(32, Math.floor(Math.random() * 256)));
-    const originCaller = Array.from(Buffer.alloc(20, Math.floor(Math.random() * 256)));
-    const [executedTxPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("executed_tx"), Buffer.from(txId)],
-        program.programId
-    );
+    // Generate tx_id and origin_caller for withdraw (use crypto for proper randomness)
+    // Keep generating until we get a unique tx_id (account doesn't exist)
+    let txId: number[];
+    let executedTxPda: PublicKey;
+    let attempts = 0;
+    do {
+        txId = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer());
+        [executedTxPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("executed_tx"), Buffer.from(txId)],
+            program.programId
+        );
+        attempts++;
+        if (attempts > 10) {
+            throw new Error("Could not generate unique tx_id after 10 attempts");
+        }
+    } while (await connection.getAccountInfo(executedTxPda) !== null);
+
+    const originCaller = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
 
     const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
     const instructionId = Buffer.from([1]); // 1 = SOL withdraw
@@ -1616,13 +1627,24 @@ async function run() {
             admin
         );
 
-        // Generate tx_id and origin_caller for SPL withdraw
-        const txIdSPL = Array.from(Buffer.alloc(32, Math.floor(Math.random() * 256)));
-        const originCallerSPL = Array.from(Buffer.alloc(20, Math.floor(Math.random() * 256)));
-        const [executedTxPdaSPL] = PublicKey.findProgramAddressSync(
-            [Buffer.from("executed_tx"), Buffer.from(txIdSPL)],
-            program.programId
-        );
+        // Generate tx_id and origin_caller for SPL withdraw (use crypto for proper randomness)
+        // Keep generating until we get a unique tx_id (account doesn't exist)
+        let txIdSPL: number[];
+        let executedTxPdaSPL: PublicKey;
+        let attempts = 0;
+        do {
+            txIdSPL = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer());
+            [executedTxPdaSPL] = PublicKey.findProgramAddressSync(
+                [Buffer.from("executed_tx"), Buffer.from(txIdSPL)],
+                program.programId
+            );
+            attempts++;
+            if (attempts > 10) {
+                throw new Error("Could not generate unique tx_id after 10 attempts");
+            }
+        } while (await connection.getAccountInfo(executedTxPdaSPL) !== null);
+
+        const originCallerSPL = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
 
         // Build message for SPL withdraw using instruction_id=2
         const PREFIX_SPL = Buffer.from("PUSH_CHAIN_SVM");
@@ -1749,12 +1771,22 @@ async function run() {
         console.log(`Current TSS nonce: ${currentNonce}`);
         console.log(`TSS chain ID: ${tssAccount.chainId}`);
 
-        // Generate tx_id for revert
-        const txIdRevert = Array.from(Buffer.alloc(32, Math.floor(Math.random() * 256)));
-        const [executedTxPdaRevert] = PublicKey.findProgramAddressSync(
-            [Buffer.from("executed_tx"), Buffer.from(txIdRevert)],
-            program.programId
-        );
+        // Generate tx_id for revert (use crypto for proper randomness)
+        // Keep generating until we get a unique tx_id (account doesn't exist)
+        let txIdRevert: number[];
+        let executedTxPdaRevert: PublicKey;
+        let attempts = 0;
+        do {
+            txIdRevert = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer());
+            [executedTxPdaRevert] = PublicKey.findProgramAddressSync(
+                [Buffer.from("executed_tx"), Buffer.from(txIdRevert)],
+                program.programId
+            );
+            attempts++;
+            if (attempts > 10) {
+                throw new Error("Could not generate unique tx_id for revert after 10 attempts");
+            }
+        } while (await connection.getAccountInfo(executedTxPdaRevert) !== null);
 
         // Create real message hash for revert withdraw (instruction_id = 3)
         const instructionId = 3;
