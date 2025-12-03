@@ -169,7 +169,7 @@ contract Vault is
     function _withdrawAndExecute(bytes32 txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data)
         private
     {
-        _validateExecutionParams(token, target, amount);
+        _validateExecutionParams(ueaAddress, token, target, amount);
         _enforceSupported(token);
 
         if (token != address(0)) {
@@ -194,7 +194,7 @@ contract Vault is
         bytes calldata data
     ) private { 
 
-        _validateExecutionParams(token, target, amount);
+        _validateExecutionParams(ueaAddress, token, target, amount);
         _enforceSupported(token);
 
         (address cea, bool isDeployed) = CEAFactory.getCEAForUEA(ueaAddress);
@@ -242,10 +242,12 @@ contract Vault is
         if (!gateway.isSupportedToken(token)) revert Errors.NotSupported();
     }
     function _validateExecutionParams(
+        address ueaAddress,
         address token,
         address target,
         uint256 amount
     ) internal view {
+        if (ueaAddress == address(0)) revert Errors.ZeroAddress();
         if (target == address(0)) revert Errors.ZeroAddress();
         // if (amount == 0) revert Errors.InvalidAmount();
 
