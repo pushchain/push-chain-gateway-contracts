@@ -5,6 +5,7 @@ import { TestCounter } from "../target/types/test_counter";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { encodeExecutePayload, decodeExecutePayload, instructionToPayloadFields } from "../app/execute-payload";
 import * as sharedState from "./shared-state";
 import { signTssMessage, buildExecuteAdditionalData, TssInstruction, GatewayAccountMeta } from "./helpers/tss";
 
@@ -239,7 +240,9 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            console.log("SOL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
 
+            const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId),
@@ -271,10 +274,14 @@ describe("Universal Gateway - Execute Tests", () => {
                 .signers([admin])
                 .rpc();
 
+            const balanceAfter = await provider.connection.getBalance(admin.publicKey);
+            console.log(`💰 Signer balance: ${balanceBefore / anchor.web3.LAMPORTS_PER_SOL} SOL → ${balanceAfter / anchor.web3.LAMPORTS_PER_SOL} SOL (deducted: ${(balanceBefore - balanceAfter) / anchor.web3.LAMPORTS_PER_SOL} SOL)`);
+
             await syncNonceFromChain();
             expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
 
             const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            console.log("SOL-only payload with zero amount counterAfter", counterAfter.value.toNumber());
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
             );
@@ -318,7 +325,9 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
             const recipientBefore = await provider.connection.getBalance(recipient.publicKey);
+            console.log("recipientBefore", recipientBefore, "\n", "counterBefore", counterBefore.value.toNumber());
 
+            const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId),
@@ -350,6 +359,9 @@ describe("Universal Gateway - Execute Tests", () => {
                 .signers([admin])
                 .rpc();
 
+            const balanceAfter = await provider.connection.getBalance(admin.publicKey);
+            console.log(`💰 Signer balance: ${balanceBefore / anchor.web3.LAMPORTS_PER_SOL} SOL → ${balanceAfter / anchor.web3.LAMPORTS_PER_SOL} SOL (deducted: ${(balanceBefore - balanceAfter) / anchor.web3.LAMPORTS_PER_SOL} SOL)`);
+
             // Verify nonce incremented
             await syncNonceFromChain();
             expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
@@ -365,6 +377,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const recipientAfter = await provider.connection.getBalance(recipient.publicKey);
             expect(recipientAfter - recipientBefore).to.equal(amount.toNumber());
+            console.log("SOL transfer to test-counter counterAfter", counterAfter.value.toNumber(), "\n", "recipientAfter", recipientAfter, "\n", "recipientBefore", recipientBefore);
         });
 
         it("should reject duplicate tx_id (replay protection)", async () => {
@@ -524,7 +537,8 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
-
+            console.log("SPL token transfer to test-counter counterBefore", counterBefore.value.toNumber());
+            const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId),
@@ -560,6 +574,9 @@ describe("Universal Gateway - Execute Tests", () => {
                 .remainingAccounts(instructionAccountsToRemaining(counterIx))
                 .signers([admin])
                 .rpc();
+
+            const balanceAfter = await provider.connection.getBalance(admin.publicKey);
+            console.log(`💰 Signer balance: ${balanceBefore / anchor.web3.LAMPORTS_PER_SOL} SOL → ${balanceAfter / anchor.web3.LAMPORTS_PER_SOL} SOL (deducted: ${(balanceBefore - balanceAfter) / anchor.web3.LAMPORTS_PER_SOL} SOL)`);
 
             // Verify nonce incremented
             await syncNonceFromChain();
@@ -616,7 +633,8 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
-
+            console.log("SPL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
+            const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId),
@@ -653,6 +671,9 @@ describe("Universal Gateway - Execute Tests", () => {
                 .signers([admin])
                 .rpc();
 
+            const balanceAfter = await provider.connection.getBalance(admin.publicKey);
+            console.log(`💰 Signer balance: ${balanceBefore / anchor.web3.LAMPORTS_PER_SOL} SOL → ${balanceAfter / anchor.web3.LAMPORTS_PER_SOL} SOL (deducted: ${(balanceBefore - balanceAfter) / anchor.web3.LAMPORTS_PER_SOL} SOL)`);
+
             await syncNonceFromChain();
             expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
 
@@ -669,6 +690,209 @@ describe("Universal Gateway - Execute Tests", () => {
             );
             // No staging ATA should have been created for zero-amount SPL execution
             expect(stagingAtaInfo).to.be.null;
+        });
+    });
+
+    describe("execute payload encode/decode roundtrip", () => {
+        it("encodes, decodes, signs, and executes SOL payload", async () => {
+            await syncNonceFromChain();
+            const txId = generateTxId();
+            const sender = generateSender();
+            const incrementAmount = new anchor.BN(4);
+
+            const counterIx = await counterProgram.methods
+                .increment(incrementAmount)
+                .accounts({
+                    counter: counterKeypair.publicKey,
+                    authority: counterAuthority.publicKey,
+                })
+                .instruction();
+
+            const accounts = instructionAccountsToGatewayMetas(counterIx);
+            const tssAccount = await gatewayProgram.account.tssPda.fetch(tssPda);
+
+            const payloadFields = instructionToPayloadFields({
+                instruction: counterIx,
+                instructionId: 5,
+                chainId: tssAccount.chainId,
+                nonce: currentNonce,
+                amount: BigInt(0),
+                txId: new Uint8Array(txId),
+                sender: new Uint8Array(sender),
+            });
+
+            const encoded = encodeExecutePayload(payloadFields);
+            const decoded = decodeExecutePayload(encoded);
+
+            expect(decoded.chainId).to.equal(payloadFields.chainId);
+            expect(Buffer.from(decoded.txId)).to.deep.equal(Buffer.from(payloadFields.txId));
+            expect(Buffer.from(decoded.ixData)).to.deep.equal(Buffer.from(counterIx.data));
+
+            const sig = await signTssMessage({
+                instruction: TssInstruction.ExecuteSol,
+                nonce: decoded.nonce,
+                amount: decoded.amount,
+                chainId: decoded.chainId,
+                additional: buildExecuteAdditionalData(
+                    decoded.txId,
+                    decoded.targetProgram,
+                    decoded.sender,
+                    decoded.accounts,
+                    decoded.ixData
+                ),
+            });
+
+            const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+
+            await gatewayProgram.methods
+                .executeUniversalTx(
+                    Array.from(decoded.txId),
+                    Array.from(decoded.sender),
+                    new anchor.BN(decoded.amount.toString()),
+                    decoded.targetProgram,
+                    Array.from(decoded.sender),
+                    decoded.accounts.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(decoded.ixData),
+                    Array.from(sig.signature),
+                    sig.recoveryId,
+                    Array.from(sig.messageHash),
+                    sig.nonce,
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(Array.from(decoded.txId)),
+                    tssPda,
+                    executedTx: getExecutedTxPda(Array.from(decoded.txId)),
+                    destinationProgram: decoded.targetProgram,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(
+                    decoded.accounts.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                        isSigner: false,
+                    })),
+                )
+                .signers([admin])
+                .rpc();
+
+            await syncNonceFromChain();
+            expect(currentNonce).to.equal(decoded.nonce + 1);
+
+            const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            expect(counterAfter.value.toNumber()).to.equal(
+                counterBefore.value.toNumber() + incrementAmount.toNumber(),
+            );
+        });
+
+        it("encodes, decodes, signs, and executes SPL payload", async () => {
+            await syncNonceFromChain();
+            const txId = generateTxId();
+            const sender = generateSender();
+            const amount = asTokenAmount(25);
+
+            const counterIx = await counterProgram.methods
+                .receiveSpl(amount)
+                .accounts({
+                    counter: counterKeypair.publicKey,
+                    stagingAta: await getStagingAta(txId, mockUSDT.mint.publicKey),
+                    recipientAta: recipientUsdtAccount,
+                    stagingAuthority: getStagingAuthorityPda(txId),
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                })
+                .instruction();
+
+            const accounts = instructionAccountsToGatewayMetas(counterIx);
+            const tssAccount = await gatewayProgram.account.tssPda.fetch(tssPda);
+
+            const payloadFields = instructionToPayloadFields({
+                instruction: counterIx,
+                instructionId: 6,
+                chainId: tssAccount.chainId,
+                nonce: currentNonce,
+                amount: BigInt(amount.toString()),
+                txId: new Uint8Array(txId),
+                sender: new Uint8Array(sender),
+            });
+
+            const encoded = encodeExecutePayload(payloadFields);
+            const decoded = decodeExecutePayload(encoded);
+
+            const sig = await signTssMessage({
+                instruction: TssInstruction.ExecuteSpl,
+                nonce: decoded.nonce,
+                amount: decoded.amount,
+                chainId: decoded.chainId,
+                additional: buildExecuteAdditionalData(
+                    decoded.txId,
+                    decoded.targetProgram,
+                    decoded.sender,
+                    decoded.accounts,
+                    decoded.ixData
+                ),
+            });
+
+            const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
+
+            await gatewayProgram.methods
+                .executeUniversalTxToken(
+                    Array.from(decoded.txId),
+                    Array.from(decoded.sender),
+                    new anchor.BN(decoded.amount.toString()),
+                    decoded.targetProgram,
+                    Array.from(decoded.sender),
+                    decoded.accounts.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(decoded.ixData),
+                    Array.from(sig.signature),
+                    sig.recoveryId,
+                    Array.from(sig.messageHash),
+                    sig.nonce,
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultAuthority: vaultPda,
+                    vaultAta: vaultUsdtAccount,
+                    stagingAuthority: getStagingAuthorityPda(Array.from(decoded.txId)),
+                    stagingAta: await getStagingAta(txId, mockUSDT.mint.publicKey),
+                    mint: mockUSDT.mint.publicKey,
+                    tssPda,
+                    executedTx: getExecutedTxPda(Array.from(decoded.txId)),
+                    destinationProgram: decoded.targetProgram,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                })
+                .remainingAccounts(
+                    decoded.accounts.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                        isSigner: false,
+                    })),
+                )
+                .signers([admin])
+                .rpc();
+
+            await syncNonceFromChain();
+            expect(currentNonce).to.equal(decoded.nonce + 1);
+
+            const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            expect(counterAfter.value.toNumber()).to.equal(
+                counterBefore.value.toNumber() + amount.toNumber(),
+            );
+
+            const recipientTokenAfter = await mockUSDT.getBalance(recipientUsdtAccount);
+            const amountTokens = amount.toNumber() / 10 ** USDT_DECIMALS;
+            expect(recipientTokenAfter - recipientTokenBefore).to.equal(amountTokens);
         });
     });
 });

@@ -1,5 +1,9 @@
-import * as anchor from "@coral-xyz/anchor";
+// Load environment variables FIRST before any other imports that might use them
 import * as dotenv from "dotenv";
+dotenv.config({ path: "../.env" });
+dotenv.config();
+
+import * as anchor from "@coral-xyz/anchor";
 import {
     PublicKey,
     LAMPORTS_PER_SOL,
@@ -9,16 +13,22 @@ import {
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
 import type { UniversalGateway } from "../target/types/universal_gateway";
+import type { TestCounter } from "../target/types/test_counter";
 import * as spl from "@solana/spl-token";
 import pkg from 'js-sha3';
 const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
 import { assert } from "chai";
+import { instructionToPayloadFields, encodeExecutePayload, decodeExecutePayload } from "./execute-payload";
+import { signTssMessage, buildExecuteAdditionalData, TssInstruction } from "../tests/helpers/tss";
 
 const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
+const TEST_COUNTER_PROGRAM_ID = new PublicKey("BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
+const STAGING_SEED = "staging";
+const EXECUTED_TX_SEED = "executed_tx";
 const PRICE_ACCOUNT = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"); // Pyth SOL/USD price feed
 
 // Load keypairs
@@ -27,6 +37,9 @@ const adminKeypair = Keypair.fromSecretKey(
 );
 const userKeypair = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(fs.readFileSync("./clean-user-keypair.json", "utf8")))
+);
+const relayerKeypair = Keypair.fromSecretKey(
+    Uint8Array.from(JSON.parse(fs.readFileSync("./fresh-relayer-keypair.json", "utf8")))
 );
 
 // Set up connection and provider
@@ -40,10 +53,51 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 
 anchor.setProvider(adminProvider);
 
+const COUNTER_KEYPAIR_PATH = "./counter-devnet-keypair.json";
+
+function loadOrCreateKeypair(filepath: string): Keypair {
+    if (fs.existsSync(filepath)) {
+        return Keypair.fromSecretKey(
+            Uint8Array.from(JSON.parse(fs.readFileSync(filepath, "utf8")))
+        );
+    }
+    const kp = Keypair.generate();
+    fs.writeFileSync(filepath, JSON.stringify(Array.from(kp.secretKey)));
+    return kp;
+}
+
+function getExecutedTxPda(txIdBytes: Uint8Array): PublicKey {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from(EXECUTED_TX_SEED), Buffer.from(txIdBytes)],
+        PROGRAM_ID,
+    )[0];
+}
+
+function getStagingAuthorityPda(txIdBytes: Uint8Array): PublicKey {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from(STAGING_SEED), Buffer.from(txIdBytes)],
+        PROGRAM_ID,
+    )[0];
+}
+
 // Load IDL
 const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
 const program = new Program(idl, adminProvider);
 const userProgram = new Program(idl, userProvider);
+
+// Create relayer provider for execute transactions (to avoid admin being fee payer when it's also in remainingAccounts)
+const relayerWallet = new anchor.Wallet(relayerKeypair);
+const relayerProvider = new anchor.AnchorProvider(connection, relayerWallet, {});
+const relayerProgram = new Program(idl, relayerProvider);
+
+// (idl as any).metadata = (idl.metadata ?? { address: PROGRAM_ID.toBase58() });
+// idl.metadata.address = PROGRAM_ID.toBase58();
+// const idlTyped = idl as UniversalGateway;
+// const program = new Program<UniversalGateway>(idlTyped, adminProvider);
+// const userProgram = new Program<UniversalGateway>(idlTyped, userProvider);
+
+const counterIdl = JSON.parse(fs.readFileSync("./target/idl/test_counter.json", "utf8"));
+const counterProgram: any = new Program(counterIdl as any, adminProvider);
 
 // Helper: Get dynamic gas amount based on current SOL price
 async function getDynamicGasAmount(targetUsd: number, fallbackSol: number = 0.01): Promise<anchor.BN> {
@@ -111,9 +165,10 @@ function loadTokenInfo(tokenSymbol: string): any {
 async function run() {
     console.log("=== GATEWAY PROGRAM COMPREHENSIVE TEST ===\n");
 
-    // Load env from parent and local (so either location works)
-    dotenv.config({ path: "../.env" });
-    dotenv.config();
+    const tssPrivKeyHex = (process.env.TSS_PRIVKEY || process.env.ETH_PRIVATE_KEY || process.env.PRIVATE_KEY || "").replace(/^0x/, "");
+    if (!tssPrivKeyHex) {
+        throw new Error("Missing TSS_PRIVKEY / ETH_PRIVATE_KEY / PRIVATE_KEY env var for execute tests");
+    }
 
     // Derive PDAs
     const [configPda] = PublicKey.findProgramAddressSync(
@@ -139,6 +194,7 @@ async function run() {
 
     const admin = adminKeypair.publicKey;
     const user = userKeypair.publicKey;
+    const relayer = relayerKeypair.publicKey;
 
     // Helper to get token rate limit PDA
     const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
@@ -1717,6 +1773,250 @@ async function run() {
     console.log("\n=== ATA Creation Note ===");
     console.log("✅ ATA creation is handled off-chain by clients (standard Solana practice)");
     console.log("✅ This avoids complex reimbursement logic and follows industry standards");
+
+    // 13.5 Execute tests via payload encode/decode pipeline
+    console.log("\n=== 13.5 Testing execute_universal_tx via payload encode/decode pipeline ===");
+    const counterKeypair = loadOrCreateKeypair(COUNTER_KEYPAIR_PATH);
+
+    try {
+        await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        console.log("Counter account already initialized");
+    } catch {
+        const initCounterTx = await counterProgram.methods
+            .initialize(new anchor.BN(0))
+            .accounts({
+                counter: counterKeypair.publicKey,
+                authority: admin,  // Admin is authority, but relayer signs execute txs
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([adminKeypair, counterKeypair])
+            .rpc();
+        console.log(`✅ Counter initialized for execute tests: ${initCounterTx}`);
+    }
+
+    const tssAccount: any = await (program.account as any).tssPda.fetch(tssPda);
+
+    // Verify TSS address matches the private key
+    const testPubKey = secp.getPublicKey(tssPrivKeyHex, false).slice(1);
+    const testEthAddressHex = keccak_256(testPubKey).slice(-40);
+    const testEthAddress = Buffer.from(testEthAddressHex, "hex");
+    const onChainTssAddress = Buffer.from(tssAccount.tssEthAddress);
+
+    console.log("🔑 TSS Address on-chain:", onChainTssAddress.toString("hex"));
+    console.log("🔑 TSS Address from privkey:", testEthAddress.toString("hex"));
+
+    if (!testEthAddress.equals(onChainTssAddress)) {
+        throw new Error("TSS private key does not match on-chain TSS address! Check your .env");
+    }
+
+    async function runExecuteSolTest() {
+        console.log("👉 execute_universal_tx (SOL) via encoded payload");
+
+        const solTxIdBytes = anchor.web3.Keypair.generate().publicKey.toBytes();
+
+        // Check relayer account (used as caller/payer)
+        const relayerInfo = await connection.getAccountInfo(relayer);
+        console.log("🔍 relayer:", relayer.toBase58());
+        console.log("🔍 relayer balance:", relayerInfo?.lamports || 0);
+        console.log("🔍 relayer data.length:", relayerInfo?.data.length || 0);
+        console.log("🔍 relayer owner:", relayerInfo?.owner.toBase58() || "none");
+        const senderBytes = Buffer.alloc(20, 0x11);
+        const incrementIx = await counterProgram.methods
+            .increment(new anchor.BN(3))
+            .accounts({
+                counter: counterKeypair.publicKey,
+                authority: admin,  // Admin is authority, but relayer signs the execute tx
+            })
+            .instruction();
+
+        const payloadFields = instructionToPayloadFields({
+            instruction: incrementIx,
+            instructionId: 5,
+            chainId: tssAccount.chainId,
+            nonce: Number(tssAccount.nonce),
+            amount: BigInt(0),
+            txId: solTxIdBytes,
+            sender: senderBytes,
+        });
+
+        const encoded = encodeExecutePayload(payloadFields);
+        const decoded = decodeExecutePayload(encoded);
+
+        console.log("🔍 Payload amount (before encode):", payloadFields.amount.toString());
+        console.log("🔍 Decoded amount:", decoded.amount.toString());
+        console.log("🔍 BN amount to pass:", new anchor.BN(decoded.amount.toString()).toString());
+
+        // Sign using the proven TSS helpers
+        const sig = await signTssMessage({
+            instruction: TssInstruction.ExecuteSol,
+            nonce: decoded.nonce,
+            amount: decoded.amount,
+            chainId: tssAccount.chainId,
+            additional: buildExecuteAdditionalData(
+                decoded.txId,
+                decoded.targetProgram,
+                decoded.sender,
+                decoded.accounts,
+                decoded.ixData
+            ),
+        });
+
+        const stagingAuthority = getStagingAuthorityPda(decoded.txId);
+        const executedTx = getExecutedTxPda(decoded.txId);
+        const remainingAccounts = decoded.accounts.map((meta) => ({
+            pubkey: meta.pubkey,
+            isWritable: meta.isWritable,
+            isSigner: false,
+        }));
+
+        const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        const execTx = await relayerProgram.methods
+            .executeUniversalTx(
+                Array.from(decoded.txId),
+                Array.from(decoded.sender),
+                new anchor.BN(decoded.amount.toString()),
+                decoded.targetProgram,
+                Array.from(decoded.sender),
+                decoded.accounts.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                })),
+                Buffer.from(decoded.ixData),
+                sig.signature,
+                sig.recoveryId,
+                sig.messageHash,
+                sig.nonce,
+            )
+            .accounts({
+                caller: relayer,  // Relayer is now both fee payer and caller
+                config: configPda,
+                vaultSol: vaultPda,
+                stagingAuthority,
+                tssPda,
+                executedTx,
+                destinationProgram: decoded.targetProgram,
+                systemProgram: SystemProgram.programId,
+            })
+            .remainingAccounts(remainingAccounts)
+            .rpc();
+
+        console.log(`✅ executeUniversalTx (SOL) succeeded: ${execTx}`);
+        const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        console.log(`Counter value: ${counterBefore.value.toNumber()} → ${counterAfter.value.toNumber()}`);
+    }
+
+    async function runExecuteSplTest() {
+        console.log("👉 execute_universal_tx_token (SPL) via encoded payload");
+        const tssAfterSol: any = await (program.account as any).tssPda.fetch(tssPda);
+        const splTxIdBytes = anchor.web3.Keypair.generate().publicKey.toBytes();
+        const senderBytes = Buffer.alloc(20, 0x22);
+        const stagingAuthority = getStagingAuthorityPda(splTxIdBytes);
+        const stagingAta = await spl.getAssociatedTokenAddress(
+            mint,
+            stagingAuthority,
+            true,
+            spl.TOKEN_PROGRAM_ID,
+            spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+        );
+        const executeRecipient = Keypair.generate();
+        const executeRecipientAta = await spl.getOrCreateAssociatedTokenAccount(
+            userProvider.connection as any,
+            userKeypair,
+            mint,
+            executeRecipient.publicKey,
+        );
+        const executeAmount = new anchor.BN(200 * Math.pow(10, tokenInfo.decimals));
+
+        const receiveSplIx = await counterProgram.methods
+            .receiveSpl(executeAmount)
+            .accounts({
+                counter: counterKeypair.publicKey,
+                stagingAta,
+                recipientAta: executeRecipientAta.address,
+                stagingAuthority,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+            })
+            .instruction();
+
+        const payloadFields = instructionToPayloadFields({
+            instruction: receiveSplIx,
+            instructionId: 6,
+            chainId: tssAfterSol.chainId,
+            nonce: Number(tssAfterSol.nonce),
+            amount: BigInt(executeAmount.toString()),
+            txId: splTxIdBytes,
+            sender: senderBytes,
+        });
+
+        const encoded = encodeExecutePayload(payloadFields);
+        const decoded = decodeExecutePayload(encoded);
+
+        // Sign using the proven TSS helpers
+        const sig = await signTssMessage({
+            instruction: TssInstruction.ExecuteSpl,
+            nonce: decoded.nonce,
+            amount: decoded.amount,
+            chainId: tssAfterSol.chainId,
+            additional: buildExecuteAdditionalData(
+                decoded.txId,
+                decoded.targetProgram,
+                decoded.sender,
+                decoded.accounts,
+                decoded.ixData
+            ),
+        });
+
+        const executedTx = getExecutedTxPda(decoded.txId);
+        const remainingAccounts = decoded.accounts.map((meta) => ({
+            pubkey: meta.pubkey,
+            isWritable: meta.isWritable,
+            isSigner: false,
+        }));
+
+        const recipientTokenBefore = (await spl.getAccount(userProvider.connection as any, executeRecipientAta.address)).amount;
+
+        const execSplTx = await relayerProgram.methods
+            .executeUniversalTxToken(
+                Array.from(decoded.txId),
+                Array.from(decoded.sender),
+                new anchor.BN(decoded.amount.toString()),
+                decoded.targetProgram,
+                Array.from(decoded.sender),
+                decoded.accounts.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                })),
+                Buffer.from(decoded.ixData),
+                sig.signature,
+                sig.recoveryId,
+                sig.messageHash,
+                sig.nonce,
+            )
+            .accounts({
+                caller: relayer,  // Relayer is now both fee payer and caller
+                config: configPda,
+                vaultAuthority: vaultPda,
+                vaultAta: vaultAta.address,
+                stagingAuthority,
+                stagingAta,
+                mint,
+                tssPda,
+                executedTx,
+                destinationProgram: decoded.targetProgram,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+            })
+            .remainingAccounts(remainingAccounts)
+            .rpc();
+
+        console.log(`✅ executeUniversalTxToken (SPL) succeeded: ${execSplTx}`);
+        const recipientTokenAfter = (await spl.getAccount(userProvider.connection as any, executeRecipientAta.address)).amount;
+        console.log(`Recipient SPL balance: ${recipientTokenBefore.toString()} → ${recipientTokenAfter.toString()}`);
+    }
+
+    await runExecuteSolTest();
+    await runExecuteSplTest();
 
     // 14. Remove token from whitelist (moved after all tests)
     console.log("14. Testing remove whitelist...");
