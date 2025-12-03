@@ -8,6 +8,8 @@ pub const TSS_SEED: &[u8] = b"tsspda";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
 pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
+pub const STAGING_SEED: &[u8] = b"staging";
+pub const STAGING_ATA_SEED: &[u8] = b"staging_ata";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
 pub const FEED_ID: &str = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
@@ -163,6 +165,44 @@ pub struct ExecutedTx {}
 impl ExecutedTx {
     // discriminator (8) only - account existence is the flag
     pub const LEN: usize = 8;
+}
+
+// ============================================
+//    EXECUTE ARBITRARY CALLS (NEW)
+// ============================================
+
+/// Account metadata for execute messages (no isSigner in payload).
+/// Off-chain builds this from target instruction's account list.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct GatewayAccountMeta {
+    pub pubkey: Pubkey,
+    pub is_writable: bool,
+}
+
+/// Execute message structure for TSS signing.
+/// Deterministically serialized with Borsh for message hash construction.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct ExecuteMessage {
+    pub instruction_id: u8, // 5 = SOL execute, 6 = SPL execute
+    pub chain_id: String,   // e.g., "PUSH"
+    pub nonce: u64,
+    pub amount: u64,
+    pub tx_id: [u8; 32],
+    pub target_program: Pubkey,
+    pub sender: [u8; 20], // EVM address
+    pub accounts: Vec<GatewayAccountMeta>,
+    pub ix_data: Vec<u8>,
+}
+
+/// Execute event (parity with EVM `UniversalTxExecuted`).
+#[event]
+pub struct UniversalTxExecuted {
+    pub tx_id: [u8; 32],
+    pub origin_caller: [u8; 20],
+    pub target: Pubkey, // Target program
+    pub token: Pubkey,  // Token (Pubkey::default() for SOL)
+    pub amount: u64,
+    pub payload: Vec<u8>, // ix_data
 }
 
 /// Universal transaction event (parity with EVM V0 `UniversalTx`).

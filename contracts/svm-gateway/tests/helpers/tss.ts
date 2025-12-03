@@ -9,6 +9,8 @@ export enum TssInstruction {
     WithdrawSpl = 2,
     RevertWithdrawSol = 3,
     RevertWithdrawSpl = 4,
+    ExecuteSol = 5,
+    ExecuteSpl = 6,
 }
 
 // Default to Devnet cluster pubkey if not specified
@@ -99,4 +101,50 @@ export async function signTssMessage({ instruction, nonce, amount, additional, c
 
 export function pubkeyToBytes(pubkey: PublicKey): Uint8Array {
     return pubkey.toBuffer();
+}
+
+// =========================
+// EXECUTE MESSAGE HELPERS
+// =========================
+
+export interface GatewayAccountMeta {
+    pubkey: PublicKey;
+    isWritable: boolean;
+}
+
+/**
+ * Build execute message additional_data buffers (accounts and ix_data with length prefixes)
+ * Matches Rust execute.rs lines 92-104
+ */
+export function buildExecuteAdditionalData(
+    txId: Uint8Array,
+    targetProgram: PublicKey,
+    sender: Uint8Array,
+    accounts: GatewayAccountMeta[],
+    ixData: Uint8Array
+): Uint8Array[] {
+    // Build accounts buffer with length prefix (u32 BE) - matches Rust line 92-98
+    const accountsCount = Buffer.alloc(4);
+    accountsCount.writeUInt32BE(accounts.length, 0);
+    const accountsBuf = Buffer.concat([
+        accountsCount,
+        ...accounts.map(acc => Buffer.concat([
+            acc.pubkey.toBuffer(),
+            Buffer.from([acc.isWritable ? 1 : 0])
+        ]))
+    ]);
+
+    // Build ix_data buffer with length prefix (u32 BE) - matches Rust line 101-104
+    const ixDataLength = Buffer.alloc(4);
+    ixDataLength.writeUInt32BE(ixData.length, 0);
+    const ixDataBuf = Buffer.concat([ixDataLength, Buffer.from(ixData)]);
+
+    // Matches Rust execute.rs lines 108-114: [tx_id, target_program, sender, accounts_buf, ix_data_buf]
+    return [
+        txId,                    // tx_id (32 bytes)
+        targetProgram.toBuffer(), // target_program (32 bytes)
+        sender,                  // sender (20 bytes)
+        accountsBuf,              // accounts with length prefix
+        ixDataBuf,               // ix_data with length prefix
+    ];
 }

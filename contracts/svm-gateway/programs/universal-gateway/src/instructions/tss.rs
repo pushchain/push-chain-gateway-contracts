@@ -99,6 +99,7 @@ pub fn reset_nonce(ctx: Context<ResetNonce>, new_nonce: u64) -> Result<()> {
 }
 
 /// Common validator: verify nonce, hash, and ECDSA secp256k1 signature recovers stored ETH address.
+/// Used by withdraw, revert, and execute functions - single standard for all TSS-signed messages.
 pub fn validate_message(
     tss: &mut Account<TssPda>,
     instruction_id: u8,
@@ -110,8 +111,11 @@ pub fn validate_message(
     recovery_id: u8,
 ) -> Result<()> {
     // Nonce check and update
-    require!(nonce == tss.nonce, ErrorCode::NonceMismatch);
-    tss.nonce = tss.nonce.checked_add(1).ok_or(ErrorCode::NonceMismatch)?;
+    require!(nonce == tss.nonce, GatewayError::NonceMismatch);
+    tss.nonce = tss
+        .nonce
+        .checked_add(1)
+        .ok_or(GatewayError::NonceMismatch)?;
 
     // Rebuild message
     let mut buf = Vec::new();
@@ -127,23 +131,13 @@ pub fn validate_message(
         buf.extend_from_slice(d);
     }
     let computed = hash(&buf[..]).to_bytes();
-    require!(&computed == message_hash, ErrorCode::MessageHashMismatch);
+    require!(&computed == message_hash, GatewayError::MessageHashMismatch);
 
     // Recover address via secp256k1
     let pubkey = secp256k1_recover(message_hash, recovery_id, signature)
-        .map_err(|_| ErrorCode::TssAuthFailed)?;
+        .map_err(|_| GatewayError::TssAuthFailed)?;
     let h = hash(pubkey.to_bytes().as_slice()).to_bytes();
     let address = &h.as_slice()[12..32];
-    require!(address == &tss.tss_eth_address, ErrorCode::TssAuthFailed);
+    require!(address == &tss.tss_eth_address, GatewayError::TssAuthFailed);
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Nonce mismatch")]
-    NonceMismatch,
-    #[msg("Message hash mismatch")]
-    MessageHashMismatch,
-    #[msg("TSS authentication failed")]
-    TssAuthFailed,
 }

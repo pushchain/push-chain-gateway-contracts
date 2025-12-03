@@ -35,7 +35,6 @@ pub enum GatewayError {
     #[msg("Token not whitelisted")]
     TokenNotWhitelisted,
 
-
     #[msg("Invalid owner")]
     InvalidOwner,
 
@@ -69,4 +68,41 @@ pub enum GatewayError {
 
     #[msg("Token not supported")]
     NotSupported,
+
+    // Execute-specific errors
+    #[msg("Message hash mismatch")]
+    MessageHashMismatch,
+
+    #[msg("TSS authentication failed")]
+    TssAuthFailed,
+
+    #[msg("Nonce mismatch")]
+    NonceMismatch,
+
+    #[msg("Account list length mismatch")]
+    AccountListLengthMismatch,
+
+    #[msg("Account pubkey mismatch")]
+    AccountPubkeyMismatch,
+
+    #[msg("Account writable flag mismatch")]
+    AccountWritableFlagMismatch,
+
+    #[msg("Unexpected outer signer in remaining accounts")]
+    UnexpectedOuterSigner,
+
+    #[msg("Target program mismatch")]
+    TargetProgramMismatch,
+
+    #[msg("Destination program is not executable")]
+    InvalidProgram,
+
+    #[msg("Payload already executed")]
+    PayloadExecuted,
+
+    #[msg("Serialization error")]
+    SerializationError,
+
+    #[msg("No writable recipient found in accounts")]
+    NoWritableRecipient,
 }

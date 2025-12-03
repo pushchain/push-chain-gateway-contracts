@@ -315,6 +315,85 @@ pub mod universal_gateway {
     }
 
     // =========================
+    //        EXECUTE
+    // =========================
+    /// @notice TSS-verified execute arbitrary Solana instruction with SOL
+    /// @param tx_id Transaction ID from Push chain event
+    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
+    /// @param amount Amount of SOL to transfer to staging authority
+    /// @param target_program Target Solana program to invoke
+    /// @param sender EVM sender address
+    /// @param accounts Ordered list of accounts for target program
+    /// @param ix_data Instruction data for target program
+    pub fn execute_universal_tx(
+        ctx: Context<ExecuteUniversalTx>,
+        tx_id: [u8; 32],
+        origin_caller: [u8; 20],
+        amount: u64,
+        target_program: Pubkey,
+        sender: [u8; 20],
+        accounts: Vec<GatewayAccountMeta>,
+        ix_data: Vec<u8>,
+        signature: [u8; 64],
+        recovery_id: u8,
+        message_hash: [u8; 32],
+        nonce: u64,
+    ) -> Result<()> {
+        instructions::execute::execute_universal_tx(
+            ctx,
+            tx_id,
+            origin_caller,
+            amount,
+            target_program,
+            sender,
+            accounts,
+            ix_data,
+            signature,
+            recovery_id,
+            message_hash,
+            nonce,
+        )
+    }
+
+    /// @notice TSS-verified execute arbitrary Solana instruction with SPL tokens
+    /// @param tx_id Transaction ID from Push chain event
+    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
+    /// @param amount Amount of SPL tokens to transfer to staging ATA
+    /// @param target_program Target Solana program to invoke
+    /// @param sender EVM sender address
+    /// @param accounts Ordered list of accounts for target program
+    /// @param ix_data Instruction data for target program
+    pub fn execute_universal_tx_token(
+        ctx: Context<ExecuteUniversalTxToken>,
+        tx_id: [u8; 32],
+        origin_caller: [u8; 20],
+        amount: u64,
+        target_program: Pubkey,
+        sender: [u8; 20],
+        accounts: Vec<GatewayAccountMeta>,
+        ix_data: Vec<u8>,
+        signature: [u8; 64],
+        recovery_id: u8,
+        message_hash: [u8; 32],
+        nonce: u64,
+    ) -> Result<()> {
+        instructions::execute::execute_universal_tx_token(
+            ctx,
+            tx_id,
+            origin_caller,
+            amount,
+            target_program,
+            sender,
+            accounts,
+            ix_data,
+            signature,
+            recovery_id,
+            message_hash,
+            nonce,
+        )
+    }
+
+    // =========================
     //         LEGACY (V0)
     // =========================
     /// @notice Legacy-compatible add funds event for offchain relayers (pushsolanalocker)
@@ -338,6 +417,7 @@ pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
 };
 pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas, SendUniversalTx};
+pub use instructions::execute::{ExecuteUniversalTx, ExecuteUniversalTxToken};
 pub use instructions::initialize::Initialize;
 pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
 pub use instructions::withdraw::{
@@ -349,19 +429,24 @@ pub use state::{
     // Events
     CapsUpdated,
     Config,
+    ExecuteMessage,
     ExecutedTx,
+    GatewayAccountMeta,
     RevertInstructions,
     TSSAddressUpdated,
     TokenWhitelist,
     TxType,
     UniversalPayload,
     UniversalTx,
+    UniversalTxExecuted,
     UniversalTxRequest,
     VerificationType,
     WithdrawToken,
     CONFIG_SEED,
     EXECUTED_TX_SEED,
     FEED_ID,
+    STAGING_ATA_SEED,
+    STAGING_SEED,
     VAULT_SEED,
     WHITELIST_SEED,
 };
