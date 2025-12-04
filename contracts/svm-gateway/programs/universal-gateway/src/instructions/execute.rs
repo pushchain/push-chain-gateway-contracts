@@ -9,8 +9,10 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     instruction::{AccountMeta as SolanaAccountMeta, Instruction},
     program::invoke_signed,
+    program_pack::Pack,
     system_instruction,
 };
+use anchor_spl::token::spl_token::state::Account as SplAccount;
 use anchor_spl::{
     associated_token::AssociatedToken,
     token::{self, CloseAccount, Mint, Token, TokenAccount},
@@ -386,6 +388,21 @@ pub fn execute_universal_tx_token(
                     ctx.accounts.associated_token_program.to_account_info(),
                 ],
             )?;
+        }
+
+        // SECURITY: Ensure provided staging_ata really belongs to staging_authority + mint
+        {
+            let staging_account_data = ctx.accounts.staging_ata.try_borrow_data()?;
+            let staging_account = SplAccount::unpack(&staging_account_data)
+                .map_err(|_| error!(GatewayError::InvalidAccount))?;
+            require!(
+                staging_account.owner == ctx.accounts.staging_authority.key(),
+                GatewayError::InvalidOwner
+            );
+            require!(
+                staging_account.mint == ctx.accounts.mint.key(),
+                GatewayError::InvalidMint
+            );
         }
 
         // Transfer tokens from vault_ata → staging_ata

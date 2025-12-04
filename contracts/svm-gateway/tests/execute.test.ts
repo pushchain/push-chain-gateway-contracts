@@ -600,6 +600,107 @@ describe("Universal Gateway - Execute Tests", () => {
             const stagingAtaInfo = await provider.connection.getAccountInfo(stagingAta);
             expect(stagingAtaInfo).to.be.null; // Account should be closed
         });
+        it("should reject SPL execution if staging ATA owner mismatches", async () => {
+            await syncNonceFromChain();
+            const txId = generateTxId();
+            const sender = generateSender();
+            const amount = asTokenAmount(25);
+
+            const counterIx = await counterProgram.methods
+                .receiveSpl(amount)
+                .accounts({
+                    counter: counterKeypair.publicKey,
+                    stagingAta: await getStagingAta(txId, mockUSDT.mint.publicKey),
+                    recipientAta: recipientUsdtAccount,
+                    stagingAuthority: getStagingAuthorityPda(txId),
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                })
+                .instruction();
+
+            const accounts = instructionAccountsToGatewayMetas(counterIx);
+            const tssAccount = await gatewayProgram.account.tssPda.fetch(tssPda);
+
+            const sig = await signTssMessage({
+                instruction: TssInstruction.ExecuteSpl,
+                nonce: currentNonce,
+                amount: BigInt(amount.toString()),
+                chainId: tssAccount.chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(txId),
+                    counterProgram.programId,
+                    new Uint8Array(sender),
+                    accounts,
+                    counterIx.data
+                ),
+            });
+
+            // Create a malicious ATA owned by an attacker (not the staging PDA)
+            const attacker = Keypair.generate();
+            const maliciousAta = await getAssociatedTokenAddress(
+                mockUSDT.mint.publicKey,
+                attacker.publicKey
+            );
+            const createIx = createAssociatedTokenAccountInstruction(
+                admin.publicKey,
+                maliciousAta,
+                attacker.publicKey,
+                mockUSDT.mint.publicKey,
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+            );
+            const createTx = new anchor.web3.Transaction().add(createIx);
+            await provider.sendAndConfirm(createTx, [admin]);
+
+            try {
+                await gatewayProgram.methods
+                    .executeUniversalTxToken(
+                        Array.from(txId),
+                        Array.from(sender),
+                        amount,
+                        counterProgram.programId,
+                        Array.from(sender),
+                        accounts.map(a => ({
+                            pubkey: a.pubkey,
+                            isWritable: a.isWritable,
+                        })),
+                        Buffer.from(counterIx.data),
+                        Array.from(sig.signature),
+                        sig.recoveryId,
+                        Array.from(sig.messageHash),
+                        sig.nonce,
+                    )
+                    .accounts({
+                        caller: admin.publicKey,
+                        config: configPda,
+                        vaultAuthority: vaultPda,
+                        vaultAta: vaultUsdtAccount,
+                        stagingAuthority: getStagingAuthorityPda(txId),
+                        stagingAta: maliciousAta,
+                        mint: mockUSDT.mint.publicKey,
+                        tssPda: tssPda,
+                        executedTx: getExecutedTxPda(txId),
+                        destinationProgram: counterProgram.programId,
+                        tokenProgram: TOKEN_PROGRAM_ID,
+                        systemProgram: SystemProgram.programId,
+                        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    })
+                    .remainingAccounts(instructionAccountsToRemaining(counterIx))
+                    .signers([admin])
+                    .rpc();
+                expect.fail("Should have rejected malicious staging ATA");
+            } catch (error: any) {
+                const errorCode =
+                    error.error?.errorCode?.code ||
+                    error.errorCode?.code ||
+                    error.code ||
+                    error.error?.code ||
+                    error.message;
+                expect(errorCode).to.equal("InvalidOwner");
+            }
+
+            // Nonce already consumed when validate_message ran; refresh cached value
+            await syncNonceFromChain();
+        });
         it("should execute SPL-only payload (decrement) with zero amount", async () => {
             await syncNonceFromChain();
             const txId = generateTxId();
