@@ -3,7 +3,6 @@ pragma solidity 0.8.26;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.sol";
-import { RevertInstructions } from "../../src/libraries/Types.sol";
 
 /**
  * @title MockReentrantContract
@@ -36,9 +35,9 @@ contract MockReentrantContract {
         bytes calldata to,
         uint256 amount,
         uint256 gasLimit,
-        RevertInstructions calldata revertCfg
+        address fundRecipient
     ) external {
-        IUniversalGatewayPC(gateway).withdraw(to, prc20Token, amount, gasLimit, revertCfg);
+        IUniversalGatewayPC(gateway).withdraw(to, prc20Token, amount, gasLimit, fundRecipient);
     }
 
     function attemptReentrancyWithExecute(
@@ -46,9 +45,9 @@ contract MockReentrantContract {
         uint256 amount,
         bytes calldata payload,
         uint256 gasLimit,
-        RevertInstructions calldata revertCfg
+        address fundRecipient
     ) external {
-        IUniversalGatewayPC(gateway).withdrawAndExecute(target, prc20Token, amount, payload, gasLimit, revertCfg);
+        IUniversalGatewayPC(gateway).withdrawAndExecute(target, prc20Token, amount, payload, gasLimit, fundRecipient);
     }
 
     // ============================================================================

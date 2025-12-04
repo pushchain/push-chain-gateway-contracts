@@ -16,7 +16,7 @@ pragma solidity 0.8.26;
 import { Errors } from "./libraries/Errors.sol";
 import { IPRC20 } from "./interfaces/IPRC20.sol";
 import { IVaultPC } from "./interfaces/IVaultPC.sol";
-import { RevertInstructions } from "./libraries/Types.sol";
+import { TX_TYPE } from "./libraries/Types.sol";
 import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
 import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
 
@@ -83,9 +83,9 @@ contract UniversalGatewayPC is
         address token,
         uint256 amount,
         uint256 gasLimit,
-        RevertInstructions calldata revertInstruction
+        address fundRecipient
     ) external whenNotPaused nonReentrant {
-        _validateCommon(to, token, amount, revertInstruction);
+        _validateCommon(to, token, amount, fundRecipient);
 
         // Compute fees + collect from caller into the UEM fee sink
         (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
@@ -96,7 +96,7 @@ contract UniversalGatewayPC is
 
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
         emit UniversalTxWithdraw(
-            msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee, revertInstruction
+            msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee, fundRecipient, TX_TYPE.FUNDS
         );
     }
 
@@ -107,9 +107,9 @@ contract UniversalGatewayPC is
         uint256 amount,
         bytes calldata payload,
         uint256 gasLimit,
-        RevertInstructions calldata revertInstruction
+        address fundRecipient
     ) external whenNotPaused nonReentrant {
-        _validateCommon(target, token, amount, revertInstruction);
+        _validateCommon(target, token, amount, fundRecipient);
 
         // Compute fees + collect from caller into the UEM fee sink
         (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
@@ -120,7 +120,7 @@ contract UniversalGatewayPC is
 
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
         emit UniversalTxWithdraw(
-            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, revertInstruction
+            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, fundRecipient, TX_TYPE.FUNDS_AND_PAYLOAD
         );
     }
 
@@ -131,17 +131,17 @@ contract UniversalGatewayPC is
     /// @param rawTarget        raw destination address on origin chain.
     /// @param token            PRC20 token address on Push Chain.
     /// @param amount           amount to withdraw (burn on Push, unlock at origin).
-    /// @param revertInstruction revert configuration (fundRecipient, revertMsg) for off-chain use.
+    /// @param fundRecipient    address to receive funds in case of revert.
     function _validateCommon(
         bytes calldata rawTarget,
         address token,
         uint256 amount,
-        RevertInstructions calldata revertInstruction
+        address fundRecipient
     ) internal pure {
         if (rawTarget.length == 0) revert Errors.InvalidInput();
         if (token == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (fundRecipient == address(0)) revert Errors.InvalidRecipient();
     }
 
     /**

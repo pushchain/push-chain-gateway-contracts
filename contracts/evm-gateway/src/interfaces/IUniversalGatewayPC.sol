@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {RevertInstructions} from "../libraries/Types.sol";
+import {RevertInstructions, TX_TYPE} from "../libraries/Types.sol";
 
 /**
  * @title   IUniversalGatewayPC
@@ -33,7 +33,8 @@ interface IUniversalGatewayPC {
         uint256 gasLimit,
         bytes payload,
         uint256 protocolFee,
-        RevertInstructions revertInstruction
+        address fundRecipient,
+        TX_TYPE txType
     );
 
     /// @notice                 Emitted when VaultPC address is updated
@@ -48,14 +49,14 @@ interface IUniversalGatewayPC {
      * @param token              PRC20 token address on Push Chain.
      * @param amount             amount to withdraw (burn on Push, unlock at origin).
      * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
-     * @param revertInstruction  revert configuration (fundRecipient, revertMsg) for off-chain use.
+     * @param fundRecipient      address to receive funds in case of revert.
      */
     function withdraw(
         bytes calldata to,
         address token,
         uint256 amount,
         uint256 gasLimit,
-        RevertInstructions calldata revertInstruction
+        address fundRecipient
     ) external;
 
     /**
@@ -66,7 +67,7 @@ interface IUniversalGatewayPC {
      * @param amount             amount to withdraw (burn on Push, unlock at origin).
      * @param payload            ABI-encoded calldata to execute on the origin chain.   
      * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
-     * @param revertInstruction  revert configuration (fundRecipient, revertMsg) for off-chain use.
+     * @param fundRecipient      address to receive funds in case of revert.
      */
     function withdrawAndExecute(
         bytes calldata target,
@@ -74,7 +75,7 @@ interface IUniversalGatewayPC {
         uint256 amount,
         bytes calldata payload,
         uint256 gasLimit,
-        RevertInstructions calldata revertInstruction
+        address fundRecipient
     ) external;
 
     // ========= View Functions =========
