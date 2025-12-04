@@ -1809,6 +1809,12 @@ async function run() {
         throw new Error("TSS private key does not match on-chain TSS address! Check your .env");
     }
 
+    // Helper to sync nonce from chain
+    const syncNonceFromChain = async () => {
+        const account = await (program.account as any).tssPda.fetch(tssPda);
+        return Number(account.nonce);
+    };
+
     async function runExecuteSolTest() {
         console.log("👉 execute_universal_tx (SOL) via encoded payload");
 
@@ -2017,6 +2023,361 @@ async function run() {
 
     await runExecuteSolTest();
     await runExecuteSplTest();
+
+    // 13.6 Execute security validations (negative tests on devnet)
+    console.log("\n=== 13.6 Testing execute security validations (negative tests) ===");
+
+    /**
+     * Helper to test that an execute call correctly reverts with expected error
+     */
+    async function expectExecuteRevertDevnet(
+        testName: string,
+        executeCall: () => Promise<any>,
+        expectedErrorCode: string
+    ): Promise<void> {
+        try {
+            await executeCall();
+            throw new Error(`❌ ${testName}: Should have reverted but succeeded`);
+        } catch (e: any) {
+            const errorMsg = e.toString();
+            const hasExpectedError = errorMsg.includes(expectedErrorCode);
+
+            if (!hasExpectedError) {
+                console.error(`❌ ${testName}: Expected error "${expectedErrorCode}" but got:`, errorMsg);
+                throw new Error(`Expected error code "${expectedErrorCode}" not found. Got: ${errorMsg}`);
+            }
+
+            console.log(`✅ ${testName}: Correctly rejected with ${expectedErrorCode}`);
+        }
+    }
+
+    // Test 1: Account substitution attack
+    console.log("🔒 Testing: Account substitution attack...");
+    const currentNonce1 = await syncNonceFromChain();
+    const tssAccount1: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId1 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender1 = Buffer.alloc(20, 0x33);
+
+    const securityCounterIx = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const correctAccounts = instructionToPayloadFields({
+        instruction: securityCounterIx,
+        instructionId: 5,
+        chainId: tssAccount1.chainId,
+        nonce: currentNonce1,
+        amount: BigInt(0),
+        txId: securityTxId1,
+        sender: securitySender1,
+    }).accounts;
+
+    const securitySig1 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: currentNonce1,
+        amount: BigInt(0),
+        chainId: tssAccount1.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId1,
+            counterProgram.programId,
+            securitySender1,
+            correctAccounts,
+            securityCounterIx.data
+        ),
+    });
+
+    // ATTACK: Substitute account
+    const attackerAccount = anchor.web3.Keypair.generate().publicKey;
+    const substitutedRemaining = [
+        { pubkey: attackerAccount, isWritable: true, isSigner: false }, // Wrong account!
+        { pubkey: admin, isWritable: false, isSigner: false },
+    ];
+
+    await expectExecuteRevertDevnet(
+        "Account substitution",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId1),
+                    Array.from(securitySender1),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender1),
+                    correctAccounts.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx.data),
+                    securitySig1.signature,
+                    securitySig1.recoveryId,
+                    securitySig1.messageHash,
+                    securitySig1.nonce,
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId1),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId1),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(substitutedRemaining)
+                .rpc();
+        },
+        "AccountPubkeyMismatch"
+    );
+
+    // Test 2: Invalid signature
+    console.log("🔒 Testing: Invalid signature...");
+    const currentNonce2 = await syncNonceFromChain();
+    const tssAccount2: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId2 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender2 = Buffer.alloc(20, 0x44);
+
+    const securityCounterIx2 = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const securityAccounts2 = instructionToPayloadFields({
+        instruction: securityCounterIx2,
+        instructionId: 5,
+        chainId: tssAccount2.chainId,
+        nonce: currentNonce2,
+        amount: BigInt(0),
+        txId: securityTxId2,
+        sender: securitySender2,
+    }).accounts;
+
+    const securitySig2 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: currentNonce2,
+        amount: BigInt(0),
+        chainId: tssAccount2.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId2,
+            counterProgram.programId,
+            securitySender2,
+            securityAccounts2,
+            securityCounterIx2.data
+        ),
+    });
+
+    // ATTACK: Corrupt signature
+    const corruptedSig = Array.from(securitySig2.signature);
+    corruptedSig[0] ^= 0xFF;
+
+    await expectExecuteRevertDevnet(
+        "Invalid signature",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId2),
+                    Array.from(securitySender2),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender2),
+                    securityAccounts2.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx2.data),
+                    corruptedSig,
+                    securitySig2.recoveryId,
+                    securitySig2.messageHash,
+                    securitySig2.nonce,
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId2),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId2),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(securityAccounts2.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                    isSigner: false,
+                })))
+                .rpc();
+        },
+        "TssAuthFailed"
+    );
+
+    // Test 3: Wrong nonce
+    console.log("🔒 Testing: Wrong nonce...");
+    const currentNonce3 = await syncNonceFromChain();
+    const tssAccount3: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId3 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender3 = Buffer.alloc(20, 0x55);
+
+    const securityCounterIx3 = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const wrongNonce = currentNonce3 + 10;
+    const securityAccounts3 = instructionToPayloadFields({
+        instruction: securityCounterIx3,
+        instructionId: 5,
+        chainId: tssAccount3.chainId,
+        nonce: wrongNonce, // Wrong nonce!
+        amount: BigInt(0),
+        txId: securityTxId3,
+        sender: securitySender3,
+    }).accounts;
+
+    const securitySig3 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: wrongNonce, // Sign with wrong nonce
+        amount: BigInt(0),
+        chainId: tssAccount3.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId3,
+            counterProgram.programId,
+            securitySender3,
+            securityAccounts3,
+            securityCounterIx3.data
+        ),
+    });
+
+    await expectExecuteRevertDevnet(
+        "Wrong nonce",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId3),
+                    Array.from(securitySender3),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender3),
+                    securityAccounts3.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx3.data),
+                    securitySig3.signature,
+                    securitySig3.recoveryId,
+                    securitySig3.messageHash,
+                    new anchor.BN(wrongNonce), // Wrong nonce!
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId3),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId3),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(securityAccounts3.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                    isSigner: false,
+                })))
+                .rpc();
+        },
+        "NonceMismatch"
+    );
+
+    // Test 4: Account count mismatch
+    console.log("🔒 Testing: Account count mismatch...");
+    const currentNonce4 = await syncNonceFromChain();
+    const tssAccount4: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId4 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender4 = Buffer.alloc(20, 0x66);
+
+    const securityCounterIx4 = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const securityAccounts4 = instructionToPayloadFields({
+        instruction: securityCounterIx4,
+        instructionId: 5,
+        chainId: tssAccount4.chainId,
+        nonce: currentNonce4,
+        amount: BigInt(0),
+        txId: securityTxId4,
+        sender: securitySender4,
+    }).accounts;
+
+    const securitySig4 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: currentNonce4,
+        amount: BigInt(0),
+        chainId: tssAccount4.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId4,
+            counterProgram.programId,
+            securitySender4,
+            securityAccounts4,
+            securityCounterIx4.data
+        ),
+    });
+
+    // ATTACK: Pass fewer accounts
+    const fewerRemaining = [
+        { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+        // Missing admin/authority!
+    ];
+
+    await expectExecuteRevertDevnet(
+        "Account count mismatch",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId4),
+                    Array.from(securitySender4),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender4),
+                    securityAccounts4.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx4.data),
+                    securitySig4.signature,
+                    securitySig4.recoveryId,
+                    securitySig4.messageHash,
+                    securitySig4.nonce,
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId4),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId4),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(fewerRemaining)
+                .rpc();
+        },
+        "AccountListLengthMismatch"
+    );
+
+    console.log("✅ All execute security validations passed on devnet!\n");
 
     // 14. Remove token from whitelist (moved after all tests)
     console.log("14. Testing remove whitelist...");

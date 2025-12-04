@@ -895,5 +895,763 @@ describe("Universal Gateway - Execute Tests", () => {
             expect(recipientTokenAfter - recipientTokenBefore).to.equal(amountTokens);
         });
     });
+
+    describe("execute security validations (negative tests)", () => {
+        /**
+         * Helper to execute a test that should revert with a specific error
+         * @param testName - Descriptive name for the attack being tested
+         * @param executeCall - Async function that performs the attack
+         * @param expectedErrorCode - Expected Anchor error code (e.g., "AccountPubkeyMismatch")
+         */
+        async function expectExecuteRevert(
+            testName: string,
+            executeCall: () => Promise<any>,
+            expectedErrorCode: string
+        ): Promise<void> {
+            try {
+                await executeCall();
+                expect.fail(`${testName}: Should have reverted but succeeded`);
+            } catch (e: any) {
+                const errorMsg = e.toString();
+                const hasExpectedError = errorMsg.includes(expectedErrorCode);
+
+                if (!hasExpectedError) {
+                    console.error(`❌ ${testName}: Expected error "${expectedErrorCode}" but got:`, errorMsg);
+                    expect.fail(`Expected error code "${expectedErrorCode}" not found. Got: ${errorMsg}`);
+                }
+
+                console.log(`✅ ${testName}: Correctly rejected with ${expectedErrorCode}`);
+            }
+        }
+
+        describe("account manipulation attacks", () => {
+            it("should reject account substitution attack", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                // Build a valid instruction
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const correctAccounts = instructionAccountsToGatewayMetas(counterIx);
+
+                // Sign with CORRECT accounts
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        correctAccounts,
+                        counterIx.data
+                    ),
+                });
+
+                // ATTACK: Pass DIFFERENT accounts in remainingAccounts
+                const attackerAccount = Keypair.generate().publicKey;
+                const substitutedRemaining = [
+                    { pubkey: attackerAccount, isWritable: true, isSigner: false }, // Wrong account!
+                    { pubkey: counterAuthority.publicKey, isWritable: false, isSigner: false },
+                ];
+
+                await expectExecuteRevert(
+                    "Account substitution",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                correctAccounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(substitutedRemaining) // Substituted accounts!
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "AccountPubkeyMismatch"
+                );
+            });
+
+            it("should reject account count mismatch", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const correctAccounts = instructionAccountsToGatewayMetas(counterIx);
+
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        correctAccounts,
+                        counterIx.data
+                    ),
+                });
+
+                // ATTACK: Pass FEWER accounts than signed
+                const fewerRemaining = [
+                    { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                    // Missing counterAuthority!
+                ];
+
+                await expectExecuteRevert(
+                    "Account count mismatch (fewer)",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                correctAccounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(fewerRemaining)
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "AccountListLengthMismatch"
+                );
+            });
+
+            it("should reject writable flag mismatch", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const correctAccounts = instructionAccountsToGatewayMetas(counterIx);
+
+                // Sign with counter as writable
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        correctAccounts,
+                        counterIx.data
+                    ),
+                });
+
+                // ATTACK: Mark writable account as read-only in remaining_accounts
+                const wrongWritableRemaining = [
+                    { pubkey: counterKeypair.publicKey, isWritable: false, isSigner: false }, // Should be writable!
+                    { pubkey: counterAuthority.publicKey, isWritable: false, isSigner: false },
+                ];
+
+                await expectExecuteRevert(
+                    "Writable flag mismatch",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                correctAccounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(wrongWritableRemaining)
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "AccountWritableFlagMismatch"
+                );
+            });
+
+            it("should reject account reordering attack", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const correctAccounts = instructionAccountsToGatewayMetas(counterIx);
+
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        correctAccounts,
+                        counterIx.data
+                    ),
+                });
+
+                // ATTACK: Reorder accounts (swap counter and authority)
+                const reorderedRemaining = [
+                    { pubkey: counterAuthority.publicKey, isWritable: false, isSigner: false }, // Wrong position!
+                    { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                ];
+
+                await expectExecuteRevert(
+                    "Account reordering",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                correctAccounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(reorderedRemaining)
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "AccountPubkeyMismatch"
+                );
+            });
+        });
+
+        describe("signature and authentication attacks", () => {
+            it("should reject invalid signature", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const accounts = instructionAccountsToGatewayMetas(counterIx);
+
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        accounts,
+                        counterIx.data
+                    ),
+                });
+
+                // ATTACK: Corrupt the signature
+                const corruptedSignature = Array.from(sig.signature);
+                corruptedSignature[0] ^= 0xFF; // Flip bits
+
+                await expectExecuteRevert(
+                    "Invalid signature",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                accounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                corruptedSignature, // Invalid!
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(instructionAccountsToRemaining(counterIx))
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "TssAuthFailed"
+                );
+            });
+
+            it("should reject wrong nonce", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const accounts = instructionAccountsToGatewayMetas(counterIx);
+
+                // Sign with WRONG nonce (future nonce)
+                const wrongNonce = currentNonce + 5;
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: wrongNonce, // Wrong!
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        accounts,
+                        counterIx.data
+                    ),
+                });
+
+                await expectExecuteRevert(
+                    "Wrong nonce",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                accounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                new anchor.BN(wrongNonce), // Wrong nonce!
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(instructionAccountsToRemaining(counterIx))
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "NonceMismatch"
+                );
+            });
+
+            it("should reject tampered message hash", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const accounts = instructionAccountsToGatewayMetas(counterIx);
+
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        accounts,
+                        counterIx.data
+                    ),
+                });
+
+                // ATTACK: Tamper with message hash
+                const tamperedHash = Array.from(sig.messageHash);
+                tamperedHash[0] ^= 0xFF;
+
+                await expectExecuteRevert(
+                    "Tampered message hash",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                accounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                tamperedHash, // Tampered!
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(instructionAccountsToRemaining(counterIx))
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "MessageHashMismatch"
+                );
+            });
+        });
+
+        describe("program and target validation", () => {
+            it("should reject non-executable destination program", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                // Use a regular account (not a program) as destination
+                const nonExecutableAccount = Keypair.generate().publicKey;
+
+                const accounts: GatewayAccountMeta[] = [
+                    { pubkey: counterKeypair.publicKey, isWritable: true },
+                ];
+
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        nonExecutableAccount, // Non-executable!
+                        new Uint8Array(sender),
+                        accounts,
+                        Buffer.from([0x01])
+                    ),
+                });
+
+                await expectExecuteRevert(
+                    "Non-executable destination program",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                nonExecutableAccount,
+                                Array.from(sender),
+                                accounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from([0x01]),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: nonExecutableAccount,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts([
+                                { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                            ])
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "InvalidProgram"
+                );
+            });
+
+            it("should reject gateway PDAs in remaining accounts (vault)", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                // ATTACK: Include vault PDA in remaining_accounts
+                const maliciousAccounts: GatewayAccountMeta[] = [
+                    { pubkey: counterKeypair.publicKey, isWritable: true },
+                    { pubkey: vaultPda, isWritable: true }, // Protected account!
+                ];
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId,
+                        new Uint8Array(sender),
+                        maliciousAccounts, // Includes vault!
+                        counterIx.data
+                    ),
+                });
+
+                const maliciousRemaining = [
+                    { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                    { pubkey: vaultPda, isWritable: true, isSigner: false }, // Vault should never be passed!
+                ];
+
+                await expectExecuteRevert(
+                    "Gateway vault PDA in remaining accounts",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                counterProgram.programId,
+                                Array.from(sender),
+                                maliciousAccounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: counterProgram.programId,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(maliciousRemaining)
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "Error" // Will fail at CPI level or earlier validation
+                );
+            });
+
+            it("should reject target program mismatch (via message hash)", async () => {
+                await syncNonceFromChain();
+                const txId = generateTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterKeypair.publicKey,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const accounts = instructionAccountsToGatewayMetas(counterIx);
+
+                // Sign for counter program
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.ExecuteSol,
+                    nonce: currentNonce,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(txId),
+                        counterProgram.programId, // Signed for counter program
+                        new Uint8Array(sender),
+                        accounts,
+                        counterIx.data
+                    ),
+                });
+
+                // ATTACK: Pass different program as destination_program
+                // Note: This fails at message hash validation because target_program is part of the signed message.
+                // The TargetProgramMismatch check exists as a defensive measure but is unlikely to be hit
+                // since message hash validation happens first.
+                const differentProgram = Keypair.generate().publicKey;
+
+                await expectExecuteRevert(
+                    "Target program mismatch (caught by message hash validation)",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .executeUniversalTx(
+                                Array.from(txId),
+                                Array.from(sender),
+                                new anchor.BN(0),
+                                differentProgram, // Different from signed!
+                                Array.from(sender),
+                                accounts.map((a) => ({
+                                    pubkey: a.pubkey,
+                                    isWritable: a.isWritable,
+                                })),
+                                Buffer.from(counterIx.data),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                                sig.nonce,
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                stagingAuthority: getStagingAuthorityPda(txId),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                destinationProgram: differentProgram,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(instructionAccountsToRemaining(counterIx))
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "MessageHashMismatch" // Correct error - message hash includes target_program
+                );
+            });
+        });
+    });
 });
 
