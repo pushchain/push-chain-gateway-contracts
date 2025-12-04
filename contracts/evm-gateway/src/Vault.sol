@@ -12,8 +12,7 @@ pragma solidity 0.8.26;
 
 import {Errors}                     from "./libraries/Errors.sol";
 import {IVault}                     from "./interfaces/IVault.sol";
-import {RevertInstructions, 
-            ExecutionType}          from "./libraries/Types.sol";
+import {RevertInstructions}         from "./libraries/Types.sol";
 import {IUniversalGateway}          from "./interfaces/IUniversalGateway.sol";
 import {ICEAFactory}                from "./interfaces/ICEAFactory.sol";
 import {ICEA}                       from "./interfaces/ICEA.sol";
@@ -147,8 +146,15 @@ contract Vault is
         emit VaultWithdraw(txID, ueaAddress, token, to, amount);
     }
 
+    /// @notice             Handles outbound execution via CEA (the only execution path)
+    /// @dev                Routes all outbound executions through user's CEA contract
+    /// @param txID         Unique transaction identifier
+    /// @param ueaAddress   UEA address on Push Chain
+    /// @param token        Token address (address(0) for native)
+    /// @param target       Target contract to execute on
+    /// @param amount       Amount of token/native to execute with
+    /// @param data         Calldata to execute on target
     function handleOutboundExecution(
-        ExecutionType executionType,
         bytes32 txID,
         address ueaAddress,
         address token,
@@ -156,44 +162,6 @@ contract Vault is
         uint256 amount,
         bytes calldata data
     ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
-        if (executionType == ExecutionType.GATEWAY) {
-            _withdrawAndExecute(txID, ueaAddress, token, target, amount, data);
-        } else if (executionType == ExecutionType.CEA) {
-            _withdrawAndExecuteViaCEA(txID, ueaAddress, token, target, amount, data);
-        } else {
-            revert Errors.InvalidInput();
-        }
-
-    }
-
-    function _withdrawAndExecute(bytes32 txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data)
-        private
-    {
-        _validateExecutionParams(ueaAddress, token, target, amount);
-        _enforceSupported(token);
-
-        if (token != address(0)) {
-            if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-            IERC20(token).safeTransfer(address(gateway), amount);
-            gateway.executeUniversalTx(txID, ueaAddress, token, target, amount, data);
-        } else {
-            if (msg.value != amount) revert Errors.InvalidAmount();
-
-            gateway.executeUniversalTx{value: amount}(txID, ueaAddress, target, amount, data);
-        }
-
-        emit VaultWithdrawAndExecute(token, target, amount, data);
-    }
-
-    function _withdrawAndExecuteViaCEA(
-        bytes32 txID,
-        address ueaAddress,
-        address token,
-        address target,
-        uint256 amount,
-        bytes calldata data
-    ) private { 
-
         _validateExecutionParams(ueaAddress, token, target, amount);
         _enforceSupported(token);
 

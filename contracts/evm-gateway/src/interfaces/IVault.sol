@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertInstructions, ExecutionType } from "../libraries/Types.sol";
+import { RevertInstructions } from "../libraries/Types.sol";
 /**
  * @title IVault
  * @notice Interface for ERC20 custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
@@ -57,7 +57,17 @@ interface IVault {
      */
     function withdraw(bytes32 txID, address ueaAddress, address token, address to, uint256 amount) external;
 
-    function handleOutboundExecution(ExecutionType executionType, bytes32 txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data) external payable;
+    /**
+     * @notice              Handles outbound execution via CEA (the only execution path)
+     * @dev                 Routes all outbound executions through user's CEA contract
+     * @param txID          Unique transaction identifier
+     * @param ueaAddress    UEA address on Push Chain
+     * @param token         Token address (address(0) for native)
+     * @param target        Target contract to execute on
+     * @param amount        Amount of token/native to execute with
+     * @param data          Calldata to execute on target
+     */
+    function handleOutboundExecution(bytes32 txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data) external payable;
 
     /**
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains
