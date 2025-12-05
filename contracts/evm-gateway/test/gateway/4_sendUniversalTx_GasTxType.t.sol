@@ -30,7 +30,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address fundRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -117,7 +117,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            fundRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -238,7 +238,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0), // Native token (even though amount is 0)
             amount: gasAmount, // Zero amount
             payload: nonEmptyPayload, // Payload is present
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -260,10 +260,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0),
             amount: 0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             payload: bytes(""),
-            revertInstruction: RevertInstructions({
-                fundRecipient: address(0), // ❌ Zero address
-                revertMsg: bytes("")
-            }),
+            fundRecipient: address(0), // ❌ Zero address
             signatureData: bytes("")
         });
 
@@ -283,7 +280,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0),
             amount: 0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0), revertMsg: bytes("") }),
+            fundRecipient: address(0),
             signatureData: bytes("")
         });
 
@@ -524,7 +521,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0),
             amount: 0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             payload: bytes(""),
-            revertInstruction: revertInst,
+            fundRecipient: revertInst.fundRecipient,
             signatureData: sigData
         });
 
@@ -537,7 +534,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0), // Native token
             amount: gasAmount,
             payload: bytes(""), // Empty for GAS
-            revertInstruction: revertInst,
+            fundRecipient: revertInst.fundRecipient,
             signatureData: sigData
         });
 
@@ -561,7 +558,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0),
             amount: 0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             payload: encodedPayload,
-            revertInstruction: revertInst,
+            fundRecipient: revertInst.fundRecipient,
             signatureData: sigData
         });
 
@@ -573,7 +570,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0), // Native token
             amount: gasAmount,
             payload: encodedPayload, // Non-empty for GAS_AND_PAYLOAD
-            revertInstruction: revertInst,
+            fundRecipient: revertInst.fundRecipient,
             signatureData: sigData
         });
 
@@ -602,7 +599,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0),
             amount: gasAmount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("") // Empty
          });
 

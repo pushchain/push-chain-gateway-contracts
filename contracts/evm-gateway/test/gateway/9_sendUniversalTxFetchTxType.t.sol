@@ -31,7 +31,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address fundRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -109,7 +109,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: token,
             amount: amount,
             payload: payloadBytes,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
+            fundRecipient: address(0x456),
             signatureData: bytes("sig")
         });
     }
@@ -136,7 +136,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: nativeValue,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -157,7 +157,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: nativeValue,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -178,7 +178,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: amount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -199,7 +199,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: nativeValue,
             payload: nonEmptyPayload(),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -233,7 +233,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: nativeValue,
             payload: nonEmptyPayload(),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -254,7 +254,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: nativeValue,
             payload: nonEmptyPayload(),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -275,7 +275,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -297,7 +297,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: 0,
             payload: nonEmptyPayload(),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -324,7 +324,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: amount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -358,7 +358,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -401,7 +401,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -457,7 +457,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: address(0),
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: req.signatureData
         });
 
@@ -543,7 +543,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
+            fundRecipient: address(0x456),
             signatureData: bytes("")
         });
 
@@ -556,7 +556,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
+            fundRecipient: address(0x456),
             signatureData: bytes("different signature data")
         });
 
@@ -575,7 +575,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("context1") }),
+            fundRecipient: address(0x456),
             signatureData: bytes("sig")
         });
 
@@ -587,10 +587,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({
-                fundRecipient: address(0x456),
-                revertMsg: bytes("completely different context")
-            }),
+            fundRecipient: address(0x456),
             signatureData: bytes("sig")
         });
 

@@ -9,7 +9,7 @@ import {
     TX_TYPE,
     UniversalTxRequest,
     UniversalTokenTxRequest
-} from "../libraries/Types.sol";
+} from "../libraries/Types.sol";    
 
 interface IUniversalGatewayV0 {
     // =========================
@@ -23,7 +23,7 @@ interface IUniversalGatewayV0 {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address fundRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -73,7 +73,7 @@ interface IUniversalGatewayV0 {
 
     function sendTxWithGas(
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address fundRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -81,7 +81,7 @@ interface IUniversalGatewayV0 {
         address tokenIn,
         uint256 amountIn,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address fundRecipient,
         uint256 amountOutMinETH,
         uint256 deadline,
         bytes memory signatureData
@@ -95,14 +95,14 @@ interface IUniversalGatewayV0 {
         address recipient,
         address bridgeToken,
         uint256 bridgeAmount,
-        RevertInstructions calldata revertCFG
+        address fundRecipient
     ) external payable;
 
     function sendTxWithFunds(
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address fundRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -114,7 +114,7 @@ interface IUniversalGatewayV0 {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address fundRecipient,
         bytes memory signatureData
     ) external;
 
@@ -122,7 +122,7 @@ interface IUniversalGatewayV0 {
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address fundRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -134,7 +134,7 @@ interface IUniversalGatewayV0 {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address fundRecipient,
         bytes memory signatureData
     ) external;
 

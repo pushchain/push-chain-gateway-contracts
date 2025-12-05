@@ -377,7 +377,7 @@ abstract contract BaseTest is Test {
             token: address(0), // Native token
             amount: 0, // No funds (amount = 0) for GAS/GAS_AND_PAYLOAD routes
             payload: abi.encode(payload), // Non-empty payload routes to GAS_AND_PAYLOAD
-            revertInstruction: buildDefaultRevertInstructions(),
+            fundRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -388,19 +388,19 @@ abstract contract BaseTest is Test {
     /// @return UniversalTxRequest struct configured for FUNDS route
     function _buildFundsTxRequest(address token, uint256 amount)
         internal
-        view
+        pure
         virtual
         returns (UniversalTxRequest memory)
     {
-        return _buildFundsTxRequest(token, amount, buildDefaultRevertInstructions());
+        return _buildFundsTxRequest(token, amount, address(0x456));
     }
 
-    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom revert instructions
+    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom fund recipient
     /// @param token Token address (address(0) for native, or ERC20 token address)
     /// @param amount Amount of tokens to send
-    /// @param revertInstructions Custom revert instructions
+    /// @param fundRecipient Address to receive funds in case of revert
     /// @return UniversalTxRequest struct configured for FUNDS route
-    function _buildFundsTxRequest(address token, uint256 amount, RevertInstructions memory revertInstructions)
+    function _buildFundsTxRequest(address token, uint256 amount, address fundRecipient)
         internal
         pure
         virtual
@@ -411,7 +411,7 @@ abstract contract BaseTest is Test {
             token: token,
             amount: amount,
             payload: bytes(""), // Empty payload for FUNDS route
-            revertInstruction: revertInstructions,
+            fundRecipient: fundRecipient,
             signatureData: bytes("")
         });
     }
@@ -425,7 +425,7 @@ abstract contract BaseTest is Test {
     /// @return UniversalTxRequest struct configured for FUNDS_AND_PAYLOAD route
     function _buildFundsAndPayloadTxRequest(address token, uint256 amount, UniversalPayload memory payload)
         internal
-        view
+        pure
         virtual
         returns (UniversalTxRequest memory)
     {
@@ -434,7 +434,7 @@ abstract contract BaseTest is Test {
             token: token,
             amount: amount,
             payload: abi.encode(payload), // Non-empty payload required for FUNDS_AND_PAYLOAD
-            revertInstruction: buildDefaultRevertInstructions(),
+            fundRecipient: address(0x456),
             signatureData: bytes("")
         });
     }

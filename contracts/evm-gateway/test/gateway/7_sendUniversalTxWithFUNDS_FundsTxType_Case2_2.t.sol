@@ -43,7 +43,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address fundRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -130,7 +130,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            fundRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -179,7 +179,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: expectedGasAmount,
             payload: bytes(""), // Gas event has empty payload
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -192,7 +192,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload, // Funds event has full payload
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -234,7 +234,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -307,7 +307,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: msgValue - fundsAmount,
             payload: bytes(""), // Empty for gas event
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -320,7 +320,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload, // Full payload preserved
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -410,7 +410,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -473,10 +473,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: RevertInstructions({
-                fundRecipient: address(0), // Zero address
-                revertMsg: bytes("")
-            }),
+            fundRecipient: address(0), // Zero address
             signatureData: bytes("")
         });
 
@@ -770,7 +767,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: gasAmount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -783,7 +780,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -816,7 +813,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -850,7 +847,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: gasAmount,
             payload: bytes(""), // Empty
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -885,7 +882,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: gasAmount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -898,7 +895,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -925,7 +922,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: revertInst,
+            fundRecipient: revertInst.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -950,7 +947,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            fundRecipient: address(0x456),
             signatureData: sigData
         });
 

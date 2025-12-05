@@ -33,7 +33,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address fundRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -120,7 +120,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            fundRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -160,7 +160,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -383,7 +383,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            fundRecipient: req.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -588,10 +588,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: RevertInstructions({
-                fundRecipient: address(0), // Zero address not allowed
-                revertMsg: bytes("")
-            }),
+            fundRecipient: address(0), // Zero address not allowed
             signatureData: bytes("")
         });
 
@@ -644,7 +641,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: revertInst,
+            fundRecipient: revertInst.fundRecipient,
             signatureData: bytes("")
         });
 
@@ -656,7 +653,7 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: revertInst, // Full struct with revertMsg
+            fundRecipient: revertInst.fundRecipient, // Full struct with revertMsg
             signatureData: bytes("")
         });
 

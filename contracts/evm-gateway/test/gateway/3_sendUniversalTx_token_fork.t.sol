@@ -76,7 +76,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address fundRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -218,7 +218,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             gasToken: gasToken,
             gasAmount: gasAmount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            fundRecipient: address(0x456),
             signatureData: bytes(""),
             amountOutMinETH: amountOutMinETH,
             deadline: deadline
@@ -242,7 +242,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             block.timestamp + 1 hours // deadline
         );
         // Set fundRecipient to non-zero for GAS routes (required by _routeUniversalTx)
-        req.revertInstruction.fundRecipient = address(0x456);
+        req.fundRecipient = address(0x456);
         return req;
     }
 
@@ -331,7 +331,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             1e15, // Small min ETH output
             pastDeadline
         );
-        req.revertInstruction.fundRecipient = address(0x456);
+        req.fundRecipient = address(0x456);
 
         vm.expectRevert(Errors.SlippageExceededOrExpired.selector);
         vm.prank(user1);
@@ -418,7 +418,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             address(0),
             gasAmount, // nativeValue from unwrap
             bytes(""),
-            req.revertInstruction,
+            req.fundRecipient,
             TX_TYPE.GAS,
             bytes("")
         );
@@ -763,7 +763,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
             address(0), address(0), 0, MAINNET_USDC, gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
-        req.revertInstruction.fundRecipient = address(0); // Invalid
+        req.fundRecipient = address(0); // Invalid
 
         // Act & Assert: Should revert on invalid revertInstruction
         vm.expectRevert(Errors.InvalidRecipient.selector);
