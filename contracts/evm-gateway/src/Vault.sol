@@ -164,13 +164,13 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function revertWithdraw(bytes32 txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertWithdraw(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertInstruction)
         external
         nonReentrant
         whenNotPaused
         onlyRole(TSS_ROLE)
     {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
+        if (token == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
         _enforceSupported(token);
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
@@ -178,7 +178,7 @@ contract Vault is
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(txID, token, amount, revertInstruction);
 
-        emit VaultRevert(token, to, amount, revertInstruction);
+        emit VaultRevert(token, revertInstruction.fundRecipient, amount);
     }
 
     // =========================
