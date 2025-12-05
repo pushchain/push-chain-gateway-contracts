@@ -35,9 +35,9 @@ contract MockReentrantContract {
         bytes calldata to,
         uint256 amount,
         uint256 gasLimit,
-        address fundRecipient
+        address revertRecipient
     ) external {
-        IUniversalGatewayPC(gateway).withdraw(to, prc20Token, amount, gasLimit, fundRecipient);
+        IUniversalGatewayPC(gateway).withdraw(to, prc20Token, amount, gasLimit, revertRecipient);
     }
 
     function attemptReentrancyWithExecute(
@@ -45,9 +45,9 @@ contract MockReentrantContract {
         uint256 amount,
         bytes calldata payload,
         uint256 gasLimit,
-        address fundRecipient
+        address revertRecipient
     ) external {
-        IUniversalGatewayPC(gateway).withdrawAndExecute(target, prc20Token, amount, payload, gasLimit, fundRecipient);
+        IUniversalGatewayPC(gateway).withdrawAndExecute(target, prc20Token, amount, payload, gasLimit, revertRecipient);
     }
 
     // ============================================================================

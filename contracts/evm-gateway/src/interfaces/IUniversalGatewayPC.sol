@@ -33,7 +33,7 @@ interface IUniversalGatewayPC {
         uint256 gasLimit,
         bytes payload,
         uint256 protocolFee,
-        address fundRecipient,
+        address revertRecipient,
         TX_TYPE txType
     );
 
@@ -49,14 +49,14 @@ interface IUniversalGatewayPC {
      * @param token              PRC20 token address on Push Chain.
      * @param amount             amount to withdraw (burn on Push, unlock at origin).
      * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
-     * @param fundRecipient      address to receive funds in case of revert.
+     * @param revertRecipient      address to receive funds in case of revert.
      */
     function withdraw(
         bytes calldata to,
         address token,
         uint256 amount,
         uint256 gasLimit,
-        address fundRecipient
+        address revertRecipient
     ) external;
 
     /**
@@ -67,7 +67,7 @@ interface IUniversalGatewayPC {
      * @param amount             amount to withdraw (burn on Push, unlock at origin).
      * @param payload            ABI-encoded calldata to execute on the origin chain.   
      * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
-     * @param fundRecipient      address to receive funds in case of revert.
+     * @param revertRecipient      address to receive funds in case of revert.
      */
     function withdrawAndExecute(
         bytes calldata target,
@@ -75,7 +75,7 @@ interface IUniversalGatewayPC {
         uint256 amount,
         bytes calldata payload,
         uint256 gasLimit,
-        address fundRecipient
+        address revertRecipient
     ) external;
 
     // ========= View Functions =========

@@ -27,7 +27,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        address fundRecipient,
+        address revertRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -118,7 +118,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            fundRecipient: address(0x456),
+            revertRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -153,7 +153,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             token: address(0), // Native token
             amount: gasAmount,
             payload: bytes(""),
-            fundRecipient: req.fundRecipient,
+            revertRecipient: req.revertRecipient,
             txType: TX_TYPE.GAS,
             signatureData: bytes("")
         });
@@ -194,7 +194,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             token: address(0), // Native token
             amount: gasAmount,
             payload: encodedPayload,
-            fundRecipient: req.fundRecipient,
+            revertRecipient: req.revertRecipient,
             txType: TX_TYPE.GAS_AND_PAYLOAD,
             signatureData: bytes("")
         });
@@ -236,7 +236,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             token: address(0), // Native token
             amount: fundsAmount,
             payload: bytes(""),
-            fundRecipient: req.fundRecipient,
+            revertRecipient: req.revertRecipient,
             txType: TX_TYPE.FUNDS,
             signatureData: bytes("")
         });

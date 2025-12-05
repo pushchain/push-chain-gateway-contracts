@@ -38,9 +38,9 @@ interface IVault {
 
     /// @notice             Vault revert event
     /// @param token        Token address
-    /// @param fundRecipient Recipient address
+    /// @param revertRecipient Recipient address
     /// @param amount       Amount of token
-    event VaultRevert(address indexed token, address indexed fundRecipient, uint256 amount);
+    event VaultRevert(address indexed token, address indexed revertRecipient, uint256 amount);
 
     // =========================
     //          WITHDRAW
@@ -74,7 +74,7 @@ interface IVault {
      * @param txID              unique transaction identifier (for replay protection)
      * @param token             ERC20 token to refund (must be supported) on external chain
      * @param amount            amount to refund on external chain
-     * @param revertInstruction revert instruction containing fundRecipient and revertMsg
+     * @param revertInstruction revert instruction containing revertRecipient and revertMsg
      */
     function revertWithdraw(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertInstruction) external;
 }

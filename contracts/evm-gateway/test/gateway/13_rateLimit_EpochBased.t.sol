@@ -865,7 +865,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions and payload
-        address fundRecipient = user1;
+        address revertRecipient = user1;
         UniversalPayload memory payload = buildDefaultPayload();
 
         // Try to send funds with unsupported bridge token (tokenB)
@@ -876,7 +876,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
             token: address(tokenB), // Unsupported bridge token
             amount: 1 ether,
             payload: encodedPayload,
-            fundRecipient: fundRecipient,
+            revertRecipient: revertRecipient,
             signatureData: bytes("")
         });
         vm.expectRevert(Errors.NotSupported.selector);
@@ -900,7 +900,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 firstAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
@@ -953,7 +953,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 firstAmount = (TOKEN_A_THRESHOLD * 3) / 4; // Use 75% of the threshold
 
@@ -1109,7 +1109,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         // Expect revert with EnforcedPause
         vm.expectRevert("EnforcedPause()");
@@ -1152,7 +1152,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         // Send exactly 1 wei (the threshold)
         gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1, user1));
@@ -1184,7 +1184,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         // Send exactly the threshold amount
         gateway.sendUniversalTx{ value: 0 }(
@@ -1222,7 +1222,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         // Expect revert with InvalidData
         vm.expectRevert(Errors.InvalidData.selector);
@@ -1260,7 +1260,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 firstAmount = TOKEN_A_THRESHOLD / 2;
 
@@ -1422,7 +1422,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 firstAmount = TOKEN_A_THRESHOLD / 2; // Use 50% of the threshold
 
@@ -1479,7 +1479,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 firstAmount = TOKEN_A_THRESHOLD / 2; // Use 50% of the threshold
 
@@ -1575,7 +1575,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 firstAmount = TOKEN_A_THRESHOLD / 3; // Use 1/3 of the threshold
 
@@ -1711,7 +1711,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 sendAmount = TOKEN_A_THRESHOLD / 2;
 
@@ -1748,7 +1748,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.startPrank(user1);
 
         // Create revert instructions
-        address fundRecipient = user1;
+        address revertRecipient = user1;
 
         uint256 sendAmount = TOKEN_A_THRESHOLD / 2;
 

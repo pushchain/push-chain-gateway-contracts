@@ -450,7 +450,7 @@ contract OracleTest is BaseTest {
     // USD CAP BOUNDARY CONDITIONS TESTS
     // =========================
 
-    function _buildGasUniversalTxRequest(UniversalPayload memory payload, address fundRecipient)
+    function _buildGasUniversalTxRequest(UniversalPayload memory payload, address revertRecipient)
         internal
         pure
         returns (UniversalTxRequest memory)
@@ -460,7 +460,7 @@ contract OracleTest is BaseTest {
             token: address(0),
             amount: 0,
             payload: abi.encode(payload),
-            fundRecipient: fundRecipient,
+            revertRecipient: revertRecipient,
             signatureData: bytes("")
         });
     }
@@ -478,7 +478,7 @@ contract OracleTest is BaseTest {
 
         // Should not revert
         vm.prank(user1);
-        gateway.sendUniversalTx{ value: testAmount }(_buildGasUniversalTxRequest(payload, revertCfg.fundRecipient));
+        gateway.sendUniversalTx{ value: testAmount }(_buildGasUniversalTxRequest(payload, revertCfg.revertRecipient));
     }
 
     function testUSDCapBoundaries_ExactMaxCap_Success() public {
@@ -493,7 +493,7 @@ contract OracleTest is BaseTest {
 
         // Should not revert
         vm.prank(user1);
-        gateway.sendUniversalTx{ value: maxEth }(_buildGasUniversalTxRequest(payload, revertCfg.fundRecipient));
+        gateway.sendUniversalTx{ value: maxEth }(_buildGasUniversalTxRequest(payload, revertCfg.revertRecipient));
     }
 
     function testUSDCapBoundaries_JustBelowMinCap_Reverts() public {
@@ -508,7 +508,7 @@ contract OracleTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
-        gateway.sendUniversalTx{ value: belowMin }(_buildGasUniversalTxRequest(payload, revertCfg.fundRecipient));
+        gateway.sendUniversalTx{ value: belowMin }(_buildGasUniversalTxRequest(payload, revertCfg.revertRecipient));
     }
 
     function testUSDCapBoundaries_JustAboveMaxCap_Reverts() public {
@@ -523,6 +523,6 @@ contract OracleTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vm.prank(user1);
-        gateway.sendUniversalTx{ value: aboveMax }(_buildGasUniversalTxRequest(payload, revertCfg.fundRecipient));
+        gateway.sendUniversalTx{ value: aboveMax }(_buildGasUniversalTxRequest(payload, revertCfg.revertRecipient));
     }
 }

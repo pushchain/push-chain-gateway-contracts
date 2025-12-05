@@ -83,9 +83,9 @@ contract UniversalGatewayPC is
         address token,
         uint256 amount,
         uint256 gasLimit,
-        address fundRecipient
+        address revertRecipient
     ) external whenNotPaused nonReentrant {
-        _validateCommon(to, token, amount, fundRecipient);
+        _validateCommon(to, token, amount, revertRecipient);
 
         // Compute fees + collect from caller into the UEM fee sink
         (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
@@ -96,7 +96,7 @@ contract UniversalGatewayPC is
 
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
         emit UniversalTxWithdraw(
-            msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee, fundRecipient, TX_TYPE.FUNDS
+            msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee, revertRecipient, TX_TYPE.FUNDS
         );
     }
 
@@ -107,9 +107,9 @@ contract UniversalGatewayPC is
         uint256 amount,
         bytes calldata payload,
         uint256 gasLimit,
-        address fundRecipient
+        address revertRecipient
     ) external whenNotPaused nonReentrant {
-        _validateCommon(target, token, amount, fundRecipient);
+        _validateCommon(target, token, amount, revertRecipient);
 
         // Compute fees + collect from caller into the UEM fee sink
         (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
@@ -120,7 +120,7 @@ contract UniversalGatewayPC is
 
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
         emit UniversalTxWithdraw(
-            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, fundRecipient, TX_TYPE.FUNDS_AND_PAYLOAD
+            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, revertRecipient, TX_TYPE.FUNDS_AND_PAYLOAD
         );
     }
 
@@ -131,17 +131,17 @@ contract UniversalGatewayPC is
     /// @param rawTarget        raw destination address on origin chain.
     /// @param token            PRC20 token address on Push Chain.
     /// @param amount           amount to withdraw (burn on Push, unlock at origin).
-    /// @param fundRecipient    address to receive funds in case of revert.
+    /// @param revertRecipient    address to receive funds in case of revert.
     function _validateCommon(
         bytes calldata rawTarget,
         address token,
         uint256 amount,
-        address fundRecipient
+        address revertRecipient
     ) internal pure {
         if (rawTarget.length == 0) revert Errors.InvalidInput();
         if (token == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
-        if (fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
     }
 
     /**

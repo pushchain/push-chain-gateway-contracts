@@ -40,7 +40,7 @@ contract VaultTest is Test {
         bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount
     );
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
-    event VaultRevert(address indexed token, address indexed fundRecipient, uint256 amount);
+    event VaultRevert(address indexed token, address indexed revertRecipient, uint256 amount);
 
     bytes32 txID = bytes32(uint256(1));
 

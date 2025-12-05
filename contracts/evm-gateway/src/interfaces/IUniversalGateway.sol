@@ -32,7 +32,7 @@ interface IUniversalGateway {
     /// @param token                Token address being sent
     /// @param amount               Amount of token being sent
     /// @param payload              Payload for arbitrary call on Push Chain: for funds-only tx, payload is empty.
-    /// @param fundRecipient        Fund recipient
+    /// @param revertRecipient        Fund recipient
     /// @param txType               Transaction type: TX_TYPE enum 
     /// @param signatureData        Signature data: for signedVerification, signatureData is the signature of the sender.
     event UniversalTx(
@@ -41,7 +41,7 @@ interface IUniversalGateway {
         address token,
         uint256 amount,
         bytes payload,
-        address fundRecipient,
+        address revertRecipient,
         TX_TYPE txType,
         bytes signatureData
     );

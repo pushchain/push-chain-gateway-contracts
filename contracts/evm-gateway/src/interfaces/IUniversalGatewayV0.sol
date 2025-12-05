@@ -23,7 +23,7 @@ interface IUniversalGatewayV0 {
         address token,
         uint256 amount,
         bytes payload,
-        address fundRecipient,
+        address revertRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -73,7 +73,7 @@ interface IUniversalGatewayV0 {
 
     function sendTxWithGas(
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -81,7 +81,7 @@ interface IUniversalGatewayV0 {
         address tokenIn,
         uint256 amountIn,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         uint256 amountOutMinETH,
         uint256 deadline,
         bytes memory signatureData
@@ -95,14 +95,14 @@ interface IUniversalGatewayV0 {
         address recipient,
         address bridgeToken,
         uint256 bridgeAmount,
-        address fundRecipient
+        address revertRecipient
     ) external payable;
 
     function sendTxWithFunds(
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -114,7 +114,7 @@ interface IUniversalGatewayV0 {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external;
 
@@ -122,7 +122,7 @@ interface IUniversalGatewayV0 {
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -134,7 +134,7 @@ interface IUniversalGatewayV0 {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external;
 

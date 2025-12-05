@@ -76,7 +76,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        address fundRecipient,
+        address revertRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -218,7 +218,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             gasToken: gasToken,
             gasAmount: gasAmount,
             payload: payload,
-            fundRecipient: address(0x456),
+            revertRecipient: address(0x456),
             signatureData: bytes(""),
             amountOutMinETH: amountOutMinETH,
             deadline: deadline
@@ -241,8 +241,8 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             amountOutMinETH,
             block.timestamp + 1 hours // deadline
         );
-        // Set fundRecipient to non-zero for GAS routes (required by _routeUniversalTx)
-        req.fundRecipient = address(0x456);
+        // Set revertRecipient to non-zero for GAS routes (required by _routeUniversalTx)
+        req.revertRecipient = address(0x456);
         return req;
     }
 
@@ -331,7 +331,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             1e15, // Small min ETH output
             pastDeadline
         );
-        req.fundRecipient = address(0x456);
+        req.revertRecipient = address(0x456);
 
         vm.expectRevert(Errors.SlippageExceededOrExpired.selector);
         vm.prank(user1);
@@ -418,7 +418,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             address(0),
             gasAmount, // nativeValue from unwrap
             bytes(""),
-            req.fundRecipient,
+            req.revertRecipient,
             TX_TYPE.GAS,
             bytes("")
         );
@@ -752,7 +752,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
 
     /// @notice Test that revertInstruction validation is preserved
     function test_TokenGas_PreservesRevertInstruction() public {
-        // Arrange: Zero fundRecipient should revert for GAS route
+        // Arrange: Zero revertRecipient should revert for GAS route
         uint256 gasAmount = 100e6; // Use larger amount to meet USD caps
         uint256 amountOutMinETH = 0.0003 ether;
 
@@ -763,7 +763,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
             address(0), address(0), 0, MAINNET_USDC, gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
-        req.fundRecipient = address(0); // Invalid
+        req.revertRecipient = address(0); // Invalid
 
         // Act & Assert: Should revert on invalid revertInstruction
         vm.expectRevert(Errors.InvalidRecipient.selector);

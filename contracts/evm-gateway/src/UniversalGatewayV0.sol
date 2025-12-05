@@ -386,7 +386,7 @@ contract UniversalGatewayV0 is
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
@@ -405,7 +405,7 @@ contract UniversalGatewayV0 is
             bridgeToken,
             bridgeAmount,
             abi.encode(payload),
-            fundRecipient,
+            revertRecipient,
             TX_TYPE.FUNDS_AND_PAYLOAD,
             signatureData
         );
@@ -420,7 +420,7 @@ contract UniversalGatewayV0 is
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
@@ -440,7 +440,7 @@ contract UniversalGatewayV0 is
             bridgeToken,
             bridgeAmount,
             abi.encode(payload),
-            fundRecipient,
+            revertRecipient,
             TX_TYPE.FUNDS_AND_PAYLOAD,
             signatureData
         );
@@ -455,11 +455,11 @@ contract UniversalGatewayV0 is
         address _bridgeToken,
         uint256 _bridgeAmount,
         bytes memory _payload, 
-        address _fundRecipient,
+        address _revertRecipient,
         TX_TYPE _txType,
         bytes memory _signatureData
     ) internal {
-        if (_fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (_revertRecipient == address(0)) revert Errors.InvalidRecipient();
         /// for recipient == address(0), the funds are being moved to UEA of the msg.sender on Push Chain.
         if (_recipient == address(0)) {
             if (_txType != TX_TYPE.FUNDS_AND_PAYLOAD && _txType != TX_TYPE.GAS_AND_PAYLOAD) {
@@ -473,7 +473,7 @@ contract UniversalGatewayV0 is
             token: _bridgeToken,
             amount: _bridgeAmount,
             payload: _payload,
-            fundRecipient: _fundRecipient,
+            revertRecipient: _revertRecipient,
             txType: _txType,
             signatureData: _signatureData
         });
@@ -503,7 +503,7 @@ contract UniversalGatewayV0 is
             token: reqToken.token,
             amount: reqToken.amount,
             payload: reqToken.payload,
-            fundRecipient: reqToken.fundRecipient,
+            revertRecipient: reqToken.revertRecipient,
             signatureData: reqToken.signatureData
         });
 
@@ -518,7 +518,7 @@ contract UniversalGatewayV0 is
         address _caller,
         uint256 _gasAmount,
         bytes memory _payload,
-        address _fundRecipient,
+        address _revertRecipient,
         bytes memory _signatureData
     ) private {
         if (_gasAmount > 0) {
@@ -529,7 +529,7 @@ contract UniversalGatewayV0 is
         }
 
         _emitUniversalTx( // recipient as address(0) -> UEA.
-        _caller, address(0), address(0), _gasAmount, _payload, _fundRecipient, _txType, _signatureData);
+        _caller, address(0), address(0), _gasAmount, _payload, _revertRecipient, _txType, _signatureData);
     }
 
 
@@ -558,7 +558,7 @@ contract UniversalGatewayV0 is
                 tokenForFunds,
                 _req.amount,
                 _req.payload,
-                _req.fundRecipient,
+                _req.revertRecipient,
                 txType,
                 _req.signatureData
             );
@@ -595,7 +595,7 @@ contract UniversalGatewayV0 is
 
                 if (gasAmount > 0) {
                     _sendTxWithGas(
-                        TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.fundRecipient, _req.signatureData
+                        TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertRecipient, _req.signatureData
                     );
                 }
                 tokenForFundsAndPayload = address(0);
@@ -605,7 +605,7 @@ contract UniversalGatewayV0 is
                 uint256 gasAmount = nativeValue;
                 // Send Gas to caller's UEA via instant route
                 _sendTxWithGas(
-                    TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.fundRecipient, _req.signatureData
+                    TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertRecipient, _req.signatureData
                 );
 
                 tokenForFundsAndPayload = _req.token;
@@ -619,7 +619,7 @@ contract UniversalGatewayV0 is
                 tokenForFundsAndPayload,
                 _req.amount,
                 _req.payload,
-                _req.fundRecipient,
+                _req.revertRecipient,
                 txType,
                 _req.signatureData
             );
@@ -634,11 +634,11 @@ contract UniversalGatewayV0 is
 
     /// @notice Legacy: Send transaction with gas using native token (GAS_AND_PAYLOAD route)
     /// @param payload Universal payload for execution
-    /// @param fundRecipient Fund recipient
+    /// @param revertRecipient Fund recipient
     /// @param signatureData Signature data for verification
     function sendTxWithGas(
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
         _sendTxWithGas(
@@ -646,7 +646,7 @@ contract UniversalGatewayV0 is
             _msgSender(),
             msg.value,
             abi.encode(payload),
-            fundRecipient,
+            revertRecipient,
             signatureData
         );
     }
@@ -656,7 +656,7 @@ contract UniversalGatewayV0 is
     /// @param tokenIn Token to swap for gas
     /// @param amountIn Amount of tokenIn to swap
     /// @param payload Universal payload for execution
-    /// @param fundRecipient Fund recipient
+    /// @param revertRecipient Fund recipient
     /// @param amountOutMinETH Minimum ETH to receive from swap
     /// @param deadline Swap deadline
     /// @param signatureData Signature data for verification
@@ -664,7 +664,7 @@ contract UniversalGatewayV0 is
         address tokenIn,
         uint256 amountIn,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         uint256 amountOutMinETH,
         uint256 deadline,
         bytes memory signatureData
@@ -682,7 +682,7 @@ contract UniversalGatewayV0 is
             _msgSender(),
             ethOut,
             abi.encode(payload),
-            fundRecipient,
+            revertRecipient,
             signatureData
         );
     }
@@ -691,12 +691,12 @@ contract UniversalGatewayV0 is
     /// @param recipient Recipient address on Push Chain
     /// @param bridgeToken Token to bridge (address(0) for native)
     /// @param bridgeAmount Amount to bridge
-    /// @param fundRecipient Fund recipient
+    /// @param revertRecipient Fund recipient
     function sendFunds(
         address recipient,
         address bridgeToken,
         uint256 bridgeAmount,
-        address fundRecipient
+        address revertRecipient
     ) external payable nonReentrant whenNotPaused {
 
         UniversalTxRequest memory req = UniversalTxRequest({
@@ -704,7 +704,7 @@ contract UniversalGatewayV0 is
             token: bridgeToken,
             amount: bridgeAmount,
             payload: bytes(""),
-            fundRecipient: fundRecipient,
+            revertRecipient: revertRecipient,
             signatureData: bytes("")
         });
 
@@ -715,13 +715,13 @@ contract UniversalGatewayV0 is
     /// @param bridgeToken Token to bridge
     /// @param bridgeAmount Amount to bridge
     /// @param payload Universal payload for execution
-    /// @param fundRecipient Fund recipient
+    /// @param revertRecipient Fund recipient
     /// @param signatureData Signature data for verification
     function sendTxWithFunds_new(
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable nonReentrant whenNotPaused {
 
@@ -730,7 +730,7 @@ contract UniversalGatewayV0 is
             token: bridgeToken,
             amount: bridgeAmount,
             payload: abi.encode(payload),
-            fundRecipient: fundRecipient,
+            revertRecipient: revertRecipient,
             signatureData: signatureData
         });
 
@@ -746,7 +746,7 @@ contract UniversalGatewayV0 is
     /// @param amountOutMinETH Minimum ETH to receive from swap
     /// @param deadline Swap deadline
     /// @param payload Universal payload for execution
-    /// @param fundRecipient Fund recipient
+    /// @param revertRecipient Fund recipient
     /// @param signatureData Signature data for verification
     function sendTxWithFunds_new(
         address bridgeToken,
@@ -756,7 +756,7 @@ contract UniversalGatewayV0 is
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        address fundRecipient,
+        address revertRecipient,
         bytes memory signatureData
     ) external nonReentrant whenNotPaused {
         if (bridgeAmount == 0) revert Errors.InvalidAmount();
@@ -773,7 +773,7 @@ contract UniversalGatewayV0 is
             token: bridgeToken,
             amount: bridgeAmount,
             payload: abi.encode(payload),
-            fundRecipient: fundRecipient,
+            revertRecipient: revertRecipient,
             signatureData: signatureData
         });
 
@@ -799,14 +799,14 @@ contract UniversalGatewayV0 is
     {
         if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
         isExecuted[txID] = true;
-        (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
+        (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
     }
 
     /// @inheritdoc IUniversalGatewayV0
@@ -823,13 +823,13 @@ contract UniversalGatewayV0 is
     {
         if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
         
         isExecuted[txID] = true;
-        IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
+        IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
         
-        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, token, amount, revertInstruction);
     }
 
 
@@ -1013,7 +1013,7 @@ contract UniversalGatewayV0 is
         address token,
         uint256 amount,
         bytes memory payload,
-        address fundRecipient,
+        address revertRecipient,
         TX_TYPE txType,
         bytes memory signatureData
     ) private {
@@ -1023,7 +1023,7 @@ contract UniversalGatewayV0 is
             token: token,
             amount: amount,
             payload: payload,
-            fundRecipient: fundRecipient,
+            revertRecipient: revertRecipient,
             txType: txType,
             signatureData: signatureData
         });
@@ -1042,14 +1042,14 @@ contract UniversalGatewayV0 is
     ) internal {
         TX_TYPE txType = _TX_TYPE;
 
-        // Sanity Check : fundRecipient is not address(0)
-        if (req.fundRecipient == address(0)) {
+        // Sanity Check : revertRecipient is not address(0)
+        if (req.revertRecipient == address(0)) {
             revert Errors.InvalidRecipient();
         }
 
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
-            _sendTxWithGas(txType, caller, nativeValue, req.payload, req.fundRecipient, req.signatureData);
+            _sendTxWithGas(txType, caller, nativeValue, req.payload, req.revertRecipient, req.signatureData);
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
