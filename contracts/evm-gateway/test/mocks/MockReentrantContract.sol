@@ -38,7 +38,16 @@ contract MockReentrantContract {
         uint256 gasLimit,
         RevertInstructions calldata revertCfg
     ) external {
-        IUniversalGatewayPC(gateway).withdraw(to, prc20Token, amount, gasLimit, revertCfg);
+        IUniversalGatewayPC(gateway).sendUniversalTxOutbound(
+            to,
+            prc20Token,
+            amount,
+            0, // tokenId
+            gasLimit,
+            "", // empty payload
+            "", // chainNamespace will be fetched from PRC20
+            revertCfg
+        );
     }
 
     function attemptReentrancyWithExecute(
@@ -48,12 +57,14 @@ contract MockReentrantContract {
         uint256 gasLimit,
         RevertInstructions calldata revertCfg
     ) external {
-        IUniversalGatewayPC(gateway).withdrawAndExecute(
-            target, 
-            prc20Token, 
-            amount, 
-            payload, 
-            gasLimit, 
+        IUniversalGatewayPC(gateway).sendUniversalTxOutbound(
+            target,
+            prc20Token,
+            amount,
+            0, // tokenId
+            gasLimit,
+            payload,
+            "", // chainNamespace will be fetched from PRC20
             revertCfg
         );
     }

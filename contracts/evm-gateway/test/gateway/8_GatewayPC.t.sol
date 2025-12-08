@@ -348,7 +348,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -363,7 +363,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.recordLogs();
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertTrue(logs.length >= 1, "At least one event should be emitted");
@@ -380,7 +380,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -395,7 +395,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawRevertZeroToken() public {
@@ -406,7 +406,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.withdraw(to, address(0), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(0), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawRevertZeroAmount() public {
@@ -417,7 +417,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawRevertInvalidRecipient() public {
@@ -428,7 +428,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawRevertWhenPaused() public {
@@ -442,7 +442,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawRevertInsufficientGasTokenBalance() public {
@@ -468,7 +468,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawRevertInsufficientGasTokenAllowance() public {
@@ -483,7 +483,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient allowance");
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawRevertInsufficientPrc20Balance() public {
@@ -494,7 +494,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     // =========================
@@ -513,7 +513,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -529,7 +529,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.recordLogs();
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertTrue(logs.length >= 1, "At least one event should be emitted");
@@ -547,7 +547,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -566,7 +566,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -594,7 +594,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -610,7 +610,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteRevertZeroToken() public {
@@ -622,7 +622,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.withdrawAndExecute(target, address(0), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(0), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteRevertZeroAmount() public {
@@ -634,7 +634,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteRevertInvalidRecipient() public {
@@ -646,7 +646,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteRevertWhenPaused() public {
@@ -661,7 +661,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteRevertInsufficientGasTokenBalance() public {
@@ -688,7 +688,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteRevertInsufficientGasTokenAllowance() public {
@@ -704,7 +704,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient allowance");
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteRevertInsufficientPrc20Balance() public {
@@ -716,7 +716,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteDifferentPayloadSizes() public {
@@ -731,7 +731,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory smallPayload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, smallPayload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, smallPayload, "", revertCfg);
 
         // Reset balances for next test
         prc20Token.mint(user1, amount);
@@ -745,7 +745,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, largePayload, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, largePayload, "", revertCfg);
 
         // Both should succeed - verify final balance
         uint256 finalBalance = prc20Token.balanceOf(user1);
@@ -835,7 +835,7 @@ contract UniversalGatewayPCTest is Test {
         }
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
 
         // Verify withdrawal with max gas limit succeeded
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -859,7 +859,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
 
         uint256 balanceAfter = gasToken.balanceOf(vaultPC);
         assertEq(balanceAfter - balanceBefore, expectedGasFee);
@@ -904,7 +904,7 @@ contract UniversalGatewayPCTest is Test {
         // Withdrawal should fail with "MockUniversalCore: zero gas token" error
         vm.prank(user1);
         vm.expectRevert("MockUniversalCore: zero gas token");
-        gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(invalidToken), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function _createInvalidToken() internal returns (MockPRC20) {
@@ -962,7 +962,7 @@ contract UniversalGatewayPCTest is Test {
         // Withdrawal should fail with "MockUniversalCore: zero gas price" error
         vm.prank(user1);
         vm.expectRevert("MockUniversalCore: zero gas price");
-        gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(invalidToken), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function _createInvalidCoreWithZeroGasPrice() internal returns (MockUniversalCoreReal) {
@@ -994,7 +994,7 @@ contract UniversalGatewayPCTest is Test {
         // Withdrawal should fail with transfer failure
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
-        gateway.withdraw(to, address(failingToken), amount, gasLimit, revertCfg);
+        gateway.sendUniversalTxOutbound(to, address(failingToken), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function _createFailingToken() internal returns (MockPRC20) {

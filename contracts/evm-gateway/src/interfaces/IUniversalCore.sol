@@ -54,4 +54,43 @@ interface IUniversalCore {
      * @return gasFee Gas fee
      */
     function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit) external view returns (address gasToken, uint256 gasFee);
+
+
+    /**
+     * @notice Protocol fee applied to PC20 withdrawals and flows that use PC20 as the asset.
+     * @return fee Protocol fee for PC20 in PC units.
+     */
+    function PC20_PROTOCOL_FEES() external view returns (uint256 fee);
+
+    /**
+     * @notice Protocol fee applied to PC721 withdrawals and flows that use PC721 as the asset.
+     * @return fee Protocol fee for PC721 in PC units.
+     */
+    function PC721_PROTOCOL_FEES() external view returns (uint256 fee);
+
+    /**
+     * @notice Default protocol fee used when the asset type does not match PC20, PC721 or PRC20.
+     * @return fee Default protocol fee in PC units.
+     */
+    function DEFAULT_PROTOCOL_FEES() external view returns (uint256 fee);
+
+    /**
+     * @notice Check if PC20 assets are supported for a given external chain namespace.
+     * @param chainNamespace Chain namespace identifier (for example "eip155:1").
+     * @return supported True if PC20 is supported on this chain, false otherwise.
+     */
+    function isPC20SupportedOnChain(string calldata chainNamespace)
+        external
+        view
+        returns (bool supported);
+
+    /**
+     * @notice Check if PC721 assets are supported for a given external chain namespace.
+     * @param chainNamespace Chain namespace identifier (for example "eip155:1").
+     * @return supported True if PC721 is supported on this chain, false otherwise.
+     */
+    function isPC721SupportedOnChain(string calldata chainNamespace)
+        external
+        view
+        returns (bool supported);
 }

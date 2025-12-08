@@ -281,6 +281,30 @@ contract MockUniversalCoreReal is IUniversalCore {
         emit BaseGasLimitUpdated(oldLimit, gasLimit);
     }
 
+    // ========= Protocol Fee Functions =========
+    function PC20_PROTOCOL_FEES() external pure returns (uint256 fee) {
+        return 100e18; // 100 PC
+    }
+
+    function PC721_PROTOCOL_FEES() external pure returns (uint256 fee) {
+        return 50e18; // 50 PC
+    }
+
+    function DEFAULT_PROTOCOL_FEES() external pure returns (uint256 fee) {
+        return 75e18; // 75 PC
+    }
+
+    // ========= Chain Support Functions =========
+    function isPC20SupportedOnChain(string calldata chainNamespace) external pure returns (bool supported) {
+        // For testing purposes, support all chains
+        return true;
+    }
+
+    function isPC721SupportedOnChain(string calldata chainNamespace) external pure returns (bool supported) {
+        // For testing purposes, support all chains
+        return true;
+    }
+
     // ========= Test Helper Functions =========
     function setUniversalExecutorModule(address _uem) external {
         // This is just for test compatibility with the old mock

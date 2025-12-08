@@ -24,6 +24,8 @@ library Errors {
     error RateLimitExceeded();
     error BlockCapLimitExceeded();
     error SlippageExceededOrExpired();
+    error TokenNotSupported();
     error TokenBurnFailed(address token, uint256 amount);
     error GasFeeTransferFailed(address token, address from, uint256 amount);
+    error RefundFailed(address recipient, uint256 amount);
 }
