@@ -178,7 +178,7 @@ contract Vault is
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(txID, token, amount, revertInstruction);
 
-        emit VaultRevert(token, revertInstruction.revertRecipient, amount);
+        emit VaultRevert(token, revertInstruction, amount);
     }
 
     // =========================

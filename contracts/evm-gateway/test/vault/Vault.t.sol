@@ -40,7 +40,7 @@ contract VaultTest is Test {
         bytes indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount
     );
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
-    event VaultRevert(address indexed token, address indexed revertRecipient, uint256 amount);
+    event VaultRevert(address indexed token, RevertInstructions indexed revertInstruction, uint256 amount);
 
     bytes txID = abi.encodePacked(uint256(1));
 
@@ -549,7 +549,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
-        emit VaultRevert(address(token), user1, amount);
+        emit VaultRevert(address(token), revertInstr, amount);
         vault.revertWithdraw(_tx(5), address(token), amount, revertInstr);
     }
 
@@ -899,7 +899,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
-        emit VaultRevert(address(token), user1, amount);
+        emit VaultRevert(address(token), revertInstr, amount);
         vault.revertWithdraw(_tx(5), address(token), amount, revertInstr);
     }
 

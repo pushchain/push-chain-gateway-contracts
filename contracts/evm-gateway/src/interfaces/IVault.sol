@@ -38,9 +38,9 @@ interface IVault {
 
     /// @notice             Vault revert event
     /// @param token        Token address
-    /// @param revertRecipient Recipient address
+    /// @param revertInstruction Recurrent instruction
     /// @param amount       Amount of token
-    event VaultRevert(address indexed token, address indexed revertRecipient, uint256 amount);
+    event VaultRevert(address indexed token, RevertInstructions indexed revertInstruction, uint256 amount);
 
     // =========================
     //          WITHDRAW
