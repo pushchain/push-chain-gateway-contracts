@@ -419,9 +419,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.revertWithdraw(
-            _tx(2), address(unsupportedToken), 100e18, RevertInstructions(user1, "")
-        );
+        vault.revertWithdraw(_tx(2), address(unsupportedToken), 100e18, RevertInstructions(user1, ""));
     }
 
     function test_TokenSupport_TogglingReflectsImmediately() public {
@@ -562,9 +560,7 @@ contract VaultTest is Test {
     function test_RevertWithdraw_ZeroRecipientReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        vault.revertWithdraw(
-            _tx(7), address(token), 100e18, RevertInstructions(address(0), "")
-        );
+        vault.revertWithdraw(_tx(7), address(token), 100e18, RevertInstructions(address(0), ""));
     }
 
     function test_RevertWithdraw_InsufficientBalanceReverts() public {
@@ -572,9 +568,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertWithdraw(
-            _tx(8), address(token), vaultBalance + 1, RevertInstructions(user1, "")
-        );
+        vault.revertWithdraw(_tx(8), address(token), vaultBalance + 1, RevertInstructions(user1, ""));
     }
 
     function test_RevertWithdraw_WhenPausedReverts() public {
@@ -663,9 +657,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.withdrawAndExecute(
-            _tx(207), user1, address(token), address(mockTarget), vaultBalance + 1, callData
-        );
+        vault.withdrawAndExecute(_tx(207), user1, address(token), address(mockTarget), vaultBalance + 1, callData);
     }
 
     function test_WithdrawAndExecute_UnsupportedTokenReverts() public {
@@ -675,9 +667,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdrawAndExecute(
-            _tx(208), user1, address(unsupportedToken), address(mockTarget), 100e18, callData
-        );
+        vault.withdrawAndExecute(_tx(208), user1, address(unsupportedToken), address(mockTarget), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_WithPayload_VerifiesExecution() public {

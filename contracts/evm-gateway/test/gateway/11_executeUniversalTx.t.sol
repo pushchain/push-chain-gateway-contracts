@@ -231,15 +231,20 @@ contract GatewayExecuteUniversalTxTest is Test {
         // ERC20 path should not accept msg.value
         // Transfer tokens to gateway first
         token.transfer(address(gateway), AMOUNT);
-        
+
         vm.deal(address(this), 1);
         // ERC20 executeUniversalTx is non-payable, so calling with value will fail
         // Use low-level call to bypass Solidity's compile-time check
         // Use the ERC20 overload signature: executeUniversalTx(bytes32,address,address,address,uint256,bytes)
-        (bool success,) = address(gateway).call{value: 1}(
+        (bool success,) = address(gateway).call{ value: 1 }(
             abi.encodeWithSignature(
                 "executeUniversalTx(bytes32,address,address,address,uint256,bytes)",
-                TX_ID, ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD
+                TX_ID,
+                ORIGIN_CALLER,
+                address(token),
+                address(target),
+                AMOUNT,
+                PAYLOAD
             )
         );
         // Non-payable function called with value should fail

@@ -888,9 +888,7 @@ contract UniversalGatewayPCTest is Test {
         _testGasFeeForLimit(amount, to, revertRecipient, 1_000_000);
     }
 
-    function _testGasFeeForLimit(uint256 amount, bytes memory to, address revertRecipient, uint256 gasLimit)
-        internal
-    {
+    function _testGasFeeForLimit(uint256 amount, bytes memory to, address revertRecipient, uint256 gasLimit) internal {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 

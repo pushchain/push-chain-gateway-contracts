@@ -31,12 +31,7 @@ contract MockReentrantContract {
     // UniversalGatewayPC Reentrancy Functions
     // ============================================================================
 
-    function attemptReentrancy(
-        bytes calldata to,
-        uint256 amount,
-        uint256 gasLimit,
-        address revertRecipient
-    ) external {
+    function attemptReentrancy(bytes calldata to, uint256 amount, uint256 gasLimit, address revertRecipient) external {
         IUniversalGatewayPC(gateway).withdraw(to, prc20Token, amount, gasLimit, revertRecipient);
     }
 

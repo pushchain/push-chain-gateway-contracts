@@ -259,7 +259,9 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Withdraw USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
-        gateway.revertUniversalTxToken(abi.encodePacked(bytes32(uint256(17))), address(usdc), usdcAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(
+            abi.encodePacked(bytes32(uint256(17))), address(usdc), usdcAmount, RevertInstructions(user1, "")
+        );
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
         // Withdraw TokenA (requires VAULT_ROLE)
@@ -273,7 +275,9 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 initialEthBalance = user1.balance;
         vm.deal(tss, ethAmount);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: ethAmount }(abi.encodePacked(bytes32(uint256(19))), ethAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{ value: ethAmount }(
+            abi.encodePacked(bytes32(uint256(19))), ethAmount, RevertInstructions(user1, "")
+        );
         assertEq(user1.balance, initialEthBalance + ethAmount);
     }
 

@@ -672,7 +672,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         uint256 fundsAmount = 500 ether;
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
@@ -686,12 +686,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(buildUniversalTxRequest(
-            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
-            address(tokenA),
-            fundsAmount,
-            encodedPayload
-        ));
+        gatewayTemp.sendUniversalTx{ value: 0 }(
+            buildUniversalTxRequest(
+                address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
+                address(tokenA),
+                fundsAmount,
+                encodedPayload
+            )
+        );
     }
 
     /// @notice Test Case 2.1 - Gateway does not accumulate ETH
