@@ -9,7 +9,7 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 
 import { UniversalGatewayPC } from "../../src/UniversalGatewayPC.sol";
 import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.sol";
-import { RevertInstructions } from "../../src/libraries/Types.sol";
+import { TX_TYPE } from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { MockPRC20 } from "../mocks/MockPRC20.sol";
 import { MockUniversalCoreReal } from "../mocks/MockUniversalCoreReal.sol";
@@ -70,18 +70,6 @@ contract UniversalGatewayPCTest is Test {
     // =========================
     //      HELPER FUNCTIONS
     // =========================
-    function buildRevertInstructions(address fundRecipient) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: fundRecipient, revertMsg: bytes("") });
-    }
-
-    function buildRevertInstructionsWithMsg(address fundRecipient, string memory revertMsg)
-        internal
-        pure
-        returns (RevertInstructions memory)
-    {
-        return RevertInstructions({ fundRecipient: fundRecipient, revertMsg: bytes(revertMsg) });
-    }
-
     function calculateExpectedGasFee(uint256 gasLimit) internal view returns (uint256) {
         return DEFAULT_GAS_PRICE * gasLimit + DEFAULT_PROTOCOL_FEE;
     }
@@ -317,7 +305,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 150_000;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Ensure user has enough balance
         uint256 userBalance = prc20Token.balanceOf(user1);
@@ -332,7 +320,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -343,28 +331,57 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 150_000;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.recordLogs();
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertTrue(logs.length >= 1, "At least one event should be emitted");
+    }
+
+    function testWithdrawEventEmissionWithTxType() public {
+        uint256 amount = 1000 * 1e6;
+        uint256 gasLimit = 150_000;
+        bytes memory to = abi.encodePacked(user2);
+        address revertRecipient = user2;
+
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
+
+        // Expect the UniversalTxWithdraw event with TX_TYPE.FUNDS
+        vm.expectEmit(true, true, false, true);
+        emit IUniversalGatewayPC.UniversalTxWithdraw(
+            user1, // sender
+            SOURCE_CHAIN_ID, // chainId
+            address(prc20Token), // token
+            to, // target
+            amount, // amount
+            address(gasToken), // gasToken
+            expectedGasFee, // gasFee
+            gasLimit, // gasLimit
+            bytes(""), // payload (empty for withdraw)
+            DEFAULT_PROTOCOL_FEE, // protocolFee
+            revertRecipient, // revertRecipient
+            TX_TYPE.FUNDS // txType
+        );
+
+        vm.prank(user1);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawSuccessWithDefaultGasLimit() public {
         uint256 amount = 1000 * 1e6; // 1000 USDC (6 decimals)
         uint256 gasLimit = 0; // Use default gas limit
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -375,44 +392,44 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = bytes(""); // Empty target
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawRevertZeroToken() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.withdraw(to, address(0), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(0), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawRevertZeroAmount() public {
         uint256 amount = 0; // Zero amount
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawRevertInvalidRecipient() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(address(0)); // Zero recipient
+        address revertRecipient = address(0); // Zero recipient
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawRevertWhenPaused() public {
@@ -422,18 +439,18 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawRevertInsufficientGasTokenBalance() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Calculate required gas fee
         uint256 requiredGasFee = calculateExpectedGasFee(gasLimit);
@@ -452,14 +469,14 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawRevertInsufficientGasTokenAllowance() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Remove gas token allowance
         vm.prank(user1);
@@ -467,18 +484,18 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient allowance");
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     function testWithdrawRevertInsufficientPrc20Balance() public {
         uint256 amount = LARGE_AMOUNT + 1; // More than user has
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
     }
 
     // =========================
@@ -490,14 +507,14 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 200_000;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -509,14 +526,44 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 200_000;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.recordLogs();
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertTrue(logs.length >= 1, "At least one event should be emitted");
+    }
+
+    function testWithdrawAndExecuteEventEmissionWithTxType() public {
+        uint256 amount = 1000 * 1e6;
+        uint256 gasLimit = 200_000;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
+        address revertRecipient = user2;
+
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
+
+        // Expect the UniversalTxWithdraw event with TX_TYPE.FUNDS_AND_PAYLOAD
+        vm.expectEmit(true, true, false, true);
+        emit IUniversalGatewayPC.UniversalTxWithdraw(
+            user1, // sender
+            SOURCE_CHAIN_ID, // chainId
+            address(prc20Token), // token
+            target, // target
+            amount, // amount
+            address(gasToken), // gasToken
+            expectedGasFee, // gasFee
+            gasLimit, // gasLimit
+            payload, // payload (non-empty for withdrawAndExecute)
+            DEFAULT_PROTOCOL_FEE, // protocolFee
+            revertRecipient, // revertRecipient
+            TX_TYPE.FUNDS_AND_PAYLOAD // txType
+        );
+
+        vm.prank(user1);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteSuccessWithDefaultGasLimit() public {
@@ -524,14 +571,14 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 0; // Use default gas limit
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -543,14 +590,14 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = bytes(""); // Empty payload
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -571,14 +618,14 @@ contract UniversalGatewayPCTest is Test {
             "complex string parameter"
         );
 
-        RevertInstructions memory revertCfg = buildRevertInstructionsWithMsg(user2, "Complex operation failed");
+        address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
 
         // Verify token balances
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -590,11 +637,11 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = bytes(""); // Empty target
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteRevertZeroToken() public {
@@ -602,11 +649,11 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.withdrawAndExecute(target, address(0), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(0), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteRevertZeroAmount() public {
@@ -614,11 +661,11 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteRevertInvalidRecipient() public {
@@ -626,11 +673,11 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(address(0)); // Zero recipient
+        address revertRecipient = address(0); // Zero recipient
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteRevertWhenPaused() public {
@@ -641,11 +688,11 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteRevertInsufficientGasTokenBalance() public {
@@ -653,7 +700,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Calculate required gas fee
         uint256 requiredGasFee = calculateExpectedGasFee(gasLimit);
@@ -672,7 +719,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteRevertInsufficientGasTokenAllowance() public {
@@ -680,7 +727,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Remove gas token allowance
         vm.prank(user1);
@@ -688,7 +735,7 @@ contract UniversalGatewayPCTest is Test {
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient allowance");
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteRevertInsufficientPrc20Balance() public {
@@ -696,18 +743,18 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
     }
 
     function testWithdrawAndExecuteDifferentPayloadSizes() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         uint256 initialBalance = prc20Token.balanceOf(user1);
 
@@ -715,7 +762,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory smallPayload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, smallPayload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, smallPayload, gasLimit, revertRecipient);
 
         // Reset balances for next test
         prc20Token.mint(user1, amount);
@@ -738,7 +785,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, largePayload, gasLimit, revertCfg);
+        gateway.withdrawAndExecute(target, address(prc20Token), amount, largePayload, gasLimit, revertRecipient);
 
         // Both should succeed - verify final balance
         uint256 finalBalance = prc20Token.balanceOf(user1);
@@ -753,7 +800,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Create a contract that calls the gateway
         MockReentrantContract reentrantContract =
@@ -770,7 +817,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Call should succeed (reentrancy protection is for preventing recursive calls during execution)
         vm.prank(address(reentrantContract));
-        reentrantContract.attemptReentrancy(to, amount, gasLimit, revertCfg);
+        reentrantContract.attemptReentrancy(to, amount, gasLimit, revertRecipient);
 
         // Verify the withdrawal succeeded
         assertEq(prc20Token.balanceOf(address(reentrantContract)), 0);
@@ -781,7 +828,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Create a contract that calls the gateway
         MockReentrantContract reentrantContract =
@@ -798,7 +845,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Call should succeed (reentrancy protection is for preventing recursive calls during execution)
         vm.prank(address(reentrantContract));
-        reentrantContract.attemptReentrancyWithExecute(target, amount, payload, gasLimit, revertCfg);
+        reentrantContract.attemptReentrancyWithExecute(target, amount, payload, gasLimit, revertRecipient);
 
         // Verify the withdrawal succeeded
         assertEq(prc20Token.balanceOf(address(reentrantContract)), 0);
@@ -808,7 +855,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 1_000_000; // Large gas limit
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -822,7 +869,7 @@ contract UniversalGatewayPCTest is Test {
         }
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
 
         // Verify withdrawal with max gas limit succeeded
         assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
@@ -831,24 +878,22 @@ contract UniversalGatewayPCTest is Test {
     function testGasFeeCalculationAccuracy() public {
         uint256 amount = 1000 * 1e6;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Test specific gas limits individually
-        _testGasFeeForLimit(amount, to, revertCfg, 50_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 100_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 200_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 500_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 1_000_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 50_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 100_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 200_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 500_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 1_000_000);
     }
 
-    function _testGasFeeForLimit(uint256 amount, bytes memory to, RevertInstructions memory revertCfg, uint256 gasLimit)
-        internal
-    {
+    function _testGasFeeForLimit(uint256 amount, bytes memory to, address revertRecipient, uint256 gasLimit) internal {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
 
         uint256 balanceAfter = gasToken.balanceOf(vaultPC);
         assertEq(balanceAfter - balanceBefore, expectedGasFee);
@@ -870,7 +915,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Create token with unconfigured chain ID (no gas token set for this chain)
         string memory unconfiguredChainId = "999"; // Chain ID not configured in universalCore
@@ -893,7 +938,7 @@ contract UniversalGatewayPCTest is Test {
         // Withdrawal should fail with "MockUniversalCore: zero gas token" error
         vm.prank(user1);
         vm.expectRevert("MockUniversalCore: zero gas token");
-        gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertRecipient);
     }
 
     function _createInvalidToken() internal returns (MockPRC20) {
@@ -922,7 +967,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Create token with a chain ID that has gas token but no gas price configured
         string memory chainWithTokenNoPrice = "777";
@@ -951,7 +996,7 @@ contract UniversalGatewayPCTest is Test {
         // Withdrawal should fail with "MockUniversalCore: zero gas price" error
         vm.prank(user1);
         vm.expectRevert("MockUniversalCore: zero gas price");
-        gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(invalidToken), amount, gasLimit, revertRecipient);
     }
 
     function _createInvalidCoreWithZeroGasPrice() internal returns (MockUniversalCoreReal) {
@@ -967,7 +1012,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Create failing token
         MockPRC20 failingToken = _createFailingToken();
@@ -983,7 +1028,7 @@ contract UniversalGatewayPCTest is Test {
         // Withdrawal should fail with transfer failure
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
-        gateway.withdraw(to, address(failingToken), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(failingToken), amount, gasLimit, revertRecipient);
     }
 
     function _createFailingToken() internal returns (MockPRC20) {

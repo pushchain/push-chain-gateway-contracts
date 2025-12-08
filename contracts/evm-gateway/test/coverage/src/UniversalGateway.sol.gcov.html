@@ -392,7 +392,7 @@
 <span id="L321"><span class="lineNum">     321</span>                 :             :         RevertSettings calldata _revertCFG,</span>
 <span id="L322"><span class="lineNum">     322</span>                 :             :         TX_TYPE _txType</span>
 <span id="L323"><span class="lineNum">     323</span>                 :             :     ) internal {</span>
-<span id="L324"><span class="lineNum">     324</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">          31 :         if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L324"><span class="lineNum">     324</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">          31 :         if (_revertCFG.revertRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
 <span id="L325"><span class="lineNum">     325</span>                 :             : </span>
 <span id="L326"><span class="lineNum">     326</span>                 :<span class="tlaGNC">          30 :         emit TxWithGas({</span></span>
 <span id="L327"><span class="lineNum">     327</span>                 :             :             sender: _caller,</span>
@@ -533,7 +533,7 @@
 <span id="L462"><span class="lineNum">     462</span>                 :             :         RevertSettings calldata _revertCFG,</span>
 <span id="L463"><span class="lineNum">     463</span>                 :             :         TX_TYPE _txType</span>
 <span id="L464"><span class="lineNum">     464</span>                 :             :     ) internal {</span>
-<span id="L465"><span class="lineNum">     465</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaGNC">          25 :         if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L465"><span class="lineNum">     465</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaGNC">          25 :         if (_revertCFG.revertRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
 <span id="L466"><span class="lineNum">     466</span>                 :             :         /// for recipient == address(0), the funds are being moved to UEA of the msg.sender on Push Chain.</span>
 <span id="L467"><span class="lineNum">     467</span>            [<span class="tlaGBC" title="Branch 0 was taken 6 times"> + </span>]:<span class="tlaGNC">          25 :         if (_recipient == address(0)){</span></span>
 <span id="L468"><span class="lineNum">     468</span>                 :             :             if (</span>
@@ -583,16 +583,16 @@
 <span id="L512"><span class="lineNum">     512</span>                 :             :         uint256 amount,</span>
 <span id="L513"><span class="lineNum">     513</span>                 :             :         RevertSettings calldata revertCFG</span>
 <span id="L514"><span class="lineNum">     514</span>                 :             :     ) external nonReentrant whenNotPaused onlyTSS {</span>
-<span id="L515"><span class="lineNum">     515</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">           7 :         if (revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L515"><span class="lineNum">     515</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">           7 :         if (revertCFG.revertRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
 <span id="L516"><span class="lineNum">     516</span>            [<span class="tlaGBC" title="Branch 0 was taken 1 time"> + </span>]:<span class="tlaGNC">           6 :         if (amount == 0) revert Errors.InvalidAmount();</span></span>
 <span id="L517"><span class="lineNum">     517</span>                 :             : </span>
 <span id="L518"><span class="lineNum">     518</span>         [<span class="tlaGBC" title="Branch 0 was taken 3 times"> + </span><span class="tlaGBC" title="Branch 1 was taken 2 times"> + </span>]:<span class="tlaGNC">           5 :         if (token == address(0)) {</span></span>
-<span id="L519"><span class="lineNum">     519</span>                 :<span class="tlaGNC">           3 :             _handleNativeWithdraw(revertCFG.fundRecipient, amount);</span></span>
+<span id="L519"><span class="lineNum">     519</span>                 :<span class="tlaGNC">           3 :             _handleNativeWithdraw(revertCFG.revertRecipient, amount);</span></span>
 <span id="L520"><span class="lineNum">     520</span>                 :             :         } else {</span>
-<span id="L521"><span class="lineNum">     521</span>                 :<span class="tlaGNC">           2 :             _handleTokenWithdraw(token, revertCFG.fundRecipient, amount);</span></span>
+<span id="L521"><span class="lineNum">     521</span>                 :<span class="tlaGNC">           2 :             _handleTokenWithdraw(token, revertCFG.revertRecipient, amount);</span></span>
 <span id="L522"><span class="lineNum">     522</span>                 :             :         }</span>
 <span id="L523"><span class="lineNum">     523</span>                 :             : </span>
-<span id="L524"><span class="lineNum">     524</span>                 :<span class="tlaGNC">           5 :         emit WithdrawFunds(revertCFG.fundRecipient, amount, token);</span></span>
+<span id="L524"><span class="lineNum">     524</span>                 :<span class="tlaGNC">           5 :         emit WithdrawFunds(revertCFG.revertRecipient, amount, token);</span></span>
 <span id="L525"><span class="lineNum">     525</span>                 :             :     }</span>
 <span id="L526"><span class="lineNum">     526</span>                 :             : </span>
 <span id="L527"><span class="lineNum">     527</span>                 :             :     // =========================</span>

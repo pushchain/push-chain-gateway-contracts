@@ -336,8 +336,8 @@ abstract contract BaseTest is Test {
         h = keccak256(abi.encode(p));
     }
 
-    function revertCfg(address fundRecipient_) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: fundRecipient_, revertMsg: bytes("") });
+    function revertCfg(address revertRecipient_) internal pure returns (RevertInstructions memory) {
+        return RevertInstructions({ revertRecipient: revertRecipient_, revertMsg: bytes("") });
     }
 
     /// @notice Build a default payload for testing (commonly used across test files)
@@ -359,7 +359,7 @@ abstract contract BaseTest is Test {
     /// @notice Build default revert instructions for testing (commonly used across test files)
     /// @dev Returns revert instructions with a default recipient
     function buildDefaultRevertInstructions() internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") });
+        return RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("") });
     }
 
     // =========================
@@ -377,7 +377,7 @@ abstract contract BaseTest is Test {
             token: address(0), // Native token
             amount: 0, // No funds (amount = 0) for GAS/GAS_AND_PAYLOAD routes
             payload: abi.encode(payload), // Non-empty payload routes to GAS_AND_PAYLOAD
-            revertInstruction: buildDefaultRevertInstructions(),
+            revertRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -388,19 +388,19 @@ abstract contract BaseTest is Test {
     /// @return UniversalTxRequest struct configured for FUNDS route
     function _buildFundsTxRequest(address token, uint256 amount)
         internal
-        view
+        pure
         virtual
         returns (UniversalTxRequest memory)
     {
-        return _buildFundsTxRequest(token, amount, buildDefaultRevertInstructions());
+        return _buildFundsTxRequest(token, amount, address(0x456));
     }
 
-    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom revert instructions
+    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom fund recipient
     /// @param token Token address (address(0) for native, or ERC20 token address)
     /// @param amount Amount of tokens to send
-    /// @param revertInstructions Custom revert instructions
+    /// @param revertRecipient Address to receive funds in case of revert
     /// @return UniversalTxRequest struct configured for FUNDS route
-    function _buildFundsTxRequest(address token, uint256 amount, RevertInstructions memory revertInstructions)
+    function _buildFundsTxRequest(address token, uint256 amount, address revertRecipient)
         internal
         pure
         virtual
@@ -411,7 +411,7 @@ abstract contract BaseTest is Test {
             token: token,
             amount: amount,
             payload: bytes(""), // Empty payload for FUNDS route
-            revertInstruction: revertInstructions,
+            revertRecipient: revertRecipient,
             signatureData: bytes("")
         });
     }
@@ -425,7 +425,7 @@ abstract contract BaseTest is Test {
     /// @return UniversalTxRequest struct configured for FUNDS_AND_PAYLOAD route
     function _buildFundsAndPayloadTxRequest(address token, uint256 amount, UniversalPayload memory payload)
         internal
-        view
+        pure
         virtual
         returns (UniversalTxRequest memory)
     {
@@ -434,7 +434,7 @@ abstract contract BaseTest is Test {
             token: token,
             amount: amount,
             payload: abi.encode(payload), // Non-empty payload required for FUNDS_AND_PAYLOAD
-            revertInstruction: buildDefaultRevertInstructions(),
+            revertRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -553,7 +553,7 @@ abstract contract BaseTest is Test {
             vType: VerificationType(0)
         });
 
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: to, revertMsg: bytes("") });
+        RevertInstructions memory revertCfg_ = RevertInstructions({ revertRecipient: to, revertMsg: bytes("") });
 
         return (payload, revertCfg_);
     }
