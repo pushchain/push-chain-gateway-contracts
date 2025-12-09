@@ -34,7 +34,7 @@ interface IVault {
     /// @param token        Token address
     /// @param to           Recipient address
     /// @param amount       Amount of token
-    event VaultWithdraw(bytes32 indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount);
+    event VaultWithdraw(bytes indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount);
 
     /// @notice             Vault revert event
     /// @param token        Token address
@@ -55,7 +55,7 @@ interface IVault {
      * @param to            recipient address on external chain
      * @param amount        amount of token to transfer on external chain
      */
-    function withdraw(bytes32 txID, address ueaAddress, address token, address to, uint256 amount) external;
+    function withdraw(bytes calldata txID, address ueaAddress, address token, address to, uint256 amount) external;
 
     /**
      * @notice              Handles outbound execution via CEA (the only execution path)
@@ -67,7 +67,7 @@ interface IVault {
      * @param amount        Amount of token/native to execute with
      * @param data          Calldata to execute on target
      */
-    function handleOutboundExecution(bytes32 txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data) external payable;
+    function handleOutboundExecution(bytes calldata txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data) external payable;
 
     /**
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains
@@ -77,6 +77,6 @@ interface IVault {
      * @param to            recipient of the refund on external chain
      * @param amount        amount to refund on external chain
      */
-    function revertWithdraw(bytes32 txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction) external;
+    function revertWithdraw(bytes calldata txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction) external;
 }
 

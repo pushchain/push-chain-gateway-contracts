@@ -40,12 +40,15 @@ contract VaultTest is Test {
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(
-        bytes32 indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount
+        bytes indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount
     );
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
     event VaultRevert(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
 
-    bytes32 txID = bytes32(uint256(1));
+    // Helper function to convert uint256 to bytes txID
+    function _tx(uint256 id) internal pure returns (bytes memory) {
+        return abi.encodePacked(bytes32(uint256(id)));
+    }
 
     function setUp() public {
         admin = makeAddr("admin");
@@ -303,7 +306,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
     }
 
     function test_SetTSS_NewTSSCanCallFunctions() public {
@@ -313,7 +316,7 @@ contract VaultTest is Test {
         vault.setTSS(newTSS);
 
         vm.prank(newTSS);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
         assertEq(token.balanceOf(user1), 100e18);
     }
 
@@ -340,13 +343,13 @@ contract VaultTest is Test {
     function test_Withdraw_OnlyTSSCanCall() public {
         vm.prank(user1);
         vm.expectRevert();
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
     }
 
     function test_RevertWithdraw_OnlyTSSCanCall() public {
         vm.prank(user1);
         vm.expectRevert();
-        vault.revertWithdraw(bytes32(uint256(1)), address(token), user1, 100e18, RevertInstructions(user1, ""));
+        vault.revertWithdraw(_tx(1), address(token), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     // ============================================================================
@@ -359,7 +362,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
     }
 
     function test_Pause_BlocksRevertWithdraw() public {
@@ -368,7 +371,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertWithdraw(bytes32(uint256(1)), address(token), user1, 100e18, RevertInstructions(user1, ""));
+        vault.revertWithdraw(_tx(1), address(token), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     function test_Pause_AllowsSetGateway() public {
@@ -410,7 +413,7 @@ contract VaultTest is Test {
         vault.unpause();
 
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
         assertEq(token.balanceOf(user1), 100e18);
     }
 
@@ -424,7 +427,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(txID, user1, address(unsupportedToken), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(unsupportedToken), user1, 100e18);
     }
 
     function test_RevertWithdraw_UnsupportedTokenReverts() public {
@@ -434,14 +437,14 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
         vault.revertWithdraw(
-            bytes32(uint256(2)), address(unsupportedToken), user1, 100e18, RevertInstructions(user1, "")
+            _tx(2), address(unsupportedToken), user1, 100e18, RevertInstructions(user1, "")
         );
     }
 
     function test_TokenSupport_TogglingReflectsImmediately() public {
         // Initially supported
         vm.prank(tss);
-        vault.withdraw(bytes32(uint256(1)), user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
         assertEq(token.balanceOf(user1), 100e18);
 
         // Remove support
@@ -455,7 +458,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(bytes32(uint256(2)), user2, address(token), user2, 100e18);
+        vault.withdraw(_tx(2), user2, address(token), user2, 100e18);
 
         // Re-add support
         thresholds[0] = 1_000_000e18;
@@ -463,20 +466,20 @@ contract VaultTest is Test {
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
         vm.prank(tss);
-        vault.withdraw(bytes32(uint256(3)), user2, address(token), user2, 100e18);
+        vault.withdraw(_tx(3), user2, address(token), user2, 100e18);
         assertEq(token.balanceOf(user2), 100e18);
     }
 
     function test_Withdraw_ZeroTokenAddressReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.withdraw(txID, user1, address(0), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(0), user1, 100e18);
     }
 
     function test_RevertWithdraw_ZeroTokenAddressReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.revertWithdraw(bytes32(uint256(3)), address(0), user1, 100e18, RevertInstructions(user1, ""));
+        vault.revertWithdraw(_tx(3), address(0), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     // ============================================================================
@@ -487,7 +490,7 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
 
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token), user1, amount);
+        vault.withdraw(_tx(1), user1, address(token), user1, amount);
 
         assertEq(token.balanceOf(user1), amount);
     }
@@ -497,20 +500,20 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectEmit(true, true, true, true);
-        emit VaultWithdraw(txID, user1, address(token), user1, amount);
-        vault.withdraw(txID, user1, address(token), user1, amount);
+        emit VaultWithdraw(_tx(1), user1, address(token), user1, amount);
+        vault.withdraw(_tx(1), user1, address(token), user1, amount);
     }
 
     function test_Withdraw_ZeroAmountReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.withdraw(txID, user1, address(token), user1, 0);
+        vault.withdraw(_tx(1), user1, address(token), user1, 0);
     }
 
     function test_Withdraw_ZeroRecipientReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.withdraw(txID, user1, address(token), address(0), 100e18);
+        vault.withdraw(_tx(1), user1, address(token), address(0), 100e18);
     }
 
     function test_Withdraw_InsufficientBalanceReverts() public {
@@ -518,15 +521,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.withdraw(txID, user1, address(token), user1, vaultBalance + 1);
+        vault.withdraw(_tx(1), user1, address(token), user1, vaultBalance + 1);
     }
 
     function test_Withdraw_MultipleRecipients() public {
         vm.prank(tss);
-        vault.withdraw(bytes32(uint256(1)), user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
 
         vm.prank(tss);
-        vault.withdraw(bytes32(uint256(2)), user2, address(token), user2, 200e18);
+        vault.withdraw(_tx(2), user2, address(token), user2, 200e18);
 
         assertEq(token.balanceOf(user1), 100e18);
         assertEq(token.balanceOf(user2), 200e18);
@@ -534,10 +537,10 @@ contract VaultTest is Test {
 
     function test_Withdraw_DifferentTokens() public {
         vm.prank(tss);
-        vault.withdraw(bytes32(uint256(1)), user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
 
         vm.prank(tss);
-        vault.withdraw(bytes32(uint256(2)), user1, address(token2), user1, 50e6);
+        vault.withdraw(_tx(2), user1, address(token2), user1, 50e6);
 
         assertEq(token.balanceOf(user1), 100e18);
         assertEq(token2.balanceOf(user1), 50e6);
@@ -551,7 +554,7 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
 
         vm.prank(tss);
-        vault.revertWithdraw(bytes32(uint256(4)), address(token), user1, amount, RevertInstructions(user1, ""));
+        vault.revertWithdraw(_tx(4), address(token), user1, amount, RevertInstructions(user1, ""));
 
         assertEq(token.balanceOf(user1), amount);
     }
@@ -564,20 +567,20 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
         emit VaultRevert(address(token), user1, amount, revertInstr);
-        vault.revertWithdraw(bytes32(uint256(5)), address(token), user1, amount, revertInstr);
+        vault.revertWithdraw(_tx(5), address(token), user1, amount, revertInstr);
     }
 
     function test_RevertWithdraw_ZeroAmountReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertWithdraw(bytes32(uint256(6)), address(token), user1, 0, RevertInstructions(user1, ""));
+        vault.revertWithdraw(_tx(6), address(token), user1, 0, RevertInstructions(user1, ""));
     }
 
     function test_RevertWithdraw_ZeroRecipientReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
         vault.revertWithdraw(
-            bytes32(uint256(7)), address(token), address(0), 100e18, RevertInstructions(address(0), "")
+            _tx(7), address(token), address(0), 100e18, RevertInstructions(address(0), "")
         );
     }
 
@@ -587,7 +590,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
         vault.revertWithdraw(
-            bytes32(uint256(8)), address(token), user1, vaultBalance + 1, RevertInstructions(user1, "")
+            _tx(8), address(token), user1, vaultBalance + 1, RevertInstructions(user1, "")
         );
     }
 
@@ -597,7 +600,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertWithdraw(bytes32(uint256(1)), address(token), user1, 100e18, RevertInstructions(user1, ""));
+        vault.revertWithdraw(_tx(1), address(token), user1, 100e18, RevertInstructions(user1, ""));
     }
 
     // ============================================================================
@@ -611,7 +614,7 @@ contract VaultTest is Test {
         uint256 initialVaultBalance = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.handleOutboundExecution(bytes32(uint256(200)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(_tx(200), user1, address(token), address(mockTarget), amount, callData);
 
         // Verify tokens were transferred via CEA and call was executed
         (address cea, ) = ceaFactory.getCEAForUEA(user1);
@@ -626,7 +629,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
         emit VaultWithdrawAndExecute(address(token), address(mockTarget), amount, callData);
-        vault.handleOutboundExecution(bytes32(uint256(201)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(_tx(201), user1, address(token), address(mockTarget), amount, callData);
     }
 
     function test_WithdrawAndExecute_OnlyTSSCanCall() public {
@@ -634,7 +637,7 @@ contract VaultTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        vault.handleOutboundExecution(bytes32(uint256(202)), user1, address(token), address(mockTarget), 100e18, callData);
+        vault.handleOutboundExecution(_tx(202), user1, address(token), address(mockTarget), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_WhenPausedReverts() public {
@@ -645,7 +648,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.handleOutboundExecution(bytes32(uint256(203)), user1, address(token), address(mockTarget), 100e18, callData);
+        vault.handleOutboundExecution(_tx(203), user1, address(token), address(mockTarget), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_ZeroTokenReverts() public {
@@ -655,7 +658,7 @@ contract VaultTest is Test {
         // Since msg.value is 0 and amount is 100e18, it will revert with InvalidAmount
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.handleOutboundExecution(bytes32(uint256(204)), user1, address(0), address(mockTarget), 100e18, callData);
+        vault.handleOutboundExecution(_tx(204), user1, address(0), address(mockTarget), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_ZeroTargetReverts() public {
@@ -663,7 +666,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.handleOutboundExecution(bytes32(uint256(205)), user1, address(token), address(0), 100e18, callData);
+        vault.handleOutboundExecution(_tx(205), user1, address(token), address(0), 100e18, callData);
     }
 
     function test_WithdrawAndExecute_ZeroAmount_Succeeds() public {
@@ -672,7 +675,7 @@ contract VaultTest is Test {
         // Zero amount is now allowed in validation (amount check is commented out)
         // The call should succeed with CEA deployment
         vm.prank(tss);
-        vault.handleOutboundExecution(bytes32(uint256(206)), user1, address(token), address(mockTarget), 0, callData);
+        vault.handleOutboundExecution(_tx(206), user1, address(token), address(mockTarget), 0, callData);
         
         // Verify CEA was deployed even with zero amount
         (address cea, bool isDeployed) = ceaFactory.getCEAForUEA(user1);
@@ -686,7 +689,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
         vault.handleOutboundExecution(
-            bytes32(uint256(207)), user1, address(token), address(mockTarget), vaultBalance + 1, callData
+            _tx(207), user1, address(token), address(mockTarget), vaultBalance + 1, callData
         );
     }
 
@@ -698,7 +701,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
         vault.handleOutboundExecution(
-            bytes32(uint256(208)), user1, address(unsupportedToken), address(mockTarget), 100e18, callData
+            _tx(208), user1, address(unsupportedToken), address(mockTarget), 100e18, callData
         );
     }
 
@@ -707,7 +710,7 @@ contract VaultTest is Test {
         bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
 
         vm.prank(tss);
-        vault.handleOutboundExecution(bytes32(uint256(209)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(_tx(209), user1, address(token), address(mockTarget), amount, callData);
 
         // Verify the call was executed via CEA (MockTarget stores lastCaller)
         (address cea, ) = ceaFactory.getCEAForUEA(user1);
@@ -723,7 +726,7 @@ contract VaultTest is Test {
         uint256 initialVaultBalance = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.handleOutboundExecution(bytes32(uint256(210)), user1, address(token), address(mockTarget), amount, callData);
+        vault.handleOutboundExecution(_tx(210), user1, address(token), address(mockTarget), amount, callData);
 
         // Tokens moved from vault
         assertEq(token.balanceOf(address(vault)), initialVaultBalance - amount);
@@ -733,12 +736,12 @@ contract VaultTest is Test {
         bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 50e18);
 
         vm.prank(tss);
-        vault.handleOutboundExecution(bytes32(uint256(211)), user1, address(token), address(mockTarget), 50e18, callData);
+        vault.handleOutboundExecution(_tx(211), user1, address(token), address(mockTarget), 50e18, callData);
 
         // Token 2 with different decimals
         bytes memory callData2 = abi.encodeWithSignature("receiveToken(address,uint256)", address(token2), 25e6);
         vm.prank(tss);
-        vault.handleOutboundExecution(bytes32(uint256(212)), user1, address(token2), address(mockTarget), 25e6, callData2);
+        vault.handleOutboundExecution(_tx(212), user1, address(token2), address(mockTarget), 25e6, callData2);
 
         // Verify both calls executed via CEA
         (address cea, ) = ceaFactory.getCEAForUEA(user1);
@@ -817,7 +820,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         (bool success,) = address(vault).call{ value: 1 ether }(
-            abi.encodeWithSelector(vault.withdraw.selector, txID, user1, address(token), user1, 100e18)
+            abi.encodeWithSelector(vault.withdraw.selector, _tx(1), user1, address(token), user1, 100e18)
         );
         assertFalse(success);
     }
@@ -830,7 +833,7 @@ contract VaultTest is Test {
         assertTrue(gateway.isSupportedToken(address(token)));
 
         vm.prank(tss);
-        vault.withdraw(txID, user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user1, 100e18);
         assertEq(token.balanceOf(user1), 100e18);
 
         // Create new gateway that doesn't support token
@@ -846,7 +849,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(txID, user1, address(token), user2, 100e18);
+        vault.withdraw(_tx(1), user1, address(token), user2, 100e18);
     }
 
     function test_GatewayChange_ReenableSupport() public {
@@ -863,7 +866,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.withdraw(bytes32(uint256(100)), user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(100), user1, address(token), user1, 100e18);
 
         // Re-enable support in new gateway
         address[] memory tokens = new address[](1);
@@ -875,7 +878,7 @@ contract VaultTest is Test {
         newGateway.setTokenLimitThresholds(tokens, thresholds);
 
         vm.prank(tss);
-        vault.withdraw(bytes32(uint256(101)), user1, address(token), user1, 100e18);
+        vault.withdraw(_tx(101), user1, address(token), user1, 100e18);
         assertEq(token.balanceOf(user1), 100e18);
     }
 
@@ -911,8 +914,8 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectEmit(true, true, true, true);
-        emit VaultWithdraw(txID, user1, address(token), user1, amount);
-        vault.withdraw(txID, user1, address(token), user1, amount);
+        emit VaultWithdraw(_tx(1), user1, address(token), user1, amount);
+        vault.withdraw(_tx(1), user1, address(token), user1, amount);
     }
 
     function test_Events_VaultRefund() public {
@@ -923,7 +926,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectEmit(true, true, false, true);
         emit VaultRevert(address(token), user1, amount, revertInstr);
-        vault.revertWithdraw(bytes32(uint256(5)), address(token), user1, amount, revertInstr);
+        vault.revertWithdraw(_tx(5), address(token), user1, amount, revertInstr);
     }
 
     function test_Events_InitializationEvents() public {
@@ -948,7 +951,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_Native_Success() public {
         uint256 amount = 1 ether;
         bytes memory callData = abi.encodeWithSignature("receiveFunds()");
-        bytes32 testTxID = bytes32(uint256(300));
+        bytes memory testTxID = _tx(300);
         address ueaAddr = user1;
 
         uint256 initialTargetBalance = address(mockTarget).balance;
@@ -976,7 +979,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_Native_EmitsEvent() public {
         uint256 amount = 1 ether;
         bytes memory callData = abi.encodeWithSignature("receiveFunds()");
-        bytes32 testTxID = bytes32(uint256(301));
+        bytes memory testTxID = _tx(301);
         address ueaAddr = user1;
 
         vm.deal(tss, amount);
@@ -996,7 +999,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_Native_InvalidValueReverts() public {
         uint256 amount = 1 ether;
         bytes memory callData = "";
-        bytes32 testTxID = bytes32(uint256(302));
+        bytes memory testTxID = _tx(302);
         address ueaAddr = user1;
 
         // Send wrong amount of ETH
@@ -1016,7 +1019,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_NativeViaCEA_Success() public {
         uint256 amount = 1 ether;
         bytes memory callData = abi.encodeWithSignature("receiveFunds()");
-        bytes32 testTxID = bytes32(uint256(303));
+        bytes memory testTxID = _tx(303);
         address ueaAddr = user1;
 
         uint256 initialTargetBalance = address(mockTarget).balance;
@@ -1054,7 +1057,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_NativeViaCEA_DeploysCEA() public {
         uint256 amount = 1 ether;
         bytes memory callData = "";
-        bytes32 testTxID = bytes32(uint256(304));
+        bytes memory testTxID = _tx(304);
         address ueaAddr = user2;
 
         // Verify CEA doesn't exist yet
@@ -1083,8 +1086,8 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_NativeViaCEA_ReusesExistingCEA() public {
         uint256 amount = 1 ether;
         bytes memory callData = "";
-        bytes32 testTxID1 = bytes32(uint256(305));
-        bytes32 testTxID2 = bytes32(uint256(306));
+        bytes memory testTxID1 = _tx(305);
+        bytes memory testTxID2 = _tx(306);
         address ueaAddr = user1;
 
         // First call - deploys CEA
@@ -1121,7 +1124,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_ERC20ViaCEA_Success() public {
         uint256 amount = 100e18;
         bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
-        bytes32 testTxID = bytes32(uint256(307));
+        bytes memory testTxID = _tx(307);
         address ueaAddr = user1;
 
         uint256 initialVaultBalance = token.balanceOf(address(vault));
@@ -1164,7 +1167,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_ERC20ViaCEA_EmitsEvent() public {
         uint256 amount = 100e18;
         bytes memory callData = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
-        bytes32 testTxID = bytes32(uint256(308));
+        bytes memory testTxID = _tx(308);
         address ueaAddr = user1;
 
         vm.prank(tss);
@@ -1183,7 +1186,7 @@ contract VaultTest is Test {
     function test_HandleOutboundExecution_ERC20ViaCEA_WithValueReverts() public {
         uint256 amount = 100e18;
         bytes memory callData = "";
-        bytes32 testTxID = bytes32(uint256(309));
+        bytes memory testTxID = _tx(309);
         address ueaAddr = user1;
 
         // ERC20 path should not accept msg.value
@@ -1204,7 +1207,7 @@ contract VaultTest is Test {
         uint256 vaultBalance = token.balanceOf(address(vault));
         uint256 amount = vaultBalance + 1;
         bytes memory callData = "";
-        bytes32 testTxID = bytes32(uint256(310));
+        bytes memory testTxID = _tx(310);
         address ueaAddr = user1;
 
         vm.prank(tss);
@@ -1224,8 +1227,8 @@ contract VaultTest is Test {
         uint256 amount2 = 25e6;
         bytes memory callData1 = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount1);
         bytes memory callData2 = abi.encodeWithSignature("receiveToken(address,uint256)", address(token2), amount2);
-        bytes32 testTxID1 = bytes32(uint256(311));
-        bytes32 testTxID2 = bytes32(uint256(312));
+        bytes memory testTxID1 = _tx(311);
+        bytes memory testTxID2 = _tx(312);
         address ueaAddr = user1;
 
         // First call with token

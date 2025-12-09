@@ -18,6 +18,11 @@ import { MockSequencerUptimeFeed } from "../mocks/MockSequencerUptimeFeed.sol";
  */
 
 contract GatewayAdminSettersTest is BaseTest {
+    // Helper function to convert uint256 to bytes txID
+    function _tx(uint256 id) internal pure returns (bytes memory) {
+        return abi.encodePacked(bytes32(uint256(id)));
+    }
+
     // =========================
     //      SETUP
     // =========================
@@ -492,7 +497,7 @@ contract GatewayAdminSettersTest is BaseTest {
         gateway.setL2SequencerGracePeriod(300);
 
         // TSS operations should be blocked
-        bytes32 txID = bytes32(uint256(1));
+        bytes memory txID = _tx(1);
         vm.prank(tss);
         vm.expectRevert();
         gateway.revertUniversalTx(txID, 1, RevertInstructions(user2, ""));

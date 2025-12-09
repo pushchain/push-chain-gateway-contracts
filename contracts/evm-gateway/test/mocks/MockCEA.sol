@@ -14,7 +14,7 @@ contract MockCEA is ICEA {
     using SafeERC20 for IERC20;
 
     // Track last call parameters for assertions
-    bytes32 public lastTxID;
+    bytes public lastTxID;
     address public lastUEA;
     address public lastToken;
     address public lastTarget;
@@ -26,7 +26,7 @@ contract MockCEA is ICEA {
      * @dev Transfers tokens to target and calls it with payload
      */
     function executeUniversalTx(
-        bytes32 txID,
+        bytes calldata txID,
         address uea,
         address token,
         address target,
@@ -60,7 +60,7 @@ contract MockCEA is ICEA {
      * @dev Forwards native value to target with payload
      */
     function executeUniversalTx(
-        bytes32 txID,
+        bytes calldata txID,
         address uea,
         address target,
         uint256 amount,

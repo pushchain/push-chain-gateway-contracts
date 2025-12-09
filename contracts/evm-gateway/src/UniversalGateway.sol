@@ -497,7 +497,7 @@ contract UniversalGateway is
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTxToken(
-        bytes32 txID,
+        bytes calldata txID,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
@@ -507,12 +507,13 @@ contract UniversalGateway is
         whenNotPaused
         onlyRole(VAULT_ROLE)
     {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        bytes32 txIDHash = keccak256(txID);
+        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
         
-        isExecuted[txID] = true;
+        isExecuted[txIDHash] = true;
         IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
         
         emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
@@ -520,7 +521,7 @@ contract UniversalGateway is
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTx(
-        bytes32 txID,
+        bytes calldata txID,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     )
@@ -530,12 +531,13 @@ contract UniversalGateway is
         whenNotPaused
         onlyTSS
     {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted();
+        bytes32 txIDHash = keccak256(txID);
+        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txID] = true;
+        isExecuted[txIDHash] = true;
         (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
@@ -548,18 +550,19 @@ contract UniversalGateway is
 
     /// @inheritdoc IUniversalGateway
     function withdraw(
-        bytes32 txID,
+        bytes calldata txID,
         address ueaAddress,
         address to,
         uint256 amount
     ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        bytes32 txIDHash = keccak256(txID);
+        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
         
         if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
         
-        isExecuted[txID] = true;
+        isExecuted[txIDHash] = true;
         (bool ok,) = payable(to).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
@@ -568,13 +571,14 @@ contract UniversalGateway is
 
     /// @inheritdoc IUniversalGateway
     function withdrawTokens(
-        bytes32 txID,
+        bytes calldata txID,
         address ueaAddress,
         address token,
         address to,
         uint256 amount
     ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
+        bytes32 txIDHash = keccak256(txID);
+        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
         
         if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
@@ -582,7 +586,7 @@ contract UniversalGateway is
         
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        isExecuted[txID] = true;
+        isExecuted[txIDHash] = true;
         IERC20(token).safeTransfer(to, amount);
         emit WithdrawToken(txID, ueaAddress, token, to, amount);
     }

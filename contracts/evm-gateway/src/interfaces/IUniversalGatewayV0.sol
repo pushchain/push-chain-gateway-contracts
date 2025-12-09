@@ -37,7 +37,7 @@ interface IUniversalGatewayV0 {
 
     /// @notice         Revert universal transaction event
     event RevertUniversalTx(
-        bytes32 indexed txID,
+        bytes indexed txID,
         address indexed to,
         address indexed token,
         uint256 amount,
@@ -46,7 +46,7 @@ interface IUniversalGatewayV0 {
 
     /// @notice         Withdraw token event (native token is represented with token = address(0))
     event WithdrawToken(
-        bytes32 indexed txID,
+        bytes indexed txID,
         address indexed ueaAddress,
         address indexed token,
         address to,
@@ -142,14 +142,14 @@ interface IUniversalGatewayV0 {
     //      REVERT & WITHDRAW
     // =========================
 
-    function revertUniversalTx(bytes32 txID, uint256 amount, RevertInstructions calldata revertCFG)
+    function revertUniversalTx(bytes calldata txID, uint256 amount, RevertInstructions calldata revertCFG)
         external
         payable;
 
-    function revertUniversalTxToken(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
+    function revertUniversalTxToken(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
         external;
 
-    function withdraw(bytes32 txID, address ueaAddress, address to, uint256 amount) external payable;
+    function withdraw(bytes calldata txID, address ueaAddress, address to, uint256 amount) external payable;
 
-    function withdrawTokens(bytes32 txID, address ueaAddress, address token, address to, uint256 amount) external;
+    function withdrawTokens(bytes calldata txID, address ueaAddress, address token, address to, uint256 amount) external;
 }

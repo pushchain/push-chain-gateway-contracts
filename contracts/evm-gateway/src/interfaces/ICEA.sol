@@ -25,7 +25,7 @@ interface ICEA {
      * @param payload Calldata to forward to `target`.
      */
     function executeUniversalTx(
-        bytes32 txID,
+        bytes calldata txID,
         address uea,
         address token,
         address target, 
@@ -45,7 +45,7 @@ interface ICEA {
      *      3. CEA calls `target` with `payload` and `amount` of native tokens.
      */
     function executeUniversalTx(
-        bytes32 txID,
+        bytes calldata txID,
         address uea,
         address target,
         uint256 amount,
