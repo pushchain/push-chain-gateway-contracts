@@ -510,13 +510,13 @@ contract UniversalGateway is
         bytes32 txIDHash = keccak256(txID);
         if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
         
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
         
         isExecuted[txIDHash] = true;
-        IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
+        IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
         
-        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, token, amount, revertInstruction);
     }
 
     /// @inheritdoc IUniversalGateway
@@ -534,14 +534,14 @@ contract UniversalGateway is
         bytes32 txIDHash = keccak256(txID);
         if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
         
-        if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
         isExecuted[txIDHash] = true;
-        (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
+        (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertUniversalTx(txID, revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================
@@ -940,8 +940,8 @@ contract UniversalGateway is
     ) internal {
         TX_TYPE txType = _TX_TYPE;
 
-        // Sanity Check : fundRecipient is not address(0)
-        if (req.revertInstruction.fundRecipient == address(0)) {
+        // Sanity Check : revertRecipient is not address(0)
+        if (req.revertInstruction.revertRecipient == address(0)) {
             revert Errors.InvalidRecipient();
         }
 

@@ -109,7 +109,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: token,
             amount: amount,
             payload: payloadBytes,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
+            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("sig")
         });
     }
@@ -543,7 +543,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
+            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("")
         });
 
@@ -556,7 +556,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("test") }),
+            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("test") }),
             signatureData: bytes("different signature data")
         });
 
@@ -575,7 +575,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             token: erc20A,
             amount: amount,
             payload: nonEmptyPayload(),
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("context1") }),
+            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("context1") }),
             signatureData: bytes("sig")
         });
 
@@ -588,7 +588,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             amount: amount,
             payload: nonEmptyPayload(),
             revertInstruction: RevertInstructions({
-                fundRecipient: address(0x456),
+                revertRecipient: address(0x456),
                 revertMsg: bytes("completely different context")
             }),
             signatureData: bytes("sig")

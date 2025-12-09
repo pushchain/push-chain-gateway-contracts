@@ -421,7 +421,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         tokenA.approve(address(gateway), 1 ether);
 
         RevertInstructions memory revertInstructions =
-            RevertInstructions({ fundRecipient: user2, revertMsg: bytes("") });
+            RevertInstructions({ revertRecipient: user2, revertMsg: bytes("") });
 
         vm.prank(user1);
         gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether, revertInstructions));

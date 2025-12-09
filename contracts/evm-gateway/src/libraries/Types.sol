@@ -19,7 +19,7 @@ enum TX_TYPE {
 
 struct RevertInstructions {
     ///             where funds go in revert / refund cases
-    address fundRecipient;
+    address revertRecipient;
     ///             arbitrary message for relayers/UEA
     bytes revertMsg;
 }

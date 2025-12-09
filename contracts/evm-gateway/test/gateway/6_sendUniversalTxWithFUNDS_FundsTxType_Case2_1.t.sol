@@ -128,7 +128,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: bytes("")
         });
     }
@@ -474,9 +474,9 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         );
     }
 
-    /// @notice Test Case 2.1 - Zero fundRecipient reverts
-    /// @dev revertInstruction.fundRecipient must be non-zero
-    function test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_ZeroFundRecipient() public {
+    /// @notice Test Case 2.1 - Zero revertRecipient reverts
+    /// @dev revertInstruction.revertRecipient must be non-zero
+    function test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_ZerorevertRecipient() public {
         uint256 fundsAmount = 500 ether;
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
@@ -487,7 +487,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             amount: fundsAmount,
             payload: encodedPayload,
             revertInstruction: RevertInstructions({
-                fundRecipient: address(0), // Zero address not allowed
+                revertRecipient: address(0), // Zero address not allowed
                 revertMsg: bytes("")
             }),
             signatureData: bytes("")
@@ -587,7 +587,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory revertMsg = abi.encodePacked("custom revert data", uint256(12345));
 
         RevertInstructions memory revertInst =
-            RevertInstructions({ fundRecipient: address(0x999), revertMsg: revertMsg });
+            RevertInstructions({ revertRecipient: address(0x999), revertMsg: revertMsg });
 
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
@@ -627,7 +627,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: RevertInstructions({ fundRecipient: address(0x456), revertMsg: bytes("") }),
+            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("") }),
             signatureData: sigData
         });
 

@@ -9,7 +9,6 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 
 import { UniversalGatewayPC } from "../../src/UniversalGatewayPC.sol";
 import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.sol";
-import { RevertInstructions } from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { MockPRC20 } from "../mocks/MockPRC20.sol";
 import { MockUniversalCoreReal } from "../mocks/MockUniversalCoreReal.sol";
@@ -65,21 +64,6 @@ contract UniversalGatewayPCTest is Test {
         _deployGateway();
         _initializeGateway();
         _setupTokens();
-    }
-
-    // =========================
-    //      HELPER FUNCTIONS
-    // =========================
-    function buildRevertInstructions(address fundRecipient) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: fundRecipient, revertMsg: bytes("") });
-    }
-
-    function buildRevertInstructionsWithMsg(address fundRecipient, string memory revertMsg)
-        internal
-        pure
-        returns (RevertInstructions memory)
-    {
-        return RevertInstructions({ fundRecipient: fundRecipient, revertMsg: bytes(revertMsg) });
     }
 
     function calculateExpectedGasFee(uint256 gasLimit) internal view returns (uint256) {
@@ -317,7 +301,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 150_000;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Ensure user has enough balance
         uint256 userBalance = prc20Token.balanceOf(user1);
@@ -343,7 +327,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 150_000;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.recordLogs();
         vm.prank(user1);
@@ -357,7 +341,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6; // 1000 USDC (6 decimals)
         uint256 gasLimit = 0; // Use default gas limit
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -375,7 +359,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = bytes(""); // Empty target
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -386,7 +370,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
@@ -397,7 +381,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 0; // Zero amount
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
@@ -408,7 +392,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(address(0)); // Zero recipient
+        address revertCfg = address(0); // Zero recipient
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
@@ -422,7 +406,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert();
@@ -433,7 +417,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Calculate required gas fee
         uint256 requiredGasFee = calculateExpectedGasFee(gasLimit);
@@ -459,7 +443,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Remove gas token allowance
         vm.prank(user1);
@@ -474,7 +458,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = LARGE_AMOUNT + 1; // More than user has
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
@@ -490,7 +474,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 200_000;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -509,7 +493,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 200_000;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.recordLogs();
         vm.prank(user1);
@@ -524,7 +508,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 0; // Use default gas limit
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -543,7 +527,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = bytes(""); // Empty payload
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -571,7 +555,7 @@ contract UniversalGatewayPCTest is Test {
             "complex string parameter"
         );
 
-        RevertInstructions memory revertCfg = buildRevertInstructionsWithMsg(user2, "Complex operation failed");
+        address revertCfg = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -590,7 +574,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = bytes(""); // Empty target
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -602,7 +586,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
@@ -614,7 +598,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
@@ -626,7 +610,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(address(0)); // Zero recipient
+        address revertCfg = address(0); // Zero recipient
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
@@ -641,7 +625,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert();
@@ -653,7 +637,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Calculate required gas fee
         uint256 requiredGasFee = calculateExpectedGasFee(gasLimit);
@@ -680,7 +664,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Remove gas token allowance
         vm.prank(user1);
@@ -696,7 +680,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
@@ -707,7 +691,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         uint256 initialBalance = prc20Token.balanceOf(user1);
 
@@ -753,7 +737,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Create a contract that calls the gateway
         MockReentrantContract reentrantContract =
@@ -781,7 +765,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Create a contract that calls the gateway
         MockReentrantContract reentrantContract =
@@ -808,7 +792,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 1_000_000; // Large gas limit
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -831,24 +815,24 @@ contract UniversalGatewayPCTest is Test {
     function testGasFeeCalculationAccuracy() public {
         uint256 amount = 1000 * 1e6;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertRecipient = user2;
 
         // Test specific gas limits individually
-        _testGasFeeForLimit(amount, to, revertCfg, 50_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 100_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 200_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 500_000);
-        _testGasFeeForLimit(amount, to, revertCfg, 1_000_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 50_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 100_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 200_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 500_000);
+        _testGasFeeForLimit(amount, to, revertRecipient, 1_000_000);
     }
 
-    function _testGasFeeForLimit(uint256 amount, bytes memory to, RevertInstructions memory revertCfg, uint256 gasLimit)
+    function _testGasFeeForLimit(uint256 amount, bytes memory to, address revertRecipient, uint256 gasLimit)
         internal
     {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertCfg);
+        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
 
         uint256 balanceAfter = gasToken.balanceOf(vaultPC);
         assertEq(balanceAfter - balanceBefore, expectedGasFee);
@@ -870,7 +854,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Create token with unconfigured chain ID (no gas token set for this chain)
         string memory unconfiguredChainId = "999"; // Chain ID not configured in universalCore
@@ -922,7 +906,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Create token with a chain ID that has gas token but no gas price configured
         string memory chainWithTokenNoPrice = "777";
@@ -967,7 +951,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
-        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+        address revertCfg = user2;
 
         // Create failing token
         MockPRC20 failingToken = _createFailingToken();
