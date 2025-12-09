@@ -35,6 +35,11 @@ contract MockUniversalCoreReal is IUniversalCore {
     /// @notice Default deadline in minutes for swaps
     uint256 public defaultDeadlineMins = 20;
 
+    /// @notice Protocol fees for different token types
+    uint256 private _pc20ProtocolFee = 100e18; // 100 PC default
+    uint256 private _pc721ProtocolFee = 50e18; // 50 PC default
+    uint256 private _defaultProtocolFee = 75e18; // 75 PC default
+
     /// @notice Uniswap V3 addresses.
     address public uniswapV3FactoryAddress;
     address public uniswapV3SwapRouterAddress;
@@ -58,6 +63,10 @@ contract MockUniversalCoreReal is IUniversalCore {
 
     // Supported tokens mapping
     mapping(address => bool) private _supportedTokens;
+
+    // Chain support mappings
+    mapping(string => bool) private _pc20SupportedChains;
+    mapping(string => bool) private _pc721SupportedChains;
 
     // ========= Events =========
     event SetGasPrice(string indexed chainID, uint256 price);
@@ -282,27 +291,39 @@ contract MockUniversalCoreReal is IUniversalCore {
     }
 
     // ========= Protocol Fee Functions =========
-    function PC20_PROTOCOL_FEES() external pure returns (uint256 fee) {
-        return 100e18; // 100 PC
+    function PC20_PROTOCOL_FEES() external view returns (uint256 fee) {
+        return _pc20ProtocolFee;
     }
 
-    function PC721_PROTOCOL_FEES() external pure returns (uint256 fee) {
-        return 50e18; // 50 PC
+    function PC721_PROTOCOL_FEES() external view returns (uint256 fee) {
+        return _pc721ProtocolFee;
     }
 
-    function DEFAULT_PROTOCOL_FEES() external pure returns (uint256 fee) {
-        return 75e18; // 75 PC
+    function DEFAULT_PROTOCOL_FEES() external view returns (uint256 fee) {
+        return _defaultProtocolFee;
+    }
+
+    function setProtocolFees(uint256 pc20Fee, uint256 pc721Fee, uint256 defaultFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pc20ProtocolFee = pc20Fee;
+        _pc721ProtocolFee = pc721Fee;
+        _defaultProtocolFee = defaultFee;
     }
 
     // ========= Chain Support Functions =========
-    function isPC20SupportedOnChain(string calldata chainNamespace) external pure returns (bool supported) {
-        // For testing purposes, support all chains
-        return true;
+    function isPC20SupportedOnChain(string calldata chainNamespace) external view returns (bool supported) {
+        return _pc20SupportedChains[chainNamespace];
     }
 
-    function isPC721SupportedOnChain(string calldata chainNamespace) external pure returns (bool supported) {
-        // For testing purposes, support all chains
-        return true;
+    function isPC721SupportedOnChain(string calldata chainNamespace) external view returns (bool supported) {
+        return _pc721SupportedChains[chainNamespace];
+    }
+
+    function setPC20SupportOnChain(string calldata chainNamespace, bool supported) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pc20SupportedChains[chainNamespace] = supported;
+    }
+
+    function setPC721SupportOnChain(string calldata chainNamespace, bool supported) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pc721SupportedChains[chainNamespace] = supported;
     }
 
     // ========= Test Helper Functions =========

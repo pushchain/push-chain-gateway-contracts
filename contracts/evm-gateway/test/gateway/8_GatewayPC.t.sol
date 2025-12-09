@@ -12,6 +12,8 @@ import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.so
 import { RevertInstructions } from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { MockPRC20 } from "../mocks/MockPRC20.sol";
+import { MockPC20 } from "../mocks/MockPC20.sol";
+import { MockPC721 } from "../mocks/MockPC721.sol";
 import { MockUniversalCoreReal } from "../mocks/MockUniversalCoreReal.sol";
 import { MockReentrantContract } from "../mocks/MockReentrantContract.sol";
 
@@ -44,7 +46,9 @@ contract UniversalGatewayPCTest is Test {
     // =========================
     MockUniversalCoreReal public universalCore;
     MockPRC20 public prc20Token;
-    MockPRC20 public gasToken;
+    MockPRC20 public gasToken;// PC20 / PC721 mocks
+    MockPC20 public pc20Token;
+    MockPC721 public pc721Token;
 
     // =========================
     //      TEST CONSTANTS
@@ -55,6 +59,8 @@ contract UniversalGatewayPCTest is Test {
     uint256 public constant DEFAULT_GAS_PRICE = 20 gwei;
     string public constant SOURCE_CHAIN_ID = "1"; // Ethereum mainnet
     string public constant SOURCE_TOKEN_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC
+    string public constant ETH_CHAIN_NAMESPACE = "eip155:1"; // ETHEREUM
+    string public constant UNSUPPORTED_CHAIN_NAMESPACE = "eip155:8453"; // UNSUPPORTED
 
     // =========================
     //         SETUP
@@ -896,6 +902,10 @@ contract UniversalGatewayPCTest is Test {
             SOURCE_TOKEN_ADDRESS
         );
 
+        // Mark token as supported
+        vm.prank(admin);
+        universalCore.setSupportedToken(address(invalidToken), true);
+
         // Setup token for user1
         invalidToken.mint(user1, amount);
         vm.prank(user1);
@@ -954,6 +964,10 @@ contract UniversalGatewayPCTest is Test {
             SOURCE_TOKEN_ADDRESS
         );
 
+        // Mark token as supported
+        vm.prank(admin);
+        universalCore.setSupportedToken(address(invalidToken), true);
+
         // Setup token for user1
         invalidToken.mint(user1, amount);
         vm.prank(user1);
@@ -983,6 +997,10 @@ contract UniversalGatewayPCTest is Test {
         // Create failing token
         MockPRC20 failingToken = _createFailingToken();
 
+        // Mark token as supported
+        vm.prank(admin);
+        universalCore.setSupportedToken(address(failingToken), true);
+
         // Setup token for user1
         failingToken.mint(user1, amount);
         vm.prank(user1);
@@ -995,6 +1013,245 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
         gateway.sendUniversalTxOutbound(to, address(failingToken), amount, 0, gasLimit, "", "", revertCfg);
+    }
+
+    // =========================
+    //      PC20 OUTBOUND TESTS
+    // =========================
+
+    function testPC20_FundsOnly_Success() public {
+        uint256 amount = 1000 ether;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        uint256 beforeVaultBalance = vaultPC.balance;
+        uint256 beforeUserBalance = pc20Token.balanceOf(user1);
+
+        // PC20 outbound uses native PC for protocol fee
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc20Token),
+            amount,
+            0,
+            0,                      // gasLimit, ignored for PC20 in current fee model
+            "",
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        // Vault receives the native fee
+        assertEq(vaultPC.balance, beforeVaultBalance + DEFAULT_PROTOCOL_FEE);
+
+        // PC20 moved from user to gateway
+        assertEq(pc20Token.balanceOf(user1), beforeUserBalance - amount);
+        assertEq(pc20Token.balanceOf(address(gateway)), amount);
+    }
+
+    function testPC20_FundsAndPayload_Success() public {
+        uint256 amount = 500 ether;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory payload = abi.encodeWithSignature("someFunction(uint256)", 42);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        uint256 beforeVaultBalance = vaultPC.balance;
+        uint256 beforeUserBalance = pc20Token.balanceOf(user1);
+
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc20Token),
+            amount,
+            0,
+            123_456,                // gasLimit hint, still flat fee now
+            payload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        assertEq(vaultPC.balance, beforeVaultBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(pc20Token.balanceOf(user1), beforeUserBalance - amount);
+        assertEq(pc20Token.balanceOf(address(gateway)), amount);
+    }
+
+    function testPC20_Revert_EmptyChainNamespace() public {
+        uint256 amount = 1000 ether;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc20Token),
+            amount,
+            0,
+            0,
+            "",
+            "",                     // empty chainNamespace
+            revertCfg
+        );
+    }
+
+    function testPC20_Revert_UnsupportedChainNamespace() public {
+        uint256 amount = 1000 ether;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // Disable PC20 support on ETH_CHAIN_NAMESPACE
+        vm.prank(admin);
+        universalCore.setPC20SupportOnChain(ETH_CHAIN_NAMESPACE, false);
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc20Token),
+            amount,
+            0,
+            0,
+            "",
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+    }
+
+    function testPC20_Revert_InsufficientNativeFee() public {
+        uint256 amount = 1000 ether;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // Send less native value than required protocol fee
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE - 1}(
+            target,
+            address(pc20Token),
+            amount,
+            0,
+            0,
+            "",
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+    }
+    // =========================
+    //      PC721 OUTBOUND TESTS
+    // =========================
+
+    function testPC721_FundsOnly_Success() public {
+        uint256 tokenId = 1;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        uint256 beforeVaultBalance = vaultPC.balance;
+        address beforeOwner = pc721Token.ownerOf(tokenId);
+
+        assertEq(beforeOwner, user1);
+
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc721Token),
+            0,
+            tokenId,
+            0,
+            "",
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        assertEq(vaultPC.balance, beforeVaultBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(pc721Token.ownerOf(tokenId), address(gateway));
+    }
+
+    function testPC721_FundsAndPayload_Success() public {
+        uint256 tokenId = 2;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory payload = abi.encodeWithSignature("doSomething(address,uint256)", user2, tokenId);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        uint256 beforeVaultBalance = vaultPC.balance;
+        address beforeOwner = pc721Token.ownerOf(tokenId);
+        assertEq(beforeOwner, user1);
+
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc721Token),
+            0,
+            tokenId,
+            250_000,
+            payload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        assertEq(vaultPC.balance, beforeVaultBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(pc721Token.ownerOf(tokenId), address(gateway));
+    }
+
+    function testPC721_Revert_EmptyChainNamespace() public {
+        uint256 tokenId = 3;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // ensure user2 owns tokenId 3 in setup
+        assertEq(pc721Token.ownerOf(3), user2);
+
+        vm.prank(user2);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc721Token),
+            0,
+            tokenId,
+            0,
+            "",
+            "",
+            revertCfg
+        );
+    }
+
+    function testPC721_Revert_UnsupportedChainNamespace() public {
+        uint256 tokenId = 1;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        vm.prank(admin);
+        universalCore.setPC721SupportOnChain(ETH_CHAIN_NAMESPACE, false);
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc721Token),
+            0,
+            tokenId,
+            0,
+            "",
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+    }
+
+    function testPC721_Revert_InsufficientNativeFee() public {
+        uint256 tokenId = 2;
+        bytes memory target = abi.encodePacked(user2);
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE - 1}(
+            target,
+            address(pc721Token),
+            0,
+            tokenId,
+            0,
+            "",
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
     }
 
     function _createFailingToken() internal returns (MockPRC20) {
@@ -1041,6 +1298,9 @@ contract UniversalGatewayPCTest is Test {
     function _deployMocks() internal {
         // Deploy UniversalCore mock
         universalCore = new MockUniversalCoreReal(uem);
+        
+        // Grant admin role to admin address
+        universalCore.grantRole(universalCore.DEFAULT_ADMIN_ROLE(), admin);
 
         // Deploy gas token (PC native token)
         gasToken = new MockPRC20(
@@ -1071,10 +1331,34 @@ contract UniversalGatewayPCTest is Test {
         universalCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
         vm.prank(uem);
         universalCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
+        
+        // Configure protocol fees for PC20 / PC721 / default
+        vm.prank(admin);
+        universalCore.setProtocolFees(
+            DEFAULT_PROTOCOL_FEE, // PC20
+            DEFAULT_PROTOCOL_FEE, // PC721
+            DEFAULT_PROTOCOL_FEE  // default
+        );
+
+        // Mark PC20 / PC721 as supported on this chainNamespace
+        vm.prank(admin);
+        universalCore.setPC20SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+        vm.prank(admin);
+        universalCore.setPC721SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+
+        // Mark PRC20 token as supported
+        vm.prank(admin);
+        universalCore.setSupportedToken(address(prc20Token), true);
+
+          // Deploy PC20 and PC721 mocks
+        pc20Token = new MockPC20("PC20 Test Token", "PC20T");
+        pc721Token = new MockPC721("PC721 Test Token", "PC721T");
 
         vm.label(address(universalCore), "UniversalCore");
         vm.label(address(prc20Token), "PRC20Token");
         vm.label(address(gasToken), "GasToken");
+        vm.label(address(pc20Token), "PC20Token");
+        vm.label(address(pc721Token), "PC721Token");
     }
 
     function _deployGateway() internal {
@@ -1129,5 +1413,26 @@ contract UniversalGatewayPCTest is Test {
         prc20Token.approve(address(gateway), type(uint256).max);
         vm.prank(user2);
         gasToken.approve(address(gateway), type(uint256).max);
+
+        // Mint PC20 and PC721 to users for tests
+        pc20Token.mint(user1, LARGE_AMOUNT);
+        pc20Token.mint(user2, LARGE_AMOUNT);
+
+        // Approve gateway for PC20
+        vm.prank(user1);
+        pc20Token.approve(address(gateway), type(uint256).max);
+        vm.prank(user2);
+        pc20Token.approve(address(gateway), type(uint256).max);
+
+        // Mint NFTs to users
+        pc721Token.mint(user1, 1);
+        pc721Token.mint(user1, 2);
+        pc721Token.mint(user2, 3);
+
+        // Approve gateway for NFTs
+        vm.prank(user1);
+        pc721Token.setApprovalForAll(address(gateway), true);
+        vm.prank(user2);
+        pc721Token.setApprovalForAll(address(gateway), true);
     }
 }

@@ -106,6 +106,7 @@ contract UniversalGatewayPC is
   ) external payable whenNotPaused nonReentrant {
       if (target.length == 0) revert Errors.InvalidInput();
       if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+      if (token == address(0) && (amount != 0 || tokenId != 0)) revert Errors.ZeroAddress();
       if (token == address(0) && payload.length == 0) revert Errors.InvalidTxType();
 
       OutboundMode oMode;
@@ -129,7 +130,6 @@ contract UniversalGatewayPC is
           // token present
           if (!hasFungible && !hasNFT) revert Errors.InvalidAmount();
           if (hasFungible && hasNFT) revert Errors.InvalidInput();
-          if (!hasChainNamespace) revert Errors.InvalidInput();
 
           oMode = hasPayload ? OutboundMode.FUNDS_AND_PAYLOAD : OutboundMode.FUNDS;
 
@@ -143,11 +143,13 @@ contract UniversalGatewayPC is
               // PC20
               if (!hasFungible || hasNFT) revert Errors.InvalidAmount();
               if (!core.isPC20SupportedOnChain(chainNamespace)) revert Errors.InvalidInput();
+              if (!hasChainNamespace) revert Errors.InvalidInput();
               aType = AssetType.PC20;
           } else if (_isERC721(token)) {
               // PC721
               if (!hasNFT || hasFungible) revert Errors.InvalidAmount();
               if (!core.isPC721SupportedOnChain(chainNamespace)) revert Errors.InvalidInput();
+              if (!hasChainNamespace) revert Errors.InvalidInput();
               aType = AssetType.PC721;
           } else {
               revert Errors.TokenNotSupported();
