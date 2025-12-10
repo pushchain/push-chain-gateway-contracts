@@ -450,7 +450,7 @@ contract OracleTest is BaseTest {
     // USD CAP BOUNDARY CONDITIONS TESTS
     // =========================
 
-    function _buildGasUniversalTxRequest(UniversalPayload memory payload, RevertInstructions memory revertCfg)
+    function _buildGasUniversalTxRequest(UniversalPayload memory payload, address revertCfg)
         internal
         pure
         returns (UniversalTxRequest memory)
@@ -460,7 +460,7 @@ contract OracleTest is BaseTest {
             token: address(0),
             amount: 0,
             payload: abi.encode(payload),
-            revertInstruction: revertCfg,
+            revertRecipient: revertCfg,
             signatureData: bytes("")
         });
     }
@@ -473,7 +473,7 @@ contract OracleTest is BaseTest {
         uint256 testAmount = minEth + 1000; // Add 1000 wei buffer
         vm.deal(user1, testAmount);
 
-        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
+        (UniversalPayload memory payload, address revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Should not revert
@@ -488,7 +488,7 @@ contract OracleTest is BaseTest {
         // Use exact maximum amount
         vm.deal(user1, maxEth);
 
-        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
+        (UniversalPayload memory payload, address revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Should not revert
@@ -503,7 +503,7 @@ contract OracleTest is BaseTest {
 
         vm.deal(user1, belowMin);
 
-        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
+        (UniversalPayload memory payload, address revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
@@ -518,7 +518,7 @@ contract OracleTest is BaseTest {
 
         vm.deal(user1, aboveMax);
 
-        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
+        (UniversalPayload memory payload, address revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));

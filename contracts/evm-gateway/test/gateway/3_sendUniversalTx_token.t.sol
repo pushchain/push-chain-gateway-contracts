@@ -53,7 +53,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address revertRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -176,7 +176,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             gasToken: gasToken,
             gasAmount: gasAmount,
             payload: payload,
-            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("") }),
+            revertRecipient: address(0x456),
             signatureData: bytes(""),
             amountOutMinETH: amountOutMinETH,
             deadline: deadline
@@ -200,7 +200,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             block.timestamp + 1 hours // deadline
         );
         // Set revertRecipient to non-zero for GAS routes (required by _routeUniversalTx)
-        req.revertInstruction.revertRecipient = address(0x456);
+        req.revertRecipient = address(0x456);
         return req;
     }
 
@@ -257,7 +257,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             amountOutMinETH,
             pastDeadline // Past deadline
         );
-        req.revertInstruction.revertRecipient = address(0x456);
+        req.revertRecipient = address(0x456);
 
         vm.expectRevert(Errors.SlippageExceededOrExpired.selector);
         vm.prank(user1);
@@ -333,7 +333,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0),
             gasAmount, // nativeValue from unwrap
             bytes(""),
-            req.revertInstruction,
+            req.revertRecipient,
             TX_TYPE.GAS,
             bytes("")
         );
@@ -411,7 +411,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0),
             expectedETH, // nativeValue from swap = 1 ETH
             bytes(""),
-            req.revertInstruction,
+            req.revertRecipient,
             TX_TYPE.GAS,
             bytes("")
         );
@@ -453,7 +453,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0),
             expectedETH,
             payloadBytes,
-            req.revertInstruction,
+            req.revertRecipient,
             TX_TYPE.GAS_AND_PAYLOAD,
             bytes("")
         );
@@ -490,7 +490,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0), // Native token
             fundsAmount, // Funds amount, not gas amount
             bytes(""),
-            req.revertInstruction,
+            req.revertRecipient,
             TX_TYPE.FUNDS,
             bytes("")
         );
@@ -530,7 +530,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0),
             fundsAmount,
             payloadBytes,
-            req.revertInstruction,
+            req.revertRecipient,
             TX_TYPE.FUNDS_AND_PAYLOAD,
             bytes("")
         );
@@ -563,7 +563,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0),
             expectedETH, // nativeValue from swap, not msg.value
             bytes(""),
-            req.revertInstruction,
+            req.revertRecipient,
             TX_TYPE.GAS,
             bytes("")
         );
@@ -614,7 +614,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
     // =========================
 
     /// @notice Test that UniversalTxRequest is correctly built from UniversalTokenTxRequest
-    /// @dev Verify that recipient, token, amount, payload, revertInstruction, signatureData are preserved
+    /// @dev Verify that recipient, token, amount, payload, revertRecipient, signatureData are preserved
     function test_TokenGas_BuildsCorrectUniversalTxRequest() public {
         // This test verifies the conversion from UniversalTokenTxRequest to UniversalTxRequest
         // The conversion happens at lines 317-324 in UniversalGateway.sol
@@ -696,7 +696,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         // Act: Should succeed with default deadline
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx(
-            user1, address(0), address(0), expectedETH, bytes(""), req.revertInstruction, TX_TYPE.GAS, bytes("")
+            user1, address(0), address(0), expectedETH, bytes(""), req.revertRecipient, TX_TYPE.GAS, bytes("")
         );
 
         vm.prank(user1);
@@ -723,8 +723,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
     //      EDGE CASE TESTS
     // =========================
 
-    /// @notice Test that revertInstruction validation is preserved
-    /// @dev The UniversalTxRequest built from UniversalTokenTxRequest should preserve revertInstruction
+    /// @notice Test that revertRecipient validation is preserved
+    /// @dev The UniversalTxRequest built from UniversalTokenTxRequest should preserve revertRecipient
     ///      and _routeUniversalTx should validate it (e.g., revertRecipient != address(0) for GAS routes)
     function test_TokenGas_PreservesRevertInstruction() public {
         // Arrange: Zero revertRecipient should revert for GAS route
@@ -735,9 +735,9 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         UniversalTokenTxRequest memory req = _buildTokenGasRequest(
             address(0), address(0), 0, address(tokenA), gasAmount, bytes(""), amountOutMinETH, block.timestamp + 1 hours
         );
-        req.revertInstruction.revertRecipient = address(0); // Invalid
+        req.revertRecipient = address(0); // Invalid
 
-        // Act & Assert: Should revert on invalid revertInstruction
+        // Act & Assert: Should revert on invalid revertRecipient
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx(req);
@@ -764,7 +764,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             address(0),
             expectedETH,
             bytes(""),
-            req.revertInstruction,
+            req.revertRecipient,
             TX_TYPE.GAS,
             customSignature // Preserved
         );

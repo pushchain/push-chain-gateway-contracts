@@ -41,7 +41,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address revertRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -128,7 +128,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("") }),
+            revertRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -172,7 +172,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload, // Payload preserved
-            revertInstruction: req.revertInstruction,
+            revertRecipient: req.revertRecipient,
             signatureData: bytes("")
         });
 
@@ -262,7 +262,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload, // Exact payload preserved
-            revertInstruction: req.revertInstruction,
+            revertRecipient: req.revertRecipient,
             signatureData: bytes("")
         });
 
@@ -427,7 +427,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: bytes(""),
-            revertInstruction: req.revertInstruction,
+            revertRecipient: req.revertRecipient,
             signatureData: bytes("")
         });
 
@@ -459,7 +459,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(0),
             amount: 0,
             payload: encodedPayload,
-            revertInstruction: req.revertInstruction,
+            revertRecipient: req.revertRecipient,
             signatureData: req.signatureData
         });
 
@@ -475,7 +475,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
     }
 
     /// @notice Test Case 2.1 - Zero revertRecipient reverts
-    /// @dev revertInstruction.revertRecipient must be non-zero
+    /// @dev revertRecipient must be non-zero
     function test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_ZerorevertRecipient() public {
         uint256 fundsAmount = 500 ether;
         UniversalPayload memory payload = buildDefaultPayload();
@@ -486,10 +486,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: RevertInstructions({
-                revertRecipient: address(0), // Zero address not allowed
-                revertMsg: bytes("")
-            }),
+            revertRecipient: address(0),
             signatureData: bytes("")
         });
 
@@ -586,15 +583,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         bytes memory revertMsg = abi.encodePacked("custom revert data", uint256(12345));
 
-        RevertInstructions memory revertInst =
-            RevertInstructions({ revertRecipient: address(0x999), revertMsg: revertMsg });
+        address revertInst = address(0x999);
 
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: revertInst,
+            revertRecipient: revertInst,
             signatureData: bytes("")
         });
 
@@ -606,7 +602,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: revertInst, // Full struct with revertMsg
+            revertRecipient: revertInst, // Full struct with revertMsg
             signatureData: bytes("")
         });
 
@@ -627,7 +623,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("") }),
+            revertRecipient: address(0x456),
             signatureData: sigData
         });
 
@@ -639,7 +635,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: req.revertInstruction,
+            revertRecipient: req.revertRecipient,
             signatureData: sigData // Should preserve signature data
          });
 
@@ -684,7 +680,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertInstruction: buildDefaultRevertInstructions(),
+            revertRecipient: address(0x456),
             signatureData: bytes("")
         });
 

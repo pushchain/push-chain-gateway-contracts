@@ -316,7 +316,7 @@ contract UniversalGateway is
             token: reqToken.token,
             amount: reqToken.amount,
             payload: reqToken.payload,
-            revertInstruction: reqToken.revertInstruction,
+            revertRecipient: reqToken.revertRecipient,
             signatureData: reqToken.signatureData
         });
 
@@ -336,14 +336,14 @@ contract UniversalGateway is
     /// @param _caller              Caller address
     /// @param _gasAmount           Gas amount
     /// @param _payload             Payload
-    /// @param _revertInstruction   Revert instruction
+    /// @param _revertRecipient     Revert recipient
     /// @param _signatureData       Signature data
     function _sendTxWithGas(
         TX_TYPE _txType,
         address _caller,
         uint256 _gasAmount,
         bytes memory _payload,
-        RevertInstructions memory _revertInstruction,
+        address _revertRecipient,
         bytes memory _signatureData
     ) private {
 
@@ -356,7 +356,7 @@ contract UniversalGateway is
         }
 
         _emitUniversalTx(
-        _caller, address(0), address(0), _gasAmount, _payload, _revertInstruction, _txType, _signatureData);
+        _caller, address(0), address(0), _gasAmount, _payload, _revertRecipient, _txType, _signatureData);
     }
 
     /// @notice                     Internal helper function to deposit for TX_TYPE.FUNDS or TX_TYPE.FUNDS_AND_PAYLOAD
@@ -390,7 +390,7 @@ contract UniversalGateway is
                 tokenForFunds,
                 _req.amount,
                 _req.payload,
-                _req.revertInstruction,
+                _req.revertRecipient,
                 txType,
                 _req.signatureData
             );
@@ -427,7 +427,7 @@ contract UniversalGateway is
 
                 if (gasAmount > 0) {
                     _sendTxWithGas(
-                        TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertInstruction, _req.signatureData
+                        TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertRecipient, _req.signatureData
                     );
                 }
                 tokenForFundsAndPayload = address(0);
@@ -437,7 +437,7 @@ contract UniversalGateway is
                 uint256 gasAmount = nativeValue;
                 // Send Gas to caller's UEA via instant route
                 _sendTxWithGas(
-                    TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertInstruction, _req.signatureData
+                    TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertRecipient, _req.signatureData
                 );
 
                 tokenForFundsAndPayload = _req.token;
@@ -452,7 +452,7 @@ contract UniversalGateway is
                 tokenForFundsAndPayload,
                 _req.amount,
                 _req.payload,
-                _req.revertInstruction,
+                _req.revertRecipient,
                 txType,
                 _req.signatureData
             );
@@ -465,7 +465,7 @@ contract UniversalGateway is
     /// @param token               Token address
     /// @param amount              Amount
     /// @param payload             Payload
-    /// @param revertInstruction   Revert instruction
+    /// @param revertRecipient     Revert recipient
     /// @param txType              TX_TYPE
     /// @param signatureData       Signature data
     function _emitUniversalTx(
@@ -474,7 +474,7 @@ contract UniversalGateway is
         address token,
         uint256 amount,
         bytes memory payload,
-        RevertInstructions memory revertInstruction,
+        address revertRecipient,
         TX_TYPE txType,
         bytes memory signatureData
     ) private {
@@ -484,7 +484,7 @@ contract UniversalGateway is
             token: token,
             amount: amount,
             payload: payload,
-            revertInstruction: revertInstruction,
+            revertRecipient: revertRecipient,
             txType: txType,
             signatureData: signatureData
         });
@@ -941,13 +941,13 @@ contract UniversalGateway is
         TX_TYPE txType = _TX_TYPE;
 
         // Sanity Check : revertRecipient is not address(0)
-        if (req.revertInstruction.revertRecipient == address(0)) {
+        if (req.revertRecipient == address(0)) {
             revert Errors.InvalidRecipient();
         }
 
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {
-            _sendTxWithGas(txType, caller, nativeValue, req.payload, req.revertInstruction, req.signatureData);
+            _sendTxWithGas(txType, caller, nativeValue, req.payload, req.revertRecipient, req.signatureData);
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {

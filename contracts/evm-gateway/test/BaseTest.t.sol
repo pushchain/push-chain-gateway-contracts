@@ -377,7 +377,7 @@ abstract contract BaseTest is Test {
             token: address(0), // Native token
             amount: 0, // No funds (amount = 0) for GAS/GAS_AND_PAYLOAD routes
             payload: abi.encode(payload), // Non-empty payload routes to GAS_AND_PAYLOAD
-            revertInstruction: buildDefaultRevertInstructions(),
+            revertRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -392,15 +392,15 @@ abstract contract BaseTest is Test {
         virtual
         returns (UniversalTxRequest memory)
     {
-        return _buildFundsTxRequest(token, amount, buildDefaultRevertInstructions());
+        return _buildFundsTxRequest(token, amount, address(0x456));
     }
 
-    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom revert instructions
+    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom revert recipient
     /// @param token Token address (address(0) for native, or ERC20 token address)
     /// @param amount Amount of tokens to send
-    /// @param revertInstructions Custom revert instructions
+    /// @param revertRecipient Address to receive funds in case of revert
     /// @return UniversalTxRequest struct configured for FUNDS route
-    function _buildFundsTxRequest(address token, uint256 amount, RevertInstructions memory revertInstructions)
+    function _buildFundsTxRequest(address token, uint256 amount, address revertRecipient)
         internal
         pure
         virtual
@@ -411,7 +411,7 @@ abstract contract BaseTest is Test {
             token: token,
             amount: amount,
             payload: bytes(""), // Empty payload for FUNDS route
-            revertInstruction: revertInstructions,
+            revertRecipient: revertRecipient,
             signatureData: bytes("")
         });
     }
@@ -434,7 +434,7 @@ abstract contract BaseTest is Test {
             token: token,
             amount: amount,
             payload: abi.encode(payload), // Non-empty payload required for FUNDS_AND_PAYLOAD
-            revertInstruction: buildDefaultRevertInstructions(),
+            revertRecipient: address(0x456),
             signatureData: bytes("")
         });
     }
@@ -539,7 +539,7 @@ abstract contract BaseTest is Test {
         internal
         pure
         virtual
-        returns (UniversalPayload memory, RevertInstructions memory)
+        returns (UniversalPayload memory, address)
     {
         UniversalPayload memory payload = UniversalPayload({
             to: to,
@@ -553,9 +553,7 @@ abstract contract BaseTest is Test {
             vType: VerificationType(0)
         });
 
-        RevertInstructions memory revertCfg_ = RevertInstructions({ revertRecipient: to, revertMsg: bytes("") });
-
-        return (payload, revertCfg_);
+        return (payload, to);
     }
 
     /// @notice Fund user with mainnet tokens by impersonating whales
