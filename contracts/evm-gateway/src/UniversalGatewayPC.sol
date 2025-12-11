@@ -60,6 +60,12 @@ contract UniversalGatewayPC is
     // Outbound Tx Nonce
     uint256 public outboundTxNonce;
 
+    // Magic Marker
+    bytes4 constant MAGIC_PCAS = 0x50434153; // "PCAS"
+    uint8  private constant META_VERSION = 1;
+    uint8  private constant META_KIND_PC20 = 1;
+    uint8  private constant META_KIND_PC721 = 2;
+
     /// @notice                 Initializes the contract.
     /// @param admin            address of the admin.
     /// @param pauser           address of the pauser.
@@ -165,12 +171,14 @@ contract UniversalGatewayPC is
               if (!core.isPC20SupportedOnChain(chainNamespace)) revert Errors.InvalidInput();
               if (!hasChainNamespace) revert Errors.InvalidInput();
               aType = AssetType.PC20;
+              oMode = OutboundMode.FUNDS_AND_PAYLOAD; // carry magic marker in the payload
           } else if (_isERC721(token)) {
               // PC721
               if (!hasNFT || hasFungible) revert Errors.InvalidAmount();
               if (!core.isPC721SupportedOnChain(chainNamespace)) revert Errors.InvalidInput();
               if (!hasChainNamespace) revert Errors.InvalidInput();
               aType = AssetType.PC721;
+              oMode = OutboundMode.FUNDS_AND_PAYLOAD; // carry magic marker in the payload
           } else {
               revert Errors.TokenNotSupported();
           }
@@ -202,10 +210,43 @@ contract UniversalGatewayPC is
           // NONE, PC20, PC721 use native PC for fees
           _moveFeesNative(gasFee);
 
+          bytes memory finalPayload;
+          
           if (aType == AssetType.PC20) {
               _movePC20(msg.sender, token, amount);
+              
+              // generate and append magic marker in the payload
+              IPC20 meta = IPC20(token);
+
+              bytes memory enrichedPayload = abi.encode(
+                  MAGIC_PCAS,                 // bytes4
+                  META_VERSION,               // uint8
+                  META_KIND_PC20,             // uint8
+                  token,                      // address
+                  meta.name(),                // string
+                  meta.symbol(),              // string
+                  meta.decimals()             // uint8
+              );
+
+              finalPayload = abi.encodePacked(enrichedPayload, payload);
+
           } else if (aType == AssetType.PC721) {
               _movePC721(msg.sender, token, tokenId);
+
+              // generate and append magic marker in the payload
+              IPC721 meta = IPC721(token);
+
+              bytes memory enrichedPayload = abi.encode(
+                  MAGIC_PCAS,                 // bytes4
+                  META_VERSION,               // uint8
+                  META_KIND_PC721,            // uint8
+                  token,                      // address
+                  meta.name(),                // string
+                  meta.symbol(),              // string
+                  uint8(0)                    // decimals fixed to 0 for NFTs
+              );
+
+              finalPayload = abi.encodePacked(enrichedPayload, payload);
           }
 
           emit UniversalTxOutbound(
@@ -218,7 +259,7 @@ contract UniversalGatewayPC is
               address(0), // native PC as fee currency
               gasFee,
               gasLimitUsed,
-              payload,
+              finalPayload,
               protocolFee,
               revertInstruction
           );

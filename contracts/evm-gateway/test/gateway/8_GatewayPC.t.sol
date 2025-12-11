@@ -1522,6 +1522,363 @@ contract UniversalGatewayPCTest is Test {
         assertEq(actualTxId, expectedTxId, "txId mismatch for PayloadOnly");
     }
 
+    // =========================
+    //   MAGIC MARKER TESTS
+    // =========================
+
+    function test_PC20_MagicMarkerInPayload() public {
+        // Enable PC20 support on this chain namespace
+        vm.prank(admin);
+        universalCore.setPC20SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+
+        // Deploy and fund PC20 for user1
+        MockPC20 pc20 = new MockPC20("PC20 Test Token", "PC20T");
+        pc20.mint(user1, 1_000 ether);
+
+        vm.prank(user1);
+        pc20.approve(address(gateway), type(uint256).max);
+
+        uint256 amount = 100 ether;
+        uint256 gasLimit = DEFAULT_GAS_LIMIT;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory originalPayload = abi.encodeWithSignature("pc20Function(address,uint256)", user2, amount);
+        
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc20),
+            amount,
+            0,
+            gasLimit,
+            originalPayload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Find the UniversalTxOutbound event
+        bytes32 eventSig = keccak256(
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+        );
+        
+        bytes memory emittedPayload;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == eventSig) {
+                // Decode the event data to extract the payload
+                (
+                    ,  // skip chainNamespace
+                    ,  // skip target
+                    ,  // skip amount
+                    ,  // skip gasToken
+                    ,  // skip gasFee
+                    ,  // skip gasLimit
+                    emittedPayload,
+                    ,  // skip protocolFee
+                       // skip revertInstruction
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found");
+
+        // Verify magic marker is present in the payload
+        // Magic marker constants
+        bytes4 MAGIC_PCAS = 0x50434153; // "PCAS"
+        uint8 META_VERSION = 1;
+        uint8 META_KIND_PC20 = 1;
+
+        // Construct expected enriched payload
+        bytes memory expectedEnrichedPayload = abi.encode(
+            MAGIC_PCAS,
+            META_VERSION,
+            META_KIND_PC20,
+            address(pc20),
+            pc20.name(),
+            pc20.symbol(),
+            pc20.decimals()
+        );
+
+        bytes memory expectedFinalPayload = abi.encodePacked(expectedEnrichedPayload, originalPayload);
+
+        assertEq(emittedPayload, expectedFinalPayload, "Payload with magic marker mismatch for PC20");
+        
+        // Verify the magic marker is at the beginning
+        bytes4 extractedMagic;
+        assembly {
+            extractedMagic := mload(add(emittedPayload, 32))
+        }
+        assertEq(extractedMagic, MAGIC_PCAS, "Magic marker PCAS not found at payload start");
+    }
+
+    function test_PC721_MagicMarkerInPayload() public {
+        // Enable PC721 support on this chain namespace
+        vm.prank(admin);
+        universalCore.setPC721SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+
+        // Deploy and mint PC721 for user1
+        MockPC721 pc721 = new MockPC721("PC721 Test Token", "PC721T");
+        uint256 tokenId = 1;
+        pc721.mint(user1, tokenId);
+
+        vm.prank(user1);
+        pc721.approve(address(gateway), tokenId);
+
+        uint256 gasLimit = DEFAULT_GAS_LIMIT;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory originalPayload = abi.encodeWithSignature("pc721Function(address,uint256)", user2, tokenId);
+        
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc721),
+            0,
+            tokenId,
+            gasLimit,
+            originalPayload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Find the UniversalTxOutbound event
+        bytes32 eventSig = keccak256(
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+        );
+        
+        bytes memory emittedPayload;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == eventSig) {
+                // Decode the event data to extract the payload
+                (
+                    ,  // skip chainNamespace
+                    ,  // skip target
+                    ,  // skip amount
+                    ,  // skip gasToken
+                    ,  // skip gasFee
+                    ,  // skip gasLimit
+                    emittedPayload,
+                    ,  // skip protocolFee
+                       // skip revertInstruction
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found");
+
+        // Verify magic marker is present in the payload
+        // Magic marker constants
+        bytes4 MAGIC_PCAS = 0x50434153; // "PCAS"
+        uint8 META_VERSION = 1;
+        uint8 META_KIND_PC721 = 2;
+
+        // Construct expected enriched payload
+        bytes memory expectedEnrichedPayload = abi.encode(
+            MAGIC_PCAS,
+            META_VERSION,
+            META_KIND_PC721,
+            address(pc721),
+            pc721.name(),
+            pc721.symbol(),
+            uint8(0)  // decimals fixed to 0 for NFTs
+        );
+
+        bytes memory expectedFinalPayload = abi.encodePacked(expectedEnrichedPayload, originalPayload);
+
+        assertEq(emittedPayload, expectedFinalPayload, "Payload with magic marker mismatch for PC721");
+        
+        // Verify the magic marker is at the beginning
+        bytes4 extractedMagic;
+        assembly {
+            extractedMagic := mload(add(emittedPayload, 32))
+        }
+        assertEq(extractedMagic, MAGIC_PCAS, "Magic marker PCAS not found at payload start");
+    }
+
+    function test_PC20_MagicMarkerWithEmptyPayload() public {
+        // Enable PC20 support on this chain namespace
+        vm.prank(admin);
+        universalCore.setPC20SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+
+        // Deploy and fund PC20 for user1
+        MockPC20 pc20 = new MockPC20("PC20 Test Token", "PC20T");
+        pc20.mint(user1, 1_000 ether);
+
+        vm.prank(user1);
+        pc20.approve(address(gateway), type(uint256).max);
+
+        uint256 amount = 100 ether;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory emptyPayload = "";
+        
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc20),
+            amount,
+            0,
+            0,
+            emptyPayload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Find the UniversalTxOutbound event
+        bytes32 eventSig = keccak256(
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+        );
+        
+        bytes memory emittedPayload;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == eventSig) {
+                (
+                    ,  // skip chainNamespace
+                    ,  // skip target
+                    ,  // skip amount
+                    ,  // skip gasToken
+                    ,  // skip gasFee
+                    ,  // skip gasLimit
+                    emittedPayload,
+                    ,  // skip protocolFee
+                       // skip revertInstruction
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found");
+
+        // Even with empty original payload, magic marker should be present
+        bytes4 MAGIC_PCAS = 0x50434153;
+        uint8 META_VERSION = 1;
+        uint8 META_KIND_PC20 = 1;
+
+        bytes memory expectedEnrichedPayload = abi.encode(
+            MAGIC_PCAS,
+            META_VERSION,
+            META_KIND_PC20,
+            address(pc20),
+            pc20.name(),
+            pc20.symbol(),
+            pc20.decimals()
+        );
+
+        // With empty original payload, final payload should just be the enriched payload
+        bytes memory expectedFinalPayload = abi.encodePacked(expectedEnrichedPayload, emptyPayload);
+
+        assertEq(emittedPayload, expectedFinalPayload, "Magic marker should be present even with empty payload");
+        assertTrue(emittedPayload.length > 0, "Payload should not be empty");
+    }
+
+    function test_PC721_MagicMarkerWithEmptyPayload() public {
+        // Enable PC721 support on this chain namespace
+        vm.prank(admin);
+        universalCore.setPC721SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+
+        // Deploy and mint PC721 for user1
+        MockPC721 pc721 = new MockPC721("PC721 Test Token", "PC721T");
+        uint256 tokenId = 1;
+        pc721.mint(user1, tokenId);
+
+        vm.prank(user1);
+        pc721.approve(address(gateway), tokenId);
+
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory emptyPayload = "";
+        
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc721),
+            0,
+            tokenId,
+            0,
+            emptyPayload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Find the UniversalTxOutbound event
+        bytes32 eventSig = keccak256(
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+        );
+        
+        bytes memory emittedPayload;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == eventSig) {
+                (
+                    ,  // skip chainNamespace
+                    ,  // skip target
+                    ,  // skip amount
+                    ,  // skip gasToken
+                    ,  // skip gasFee
+                    ,  // skip gasLimit
+                    emittedPayload,
+                    ,  // skip protocolFee
+                       // skip revertInstruction
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found");
+
+        // Even with empty original payload, magic marker should be present
+        bytes4 MAGIC_PCAS = 0x50434153;
+        uint8 META_VERSION = 1;
+        uint8 META_KIND_PC721 = 2;
+
+        bytes memory expectedEnrichedPayload = abi.encode(
+            MAGIC_PCAS,
+            META_VERSION,
+            META_KIND_PC721,
+            address(pc721),
+            pc721.name(),
+            pc721.symbol(),
+            uint8(0)
+        );
+
+        bytes memory expectedFinalPayload = abi.encodePacked(expectedEnrichedPayload, emptyPayload);
+
+        assertEq(emittedPayload, expectedFinalPayload, "Magic marker should be present even with empty payload");
+        assertTrue(emittedPayload.length > 0, "Payload should not be empty");
+    }
+
 
 
 
