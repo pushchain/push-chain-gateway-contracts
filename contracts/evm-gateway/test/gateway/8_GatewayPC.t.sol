@@ -1254,6 +1254,277 @@ contract UniversalGatewayPCTest is Test {
         );
     }
 
+    function test_UniversalTxOutbound_TxIdComputedCorrectly_PRC20() public {
+        uint256 amount        = 1000 * 1e6;
+        uint256 gasLimit      = DEFAULT_GAS_LIMIT;
+        bytes  memory target  = abi.encodePacked(user2);
+        bytes  memory payload = "";                 // keep simple
+        string memory chainNamespace = "";          // PRC20 path ignores this for routing
+
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // 1) Read nonce BEFORE call (this is what the contract hashes in)
+        uint256 nonceBefore = gateway.outboundTxNonce();
+
+        // 2) Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound(
+            target,
+            address(prc20Token),
+            amount,
+            0,              // tokenId
+            gasLimit,
+            payload,
+            chainNamespace,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // 3) Find the first log from gateway and take topics[1] as txId
+        bytes32 actualTxId;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].emitter == address(gateway)) {
+                // topic[0] = event signature, topic[1] = first indexed arg (txId)
+                require(logs[i].topics.length > 1, "no indexed txId in event");
+                actualTxId = logs[i].topics[1];
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found");
+
+        // 4) Compute expectedTxId with EXACT same formula as the contract
+        bytes32 expectedTxId = keccak256(
+            abi.encode(
+                bytes32("PUSH.OUTBOUND.TX"),
+                user1,                              // msg.sender
+                address(prc20Token),                // token
+                amount,                             // amount
+                uint256(0),                         // tokenId
+                keccak256(payload),                 // keccak(payload)
+                keccak256(bytes(chainNamespace)),   // keccak(bytes(chainNamespace))
+                nonceBefore                         // nonce before increment
+            )
+        );
+
+        assertEq(actualTxId, expectedTxId, "txId mismatch");
+    }
+
+    function test_UniversalTxOutbound_TxIdComputedCorrectly_PC20() public {
+        // Enable PC20 support on this chain namespace
+        vm.prank(admin);
+        universalCore.setPC20SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+
+        // Deploy and fund PC20 for user1
+        MockPC20 pc20 = new MockPC20("PC20 Test Token", "PC20T");
+        pc20.mint(user1, 1_000 ether);
+
+        vm.prank(user1);
+        pc20.approve(address(gateway), type(uint256).max);
+
+        uint256 amount = 100 ether;
+        uint256 gasLimit = DEFAULT_GAS_LIMIT;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory payload = abi.encodeWithSignature("pc20Function(address,uint256)", user2, amount);
+        
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // 1) Capture nonce BEFORE call (this is what the contract hashes in)
+        uint256 nonceBefore = gateway.outboundTxNonce();
+
+        // 2) Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc20),
+            amount,
+            0,                    // tokenId (not used for PC20)
+            gasLimit,
+            payload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // 3) Find the UniversalTxOutbound event and extract txId from topics[1]
+        bytes32 eventSig = keccak256(
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+        );
+        
+        bytes32 actualTxId;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == eventSig) {
+                actualTxId = logs[i].topics[1];
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found for PC20");
+
+        // 4) Compute expectedTxId with EXACT same formula as the contract
+        bytes32 expectedTxId = keccak256(
+            abi.encode(
+                bytes32("PUSH.OUTBOUND.TX"),
+                user1,                                      // msg.sender
+                address(pc20),                              // token
+                amount,                                     // amount
+                uint256(0),                                 // tokenId
+                keccak256(payload),                         // keccak(payload)
+                keccak256(bytes(ETH_CHAIN_NAMESPACE)),      // keccak(bytes(chainNamespace))
+                nonceBefore                                 // nonce before increment
+            )
+        );
+
+        assertEq(actualTxId, expectedTxId, "txId mismatch for PC20");
+    }
+
+    function test_UniversalTxOutbound_TxIdComputedCorrectly_PC721() public {
+        // Enable PC721 support on this chain namespace
+        vm.prank(admin);
+        universalCore.setPC721SupportOnChain(ETH_CHAIN_NAMESPACE, true);
+
+        // Deploy and mint PC721 for user1
+        MockPC721 pc721 = new MockPC721("PC721 Test Token", "PC721T");
+        uint256 tokenId = 1;
+        pc721.mint(user1, tokenId);
+
+        vm.prank(user1);
+        pc721.approve(address(gateway), tokenId);
+
+        uint256 gasLimit = DEFAULT_GAS_LIMIT;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory payload = abi.encodeWithSignature("pc721Function(address,uint256)", user2, tokenId);
+        
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // 1) Capture nonce BEFORE call (this is what the contract hashes in)
+        uint256 nonceBefore = gateway.outboundTxNonce();
+
+        // 2) Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(pc721),
+            0,                    // amount (not used for PC721)
+            tokenId,
+            gasLimit,
+            payload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // 3) Find the UniversalTxOutbound event and extract txId from topics[1]
+        bytes32 eventSig = keccak256(
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+        );
+        
+        bytes32 actualTxId;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == eventSig) {
+                actualTxId = logs[i].topics[1];
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found for PC721");
+
+        // 4) Compute expectedTxId with EXACT same formula as the contract
+        bytes32 expectedTxId = keccak256(
+            abi.encode(
+                bytes32("PUSH.OUTBOUND.TX"),
+                user1,                                      // msg.sender
+                address(pc721),                             // token
+                uint256(0),                                 // amount
+                tokenId,                                    // tokenId
+                keccak256(payload),                         // keccak(payload)
+                keccak256(bytes(ETH_CHAIN_NAMESPACE)),      // keccak(bytes(chainNamespace))
+                nonceBefore                                 // nonce before increment
+            )
+        );
+
+        assertEq(actualTxId, expectedTxId, "txId mismatch for PC721");
+    }
+
+    function test_UniversalTxOutbound_TxIdComputedCorrectly_PayloadOnly() public {
+        uint256 gasLimit = DEFAULT_GAS_LIMIT;
+        bytes memory target = abi.encodePacked(user2);
+        bytes memory payload = abi.encodeWithSignature("executeAction(address,string)", user2, "test");
+        
+        RevertInstructions memory revertCfg = buildRevertInstructions(user2);
+
+        // 1) Capture nonce BEFORE call (this is what the contract hashes in)
+        uint256 nonceBefore = gateway.outboundTxNonce();
+
+        // 2) Execute and record logs
+        vm.recordLogs();
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: DEFAULT_PROTOCOL_FEE}(
+            target,
+            address(0),           // token = address(0) for payload-only
+            0,                    // amount
+            0,                    // tokenId
+            gasLimit,
+            payload,
+            ETH_CHAIN_NAMESPACE,
+            revertCfg
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // 3) Find the UniversalTxOutbound event and extract txId from topics[1]
+        bytes32 eventSig = keccak256(
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+        );
+        
+        bytes32 actualTxId;
+        bool found;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == eventSig) {
+                actualTxId = logs[i].topics[1];
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "UniversalTxOutbound event not found for PayloadOnly");
+
+        // 4) Compute expectedTxId with EXACT same formula as the contract
+        bytes32 expectedTxId = keccak256(
+            abi.encode(
+                bytes32("PUSH.OUTBOUND.TX"),
+                user1,                                      // msg.sender
+                address(0),                                 // token (address(0) for payload-only)
+                uint256(0),                                 // amount
+                uint256(0),                                 // tokenId
+                keccak256(payload),                         // keccak(payload)
+                keccak256(bytes(ETH_CHAIN_NAMESPACE)),      // keccak(bytes(chainNamespace))
+                nonceBefore                                 // nonce before increment
+            )
+        );
+
+        assertEq(actualTxId, expectedTxId, "txId mismatch for PayloadOnly");
+    }
+
+
+
+
     function _createFailingToken() internal returns (MockPRC20) {
         return new MockPRC20(
             "Failing Token",

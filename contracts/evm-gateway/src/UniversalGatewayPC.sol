@@ -57,6 +57,9 @@ contract UniversalGatewayPC is
     bytes4 private constant _INTERFACE_ID_ERC165 = 0x01ffc9a7;
     bytes4 private constant _INTERFACE_ID_ERC721 = 0x80ac58cd;
 
+    // Outbound Tx Nonce
+    uint256 public outboundTxNonce;
+
     /// @notice                 Initializes the contract.
     /// @param admin            address of the admin.
     /// @param pauser           address of the pauser.
@@ -108,6 +111,23 @@ contract UniversalGatewayPC is
       if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
       if (token == address(0) && (amount != 0 || tokenId != 0)) revert Errors.ZeroAddress();
       if (token == address(0) && payload.length == 0) revert Errors.InvalidTxType();
+
+      // Generate canonical txId
+      uint256 nonce = outboundTxNonce;
+      outboundTxNonce = nonce + 1;
+
+      bytes32 txId = keccak256(
+          abi.encode(
+              bytes32("PUSH.OUTBOUND.TX"),
+              msg.sender,
+              token,
+              amount,
+              tokenId,
+              keccak256(payload),
+              keccak256(bytes(chainNamespace)),
+              nonce
+          )
+      );
 
       OutboundMode oMode;
       AssetType aType;
@@ -165,9 +185,10 @@ contract UniversalGatewayPC is
 
           string memory sourceChainId = IPRC20(token).SOURCE_CHAIN_ID();
           emit UniversalTxOutbound(
+              txId,
               msg.sender,
-              sourceChainId,
               token,
+              sourceChainId,
               target,
               amount,
               gasToken,
@@ -188,9 +209,10 @@ contract UniversalGatewayPC is
           }
 
           emit UniversalTxOutbound(
+              txId,
               msg.sender,
-              chainNamespace,
               token,
+              chainNamespace,
               target,
               amount,
               address(0), // native PC as fee currency
