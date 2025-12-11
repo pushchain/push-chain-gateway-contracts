@@ -243,7 +243,7 @@ contract UniversalGatewayPC is
                   token,                      // address
                   meta.name(),                // string
                   meta.symbol(),              // string
-                  uint8(0)                    // decimals fixed to 0 for NFTs
+                  meta.tokenURI(tokenId)
               );
 
               finalPayload = abi.encodePacked(enrichedPayload, payload);

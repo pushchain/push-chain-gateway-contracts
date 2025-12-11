@@ -1697,7 +1697,7 @@ contract UniversalGatewayPCTest is Test {
             address(pc721),
             pc721.name(),
             pc721.symbol(),
-            uint8(0)  // decimals fixed to 0 for NFTs
+            pc721.tokenURI(tokenId)  // tokenURI for the specific NFT
         );
 
         bytes memory expectedFinalPayload = abi.encodePacked(expectedEnrichedPayload, originalPayload);
@@ -1870,7 +1870,7 @@ contract UniversalGatewayPCTest is Test {
             address(pc721),
             pc721.name(),
             pc721.symbol(),
-            uint8(0)
+            pc721.tokenURI(tokenId)  // tokenURI for the specific NFT
         );
 
         bytes memory expectedFinalPayload = abi.encodePacked(expectedEnrichedPayload, emptyPayload);

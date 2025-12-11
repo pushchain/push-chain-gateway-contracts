@@ -11,6 +11,9 @@ interface IPC721 {
     function name() external view returns (string memory);
     function symbol() external view returns (string memory);
 
+    /// @notice Full metadata URI for a given tokenId (ERC721Metadata-style)
+    function tokenURI(uint256 tokenId) external view returns (string memory);
+
     /**
      * @notice Returns the owner of an NFT
      * @param tokenId The NFT ID
@@ -26,10 +29,6 @@ interface IPC721 {
     /**
      * @notice Push-native deposit (mirrors IPC20.deposit)
      *         This "locks" or "mints" the NFT into the Push Chain account.
-     *
-     * @param to Receiver address
-     * @param tokenId Token ID being deposited
-     * @return success Whether deposit was processed
      */
     function deposit(address to, uint256 tokenId) external returns (bool);
 
