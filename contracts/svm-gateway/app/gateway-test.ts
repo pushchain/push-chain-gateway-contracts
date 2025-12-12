@@ -1199,14 +1199,27 @@ async function run() {
 
     // Try to send funds while paused (should fail)
     const signatureNew = Buffer.from("test_signature_data_for_gas", "utf8");
+    const gasReqPaused = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]), // Empty payload for GAS route
+        revertInstruction: revertInstructions,
+        signatureData: signatureNew,
+    };
     try {
         await userProgram.methods
-            .sendTxWithGas(payload, revertInstructions, gasAmount, signatureNew)
+            .sendUniversalTx(gasReqPaused, gasAmount)
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                userTokenAccount: vaultPda,
+                gatewayTokenAccount: vaultPda,
                 user: user,
                 priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
             })
             .rpc();

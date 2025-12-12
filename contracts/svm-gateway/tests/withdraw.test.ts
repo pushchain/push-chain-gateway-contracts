@@ -40,6 +40,8 @@ describe("Universal Gateway - Withdraw Tests", () => {
     let vaultPda: PublicKey;
     let tssPda: PublicKey;
     let whitelistPda: PublicKey;
+    let rateLimitConfigPda: PublicKey;
+    let mockPriceFeed: PublicKey;
 
     let mockUSDT: any;
 
@@ -93,6 +95,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
     const getExecutedTxPda = (txId: number[]): PublicKey => {
         const [pda] = PublicKey.findProgramAddressSync(
             [Buffer.from("executed_tx"), Buffer.from(txId)],
+            program.programId
+        );
+        return pda;
+    };
+
+    // Helper to get token rate limit PDA
+    const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
+        const [pda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit"), tokenMint.toBuffer()],
             program.programId
         );
         return pda;
@@ -173,6 +184,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
         [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], program.programId);
         [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
+        [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
+
+        mockPriceFeed = sharedState.getMockPriceFeed();
 
         user1UsdtAccount = await mockUSDT.createTokenAccount(user1.publicKey);
         await mockUSDT.mintTo(user1UsdtAccount, 10_000);
@@ -184,29 +198,53 @@ describe("Universal Gateway - Withdraw Tests", () => {
         const tokens = whitelist.tokens.map((token: PublicKey) => token.toString());
         expect(tokens).to.include(mockUSDT.mint.publicKey.toString());
 
-        const depositLamports = 5 * anchor.web3.LAMPORTS_PER_SOL;
-        const transferIx = anchor.web3.SystemProgram.transfer({
-            fromPubkey: user1.publicKey,
-            toPubkey: vaultPda,
-            lamports: depositLamports,
-        });
-        await provider.sendAndConfirm(new anchor.web3.Transaction().add(transferIx), [user1]);
+        // Seed vault with SPL tokens using sendUniversalTx (FUNDS route)
+        const depositAmount = asTokenAmount(5_000);
+        const recipientEvm = Array.from(Buffer.alloc(20, 1)); // EVM address (20 bytes)
+        const fundsReq = {
+            recipient: recipientEvm,
+            token: mockUSDT.mint.publicKey,
+            amount: depositAmount,
+            payload: Buffer.from([]), // Empty payload for FUNDS route
+            revertInstruction: {
+                fundRecipient: user1.publicKey,
+                revertMsg: Buffer.from("seed vault")
+            },
+            signatureData: Buffer.from([]), // Empty for FUNDS route
+        };
+
+        const splTokenRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
+
+        // Initialize token rate limit if needed (with very large threshold to effectively disable)
+        try {
+            await program.account.tokenRateLimit.fetch(splTokenRateLimitPda);
+        } catch {
+            // Not initialized, create it
+            const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
+            await program.methods
+                .setTokenRateLimit(veryLargeThreshold)
+                .accounts({
+                    config: configPda,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: splTokenRateLimitPda,
+                    admin: admin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        }
 
         await program.methods
-            .sendFunds(
-                Array.from(Buffer.alloc(20, 1)),
-                mockUSDT.mint.publicKey,
-                asTokenAmount(5_000),
-                { fundRecipient: user1.publicKey, revertMsg: Buffer.from("seed vault") }
-            )
+            .sendUniversalTx(fundsReq, new anchor.BN(0)) // No native SOL for SPL funds
             .accounts({
-                user: user1.publicKey,
                 config: configPda,
                 vault: vaultPda,
-                tokenWhitelist: whitelistPda,
+                user: user1.publicKey,
                 userTokenAccount: user1UsdtAccount,
                 gatewayTokenAccount: vaultUsdtAccount,
-                bridgeToken: mockUSDT.mint.publicKey,
+                priceUpdate: mockPriceFeed,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: splTokenRateLimitPda,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
             })
