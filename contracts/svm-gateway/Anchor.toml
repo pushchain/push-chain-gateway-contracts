@@ -5,9 +5,8 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-# Use DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp for local testing
+test_counter = "EDGTffWo8aXV6Z7zkHGUCKDXg5LLfUAvUBHVf3qYya7o"
 universal_gateway = "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp"
-test_counter = "BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L"
 
 [registry]
 url = "https://api.apr.dev"

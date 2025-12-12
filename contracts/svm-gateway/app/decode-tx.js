@@ -211,7 +211,7 @@ async function decodeTx(sig, label) {
         // Try both snake_case and camelCase for tx_type
         const txType = e.tx_type !== undefined ? e.tx_type : e.txType;
         const txTypeName = decodeTxType(e);
-        console.log(`  - tx_type: ${txTypeName}`);
+            console.log(`  - tx_type: ${txTypeName}`);
 
         // Handle payload - it might be an array, buffer, or already deserialized
         let payloadBytes;
