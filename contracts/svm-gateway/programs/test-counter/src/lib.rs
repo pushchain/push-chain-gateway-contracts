@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount};
 
-declare_id!("BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L");
+declare_id!("EDGTffWo8aXV6Z7zkHGUCKDXg5LLfUAvUBHVf3qYya7o");
 
 #[program]
 pub mod test_counter {
@@ -62,21 +62,74 @@ pub mod test_counter {
         Ok(())
     }
 
-    /// Receive SOL and increment counter
-    /// This simulates a program that receives SOL via execute_universal_tx
-    /// The staging_authority already has SOL transferred from gateway
+    /// Stake SOL - tracks staked amount in Stake PDA (CEA holds actual SOL)
+    /// This tests CEA identity preservation (same authority = same stake PDA)
+    pub fn stake_sol(ctx: Context<StakeSol>, amount: u64) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+        let stake = &mut ctx.accounts.stake;
+
+        // Initialize or update stake account (just tracking, CEA holds the SOL)
+        stake.authority = ctx.accounts.authority.key();
+        stake.amount = stake
+            .amount
+            .checked_add(amount)
+            .ok_or(CounterError::Overflow)?;
+
+        // Increment counter
+        counter.value = counter
+            .value
+            .checked_add(amount)
+            .ok_or(CounterError::Overflow)?;
+
+        msg!(
+            "Staked {} SOL (tracked), total stake: {}",
+            amount,
+            stake.amount
+        );
+        Ok(())
+    }
+
+    /// Unstake SOL - returns tracked SOL back to authority (no-op since CEA already holds it)
+    /// In real scenario, this would verify and transfer, but for testing we just track
+    pub fn unstake_sol(ctx: Context<UnstakeSol>, amount: u64) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+        let stake = &mut ctx.accounts.stake;
+
+        require!(stake.amount >= amount, CounterError::InsufficientStake);
+
+        // Decrement stake tracking
+        stake.amount = stake
+            .amount
+            .checked_sub(amount)
+            .ok_or(CounterError::Underflow)?;
+
+        // Increment counter
+        counter.value = counter
+            .value
+            .checked_add(amount)
+            .ok_or(CounterError::Overflow)?;
+
+        msg!(
+            "Unstaked {} SOL (tracked), remaining stake: {}",
+            amount,
+            stake.amount
+        );
+        Ok(())
+    }
+
+    /// Receive SOL and increment counter (for non-CEA tests)
     pub fn receive_sol(ctx: Context<ReceiveSol>, amount: u64) -> Result<()> {
         let counter = &mut ctx.accounts.counter;
 
-        // Transfer SOL from staging_authority to recipient
+        // Transfer SOL from cea_authority to recipient
         anchor_lang::solana_program::program::invoke(
             &anchor_lang::solana_program::system_instruction::transfer(
-                ctx.accounts.staging_authority.key,
+                ctx.accounts.cea_authority.key,
                 ctx.accounts.recipient.key,
                 amount,
             ),
             &[
-                ctx.accounts.staging_authority.to_account_info(),
+                ctx.accounts.cea_authority.to_account_info(),
                 ctx.accounts.recipient.to_account_info(),
                 ctx.accounts.system_program.to_account_info(),
             ],
@@ -93,31 +146,74 @@ pub mod test_counter {
             amount,
             counter.value
         );
-
-        emit!(CounterUpdated {
-            counter: counter.key(),
-            old_value: counter.value.saturating_sub(amount),
-            new_value: counter.value,
-            operation: "receive_sol".to_string(),
-        });
-
         Ok(())
     }
 
-    /// Receive SPL tokens and increment counter by amount received
-    /// This simulates a program that receives SPL tokens via execute_universal_tx_token
+    /// Stake SPL tokens - tracks staked amount (tokens stay in CEA ATA)
+    pub fn stake_spl(ctx: Context<StakeSpl>, amount: u64) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+        let stake = &mut ctx.accounts.stake;
+
+        // Initialize or update stake account (just tracking, CEA ATA holds tokens)
+        stake.authority = ctx.accounts.authority.key();
+        stake.amount = stake
+            .amount
+            .checked_add(amount)
+            .ok_or(CounterError::Overflow)?;
+
+        // Increment counter
+        counter.value = counter
+            .value
+            .checked_add(amount)
+            .ok_or(CounterError::Overflow)?;
+
+        msg!(
+            "Staked {} SPL tokens (tracked), total stake: {}",
+            amount,
+            stake.amount
+        );
+        Ok(())
+    }
+
+    /// Unstake SPL tokens - returns tracked tokens back to authority
+    pub fn unstake_spl(ctx: Context<UnstakeSpl>, amount: u64) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+        let stake = &mut ctx.accounts.stake;
+
+        require!(stake.amount >= amount, CounterError::InsufficientStake);
+
+        // Decrement stake tracking
+        stake.amount = stake
+            .amount
+            .checked_sub(amount)
+            .ok_or(CounterError::Underflow)?;
+
+        // Increment counter
+        counter.value = counter
+            .value
+            .checked_add(amount)
+            .ok_or(CounterError::Overflow)?;
+
+        msg!(
+            "Unstaked {} SPL tokens (tracked), remaining stake: {}",
+            amount,
+            stake.amount
+        );
+        Ok(())
+    }
+
+    /// Receive SPL tokens and increment counter (for non-CEA tests)
     pub fn receive_spl(ctx: Context<ReceiveSpl>, amount: u64) -> Result<()> {
         let counter = &mut ctx.accounts.counter;
 
-        // Transfer tokens from staging_ata to recipient_ata
-        // staging_ata is owned by staging_authority (gateway's per-tx PDA)
+        // Transfer tokens from cea_ata to recipient_ata
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
                 token::Transfer {
-                    from: ctx.accounts.staging_ata.to_account_info(),
+                    from: ctx.accounts.cea_ata.to_account_info(),
                     to: ctx.accounts.recipient_ata.to_account_info(),
-                    authority: ctx.accounts.staging_authority.to_account_info(),
+                    authority: ctx.accounts.cea_authority.to_account_info(),
                 },
             ),
             amount,
@@ -134,14 +230,6 @@ pub mod test_counter {
             amount,
             counter.value
         );
-
-        emit!(CounterUpdated {
-            counter: counter.key(),
-            old_value: counter.value.saturating_sub(amount),
-            new_value: counter.value,
-            operation: "receive_spl".to_string(),
-        });
-
         Ok(())
     }
 }
@@ -169,8 +257,101 @@ pub struct UpdateCounter<'info> {
     )]
     pub counter: Account<'info, Counter>,
 
-    /// CHECK: Can be staging_authority from gateway or any other signer
+    /// CHECK: Can be cea_authority from gateway or any other signer
     pub authority: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct StakeSol<'info> {
+    #[account(mut)]
+    pub counter: Account<'info, Counter>,
+
+    /// CHECK: Authority (CEA from gateway)
+    #[account(mut)]
+    pub authority: UncheckedAccount<'info>,
+
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + Stake::LEN,
+        seeds = [b"stake", authority.key().as_ref()],
+        bump
+    )]
+    pub stake: Account<'info, Stake>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UnstakeSol<'info> {
+    #[account(mut)]
+    pub counter: Account<'info, Counter>,
+
+    /// CHECK: Authority (CEA from gateway)
+    #[account(mut)]
+    pub authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"stake", authority.key().as_ref()],
+        bump,
+        has_one = authority @ CounterError::Unauthorized
+    )]
+    pub stake: Account<'info, Stake>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct StakeSpl<'info> {
+    #[account(mut)]
+    pub counter: Account<'info, Counter>,
+
+    /// CHECK: Authority (CEA from gateway)
+    #[account(mut)]
+    pub authority: UncheckedAccount<'info>,
+
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + Stake::LEN,
+        seeds = [b"stake", authority.key().as_ref()],
+        bump
+    )]
+    pub stake: Account<'info, Stake>,
+
+    pub mint: Account<'info, anchor_spl::token::Mint>,
+
+    #[account(mut)]
+    pub authority_ata: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UnstakeSpl<'info> {
+    #[account(mut)]
+    pub counter: Account<'info, Counter>,
+
+    /// CHECK: Authority (CEA from gateway)
+    pub authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"stake", authority.key().as_ref()],
+        bump,
+        has_one = authority @ CounterError::Unauthorized
+    )]
+    pub stake: Account<'info, Stake>,
+
+    pub mint: Account<'info, anchor_spl::token::Mint>,
+
+    #[account(mut)]
+    pub authority_ata: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -182,9 +363,9 @@ pub struct ReceiveSol<'info> {
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
 
-    /// CHECK: Staging authority from gateway (will have SOL, signs via invoke_signed)
+    /// CHECK: CEA authority from gateway (will have SOL, signs via invoke_signed)
     #[account(mut)]
-    pub staging_authority: UncheckedAccount<'info>,
+    pub cea_authority: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -194,16 +375,16 @@ pub struct ReceiveSpl<'info> {
     #[account(mut)]
     pub counter: Account<'info, Counter>,
 
-    /// CHECK: Staging ATA from gateway (will have tokens)
+    /// CHECK: CEA ATA from gateway (will have tokens)
     #[account(mut)]
-    pub staging_ata: Account<'info, TokenAccount>,
+    pub cea_ata: Account<'info, TokenAccount>,
 
     /// CHECK: Recipient ATA (will receive tokens)
     #[account(mut)]
     pub recipient_ata: Account<'info, TokenAccount>,
 
-    /// CHECK: Staging authority from gateway (signs for staging_ata)
-    pub staging_authority: Signer<'info>,
+    /// CHECK: CEA authority from gateway (signs for cea_ata)
+    pub cea_authority: Signer<'info>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -216,6 +397,16 @@ pub struct Counter {
 
 impl Counter {
     pub const LEN: usize = 8 + 8 + 32; // discriminator + u64 + Pubkey
+}
+
+#[account]
+pub struct Stake {
+    pub authority: Pubkey,
+    pub amount: u64,
+}
+
+impl Stake {
+    pub const LEN: usize = 32 + 8; // Pubkey + u64
 }
 
 #[event]
@@ -234,4 +425,6 @@ pub enum CounterError {
     Underflow,
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("Insufficient stake")]
+    InsufficientStake,
 }
