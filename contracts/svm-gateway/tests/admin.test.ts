@@ -599,31 +599,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         });
     });
 
-    describe("Fund Management", () => {
-        it("Adds funds to vault (if add_funds function exists)", async () => {
-
-            const addAmount = 1 * anchor.web3.LAMPORTS_PER_SOL;
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
-
-            try {
-                await program.methods
-                    .addFunds(new anchor.BN(addAmount))
-                    .accounts({
-                        admin: admin.publicKey,
-                        config: configPda,
-                        vault: vaultPda,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([admin])
-                    .rpc();
-
-                const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-                expect(finalVaultBalance).to.be.greaterThan(initialVaultBalance);
-            } catch {
-                // add_funds instruction is optional and may be disabled
-            }
-        });
-    });
 
     describe("Price Oracle Functions", () => {
         it("Gets SOL price from Pyth oracle", async () => {

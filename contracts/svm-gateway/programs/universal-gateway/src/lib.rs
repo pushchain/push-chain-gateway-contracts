@@ -28,71 +28,6 @@ pub mod universal_gateway {
         instructions::deposit::send_universal_tx(ctx, req, native_amount)
     }
 
-    /// @notice Allows initiating a TX for funding UEA with gas deposits from source chain.
-    /// @dev    Supports only native SOL deposits for gas funding.
-    ///         The route emits UniversalTx event - important for Instant TX Route.
-    pub fn send_tx_with_gas(
-        ctx: Context<SendTxWithGas>,
-        payload: UniversalPayload,
-        revert_instruction: RevertInstructions,
-        amount: u64,
-        signature_data: Vec<u8>,
-    ) -> Result<()> {
-        instructions::deposit::send_tx_with_gas(
-            ctx,
-            payload,
-            revert_instruction,
-            amount,
-            signature_data,
-        )
-    }
-
-    /// @notice Allows initiating a TX for movement of funds from source chain to Push Chain.
-    /// @dev    Supports both native SOL and SPL token deposits (like ETH Gateway).
-    ///         For native SOL: pass Pubkey::default() as bridge_token
-    ///         For SPL tokens: pass token mint address as bridge_token
-
-    ///         The route emits UniversalTx event.
-
-    pub fn send_funds(
-        ctx: Context<SendFunds>,
-        recipient: [u8; 20],
-        bridge_token: Pubkey,
-        bridge_amount: u64,
-        revert_instruction: RevertInstructions,
-    ) -> Result<()> {
-        instructions::deposit::send_funds(
-            ctx,
-            recipient,
-            bridge_token,
-            bridge_amount,
-            revert_instruction,
-        )
-    }
-
-    /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
-    /// @dev    Supports both native SOL and SPL token deposits with payload execution.
-    ///         The route emits UniversalTx event.
-    pub fn send_tx_with_funds(
-        ctx: Context<SendTxWithFunds>,
-        bridge_token: Pubkey,
-        bridge_amount: u64,
-        payload: UniversalPayload,
-        revert_instruction: RevertInstructions,
-        gas_amount: u64,
-        signature_data: Vec<u8>,
-    ) -> Result<()> {
-        instructions::deposit::send_tx_with_funds(
-            ctx,
-            bridge_token,
-            bridge_amount,
-            payload,
-            revert_instruction,
-            gas_amount,
-            signature_data,
-        )
-    }
-
     // =========================
     //        WITHDRAWALS
     // =========================
@@ -409,21 +344,12 @@ pub mod universal_gateway {
     }
 
     // =========================
-    //         LEGACY (V0)
+    //         UTILS
     // =========================
-    /// @notice Legacy-compatible add funds event for offchain relayers (pushsolanalocker)
-    pub fn add_funds(
-        ctx: Context<AddFunds>,
-        amount: u64,
-        transaction_hash: [u8; 32],
-    ) -> Result<()> {
-        instructions::legacy::add_funds(ctx, amount, transaction_hash)
-    }
-
     /// @notice View function for SOL price (locker-compatible)
     /// @dev    Anyone can fetch SOL price in USD
     pub fn get_sol_price(ctx: Context<GetSolPrice>) -> Result<PriceData> {
-        instructions::legacy::get_sol_price(ctx)
+        utils::get_sol_price(&ctx.accounts.price_update)
     }
 }
 
@@ -431,14 +357,13 @@ pub mod universal_gateway {
 pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
 };
-pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas, SendUniversalTx};
+pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::{ExecuteUniversalTx, ExecuteUniversalTxToken};
 pub use instructions::initialize::Initialize;
-pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
 pub use instructions::withdraw::{
     RevertUniversalTx, RevertUniversalTxToken, Withdraw, WithdrawFunds,
 };
-pub use utils::PriceData;
+pub use utils::{GetSolPrice, PriceData};
 
 pub use state::{
     // Events

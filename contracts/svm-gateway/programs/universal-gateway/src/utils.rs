@@ -363,3 +363,19 @@ pub fn validate_remaining_accounts(
 
     Ok(())
 }
+
+// =========================
+// PRICE VIEW FUNCTION
+// =========================
+
+/// View function for SOL price (locker-compatible)
+/// Anyone can fetch SOL price in USD
+pub fn get_sol_price(price_update: &Account<PriceUpdateV2>) -> Result<PriceData> {
+    calculate_sol_price(price_update)
+}
+
+/// Accounts for get_sol_price view function (locker-compatible)
+#[derive(Accounts)]
+pub struct GetSolPrice<'info> {
+    pub price_update: Account<'info, PriceUpdateV2>,
+}
