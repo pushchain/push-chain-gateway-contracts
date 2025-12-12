@@ -11,7 +11,7 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain wit
 ## Core Functions
 
 ### Deposit Functions
-- **`send_tx_with_gas`** - Native SOL gas deposits with USD caps ($1-$10)
+- **`send_tx_with_gas`** - Native SOL gas deposits with USD caps ($1-$10) and signature data
 - **`send_funds`** - SPL token bridging (whitelisted tokens only)
 - **`send_funds_native`** - Native SOL bridging (high value, no caps)
 - **`send_tx_with_funds`** - Combined SPL tokens + gas with payload execution

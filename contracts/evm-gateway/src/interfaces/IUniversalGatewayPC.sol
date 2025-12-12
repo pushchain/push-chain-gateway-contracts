@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {RevertInstructions} from "../libraries/Types.sol";
+import {RevertInstructions, TX_TYPE} from "../libraries/Types.sol";
 
 /**
  * @title   IUniversalGatewayPC
@@ -35,12 +35,13 @@ interface IUniversalGatewayPC {
         uint256 gasLimit,
         bytes payload,
         uint256 protocolFee,
-        RevertInstructions revertInstruction
+        address revertRecipient,
+        TX_TYPE txType
     );
 
-    /// @notice Emitted when VaultPC address is updated
-    /// @param oldVaultPC Previous VaultPC address
-    /// @param newVaultPC New VaultPC address
+    /// @notice                 Emitted when VaultPC address is updated
+    /// @param oldVaultPC       Previous VaultPC address
+    /// @param newVaultPC       New VaultPC address
     event VaultPCUpdated(address indexed oldVaultPC, address indexed newVaultPC);
 
     /**

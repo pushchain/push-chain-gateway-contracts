@@ -18,7 +18,7 @@ import { IPRC20 } from "./interfaces/IPRC20.sol";
 import { IPC20 } from "./interfaces/IPC20.sol";
 import { IPC721 } from "./interfaces/IPC721.sol";
 import { IVaultPC } from "./interfaces/IVaultPC.sol";
-import { RevertInstructions } from "./libraries/Types.sol";
+import { TX_TYPE } from "./libraries/Types.sol";
 import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
 import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
 

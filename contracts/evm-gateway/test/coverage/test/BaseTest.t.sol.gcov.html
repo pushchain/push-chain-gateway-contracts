@@ -395,9 +395,9 @@
 <span id="L324"><span class="lineNum">     324</span>                 :<span class="tlaGNC">          14 :         h = keccak256(abi.encode(p));</span></span>
 <span id="L325"><span class="lineNum">     325</span>                 :             :     }</span>
 <span id="L326"><span class="lineNum">     326</span>                 :             : </span>
-<span id="L327"><span class="lineNum">     327</span>                 :<span class="tlaGNC">          29 :     function revertCfg(address fundRecipient_) internal pure returns (RevertSettings memory) {</span></span>
+<span id="L327"><span class="lineNum">     327</span>                 :<span class="tlaGNC">          29 :     function revertCfg(address revertRecipient_) internal pure returns (RevertSettings memory) {</span></span>
 <span id="L328"><span class="lineNum">     328</span>                 :<span class="tlaGNC">          29 :         return RevertSettings({</span></span>
-<span id="L329"><span class="lineNum">     329</span>                 :             :             fundRecipient: fundRecipient_,</span>
+<span id="L329"><span class="lineNum">     329</span>                 :             :             revertRecipient: revertRecipient_,</span>
 <span id="L330"><span class="lineNum">     330</span>                 :             :             revertMsg: &quot;&quot;</span>
 <span id="L331"><span class="lineNum">     331</span>                 :             :         });</span>
 <span id="L332"><span class="lineNum">     332</span>                 :             :     }</span>
@@ -513,7 +513,7 @@
 <span id="L442"><span class="lineNum">     442</span>                 :             :         });</span>
 <span id="L443"><span class="lineNum">     443</span>                 :             : </span>
 <span id="L444"><span class="lineNum">     444</span>                 :<span class="tlaGNC">           4 :         RevertSettings memory revertCfg_ = RevertSettings({</span></span>
-<span id="L445"><span class="lineNum">     445</span>                 :             :             fundRecipient: to,</span>
+<span id="L445"><span class="lineNum">     445</span>                 :             :             revertRecipient: to,</span>
 <span id="L446"><span class="lineNum">     446</span>                 :             :             revertMsg: &quot;&quot;</span>
 <span id="L447"><span class="lineNum">     447</span>                 :             :         });</span>
 <span id="L448"><span class="lineNum">     448</span>                 :             : </span>
