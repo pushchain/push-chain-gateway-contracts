@@ -10,10 +10,20 @@ import { signTssMessage, TssInstruction } from "./helpers/tss";
 const USDT_DECIMALS = 6;
 const TOKEN_MULTIPLIER = BigInt(10 ** USDT_DECIMALS);
 
+// Gas fee constants (in lamports)
+const DEFAULT_GAS_FEE = BigInt(5000); // 0.000005 SOL for relayer
+
 const asLamports = (sol: number) => new anchor.BN(sol * anchor.web3.LAMPORTS_PER_SOL);
 const asTokenAmount = (tokens: number) => new anchor.BN(Number(BigInt(tokens) * TOKEN_MULTIPLIER));
 
 const toBytes = (pubkey: PublicKey) => pubkey.toBuffer();
+
+// Helper to build gas_fee buffer (u64 BE)
+const buildGasFeeBuf = (gasFee: bigint): Buffer => {
+    const buf = Buffer.alloc(8);
+    buf.writeBigUInt64BE(gasFee, 0);
+    return buf;
+};
 
 describe("Universal Gateway - Withdraw Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -39,6 +49,14 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
     let currentNonce = 0;
     let txIdCounter = 0; // Counter to ensure unique tx_ids across tests
+
+    const getClaimableFeesPda = (caller: PublicKey): PublicKey => {
+        const [pda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("claimable_fees"), caller.toBuffer()],
+            program.programId
+        );
+        return pda;
+    };
 
     const syncNonceFromChain = async () => {
         const account = await program.account.tssPda.fetch(tssPda);
@@ -211,7 +229,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -224,6 +242,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     originCaller,
                     new anchor.BN(withdrawLamports),
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
@@ -235,6 +254,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -262,7 +282,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -276,6 +296,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         corrupted,
                         valid.recoveryId,
                         valid.messageHash,
@@ -287,6 +308,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         tssPda,
                         recipient: recipient.publicKey,
                         executedTx: executedTxPda,
+                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                     })
@@ -316,7 +338,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -327,6 +349,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -368,7 +391,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(excessive),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -379,6 +402,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(excessive),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -417,7 +441,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSpl,
                 nonce: currentNonce,
                 amount: withdrawRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -430,6 +454,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     originCaller,
                     new anchor.BN(Number(withdrawRaw)),
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
@@ -444,6 +469,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     recipientTokenAccount: recipientUsdtAccount,
                     tokenMint: mockUSDT.mint.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -474,7 +500,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSpl,
                 nonce: currentNonce,
                 amount: withdrawRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -488,6 +514,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(Number(withdrawRaw)),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         corrupted,
                         signature.recoveryId,
                         signature.messageHash,
@@ -502,6 +529,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientUsdtAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
+                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -528,12 +556,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 revertMsg: Buffer.from("revert SOL"),
             };
 
-            // Include tx_id and recipient in message hash (NO origin_caller for revert)
+            // Include tx_id, recipient, and gas_fee in message hash (NO origin_caller for revert)
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(revertAmount),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -544,6 +572,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     new anchor.BN(revertAmount),
                     revertInstruction,
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
@@ -555,6 +584,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -583,12 +613,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Create recipient account first (needed for message hash)
             const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
 
-            // Include tx_id, mint AND fund_recipient in message hash (NO origin_caller for revert)
+            // Include tx_id, mint, fund_recipient, and gas_fee in message hash (NO origin_caller for revert)
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
             const initialRecipientBalance = await mockUSDT.getBalance(recipientRevertAccount);
@@ -598,6 +628,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     new anchor.BN(Number(revertRaw)),
                     revertInstruction,
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
@@ -612,6 +643,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -638,7 +670,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(0),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -649,6 +681,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(0),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -682,7 +715,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -693,6 +726,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -734,7 +768,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(zeroOriginCaller),
             });
@@ -745,6 +779,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         zeroOriginCaller,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -790,7 +825,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
-                additional: [toBytes(zeroRecipient)],
+                additional: [toBytes(zeroRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -803,6 +838,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -845,7 +881,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -856,6 +892,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     originCaller,
                     new anchor.BN(withdrawLamports),
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
@@ -867,6 +904,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -887,7 +925,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -898,6 +936,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature2.signature,
                         signature2.recoveryId,
                         signature2.messageHash,
@@ -947,7 +986,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -963,6 +1002,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         corrupted,
                         valid.recoveryId,
                         valid.messageHash,
@@ -998,7 +1038,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -1008,6 +1048,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     originCaller,
                     new anchor.BN(withdrawLamports),
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     validSig.signature,
                     validSig.recoveryId,
                     validSig.messageHash,
@@ -1019,6 +1060,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -1049,7 +1091,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(0),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -1059,6 +1101,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         new anchor.BN(0),
                         revertInstruction,
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -1109,6 +1152,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         new anchor.BN(revertAmount),
                         revertInstruction,
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -1164,7 +1208,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(revertAmount),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -1174,6 +1218,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     new anchor.BN(revertAmount),
                     revertInstruction,
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
@@ -1185,6 +1230,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -1205,7 +1251,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(revertAmount),
-                additional: [toBytes(recipient.publicKey)],
+                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -1215,6 +1261,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         new anchor.BN(revertAmount),
                         revertInstruction,
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature2.signature,
                         signature2.recoveryId,
                         signature2.messageHash,
@@ -1226,6 +1273,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         tssPda,
                         recipient: recipient.publicKey,
                         executedTx: executedTxPda,
+                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                     })
@@ -1269,7 +1317,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: BigInt(0),
-                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -1279,6 +1327,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         new anchor.BN(0),
                         revertInstruction,
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -1293,6 +1342,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
+                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -1324,7 +1374,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(PublicKey.default)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -1334,6 +1384,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         new anchor.BN(Number(revertRaw)),
                         revertInstruction,
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
@@ -1348,6 +1399,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
+                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -1379,7 +1431,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -1389,6 +1441,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     new anchor.BN(Number(revertRaw)),
                     revertInstruction,
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
@@ -1403,6 +1456,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
                     executedTx: executedTxPda,
+                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -1424,7 +1478,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
-                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient)],
+                additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
@@ -1434,6 +1488,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         new anchor.BN(Number(revertRaw)),
                         revertInstruction,
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature2.signature,
                         signature2.recoveryId,
                         signature2.messageHash,
@@ -1448,6 +1503,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
+                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
