@@ -1,5 +1,9 @@
-import * as anchor from "@coral-xyz/anchor";
+// Load environment variables FIRST before any other imports that might use them
 import * as dotenv from "dotenv";
+dotenv.config({ path: "../.env" });
+dotenv.config();
+
+import * as anchor from "@coral-xyz/anchor";
 import {
     PublicKey,
     LAMPORTS_PER_SOL,
@@ -11,16 +15,22 @@ import {
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
 import type { UniversalGateway } from "../target/types/universal_gateway";
+import type { TestCounter } from "../target/types/test_counter";
 import * as spl from "@solana/spl-token";
 import pkg from 'js-sha3';
 const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
 import { assert } from "chai";
+import { instructionToPayloadFields, encodeExecutePayload, decodeExecutePayload } from "./execute-payload";
+import { signTssMessage, buildExecuteAdditionalData, TssInstruction } from "../tests/helpers/tss";
 
-const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
+const TEST_COUNTER_PROGRAM_ID = new PublicKey("BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
+const STAGING_SEED = "staging";
+const EXECUTED_TX_SEED = "executed_tx";
 const PRICE_ACCOUNT = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"); // Pyth SOL/USD price feed
 const ALT_ADDRESS = new PublicKey("EWXJ1ERkMwizmSovjtQ2qBTDpm1vxrZZ4Y2RjEujbqBo"); // Universal Gateway ALT
 
@@ -30,6 +40,9 @@ const adminKeypair = Keypair.fromSecretKey(
 );
 const userKeypair = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(fs.readFileSync("./clean-user-keypair.json", "utf8")))
+);
+const relayerKeypair = Keypair.fromSecretKey(
+    Uint8Array.from(JSON.parse(fs.readFileSync("./fresh-relayer-keypair.json", "utf8")))
 );
 
 // Set up connection and provider
@@ -43,10 +56,51 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 
 anchor.setProvider(adminProvider);
 
+const COUNTER_KEYPAIR_PATH = "./counter-devnet-keypair.json";
+
+function loadOrCreateKeypair(filepath: string): Keypair {
+    if (fs.existsSync(filepath)) {
+        return Keypair.fromSecretKey(
+            Uint8Array.from(JSON.parse(fs.readFileSync(filepath, "utf8")))
+        );
+    }
+    const kp = Keypair.generate();
+    fs.writeFileSync(filepath, JSON.stringify(Array.from(kp.secretKey)));
+    return kp;
+}
+
+function getExecutedTxPda(txIdBytes: Uint8Array): PublicKey {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from(EXECUTED_TX_SEED), Buffer.from(txIdBytes)],
+        PROGRAM_ID,
+    )[0];
+}
+
+function getStagingAuthorityPda(txIdBytes: Uint8Array): PublicKey {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from(STAGING_SEED), Buffer.from(txIdBytes)],
+        PROGRAM_ID,
+    )[0];
+}
+
 // Load IDL
 const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
 const program = new Program(idl, adminProvider);
 const userProgram = new Program(idl, userProvider);
+
+// Create relayer provider for execute transactions (to avoid admin being fee payer when it's also in remainingAccounts)
+const relayerWallet = new anchor.Wallet(relayerKeypair);
+const relayerProvider = new anchor.AnchorProvider(connection, relayerWallet, {});
+const relayerProgram = new Program(idl, relayerProvider);
+
+// (idl as any).metadata = (idl.metadata ?? { address: PROGRAM_ID.toBase58() });
+// idl.metadata.address = PROGRAM_ID.toBase58();
+// const idlTyped = idl as UniversalGateway;
+// const program = new Program<UniversalGateway>(idlTyped, adminProvider);
+// const userProgram = new Program<UniversalGateway>(idlTyped, userProvider);
+
+const counterIdl = JSON.parse(fs.readFileSync("./target/idl/test_counter.json", "utf8"));
+const counterProgram: any = new Program(counterIdl as any, adminProvider);
 
 // Helper: Get dynamic gas amount based on current SOL price
 async function getDynamicGasAmount(targetUsd: number, fallbackSol: number = 0.01): Promise<anchor.BN> {
@@ -114,9 +168,10 @@ function loadTokenInfo(tokenSymbol: string): any {
 async function run() {
     console.log("=== GATEWAY PROGRAM COMPREHENSIVE TEST ===\n");
 
-    // Load env from parent and local (so either location works)
-    dotenv.config({ path: "../.env" });
-    dotenv.config();
+    const tssPrivKeyHex = (process.env.TSS_PRIVKEY || process.env.ETH_PRIVATE_KEY || process.env.PRIVATE_KEY || "").replace(/^0x/, "");
+    if (!tssPrivKeyHex) {
+        throw new Error("Missing TSS_PRIVKEY / ETH_PRIVATE_KEY / PRIVATE_KEY env var for execute tests");
+    }
 
     // Derive PDAs
     const [configPda] = PublicKey.findProgramAddressSync(
@@ -128,7 +183,7 @@ async function run() {
         PROGRAM_ID
     );
     const [tssPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("tss")],
+        [Buffer.from("tsspda")],
         PROGRAM_ID
     );
     const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
@@ -142,6 +197,7 @@ async function run() {
 
     const admin = adminKeypair.publicKey;
     const user = userKeypair.publicKey;
+    const relayer = relayerKeypair.publicKey;
 
     // Helper to get token rate limit PDA
     const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
@@ -980,342 +1036,146 @@ async function run() {
         console.log(`  ✅ Correctly rejected insufficient native amount (InvalidAmount error)`);
     }
 
+    // Security Test: Attempt to redirect SPL tokens to user's own account (should fail)
+    if (tokenLoaded) {
+        console.log("  - Testing SECURITY: Attempt to redirect SPL tokens to user's own account (should fail)...");
+        const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
+            adminProvider.connection as any,
+            adminKeypair,
+            mint,
+            vaultPda,
+            true
+        );
+
+        // Try to pass user's own token account as gateway_token_account (the attack vector)
+        const maliciousSplFundsReq = {
+            recipient: Array.from(Buffer.from("9999999999999999999999999999999999999999", "hex").subarray(0, 20)),
+            token: mint,
+            amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
+            payload: Buffer.from([]),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("malicious_spl_sig"),
+        };
+
+        try {
+            await userProgram.methods
+                .sendUniversalTx(maliciousSplFundsReq, new anchor.BN(0))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: tokenAccount,
+                    gatewayTokenAccount: tokenAccount, // ⚠️ ATTACK: User's own account instead of vault ATA
+                    user: user,
+                    priceUpdate: PRICE_ACCOUNT,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: getTokenRateLimitPda(mint),
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([userKeypair])
+                .rpc();
+            assert.fail("Should have rejected user's own token account as gateway_token_account");
+        } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            assert(
+                errorCode === "InvalidOwner" || errorCode === "InvalidAccount",
+                `Expected InvalidOwner or InvalidAccount but got: ${errorCode}`
+            );
+            console.log(`  ✅ SECURITY: Correctly rejected user's own token account (${errorCode} error)`);
+        }
+
+        // Also test with FUNDS_AND_PAYLOAD route
+        console.log("  - Testing SECURITY: Attempt to redirect SPL tokens in FUNDS_AND_PAYLOAD route (should fail)...");
+        const maliciousSplFundsPayloadReq = {
+            recipient: Array.from(Buffer.from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "hex").subarray(0, 20)),
+            token: mint,
+            amount: new anchor.BN(500 * Math.pow(10, tokenInfo.decimals)),
+            payload: serializePayload(createPayload(99)),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("malicious_spl_payload_sig"),
+        };
+
+        try {
+            await userProgram.methods
+                .sendUniversalTx(maliciousSplFundsPayloadReq, await getDynamicGasAmount(1.5, 0.01))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: tokenAccount,
+                    gatewayTokenAccount: tokenAccount, // ⚠️ ATTACK: User's own account instead of vault ATA
+                    user: user,
+                    priceUpdate: PRICE_ACCOUNT,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: getTokenRateLimitPda(mint),
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([userKeypair])
+                .rpc();
+            assert.fail("Should have rejected user's own token account in FUNDS_AND_PAYLOAD route");
+        } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            assert(
+                errorCode === "InvalidOwner" || errorCode === "InvalidAccount",
+                `Expected InvalidOwner or InvalidAccount but got: ${errorCode}`
+            );
+            console.log(`  ✅ SECURITY: Correctly rejected user's own token account in FUNDS_AND_PAYLOAD (${errorCode} error)`);
+        }
+
+        // Test with wrong mint (correct owner, wrong token)
+        console.log("  - Testing SECURITY: Attempt to use vault ATA with wrong mint (should fail)...");
+        // Create a different token for this test (or use a dummy mint)
+        const wrongMint = Keypair.generate().publicKey; // Dummy mint that doesn't exist
+        const wrongMintVaultAta = PublicKey.findProgramAddressSync(
+            [
+                vaultPda.toBuffer(),
+                spl.TOKEN_PROGRAM_ID.toBuffer(),
+                wrongMint.toBuffer(),
+            ],
+            spl.ASSOCIATED_TOKEN_PROGRAM_ID
+        )[0];
+
+        const wrongMintReq = {
+            recipient: Array.from(Buffer.from("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "hex").subarray(0, 20)),
+            token: mint, // Correct mint
+            amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
+            payload: Buffer.from([]),
+            revertInstruction: createRevertInstruction(user),
+            signatureData: Buffer.from("wrong_mint_sig"),
+        };
+
+        try {
+            await userProgram.methods
+                .sendUniversalTx(wrongMintReq, new anchor.BN(0))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: tokenAccount,
+                    gatewayTokenAccount: wrongMintVaultAta, // ⚠️ ATTACK: Vault ATA but for wrong mint
+                    user: user,
+                    priceUpdate: PRICE_ACCOUNT,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: getTokenRateLimitPda(mint),
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([userKeypair])
+                .rpc();
+            assert.fail("Should have rejected vault ATA with wrong mint");
+        } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            // This might fail earlier (account doesn't exist) or with InvalidMint
+            assert(
+                errorCode === "InvalidMint" || errorCode === "InvalidAccount" || error.message.includes("AccountNotInitialized"),
+                `Expected InvalidMint, InvalidAccount, or AccountNotInitialized but got: ${errorCode}`
+            );
+            console.log(`  ✅ SECURITY: Correctly rejected vault ATA with wrong mint (${errorCode} error)`);
+        }
+    }
+
     console.log("✅ Edge cases and negative tests completed!\n");
 
     console.log("✅ All sendUniversalTx tests completed!\n");
-
-    // Step 5: Test send_tx_with_gas (SOL deposit with payload) - LEGACY FUNCTION
-    console.log("5. Testing send_tx_with_gas...");
-    const userBalanceBefore = await connection.getBalance(user);
-    const vaultBalanceBefore = await connection.getBalance(vaultPda);
-
-    console.log(`User balance BEFORE: ${userBalanceBefore / LAMPORTS_PER_SOL} SOL`);
-    console.log(`Vault balance BEFORE: ${vaultBalanceBefore / LAMPORTS_PER_SOL} SOL`);
-
-    // Create payload and revert settings
-    const payload = {
-        to: Array.from(Buffer.from("1234567890123456789012345678901234567890", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
-        value: new anchor.BN(0), // Value to send
-        data: Buffer.from("test payload data"),
-        gasLimit: new anchor.BN(100000),
-        maxFeePerGas: new anchor.BN(20000000000), // 20 gwei
-        maxPriorityFeePerGas: new anchor.BN(1000000000), // 1 gwei
-        nonce: new anchor.BN(0),
-        deadline: new anchor.BN(Date.now() + 3600000), // 1 hour from now
-        vType: { signedVerification: {} }, // VerificationType enum
-    };
-
-    const revertInstructions = {
-        fundRecipient: user, // Use user as recipient for simplicity  
-        revertMsg: Buffer.from("revert message"),
-    };
-
-
-    // Get dynamic gas amount for USD cap compliance
-    const gasAmount = await getDynamicGasAmount(1.20, 0.01); // Target $1.20, fallback 0.01 SOL
-
-    // Generate signature data for send_tx_with_gas
-    const gasSignatureData = Buffer.from("test_signature_data_for_send_tx_with_gas", "utf8");
-
-    const gasTx = await userProgram.methods
-        .sendTxWithGas(payload, revertInstructions, gasAmount, gasSignatureData)
-        .accounts({
-            config: configPda,
-            vault: vaultPda,
-            user: user,
-            priceUpdate: PRICE_ACCOUNT,
-            systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-    console.log(`Gas transaction sent: ${gasTx}`);
-    await parseAndPrintEvents(gasTx, "send_tx_with_gas events");
-
-    const userBalanceAfter = await connection.getBalance(user);
-    const vaultBalanceAfter = await connection.getBalance(vaultPda);
-    const vaultBalanceIncrease = vaultBalanceAfter - vaultBalanceBefore;
-    assert.equal(vaultBalanceIncrease, gasAmount.toNumber(), "Vault should receive exact gas amount");
-    console.log(`User balance AFTER: ${userBalanceAfter / LAMPORTS_PER_SOL} SOL`);
-    console.log(`Vault balance AFTER: ${vaultBalanceAfter / LAMPORTS_PER_SOL} SOL (verified: +${vaultBalanceIncrease / LAMPORTS_PER_SOL} SOL)\n`);
-
-    // Step 5a: Legacy add_funds (locker-compatible)
-    console.log("5a. Legacy add_funds (locker-compatible)...");
-    // Get dynamic amount for USD cap compliance
-    const legacyAmount = await getDynamicGasAmount(1.10, 0.001); // Target $1.10, fallback 0.001 SOL
-    const txHashLegacy: number[] = Array(32).fill(1); // 32-byte transaction hash (dummy)
-
-    const legacyTx = await userProgram.methods
-        .addFunds(legacyAmount, txHashLegacy)
-        .accounts({
-            config: configPda,
-            vault: vaultPda,
-            user: user,
-            priceUpdate: PRICE_ACCOUNT,
-            systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-    console.log(`✅ Legacy add_funds sent: ${legacyTx}`);
-    await parseAndPrintEvents(legacyTx, "legacy add_funds events");
-
-    // Step 6: Test send_funds with native SOL (unified function)
-    console.log("6. Testing send_funds (Native SOL)...");
-    const recipient = Array.from(Buffer.from("1111111111111111111111111111111111111111", "hex").subarray(0, 20)); // EVM address (20 bytes)
-    const fundAmount = new anchor.BN(0.005 * LAMPORTS_PER_SOL); // 0.005 SOL
-
-    const userBalanceBeforeFunds = await connection.getBalance(user);
-    const vaultBalanceBeforeFunds = await connection.getBalance(vaultPda);
-
-    console.log(`💳 User balance BEFORE send_funds (native): ${userBalanceBeforeFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault balance BEFORE send_funds (native): ${vaultBalanceBeforeFunds / LAMPORTS_PER_SOL} SOL`);
-
-    const nativeFundsTx = await userProgram.methods
-        .sendFunds(recipient, PublicKey.default, fundAmount, revertInstructions) // PublicKey.default for native SOL
-        .accounts({
-            config: configPda,
-            vault: vaultPda,
-            user: user,
-            tokenWhitelist: whitelistPda,
-            userTokenAccount: user, // For native SOL, can be any account
-            gatewayTokenAccount: vaultPda, // For native SOL, can be any account
-            bridgeToken: PublicKey.default, // Native SOL
-            tokenProgram: spl.TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-    console.log(`✅ Native SOL funds sent to ${recipient.toString()}: ${nativeFundsTx}`);
-
-    // Parse events
-    await parseAndPrintEvents(nativeFundsTx, "send_funds (native) events");
-
-    const userBalanceAfterFunds = await connection.getBalance(user);
-    const vaultBalanceAfterFunds = await connection.getBalance(vaultPda);
-    const vaultBalanceIncreaseFunds = vaultBalanceAfterFunds - vaultBalanceBeforeFunds;
-    assert.equal(vaultBalanceIncreaseFunds, fundAmount.toNumber(), "Vault should receive exact funds amount");
-    console.log(`💳 User balance AFTER send_funds (native): ${userBalanceAfterFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault balance AFTER send_funds (native): ${vaultBalanceAfterFunds / LAMPORTS_PER_SOL} SOL (verified: +${vaultBalanceIncreaseFunds / LAMPORTS_PER_SOL} SOL)\n`);
-
-    // Step 7: Test SPL token functions
-    console.log("7. Testing SPL Token Functions...");
-
-    // Create ATA for vault (admin's responsibility)
-    const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
-        adminProvider.connection as any,
-        adminKeypair,
-        mint,
-        vaultPda,
-        true
-    );
-    console.log(`✅ Vault ATA created by admin: ${vaultAta.address.toString()}`);
-
-    // Test send_funds with SPL token (SPL-only function)
-    const splRecipient = Keypair.generate().publicKey;
-    const splAmount = new anchor.BN(1000 * Math.pow(10, 6)); // 1000 tokens (6 decimals)
-
-    console.log(`🪙 Testing SPL token send_funds...`);
-
-    // Get SPL balances before
-    const userTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
-    const vaultTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
-
-    console.log(`📊 User SPL balance BEFORE: ${userTokenBalanceBefore.toString()} tokens`);
-    console.log(`📊 Vault SPL balance BEFORE: ${vaultTokenBalanceBefore.toString()} tokens`);
-    // Convert SPL recipient to EVM address for the event
-    const splRecipientEvm = Array.from(Buffer.from("2222222222222222222222222222222222222222", "hex").subarray(0, 20)); // EVM address (20 bytes)
-
-    console.log(`📤 Sending ${splAmount.toNumber() / Math.pow(10, 6)} tokens to EVM address 0x2222222222222222222222222222222222222222`);
-
-    const splFundsTx = await userProgram.methods
-        .sendFunds(splRecipientEvm, mint, splAmount, revertInstructions)
-        .accounts({
-            config: configPda,
-            vault: vaultPda,
-            user: user,
-            tokenWhitelist: whitelistPda,
-            userTokenAccount: tokenAccount,
-            gatewayTokenAccount: vaultAta.address,
-            bridgeToken: mint,
-            tokenProgram: spl.TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-    console.log(`✅ SPL funds sent: ${splFundsTx}`);
-
-    // Parse events
-    await parseAndPrintEvents(splFundsTx, "send_funds (SPL) events");
-
-    // Get SPL balances after
-    const userTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
-    const vaultTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
-    const userTokenChange = Number(userTokenBalanceAfter) - Number(userTokenBalanceBefore);
-    const vaultTokenChange = Number(vaultTokenBalanceAfter) - Number(vaultTokenBalanceBefore);
-    assert.equal(userTokenChange, -splAmount.toNumber(), "User should lose exact SPL amount");
-    assert.equal(vaultTokenChange, splAmount.toNumber(), "Vault should gain exact SPL amount");
-    console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfter.toString()} tokens (verified: ${userTokenChange < 0 ? '-' : '+'}${Math.abs(userTokenChange)})`);
-    console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfter.toString()} tokens (verified: +${vaultTokenChange})\n`);
-
-    // Step 8: Test send_tx_with_funds (SPL + payload + gas)
-    console.log("8. Testing send_tx_with_funds (SPL + payload + gas)...");
-
-    // Get dynamic gas amount for USD cap compliance
-    const txWithFundsGasAmount = await getDynamicGasAmount(1.50, 0.01); // Target $1.50, fallback 0.01 SOL
-
-    const txWithFundsRecipient = Keypair.generate().publicKey;
-    const txWithFundsSplAmount = new anchor.BN(500 * Math.pow(10, 6)); // 500 tokens
-
-    // Create payload for this transaction
-    const txWithFundsPayload = {
-        to: Array.from(Buffer.from("abcdefabcdefabcdefabcdefabcdefabcdefabcd", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
-        value: new anchor.BN(0), // Value to send
-        data: Buffer.from("test payload for funds+gas"),
-        gasLimit: new anchor.BN(120000),
-        maxFeePerGas: new anchor.BN(20000000000), // 20 gwei
-        maxPriorityFeePerGas: new anchor.BN(1000000000), // 1 gwei
-        nonce: new anchor.BN(1),
-        deadline: new anchor.BN(Date.now() + 3600000), // 1 hour from now
-        vType: { signedVerification: {} }, // VerificationType enum
-    };
-
-    console.log(`🚀 Testing combined SPL + Gas transaction...`);
-    console.log(`📤 SPL Amount: ${txWithFundsSplAmount.toNumber() / Math.pow(10, 6)} tokens`);
-    console.log(`⛽ Gas Amount: ${txWithFundsGasAmount.toNumber() / LAMPORTS_PER_SOL} SOL`);
-
-    const userBalanceBeforeTxWithFunds = await connection.getBalance(user);
-    const vaultBalanceBeforeTxWithFunds = await connection.getBalance(vaultPda);
-    const userTokenBalanceBeforeTx = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
-    const vaultTokenBalanceBeforeTx = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
-
-    console.log(`💳 User SOL balance BEFORE: ${userBalanceBeforeTxWithFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault SOL balance BEFORE: ${vaultBalanceBeforeTxWithFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`📊 User SPL balance BEFORE: ${userTokenBalanceBeforeTx.toString()} tokens`);
-    console.log(`📊 Vault SPL balance BEFORE: ${vaultTokenBalanceBeforeTx.toString()} tokens`);
-
-    // Generate signature data for payload security (dynamic bytes)
-    const signatureData = Buffer.from("test_signature_data_for_spl_payload", "utf8");
-    // For testing, use a simple string. In production, this would be a secure signature.
-
-    const txWithFundsTx = await userProgram.methods
-        .sendTxWithFunds(
-            mint,
-            txWithFundsSplAmount,
-            txWithFundsPayload,
-            revertInstructions,
-            txWithFundsGasAmount,
-            signatureData
-        )
-        .accounts({
-            config: configPda,
-            vault: vaultPda,
-            user: user,
-            tokenWhitelist: whitelistPda,
-            userTokenAccount: tokenAccount,
-            gatewayTokenAccount: vaultAta.address,
-            priceUpdate: PRICE_ACCOUNT,
-            bridgeToken: mint,
-            tokenProgram: spl.TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-    console.log(`✅ Combined SPL + Gas transaction sent: ${txWithFundsTx}`);
-
-    // Parse events
-    await parseAndPrintEvents(txWithFundsTx, "send_tx_with_funds events");
-
-    const userBalanceAfterTxWithFunds = await connection.getBalance(user);
-    const vaultBalanceAfterTxWithFunds = await connection.getBalance(vaultPda);
-    const userTokenBalanceAfterTx = (await spl.getAccount(userProvider.connection as any, tokenAccount)).amount;
-    const vaultTokenBalanceAfterTx = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
-    const vaultSolIncreaseTx = vaultBalanceAfterTxWithFunds - vaultBalanceBeforeTxWithFunds;
-    const userTokenChangeTx = Number(userTokenBalanceAfterTx) - Number(userTokenBalanceBeforeTx);
-    const vaultTokenChangeTx = Number(vaultTokenBalanceAfterTx) - Number(vaultTokenBalanceBeforeTx);
-    assert.equal(vaultSolIncreaseTx, txWithFundsGasAmount.toNumber(), "Vault should receive exact gas amount");
-    assert.equal(userTokenChangeTx, -txWithFundsSplAmount.toNumber(), "User should lose exact SPL amount");
-    assert.equal(vaultTokenChangeTx, txWithFundsSplAmount.toNumber(), "Vault should gain exact SPL amount");
-    console.log(`💳 User SOL balance AFTER: ${userBalanceAfterTxWithFunds / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault SOL balance AFTER: ${vaultBalanceAfterTxWithFunds / LAMPORTS_PER_SOL} SOL (verified: +${vaultSolIncreaseTx / LAMPORTS_PER_SOL} SOL)`);
-    console.log(`📊 User SPL balance AFTER: ${userTokenBalanceAfterTx.toString()} tokens (verified: ${userTokenChangeTx < 0 ? '-' : '+'}${Math.abs(userTokenChangeTx)})`);
-    console.log(`📊 Vault SPL balance AFTER: ${vaultTokenBalanceAfterTx.toString()} tokens (verified: +${vaultTokenChangeTx})\n`);
-
-    // Step 9.5: Test send_tx_with_funds with native SOL as both bridge token and gas
-    console.log("9.5. Testing send_tx_with_funds with native SOL (bridge + gas)...");
-
-    // Get dynamic amounts for USD cap compliance
-    const nativeGasAmount = await getDynamicGasAmount(1.20, 0.008); // Target $1.20, fallback 0.008 SOL
-    const nativeBridgeAmount = await getDynamicGasAmount(2.00, 0.02); // Target $2.00, fallback 0.02 SOL
-    console.log(`🌉 Bridge amount: ${(nativeBridgeAmount.toNumber() / LAMPORTS_PER_SOL).toFixed(4)} SOL`);
-
-    const nativePayload = {
-        to: Array.from(Buffer.from("fedcbafedcbafedcbafedcbafedcbafedcbafedcba", "hex").subarray(0, 20)), // Ethereum address (20 bytes)
-        value: new anchor.BN(0),
-        data: Buffer.from("native_sol_payload_data"),
-        gasLimit: new anchor.BN(21000),
-        maxFeePerGas: new anchor.BN(20000000000),
-        maxPriorityFeePerGas: new anchor.BN(2000000000),
-        nonce: new anchor.BN(0),
-        deadline: new anchor.BN(Date.now() + 3600000),
-        vType: { signedVerification: {} }
-    };
-
-    const nativeRevertInstructions = {
-        fundRecipient: user,
-        revertMsg: Buffer.from("Native SOL revert")
-    };
-
-    // Generate signature data for native SOL payload
-    const nativeSignatureData = Buffer.from("test_signature_data_for_native_sol_payload", "utf8");
-    // Different signature for native SOL test
-
-    const userBalanceBeforeNative = await connection.getBalance(user);
-    const vaultBalanceBeforeNative = await connection.getBalance(vaultPda);
-
-    console.log(`💳 User SOL balance BEFORE native test: ${userBalanceBeforeNative / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault SOL balance BEFORE native test: ${vaultBalanceBeforeNative / LAMPORTS_PER_SOL} SOL`);
-
-    const nativeTxWithFundsTx = await userProgram.methods
-        .sendTxWithFunds(
-            PublicKey.default, // Native SOL (Pubkey::default())
-            nativeBridgeAmount,
-            nativePayload,
-            nativeRevertInstructions,
-            nativeGasAmount,
-            nativeSignatureData
-        )
-        .accounts({
-            config: configPda,
-            vault: vaultPda,
-            user: user,
-            tokenWhitelist: whitelistPda,
-            userTokenAccount: tokenAccount, // Not used for native SOL but required by struct
-            gatewayTokenAccount: vaultAta.address, // Not used for native SOL but required by struct
-            priceUpdate: PRICE_ACCOUNT,
-            bridgeToken: PublicKey.default, // Native SOL
-            tokenProgram: spl.TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-    console.log(`✅ Native SOL + Gas transaction sent: ${nativeTxWithFundsTx}`);
-
-    // Parse events
-    await parseAndPrintEvents(nativeTxWithFundsTx, "native SOL send_tx_with_funds events");
-
-    const userBalanceAfterNative = await connection.getBalance(user);
-    const vaultBalanceAfterNative = await connection.getBalance(vaultPda);
-
-    console.log(`💳 User SOL balance AFTER native test: ${userBalanceAfterNative / LAMPORTS_PER_SOL} SOL`);
-    console.log(`🏦 Vault SOL balance AFTER native test: ${vaultBalanceAfterNative / LAMPORTS_PER_SOL} SOL`);
-
-    const totalDeducted = (userBalanceBeforeNative - userBalanceAfterNative) / LAMPORTS_PER_SOL;
-    const expectedDeduction = (nativeBridgeAmount.toNumber() + nativeGasAmount.toNumber()) / LAMPORTS_PER_SOL;
-    console.log(`💰 Total SOL deducted: ${totalDeducted.toFixed(6)} SOL (expected: ${expectedDeduction.toFixed(6)} SOL)`);
-
-    // Allow small tolerance for transaction fees
-    const tolerance = 0.001; // 0.001 SOL tolerance
-    assert.approximately(totalDeducted, expectedDeduction, tolerance, "Native SOL deduction should match expected amount within tolerance");
-    console.log(`✅ Native SOL test passed - correct amount deducted\n`);
 
     // Step 10: Test pause/unpause
     console.log("10. Testing pause/unpause...");
@@ -1339,14 +1199,27 @@ async function run() {
 
     // Try to send funds while paused (should fail)
     const signatureNew = Buffer.from("test_signature_data_for_gas", "utf8");
+    const gasReqPaused = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]), // Empty payload for GAS route
+        revertInstruction: revertInstructions,
+        signatureData: signatureNew,
+    };
     try {
         await userProgram.methods
-            .sendTxWithGas(payload, revertInstructions, gasAmount, signatureNew)
+            .sendUniversalTx(gasReqPaused, gasAmount)
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                userTokenAccount: vaultPda,
+                gatewayTokenAccount: vaultPda,
                 user: user,
                 priceUpdate: PRICE_ACCOUNT,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
             })
             .rpc();
@@ -1389,7 +1262,7 @@ async function run() {
         const tssInfo = await connection.getAccountInfo(tssPda);
         if (!tssInfo) {
             const initTssTx = await program.methods
-                .initTss(Array.from(ethAddrBytes) as any, new anchor.BN(1))
+                .initTss(Array.from(ethAddrBytes) as any, "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG") // Devnet cluster pubkey
                 .accounts({
                     tssPda: tssPda,
                     authority: admin,
@@ -1419,37 +1292,62 @@ async function run() {
 
     // 12.2 Build message for SOL withdraw to admin using instruction_id=1
     const withdrawAmountTss = new anchor.BN(0.0005 * LAMPORTS_PER_SOL).toNumber();
-    const chainId = 1; // Ethereum mainnet id for domain separation
-    // Fetch current nonce by reading TssPda account (optional). We'll pass a rolling nonce = 0 on first run.
-    // For simplicity here, use a small local nonce and retry if mismatch.
+    // Fetch chain_id and nonce from TSS account (chain_id is now a String - Solana cluster pubkey)
     let nonce = 0; // default
+    let chainId = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"; // Default to Devnet cluster pubkey
     try {
-        // Attempt to read current nonce from on-chain TSS PDA
+        // Attempt to read current nonce and chain_id from on-chain TSS PDA
         const tssAcc: any = await (program.account as any).tssPda.fetch(tssPda);
-        if (tssAcc && typeof tssAcc.nonce !== "undefined") {
-            nonce = Number(tssAcc.nonce);
+        if (tssAcc) {
+            if (typeof tssAcc.nonce !== "undefined") {
+                nonce = Number(tssAcc.nonce);
+            }
+            if (typeof tssAcc.chainId !== "undefined") {
+                chainId = tssAcc.chainId; // String: Solana cluster pubkey
+            }
         }
     } catch (e) {
-        // If not initialized or IDL not exposed yet, keep default 0
+        // If not initialized or IDL not exposed yet, keep defaults
     }
+
+    // Generate tx_id and origin_caller for withdraw (use crypto for proper randomness)
+    // Keep generating until we get a unique tx_id (account doesn't exist)
+    let txId: number[];
+    let executedTxPda: PublicKey;
+    let attempts = 0;
+    do {
+        txId = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer());
+        [executedTxPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("executed_tx"), Buffer.from(txId)],
+            program.programId
+        );
+        attempts++;
+        if (attempts > 10) {
+            throw new Error("Could not generate unique tx_id after 10 attempts");
+        }
+    } while (await connection.getAccountInfo(executedTxPda) !== null);
+
+    const originCaller = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
 
     const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
     const instructionId = Buffer.from([1]); // 1 = SOL withdraw
-    const chainIdBE = Buffer.alloc(8);
-    chainIdBE.writeBigUInt64BE(BigInt(chainId));
+    const chainIdBytes = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
     const nonceBE = Buffer.alloc(8);
     nonceBE.writeBigUInt64BE(BigInt(nonce));
     const amountBE = Buffer.alloc(8);
     amountBE.writeBigUInt64BE(BigInt(withdrawAmountTss));
     const recipientBytes = admin.toBuffer();
 
+    // Include tx_id, origin_caller, and recipient in message hash
     const concat = Buffer.concat([
         PREFIX,
         instructionId,
-        chainIdBE,
+        chainIdBytes,          // UTF-8 bytes of chain_id string
         nonceBE,
         amountBE,
-        recipientBytes,
+        Buffer.from(txId),      // tx_id (32 bytes)
+        Buffer.from(originCaller), // origin_caller (20 bytes)
+        recipientBytes,         // recipient (32 bytes)
     ]);
     const messageHashHex = keccak_256(concat);
     const messageHash = Buffer.from(messageHashHex, "hex");
@@ -1461,9 +1359,11 @@ async function run() {
     const signature: Uint8Array = sig[0];
     let recoveryId: number = sig[1]; // 0 or 1
 
-    // 12.4 Call withdraw_tss
+    // 12.4 Call withdraw
     const tssWithdrawTx = await program.methods
-        .withdrawTss(
+        .withdraw(
+            txId,
+            originCaller,
             new anchor.BN(withdrawAmountTss),
             Array.from(signature) as any,
             recoveryId,
@@ -1475,6 +1375,8 @@ async function run() {
             vault: vaultPda,
             tssPda: tssPda,
             recipient: admin,
+            executedTx: executedTxPda,
+            caller: admin, // The caller/relayer who pays for the transaction
             systemProgram: SystemProgram.programId,
         })
         .signers([adminKeypair])
@@ -1500,25 +1402,47 @@ async function run() {
             admin
         );
 
+        // Generate tx_id and origin_caller for SPL withdraw (use crypto for proper randomness)
+        // Keep generating until we get a unique tx_id (account doesn't exist)
+        let txIdSPL: number[];
+        let executedTxPdaSPL: PublicKey;
+        let attempts = 0;
+        do {
+            txIdSPL = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer());
+            [executedTxPdaSPL] = PublicKey.findProgramAddressSync(
+                [Buffer.from("executed_tx"), Buffer.from(txIdSPL)],
+                program.programId
+            );
+            attempts++;
+            if (attempts > 10) {
+                throw new Error("Could not generate unique tx_id after 10 attempts");
+            }
+        } while (await connection.getAccountInfo(executedTxPdaSPL) !== null);
+
+        const originCallerSPL = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
+
         // Build message for SPL withdraw using instruction_id=2
         const PREFIX_SPL = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdSPL = Buffer.from([2]); // 2 = SPL withdraw
-        const chainIdBE_SPL = Buffer.alloc(8);
-        chainIdBE_SPL.writeBigUInt64BE(BigInt(chainId));
+        const chainIdBytesSPL = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
         const nonceBE_SPL = Buffer.alloc(8);
         nonceBE_SPL.writeBigUInt64BE(BigInt(nonce + 1)); // Increment nonce for SPL withdraw
         const amountBE_SPL = Buffer.alloc(8);
         amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
         const mintBytes = mint.toBuffer(); // 32 bytes for mint address
 
-        // Include both mint AND recipient in message hash (ZetaChain pattern - security fix)
+        // Include tx_id, origin_caller, mint AND recipient in message hash
+        const recipientBytesSPL = adminAta.address.toBuffer();
         const concatSPL = Buffer.concat([
             PREFIX_SPL,
             instructionIdSPL,
-            chainIdBE_SPL,
+            chainIdBytesSPL,            // UTF-8 bytes of chain_id string
             nonceBE_SPL,
             amountBE_SPL,
-            mintBytes      // Token mint (32 bytes)
+            Buffer.from(txIdSPL),        // tx_id (32 bytes)
+            Buffer.from(originCallerSPL), // origin_caller (20 bytes)
+            mintBytes,                   // Token mint (32 bytes)
+            recipientBytesSPL,          // Recipient token account (32 bytes)
         ]);
         const messageHashHexSPL = keccak_256(concatSPL);
         const messageHashSPL = Buffer.from(messageHashHexSPL, "hex");
@@ -1528,9 +1452,11 @@ async function run() {
         const signatureSPL: Uint8Array = sigSPL[0];
         let recoveryIdSPL: number = sigSPL[1];
 
-        // Call withdraw_spl_token_tss
+        // Call withdraw_funds
         const tssSplWithdrawTx = await program.methods
-            .withdrawSplTokenTss(
+            .withdrawFunds(
+                txIdSPL,
+                originCallerSPL,
                 new anchor.BN(splWithdrawAmount),
                 Array.from(signatureSPL) as any,
                 recoveryIdSPL,
@@ -1545,7 +1471,10 @@ async function run() {
                 tokenMint: mint,
                 tssPda: tssPda,
                 recipientTokenAccount: adminAta.address,
+                executedTx: executedTxPdaSPL,
+                caller: admin, // The caller/relayer who pays for the transaction
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
             })
             .signers([adminKeypair])
             .rpc();
@@ -1563,6 +1492,611 @@ async function run() {
     console.log("\n=== ATA Creation Note ===");
     console.log("✅ ATA creation is handled off-chain by clients (standard Solana practice)");
     console.log("✅ This avoids complex reimbursement logic and follows industry standards");
+
+    // 13.5 Execute tests via payload encode/decode pipeline
+    console.log("\n=== 13.5 Testing execute_universal_tx via payload encode/decode pipeline ===");
+    const counterKeypair = loadOrCreateKeypair(COUNTER_KEYPAIR_PATH);
+
+    try {
+        await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        console.log("Counter account already initialized");
+    } catch {
+        const initCounterTx = await counterProgram.methods
+            .initialize(new anchor.BN(0))
+            .accounts({
+                counter: counterKeypair.publicKey,
+                authority: admin,  // Admin is authority, but relayer signs execute txs
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([adminKeypair, counterKeypair])
+            .rpc();
+        console.log(`✅ Counter initialized for execute tests: ${initCounterTx}`);
+    }
+
+    const tssAccount: any = await (program.account as any).tssPda.fetch(tssPda);
+
+    // Verify TSS address matches the private key
+    const testPubKey = secp.getPublicKey(tssPrivKeyHex, false).slice(1);
+    const testEthAddressHex = keccak_256(testPubKey).slice(-40);
+    const testEthAddress = Buffer.from(testEthAddressHex, "hex");
+    const onChainTssAddress = Buffer.from(tssAccount.tssEthAddress);
+
+    console.log("🔑 TSS Address on-chain:", onChainTssAddress.toString("hex"));
+    console.log("🔑 TSS Address from privkey:", testEthAddress.toString("hex"));
+
+    if (!testEthAddress.equals(onChainTssAddress)) {
+        throw new Error("TSS private key does not match on-chain TSS address! Check your .env");
+    }
+
+    // Helper to sync nonce from chain
+    const syncNonceFromChain = async () => {
+        const account = await (program.account as any).tssPda.fetch(tssPda);
+        return Number(account.nonce);
+    };
+
+    async function runExecuteSolTest() {
+        console.log("👉 execute_universal_tx (SOL) via encoded payload");
+
+        const solTxIdBytes = anchor.web3.Keypair.generate().publicKey.toBytes();
+
+        // Check relayer account (used as caller/payer)
+        const relayerInfo = await connection.getAccountInfo(relayer);
+        console.log("🔍 relayer:", relayer.toBase58());
+        console.log("🔍 relayer balance:", relayerInfo?.lamports || 0);
+        console.log("🔍 relayer data.length:", relayerInfo?.data.length || 0);
+        console.log("🔍 relayer owner:", relayerInfo?.owner.toBase58() || "none");
+        const senderBytes = Buffer.alloc(20, 0x11);
+        const incrementIx = await counterProgram.methods
+            .increment(new anchor.BN(3))
+            .accounts({
+                counter: counterKeypair.publicKey,
+                authority: admin,  // Admin is authority, but relayer signs the execute tx
+            })
+            .instruction();
+
+        const payloadFields = instructionToPayloadFields({
+            instruction: incrementIx,
+            instructionId: 5,
+            chainId: tssAccount.chainId,
+            nonce: Number(tssAccount.nonce),
+            amount: BigInt(0),
+            txId: solTxIdBytes,
+            sender: senderBytes,
+        });
+
+        const encoded = encodeExecutePayload(payloadFields);
+        const decoded = decodeExecutePayload(encoded);
+
+        console.log("🔍 Payload amount (before encode):", payloadFields.amount.toString());
+        console.log("🔍 Decoded amount:", decoded.amount.toString());
+        console.log("🔍 BN amount to pass:", new anchor.BN(decoded.amount.toString()).toString());
+
+        // Sign using the proven TSS helpers
+        const sig = await signTssMessage({
+            instruction: TssInstruction.ExecuteSol,
+            nonce: decoded.nonce,
+            amount: decoded.amount,
+            chainId: tssAccount.chainId,
+            additional: buildExecuteAdditionalData(
+                decoded.txId,
+                decoded.targetProgram,
+                decoded.sender,
+                decoded.accounts,
+                decoded.ixData
+            ),
+        });
+
+        const stagingAuthority = getStagingAuthorityPda(decoded.txId);
+        const executedTx = getExecutedTxPda(decoded.txId);
+        const remainingAccounts = decoded.accounts.map((meta) => ({
+            pubkey: meta.pubkey,
+            isWritable: meta.isWritable,
+            isSigner: false,
+        }));
+
+        const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        const execTx = await relayerProgram.methods
+            .executeUniversalTx(
+                Array.from(decoded.txId),
+                Array.from(decoded.sender),
+                new anchor.BN(decoded.amount.toString()),
+                decoded.targetProgram,
+                Array.from(decoded.sender),
+                decoded.accounts.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                })),
+                Buffer.from(decoded.ixData),
+                sig.signature,
+                sig.recoveryId,
+                sig.messageHash,
+                sig.nonce,
+            )
+            .accounts({
+                caller: relayer,  // Relayer is now both fee payer and caller
+                config: configPda,
+                vaultSol: vaultPda,
+                stagingAuthority,
+                tssPda,
+                executedTx,
+                destinationProgram: decoded.targetProgram,
+                systemProgram: SystemProgram.programId,
+            })
+            .remainingAccounts(remainingAccounts)
+            .rpc();
+
+        console.log(`✅ executeUniversalTx (SOL) succeeded: ${execTx}`);
+        const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        console.log(`Counter value: ${counterBefore.value.toNumber()} → ${counterAfter.value.toNumber()}`);
+    }
+
+    async function runExecuteSplTest() {
+        console.log("👉 execute_universal_tx_token (SPL) via encoded payload");
+        const tssAfterSol: any = await (program.account as any).tssPda.fetch(tssPda);
+        const splTxIdBytes = anchor.web3.Keypair.generate().publicKey.toBytes();
+        const senderBytes = Buffer.alloc(20, 0x22);
+        const stagingAuthority = getStagingAuthorityPda(splTxIdBytes);
+        const stagingAta = await spl.getAssociatedTokenAddress(
+            mint,
+            stagingAuthority,
+            true,
+            spl.TOKEN_PROGRAM_ID,
+            spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+        );
+        const executeRecipient = Keypair.generate();
+        const executeRecipientAta = await spl.getOrCreateAssociatedTokenAccount(
+            userProvider.connection as any,
+            userKeypair,
+            mint,
+            executeRecipient.publicKey,
+        );
+        const executeAmount = new anchor.BN(200 * Math.pow(10, tokenInfo.decimals));
+
+        const receiveSplIx = await counterProgram.methods
+            .receiveSpl(executeAmount)
+            .accounts({
+                counter: counterKeypair.publicKey,
+                stagingAta,
+                recipientAta: executeRecipientAta.address,
+                stagingAuthority,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+            })
+            .instruction();
+
+        const payloadFields = instructionToPayloadFields({
+            instruction: receiveSplIx,
+            instructionId: 6,
+            chainId: tssAfterSol.chainId,
+            nonce: Number(tssAfterSol.nonce),
+            amount: BigInt(executeAmount.toString()),
+            txId: splTxIdBytes,
+            sender: senderBytes,
+        });
+
+        const encoded = encodeExecutePayload(payloadFields);
+        const decoded = decodeExecutePayload(encoded);
+
+        // Sign using the proven TSS helpers
+        const sig = await signTssMessage({
+            instruction: TssInstruction.ExecuteSpl,
+            nonce: decoded.nonce,
+            amount: decoded.amount,
+            chainId: tssAfterSol.chainId,
+            additional: buildExecuteAdditionalData(
+                decoded.txId,
+                decoded.targetProgram,
+                decoded.sender,
+                decoded.accounts,
+                decoded.ixData
+            ),
+        });
+
+        const executedTx = getExecutedTxPda(decoded.txId);
+        const remainingAccounts = decoded.accounts.map((meta) => ({
+            pubkey: meta.pubkey,
+            isWritable: meta.isWritable,
+            isSigner: false,
+        }));
+
+        const recipientTokenBefore = (await spl.getAccount(userProvider.connection as any, executeRecipientAta.address)).amount;
+
+        const execSplTx = await relayerProgram.methods
+            .executeUniversalTxToken(
+                Array.from(decoded.txId),
+                Array.from(decoded.sender),
+                new anchor.BN(decoded.amount.toString()),
+                decoded.targetProgram,
+                Array.from(decoded.sender),
+                decoded.accounts.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                })),
+                Buffer.from(decoded.ixData),
+                sig.signature,
+                sig.recoveryId,
+                sig.messageHash,
+                sig.nonce,
+            )
+            .accounts({
+                caller: relayer,  // Relayer is now both fee payer and caller
+                config: configPda,
+                vaultAuthority: vaultPda,
+                vaultAta: vaultAta.address,
+                stagingAuthority,
+                stagingAta,
+                mint,
+                tssPda,
+                executedTx,
+                destinationProgram: decoded.targetProgram,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+            })
+            .remainingAccounts(remainingAccounts)
+            .rpc();
+
+        console.log(`✅ executeUniversalTxToken (SPL) succeeded: ${execSplTx}`);
+        const recipientTokenAfter = (await spl.getAccount(userProvider.connection as any, executeRecipientAta.address)).amount;
+        console.log(`Recipient SPL balance: ${recipientTokenBefore.toString()} → ${recipientTokenAfter.toString()}`);
+    }
+
+    await runExecuteSolTest();
+    await runExecuteSplTest();
+
+    // 13.6 Execute security validations (negative tests on devnet)
+    console.log("\n=== 13.6 Testing execute security validations (negative tests) ===");
+
+    /**
+     * Helper to test that an execute call correctly reverts with expected error
+     */
+    async function expectExecuteRevertDevnet(
+        testName: string,
+        executeCall: () => Promise<any>,
+        expectedErrorCode: string
+    ): Promise<void> {
+        try {
+            await executeCall();
+            throw new Error(`❌ ${testName}: Should have reverted but succeeded`);
+        } catch (e: any) {
+            const errorMsg = e.toString();
+            const hasExpectedError = errorMsg.includes(expectedErrorCode);
+
+            if (!hasExpectedError) {
+                console.error(`❌ ${testName}: Expected error "${expectedErrorCode}" but got:`, errorMsg);
+                throw new Error(`Expected error code "${expectedErrorCode}" not found. Got: ${errorMsg}`);
+            }
+
+            console.log(`✅ ${testName}: Correctly rejected with ${expectedErrorCode}`);
+        }
+    }
+
+    // Test 1: Account substitution attack
+    console.log("🔒 Testing: Account substitution attack...");
+    const currentNonce1 = await syncNonceFromChain();
+    const tssAccount1: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId1 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender1 = Buffer.alloc(20, 0x33);
+
+    const securityCounterIx = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const correctAccounts = instructionToPayloadFields({
+        instruction: securityCounterIx,
+        instructionId: 5,
+        chainId: tssAccount1.chainId,
+        nonce: currentNonce1,
+        amount: BigInt(0),
+        txId: securityTxId1,
+        sender: securitySender1,
+    }).accounts;
+
+    const securitySig1 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: currentNonce1,
+        amount: BigInt(0),
+        chainId: tssAccount1.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId1,
+            counterProgram.programId,
+            securitySender1,
+            correctAccounts,
+            securityCounterIx.data
+        ),
+    });
+
+    // ATTACK: Substitute account
+    const attackerAccount = anchor.web3.Keypair.generate().publicKey;
+    const substitutedRemaining = [
+        { pubkey: attackerAccount, isWritable: true, isSigner: false }, // Wrong account!
+        { pubkey: admin, isWritable: false, isSigner: false },
+    ];
+
+    await expectExecuteRevertDevnet(
+        "Account substitution",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId1),
+                    Array.from(securitySender1),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender1),
+                    correctAccounts.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx.data),
+                    securitySig1.signature,
+                    securitySig1.recoveryId,
+                    securitySig1.messageHash,
+                    securitySig1.nonce,
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId1),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId1),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(substitutedRemaining)
+                .rpc();
+        },
+        "AccountPubkeyMismatch"
+    );
+
+    // Test 2: Invalid signature
+    console.log("🔒 Testing: Invalid signature...");
+    const currentNonce2 = await syncNonceFromChain();
+    const tssAccount2: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId2 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender2 = Buffer.alloc(20, 0x44);
+
+    const securityCounterIx2 = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const securityAccounts2 = instructionToPayloadFields({
+        instruction: securityCounterIx2,
+        instructionId: 5,
+        chainId: tssAccount2.chainId,
+        nonce: currentNonce2,
+        amount: BigInt(0),
+        txId: securityTxId2,
+        sender: securitySender2,
+    }).accounts;
+
+    const securitySig2 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: currentNonce2,
+        amount: BigInt(0),
+        chainId: tssAccount2.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId2,
+            counterProgram.programId,
+            securitySender2,
+            securityAccounts2,
+            securityCounterIx2.data
+        ),
+    });
+
+    // ATTACK: Corrupt signature
+    const corruptedSig = Array.from(securitySig2.signature);
+    corruptedSig[0] ^= 0xFF;
+
+    await expectExecuteRevertDevnet(
+        "Invalid signature",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId2),
+                    Array.from(securitySender2),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender2),
+                    securityAccounts2.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx2.data),
+                    corruptedSig,
+                    securitySig2.recoveryId,
+                    securitySig2.messageHash,
+                    securitySig2.nonce,
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId2),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId2),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(securityAccounts2.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                    isSigner: false,
+                })))
+                .rpc();
+        },
+        "TssAuthFailed"
+    );
+
+    // Test 3: Wrong nonce
+    console.log("🔒 Testing: Wrong nonce...");
+    const currentNonce3 = await syncNonceFromChain();
+    const tssAccount3: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId3 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender3 = Buffer.alloc(20, 0x55);
+
+    const securityCounterIx3 = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const wrongNonce = currentNonce3 + 10;
+    const securityAccounts3 = instructionToPayloadFields({
+        instruction: securityCounterIx3,
+        instructionId: 5,
+        chainId: tssAccount3.chainId,
+        nonce: wrongNonce, // Wrong nonce!
+        amount: BigInt(0),
+        txId: securityTxId3,
+        sender: securitySender3,
+    }).accounts;
+
+    const securitySig3 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: wrongNonce, // Sign with wrong nonce
+        amount: BigInt(0),
+        chainId: tssAccount3.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId3,
+            counterProgram.programId,
+            securitySender3,
+            securityAccounts3,
+            securityCounterIx3.data
+        ),
+    });
+
+    await expectExecuteRevertDevnet(
+        "Wrong nonce",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId3),
+                    Array.from(securitySender3),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender3),
+                    securityAccounts3.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx3.data),
+                    securitySig3.signature,
+                    securitySig3.recoveryId,
+                    securitySig3.messageHash,
+                    new anchor.BN(wrongNonce), // Wrong nonce!
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId3),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId3),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(securityAccounts3.map((a) => ({
+                    pubkey: a.pubkey,
+                    isWritable: a.isWritable,
+                    isSigner: false,
+                })))
+                .rpc();
+        },
+        "NonceMismatch"
+    );
+
+    // Test 4: Account count mismatch
+    console.log("🔒 Testing: Account count mismatch...");
+    const currentNonce4 = await syncNonceFromChain();
+    const tssAccount4: any = await (program.account as any).tssPda.fetch(tssPda);
+    const securityTxId4 = anchor.web3.Keypair.generate().publicKey.toBytes();
+    const securitySender4 = Buffer.alloc(20, 0x66);
+
+    const securityCounterIx4 = await counterProgram.methods
+        .increment(new anchor.BN(1))
+        .accounts({
+            counter: counterKeypair.publicKey,
+            authority: admin,
+        })
+        .instruction();
+
+    const securityAccounts4 = instructionToPayloadFields({
+        instruction: securityCounterIx4,
+        instructionId: 5,
+        chainId: tssAccount4.chainId,
+        nonce: currentNonce4,
+        amount: BigInt(0),
+        txId: securityTxId4,
+        sender: securitySender4,
+    }).accounts;
+
+    const securitySig4 = await signTssMessage({
+        instruction: TssInstruction.ExecuteSol,
+        nonce: currentNonce4,
+        amount: BigInt(0),
+        chainId: tssAccount4.chainId,
+        additional: buildExecuteAdditionalData(
+            securityTxId4,
+            counterProgram.programId,
+            securitySender4,
+            securityAccounts4,
+            securityCounterIx4.data
+        ),
+    });
+
+    // ATTACK: Pass fewer accounts
+    const fewerRemaining = [
+        { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+        // Missing admin/authority!
+    ];
+
+    await expectExecuteRevertDevnet(
+        "Account count mismatch",
+        async () => {
+            return await relayerProgram.methods
+                .executeUniversalTx(
+                    Array.from(securityTxId4),
+                    Array.from(securitySender4),
+                    new anchor.BN(0),
+                    counterProgram.programId,
+                    Array.from(securitySender4),
+                    securityAccounts4.map((a) => ({
+                        pubkey: a.pubkey,
+                        isWritable: a.isWritable,
+                    })),
+                    Buffer.from(securityCounterIx4.data),
+                    securitySig4.signature,
+                    securitySig4.recoveryId,
+                    securitySig4.messageHash,
+                    securitySig4.nonce,
+                )
+                .accounts({
+                    caller: relayer,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    stagingAuthority: getStagingAuthorityPda(securityTxId4),
+                    tssPda,
+                    executedTx: getExecutedTxPda(securityTxId4),
+                    destinationProgram: counterProgram.programId,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(fewerRemaining)
+                .rpc();
+        },
+        "AccountListLengthMismatch"
+    );
+
+    console.log("✅ All execute security validations passed on devnet!\n");
 
     // 14. Remove token from whitelist (moved after all tests)
     console.log("14. Testing remove whitelist...");
@@ -1617,17 +2151,34 @@ async function run() {
         console.log(`Current TSS nonce: ${currentNonce}`);
         console.log(`TSS chain ID: ${tssAccount.chainId}`);
 
+        // Generate tx_id for revert (use crypto for proper randomness)
+        // Keep generating until we get a unique tx_id (account doesn't exist)
+        let txIdRevert: number[];
+        let executedTxPdaRevert: PublicKey;
+        let attempts = 0;
+        do {
+            txIdRevert = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer());
+            [executedTxPdaRevert] = PublicKey.findProgramAddressSync(
+                [Buffer.from("executed_tx"), Buffer.from(txIdRevert)],
+                program.programId
+            );
+            attempts++;
+            if (attempts > 10) {
+                throw new Error("Could not generate unique tx_id for revert after 10 attempts");
+            }
+        } while (await connection.getAccountInfo(executedTxPdaRevert) !== null);
+
         // Create real message hash for revert withdraw (instruction_id = 3)
         const instructionId = 3;
         const amount = 1000000; // 0.001 SOL
         const recipientBytes = admin.toBytes();
+        const chainIdString = tssAccount.chainId; // String: Solana cluster pubkey
 
-        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + nonce + amount + recipient
-        // Use EXACT same format as working TSS withdrawal
+        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + nonce + amount + tx_id + recipient
+        // NO origin_caller for revert functions
         const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdBE = Buffer.from([instructionId]);
-        const chainIdBE = Buffer.alloc(8);
-        chainIdBE.writeBigUInt64BE(BigInt(1));
+        const chainIdBytes = Buffer.from(chainIdString, 'utf8'); // UTF-8 bytes of cluster pubkey string
         const nonceBE = Buffer.alloc(8);
         nonceBE.writeBigUInt64BE(BigInt(currentNonce));
         const amountBE = Buffer.alloc(8);
@@ -1637,10 +2188,11 @@ async function run() {
         const messageData = Buffer.concat([
             PREFIX,
             instructionIdBE,
-            chainIdBE,
+            chainIdBytes,          // UTF-8 bytes of chain_id string
             nonceBE,
             amountBE,
-            recipientBytesBE,
+            Buffer.from(txIdRevert), // tx_id (32 bytes)
+            recipientBytesBE,        // recipient (32 bytes)
         ]);
 
         // Hash with keccak (same as program)
@@ -1658,11 +2210,12 @@ async function run() {
         let recoveryId: number = sig[1]; // 0 or 1
 
         await program.methods
-            .revertWithdraw(
+            .revertUniversalTx(
+                txIdRevert,
                 new anchor.BN(amount),
                 {
                     fundRecipient: admin,
-                    revertCause: "test_revert",
+                    revertMsg: Buffer.from("test_revert"),
                 },
                 Array.from(signature),
                 recoveryId,
@@ -1672,10 +2225,13 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
-                tss: tssPda,
+                tssPda: tssPda,
                 recipient: admin,
+                executedTx: executedTxPdaRevert,
+                caller: admin, // The caller/relayer who pays for the transaction
                 systemProgram: SystemProgram.programId,
             })
+            .signers([adminKeypair])
             .rpc();
 
         console.log("✅ revertWithdraw function working with real TSS signature!");
