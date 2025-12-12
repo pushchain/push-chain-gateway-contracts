@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+
+/// @notice Interface for Universal Gateway V0 - EVM TESTNETS Only
 import {
     RevertInstructions,
     UniversalPayload,
@@ -21,7 +23,7 @@ interface IUniversalGatewayV0 {
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address revertRecipient,
         TX_TYPE txType,
         bytes signatureData
     );
@@ -35,7 +37,7 @@ interface IUniversalGatewayV0 {
 
     /// @notice         Revert universal transaction event
     event RevertUniversalTx(
-        bytes32 indexed txID,
+        bytes indexed txID,
         address indexed to,
         address indexed token,
         uint256 amount,
@@ -44,8 +46,8 @@ interface IUniversalGatewayV0 {
 
     /// @notice         Withdraw token event (native token is represented with token = address(0))
     event WithdrawToken(
-        bytes32 indexed txID,
-        address indexed originCaller,
+        bytes indexed txID,
+        address indexed ueaAddress,
         address indexed token,
         address to,
         uint256 amount
@@ -71,7 +73,7 @@ interface IUniversalGatewayV0 {
 
     function sendTxWithGas(
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -79,7 +81,7 @@ interface IUniversalGatewayV0 {
         address tokenIn,
         uint256 amountIn,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address revertRecipient,
         uint256 amountOutMinETH,
         uint256 deadline,
         bytes memory signatureData
@@ -93,14 +95,14 @@ interface IUniversalGatewayV0 {
         address recipient,
         address bridgeToken,
         uint256 bridgeAmount,
-        RevertInstructions calldata revertCFG
+        address revertRecipient
     ) external payable;
 
     function sendTxWithFunds(
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -112,7 +114,7 @@ interface IUniversalGatewayV0 {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address revertRecipient,
         bytes memory signatureData
     ) external;
 
@@ -120,7 +122,7 @@ interface IUniversalGatewayV0 {
         address bridgeToken,
         uint256 bridgeAmount,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address revertRecipient,
         bytes memory signatureData
     ) external payable;
 
@@ -132,7 +134,7 @@ interface IUniversalGatewayV0 {
         uint256 amountOutMinETH,
         uint256 deadline,
         UniversalPayload calldata payload,
-        RevertInstructions calldata revertCFG,
+        address revertRecipient,
         bytes memory signatureData
     ) external;
 
@@ -140,14 +142,14 @@ interface IUniversalGatewayV0 {
     //      REVERT & WITHDRAW
     // =========================
 
-    function revertUniversalTx(bytes32 txID, uint256 amount, RevertInstructions calldata revertCFG)
+    function revertUniversalTx(bytes calldata txID, uint256 amount, RevertInstructions calldata revertCFG)
         external
         payable;
 
-    function revertUniversalTxToken(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
+    function revertUniversalTxToken(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
         external;
 
-    function withdraw(bytes32 txID, address originCaller, address to, uint256 amount) external payable;
+    function withdraw(bytes calldata txID, address ueaAddress, address to, uint256 amount) external payable;
 
-    function withdrawTokens(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawTokens(bytes calldata txID, address ueaAddress, address token, address to, uint256 amount) external;
 }

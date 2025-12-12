@@ -10,7 +10,13 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 
 import { UniversalGateway } from "../src/UniversalGateway.sol";
 import { IUniversalGateway } from "../src/interfaces/IUniversalGateway.sol";
-import { TX_TYPE, RevertInstructions, UniversalPayload, VerificationType } from "../src/libraries/Types.sol";
+import {
+    TX_TYPE,
+    RevertInstructions,
+    UniversalPayload,
+    VerificationType,
+    UniversalTxRequest
+} from "../src/libraries/Types.sol";
 import { Errors } from "../src/libraries/Errors.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { MockWETH } from "./mocks/MockWETH.sol";
@@ -330,8 +336,8 @@ abstract contract BaseTest is Test {
         h = keccak256(abi.encode(p));
     }
 
-    function revertCfg(address fundRecipient_) internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: fundRecipient_, revertContext: bytes("") });    
+    function revertCfg(address revertRecipient_) internal pure returns (RevertInstructions memory) {
+        return RevertInstructions({ revertRecipient: revertRecipient_, revertMsg: bytes("") });
     }
 
     /// @notice Build a default payload for testing (commonly used across test files)
@@ -353,7 +359,84 @@ abstract contract BaseTest is Test {
     /// @notice Build default revert instructions for testing (commonly used across test files)
     /// @dev Returns revert instructions with a default recipient
     function buildDefaultRevertInstructions() internal pure returns (RevertInstructions memory) {
-        return RevertInstructions({ fundRecipient: address(0x456), revertContext: bytes("") });
+        return RevertInstructions({ revertRecipient: address(0x456), revertMsg: bytes("") });
+    }
+
+    // =========================
+    //      UNIVERSAL TX REQUEST BUILDERS
+    // =========================
+
+    /// @notice Build a UniversalTxRequest for GAS_AND_PAYLOAD transactions
+    /// @dev Creates a request that routes to TX_TYPE.GAS_AND_PAYLOAD
+    ///      Requirements: recipient=address(0), token=address(0), amount=0, non-empty payload, msg.value>0
+    /// @return UniversalTxRequest struct configured for GAS_AND_PAYLOAD route
+    function _buildGasTxRequest() internal view virtual returns (UniversalTxRequest memory) {
+        UniversalPayload memory payload = buildDefaultPayload();
+        return UniversalTxRequest({
+            recipient: address(0), // GAS routes always use address(0) for UEA credit
+            token: address(0), // Native token
+            amount: 0, // No funds (amount = 0) for GAS/GAS_AND_PAYLOAD routes
+            payload: abi.encode(payload), // Non-empty payload routes to GAS_AND_PAYLOAD
+            revertRecipient: address(0x456),
+            signatureData: bytes("")
+        });
+    }
+
+    /// @notice Build a UniversalTxRequest for FUNDS transactions
+    /// @param token Token address (address(0) for native, or ERC20 token address)
+    /// @param amount Amount of tokens to send
+    /// @return UniversalTxRequest struct configured for FUNDS route
+    function _buildFundsTxRequest(address token, uint256 amount)
+        internal
+        view
+        virtual
+        returns (UniversalTxRequest memory)
+    {
+        return _buildFundsTxRequest(token, amount, address(0x456));
+    }
+
+    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom revert recipient
+    /// @param token Token address (address(0) for native, or ERC20 token address)
+    /// @param amount Amount of tokens to send
+    /// @param revertRecipient Address to receive funds in case of revert
+    /// @return UniversalTxRequest struct configured for FUNDS route
+    function _buildFundsTxRequest(address token, uint256 amount, address revertRecipient)
+        internal
+        pure
+        virtual
+        returns (UniversalTxRequest memory)
+    {
+        return UniversalTxRequest({
+            recipient: address(0), // FUNDS requires recipient == address(0) for UEA credit
+            token: token,
+            amount: amount,
+            payload: bytes(""), // Empty payload for FUNDS route
+            revertRecipient: revertRecipient,
+            signatureData: bytes("")
+        });
+    }
+
+    /// @notice Build a UniversalTxRequest for FUNDS_AND_PAYLOAD transactions
+    /// @dev Creates a request that routes to TX_TYPE.FUNDS_AND_PAYLOAD
+    ///      Requirements: recipient=address(0), non-zero amount, non-empty payload
+    /// @param token Token address (address(0) for native, or ERC20 token address)
+    /// @param amount Amount of tokens to send
+    /// @param payload UniversalPayload to encode in the request
+    /// @return UniversalTxRequest struct configured for FUNDS_AND_PAYLOAD route
+    function _buildFundsAndPayloadTxRequest(address token, uint256 amount, UniversalPayload memory payload)
+        internal
+        view
+        virtual
+        returns (UniversalTxRequest memory)
+    {
+        return UniversalTxRequest({
+            recipient: address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0) for UEA credit
+            token: token,
+            amount: amount,
+            payload: abi.encode(payload), // Non-empty payload required for FUNDS_AND_PAYLOAD
+            revertRecipient: address(0x456),
+            signatureData: bytes("")
+        });
     }
 
     // =========================
@@ -456,7 +539,7 @@ abstract contract BaseTest is Test {
         internal
         pure
         virtual
-        returns (UniversalPayload memory, RevertInstructions memory)
+        returns (UniversalPayload memory, address)
     {
         UniversalPayload memory payload = UniversalPayload({
             to: to,
@@ -470,9 +553,7 @@ abstract contract BaseTest is Test {
             vType: VerificationType(0)
         });
 
-        RevertInstructions memory revertCfg_ = RevertInstructions({ fundRecipient: to, revertContext: bytes("") });
-
-        return (payload, revertCfg_);
+        return (payload, to);
     }
 
     /// @notice Fund user with mainnet tokens by impersonating whales

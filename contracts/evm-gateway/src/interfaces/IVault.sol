@@ -30,18 +30,17 @@ interface IVault {
 
     /// @notice             Vault withdraw event
     /// @param txID         Unique transaction identifier
-    /// @param originCaller Original caller/user on source chain
+    /// @param ueaAddress Original caller/user on source chain
     /// @param token        Token address
     /// @param to           Recipient address
     /// @param amount       Amount of token
-    event VaultWithdraw(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
+    event VaultWithdraw(bytes indexed txID, address indexed ueaAddress, address indexed token, address to, uint256 amount);
 
     /// @notice             Vault revert event
     /// @param token        Token address
-    /// @param to           Recipient address
-    /// @param amount       Amount of token
     /// @param revertInstruction Revert instructions configuration
-    event VaultRevert(address indexed token, address indexed to, uint256 amount, RevertInstructions revertInstruction);
+    /// @param amount       Amount of token
+    event VaultRevert(address indexed token, RevertInstructions revertInstruction, uint256 amount);
 
     // =========================
     //          WITHDRAW
@@ -50,33 +49,33 @@ interface IVault {
      * @notice              TSS-only withdraw to an external recipient on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
      * @param txID          unique transaction identifier on external chain
-     * @param originCaller  original caller/user on source chain ( Push Chain)
+     * @param ueaAddress  original caller/user on source chain ( Push Chain)
      * @param token         ERC20 token to transfer (must be supported by gateway) on external chain
      * @param to            recipient address on external chain
      * @param amount        amount of token to transfer on external chain
      */
-    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdraw(bytes calldata txID, address ueaAddress, address token, address to, uint256 amount) external;
 
     /**
-     * @notice              TSS-only withdraw and execute transaction via gateway on external chains
-     * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
-     * @param txID          unique transaction identifier on external chain     
-     * @param originCaller  original caller/user on source chain ( Push Chain)
-     * @param token         ERC20 token to transfer (must be supported by gateway) on external chain
-     * @param target        contract to call via gateway on external chain
-     * @param amount        token amount to transfer and use in execution on external chain
-     * @param data          calldata for the target execution on external chain
+     * @notice              Handles outbound execution via CEA (the only execution path)
+     * @dev                 Routes all outbound executions through user's CEA contract
+     * @param txID          Unique transaction identifier
+     * @param ueaAddress    UEA address on Push Chain
+     * @param token         Token address (address(0) for native)
+     * @param target        Target contract to execute on
+     * @param amount        Amount of token/native to execute with
+     * @param data          Calldata to execute on target
      */
-    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data) external;
+    function handleOutboundExecution(bytes calldata txID, address ueaAddress, address token, address target, uint256 amount, bytes calldata data) external payable;
 
     /**
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
      * @param txID          unique transaction identifier (for replay protection)
      * @param token         ERC20 token to refund (must be supported) on external chain
-     * @param to            recipient of the refund on external chain
      * @param amount        amount to refund on external chain
+     * @param revertInstruction Revert instructions containing fundRecipient
      */
-    function revertWithdraw(bytes32 txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction) external;
+    function revertWithdraw(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertInstruction) external;
 }
 

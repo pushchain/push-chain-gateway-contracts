@@ -149,10 +149,7 @@ contract MockPRC20 is IPRC20 {
     /// @param to       Recipient on Push EVM
     /// @param amount   Amount to mint
     function deposit(address to, uint256 amount) external returns (bool) {
-        require(
-            msg.sender == UNIVERSAL_CORE || msg.sender == UNIVERSAL_EXECUTOR_MODULE,
-            "MockPRC20: Invalid sender"
-        );
+        require(msg.sender == UNIVERSAL_CORE || msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: Invalid sender");
 
         _mint(to, amount);
 

@@ -14,6 +14,8 @@ import {Errors}                     from "./libraries/Errors.sol";
 import {IVault}                     from "./interfaces/IVault.sol";
 import {RevertInstructions}         from "./libraries/Types.sol";
 import {IUniversalGateway}          from "./interfaces/IUniversalGateway.sol";
+import {ICEAFactory}                from "./interfaces/ICEAFactory.sol";
+import {ICEA}                       from "./interfaces/ICEA.sol";
 
 import {IERC20}                     from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20}                  from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -49,11 +51,14 @@ contract Vault is
     /// @notice The current TSS address for Vault
     address public TSS_ADDRESS;
 
+    /// @notice The current CEAFactory address for Vault
+    ICEAFactory public CEAFactory;
+
     // =========================
     //         INITIALIZER
     // =========================
-    function initialize(address admin, address pauser, address tss, address gw) external initializer {
-        if (admin == address(0) || pauser == address(0) || tss == address(0) || gw == address(0)) {
+    function initialize(address admin, address pauser, address tss, address gw, address ceaFactory) external initializer {
+        if (admin == address(0) || pauser == address(0) || tss == address(0) || gw == address(0) || ceaFactory == address(0)) {
             revert Errors.ZeroAddress();
         }
 
@@ -68,8 +73,7 @@ contract Vault is
 
         gateway = IUniversalGateway(gw);
         TSS_ADDRESS = tss;
-        emit GatewayUpdated(address(0), gw);
-        emit TSSUpdated(address(0), tss);
+        CEAFactory = ICEAFactory(ceaFactory);
     }
 
     // =========================
@@ -126,7 +130,7 @@ contract Vault is
     //          WITHDRAW
     // =========================
     /// @inheritdoc IVault
-    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount)
+    function withdraw(bytes calldata txID, address ueaAddress, address token, address to, uint256 amount)
         external
         nonReentrant
         whenNotPaused
@@ -138,39 +142,56 @@ contract Vault is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.withdrawFunds(txID, originCaller, token, to, amount);
-        emit VaultWithdraw(txID, originCaller, token, to, amount);
+        gateway.withdrawTokens(txID, ueaAddress, token, to, amount);
+        emit VaultWithdraw(txID, ueaAddress, token, to, amount);
     }
 
-    /// @inheritdoc IVault
-    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
-        external
-        nonReentrant
-        whenNotPaused
-        onlyRole(TSS_ROLE)
-    {
-        if (token == address(0) || target == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
+    /// @notice             Handles outbound execution via CEA (the only execution path)
+    /// @dev                Routes all outbound executions through user's CEA contract
+    /// @param txID         Unique transaction identifier
+    /// @param ueaAddress   UEA address on Push Chain
+    /// @param token        Token address (address(0) for native)
+    /// @param target       Target contract to execute on
+    /// @param amount       Amount of token/native to execute with
+    /// @param data         Calldata to execute on target
+    function handleOutboundExecution(
+        bytes calldata txID,
+        address ueaAddress,
+        address token,
+        address target,
+        uint256 amount,
+        bytes calldata data
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        _validateExecutionParams(ueaAddress, token, target, amount);
         _enforceSupported(token);
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        // Transfer tokens to gateway
-        IERC20(token).safeTransfer(address(gateway), amount);
+        (address cea, bool isDeployed) = CEAFactory.getCEAForUEA(ueaAddress);
 
-        // Forward execution call to gateway
-        gateway.executeUniversalTx(txID, originCaller, token, target, amount, data);
-        
+        if (!isDeployed) {
+            cea = CEAFactory.deployCEA(ueaAddress);
+        }
+
+        if (token != address(0)) {
+            if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+            IERC20(token).safeTransfer(cea, amount);
+            ICEA(cea).executeUniversalTx(txID, ueaAddress, token, target, amount, data);
+        } else {
+            if (msg.value != amount) revert Errors.InvalidAmount();
+
+            ICEA(cea).executeUniversalTx{value: amount}(txID, ueaAddress, target, amount, data);
+        }
+
         emit VaultWithdrawAndExecute(token, target, amount, data);
     }
 
     /// @inheritdoc IVault
-    function revertWithdraw(bytes32 txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertWithdraw(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertInstruction)
         external
         nonReentrant
         whenNotPaused
         onlyRole(TSS_ROLE)
     {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
+        if (token == address(0) || revertInstruction.revertRecipient == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
         _enforceSupported(token);
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
@@ -178,7 +199,7 @@ contract Vault is
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(txID, token, amount, revertInstruction);
 
-        emit VaultRevert(token, to, amount, revertInstruction);
+        emit VaultRevert(token, revertInstruction, amount);
     }
 
     // =========================
@@ -187,5 +208,24 @@ contract Vault is
     function _enforceSupported(address token) internal view {
         // Single source of truth lives in UniversalGateway
         if (!gateway.isSupportedToken(token)) revert Errors.NotSupported();
+    }
+    function _validateExecutionParams(
+        address ueaAddress,
+        address token,
+        address target,
+        uint256 amount
+    ) internal view {
+        if (ueaAddress == address(0)) revert Errors.ZeroAddress();
+        if (target == address(0)) revert Errors.ZeroAddress();
+        // if (amount == 0) revert Errors.InvalidAmount();
+
+        // Invariant on (token, msg.value):
+        // - Native flow: token == address(0) → msg.value MUST equal amount
+        // - ERC20 flow:  token != address(0) → msg.value MUST be 0
+        if (token == address(0)) {
+            if (msg.value != amount) revert Errors.InvalidAmount();
+        } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+        }
     }
 }
