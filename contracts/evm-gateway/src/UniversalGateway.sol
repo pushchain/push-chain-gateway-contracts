@@ -37,6 +37,10 @@ pragma solidity 0.8.26;
 import { IWETH } from "./interfaces/IWETH.sol";
 import { Errors } from "./libraries/Errors.sol";
 import { IUniversalGateway } from "./interfaces/IUniversalGateway.sol";
+import { PC20Factory } from "./PC20Factory.sol";
+import { PC721Factory } from "./PC721Factory.sol";
+import { IPC20 } from "./interfaces/IPC20.sol";
+import { IPC721 } from "./interfaces/IPC721.sol";
 import { RevertInstructions, 
             UniversalPayload, 
                 TX_TYPE, 
@@ -103,6 +107,16 @@ contract UniversalGateway is
     
     /// @notice Map to track if a payload has been executed
     mapping(bytes32 => bool) public isExecuted;
+
+    /// @notice PC20 and PC721 Factories for wrapped tokens
+    PC20Factory public pc20Factory;
+    PC721Factory public pc721Factory;
+
+    // Magic Marker Constants
+    bytes4 private constant MAGIC_PCAS = 0x50434153; // "PCAS"
+    uint8 private constant META_VERSION = 1;
+    uint8 private constant META_KIND_PC20 = 1;
+    uint8 private constant META_KIND_PC721 = 2;
 
     /**
      * @notice                  Initialize the UniversalGateway contract
@@ -228,6 +242,20 @@ contract UniversalGateway is
         if (factory == address(0) || router == address(0)) revert Errors.ZeroAddress();
         uniV3Factory = IUniswapV3Factory(factory);
         uniV3Router = ISwapRouterV3(router);
+    }
+
+    /// @notice                 Set the PC20 factory address
+    /// @param factory          PC20Factory address
+    function setPC20Factory(address factory) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        if (factory == address(0)) revert Errors.ZeroAddress();
+        pc20Factory = PC20Factory(factory);
+    }
+
+    /// @notice                 Set the PC721 factory address
+    /// @param factory          PC721Factory address
+    function setPC721Factory(address factory) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        if (factory == address(0)) revert Errors.ZeroAddress();
+        pc721Factory = PC721Factory(factory);
     }
 
     /// @notice             Set limit thresholds for a batch of tokens (0 disables support for that token)
@@ -662,11 +690,18 @@ contract UniversalGateway is
 
         isExecuted[txID] = true;
 
+        // Check for magic marker and handle PC20/PC721 minting
+        bytes memory strippedPayload = payload;
+        if (payload.length >= 4) {
+            bytes4 magic = bytes4(payload[:4]);
+            if (magic == MAGIC_PCAS) {
+                strippedPayload = _handleMagicMarker(target, amount, payload);
+            }
+        }
         
+        _executeCall(target, strippedPayload, amount);
         
-        _executeCall(target, payload, amount);
-        
-        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
+        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, strippedPayload);
     }
 
     // =========================
@@ -975,6 +1010,130 @@ contract UniversalGateway is
         revert Errors.InvalidInput();
     }
 
+
+    /// @notice                 Handle magic marker in payload and mint PC20/PC721 tokens
+    /// @param target           Target address to receive minted tokens
+    /// @param amount           Amount of native tokens (used for PC20 minting amount)
+    /// @param payload          Full payload with magic marker
+    /// @return                 Stripped payload without magic marker
+    function _handleMagicMarker(address target, uint256 amount, bytes calldata payload) internal returns (bytes memory) {
+        // Decode based on the kind to handle different structures
+        bytes4 magic = bytes4(payload[:4]);
+        uint8 version = uint8(bytes1(payload[4:5]));
+        uint8 kind = uint8(bytes1(payload[5:6]));
+
+        // Verify magic marker
+        if (magic != MAGIC_PCAS || version != META_VERSION) {
+            revert Errors.InvalidInput();
+        }
+
+        if (kind == META_KIND_PC20) {
+            // PC20: abi.encode(magic, version, kind, token, name, symbol, decimals)
+            (
+                ,
+                ,
+                ,
+                address originToken,
+                string memory name,
+                string memory symbol,
+                uint8 decimals
+            ) = abi.decode(payload, (bytes4, uint8, uint8, address, string, string, uint8));
+            
+            if (address(pc20Factory) == address(0)) revert Errors.InvalidInput();
+            
+            // Check if PC20 already exists
+            address pc20Address = pc20Factory.getPC20(originToken);
+            
+            // Create only if it doesn't exist
+            if (pc20Address == address(0)) {
+                pc20Address = pc20Factory.createPC20(originToken, name, symbol, decimals);
+            }
+            
+            // Mint tokens to target using the amount parameter
+            IPC20(pc20Address).mint(target, amount);
+            
+        } else if (kind == META_KIND_PC721) {
+            // PC721: abi.encode(magic, version, kind, token, name, symbol, tokenId, tokenURI)
+            (
+                ,
+                ,
+                ,
+                address originToken,
+                string memory name,
+                string memory symbol,
+                uint256 tokenId,
+                string memory tokenURI
+            ) = abi.decode(payload, (bytes4, uint8, uint8, address, string, string, uint256, string));
+            
+            if (address(pc721Factory) == address(0)) revert Errors.InvalidInput();
+            
+            // Check if PC721 already exists
+            address pc721Address = pc721Factory.getPC721(originToken);
+            
+            // Create only if it doesn't exist
+            if (pc721Address == address(0)) {
+                pc721Address = pc721Factory.createPC721(originToken, name, symbol);
+            }
+            
+            // Mint NFT to target
+            IPC721(pc721Address).mint(target, tokenId);
+            
+        } else {
+            revert Errors.InvalidInput();
+        }
+
+        // Calculate the offset where the enriched payload ends
+        uint256 enrichedLength = _getEnrichedPayloadLength(payload, kind);
+        
+        // Return the remaining payload after the magic marker
+        if (payload.length > enrichedLength) {
+            return payload[enrichedLength:];
+        }
+        
+        return "";
+    }
+
+    /// @notice                 Calculate the length of the enriched payload
+    /// @param payload          Full payload with magic marker
+    /// @param kind             Kind of token (PC20 or PC721)
+    /// @return                 Length of enriched payload
+    function _getEnrichedPayloadLength(bytes calldata payload, uint8 kind) internal pure returns (uint256) {
+        if (kind == META_KIND_PC20) {
+            // PC20: abi.encode(magic, version, kind, token, name, symbol, decimals)
+            (
+                bytes4 magic,
+                uint8 version,
+                uint8 k,
+                address token,
+                string memory name,
+                string memory symbol,
+                uint8 decimals
+            ) = abi.decode(payload, (bytes4, uint8, uint8, address, string, string, uint8));
+            
+            // Re-encode to get the exact length
+            bytes memory enriched = abi.encode(magic, version, k, token, name, symbol, decimals);
+            return enriched.length;
+            
+        } else if (kind == META_KIND_PC721) {
+            // PC721: abi.encode(magic, version, kind, token, name, symbol, tokenId, tokenURI)
+            (
+                bytes4 magic,
+                uint8 version,
+                uint8 k,
+                address token,
+                string memory name,
+                string memory symbol,
+                uint256 tokenId,
+                string memory tokenURI
+            ) = abi.decode(payload, (bytes4, uint8, uint8, address, string, string, uint256, string));
+            
+            // Re-encode to get the exact length
+            bytes memory enriched = abi.encode(magic, version, k, token, name, symbol, tokenId, tokenURI);
+            return enriched.length;
+        }
+        
+        revert Errors.InvalidInput();
+    }
 
     /// @dev Reject plain ETH; we only accept ETH via explicit deposit functions or WETH unwrapping.
     receive() external payable {
