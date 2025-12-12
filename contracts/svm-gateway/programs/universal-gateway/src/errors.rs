@@ -105,4 +105,7 @@ pub enum GatewayError {
 
     #[msg("No writable recipient found in accounts")]
     NoWritableRecipient,
+
+    #[msg("Invalid instruction")]
+    InvalidInstruction,
 }

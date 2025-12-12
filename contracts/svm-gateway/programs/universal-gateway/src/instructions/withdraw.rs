@@ -45,6 +45,16 @@ pub struct Withdraw<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
+    /// Claimable fees - accumulates gas_fee for this relayer
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = 8 + ClaimableFees::LEN,
+        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
+        bump
+    )]
+    pub claimable_fees: Account<'info, ClaimableFees>,
+
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -57,6 +67,7 @@ pub fn withdraw(
     tx_id: [u8; 32],
     origin_caller: [u8; 20], // EVM address (20 bytes) from Push Chain
     amount: u64,
+    gas_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -77,8 +88,15 @@ pub fn withdraw(
     // instruction_id = 1 for SOL withdraw
     let instruction_id: u8 = 1;
     let recipient_bytes = ctx.accounts.recipient.key().to_bytes();
-    // Include txID and origin_caller (EVM address) in message hash for security and tracking
-    let additional: [&[u8]; 3] = [&tx_id[..], &origin_caller[..], &recipient_bytes[..]];
+    let mut gas_fee_buf = [0u8; 8];
+    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    // Include txID, origin_caller (EVM address), recipient, and gas_fee in message hash
+    let additional: [&[u8]; 4] = [
+        &tx_id[..],
+        &origin_caller[..],
+        &recipient_bytes[..],
+        &gas_fee_buf,
+    ];
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
@@ -109,6 +127,18 @@ pub fn withdraw(
         to: ctx.accounts.recipient.key(),
         amount,
     });
+
+    // Store gas_fee as claimable by relayer (accumulates across executions)
+    let claimable = &mut ctx.accounts.claimable_fees;
+    if claimable.accumulated == 0 {
+        // First time initialization
+        claimable.relayer = ctx.accounts.caller.key();
+        claimable.bump = ctx.bumps.claimable_fees;
+    }
+    claimable.accumulated = claimable
+        .accumulated
+        .checked_add(gas_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)
@@ -162,6 +192,16 @@ pub struct WithdrawFunds<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
+    /// Claimable fees - accumulates gas_fee for this relayer
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = 8 + ClaimableFees::LEN,
+        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
+        bump
+    )]
+    pub claimable_fees: Account<'info, ClaimableFees>,
+
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -175,6 +215,7 @@ pub fn withdraw_funds(
     tx_id: [u8; 32],
     origin_caller: [u8; 20], // EVM address (20 bytes) from Push Chain
     amount: u64,
+    gas_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -193,12 +234,15 @@ pub fn withdraw_funds(
     let mut mint_bytes = [0u8; 32];
     mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
     let recipient_bytes = ctx.accounts.recipient_token_account.key().to_bytes();
-    // Include txID, origin_caller (EVM address), mint AND recipient in message hash
-    let additional: [&[u8]; 4] = [
+    let mut gas_fee_buf = [0u8; 8];
+    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    // Include txID, origin_caller (EVM address), mint, recipient, and gas_fee in message hash
+    let additional: [&[u8]; 5] = [
         &tx_id[..],
         &origin_caller[..],
         &mint_bytes[..],
         &recipient_bytes[..],
+        &gas_fee_buf,
     ];
     validate_message(
         &mut ctx.accounts.tss_pda,
@@ -234,6 +278,18 @@ pub fn withdraw_funds(
         to: ctx.accounts.recipient_token_account.key(),
         amount,
     });
+
+    // Store gas_fee as claimable by relayer (accumulates across executions)
+    let claimable = &mut ctx.accounts.claimable_fees;
+    if claimable.accumulated == 0 {
+        // First time initialization
+        claimable.relayer = ctx.accounts.caller.key();
+        claimable.bump = ctx.bumps.claimable_fees;
+    }
+    claimable.accumulated = claimable
+        .accumulated
+        .checked_add(gas_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)
@@ -284,6 +340,16 @@ pub struct RevertUniversalTx<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
+    /// Claimable fees - accumulates gas_fee for this relayer
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = 8 + ClaimableFees::LEN,
+        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
+        bump
+    )]
+    pub claimable_fees: Account<'info, ClaimableFees>,
+
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -296,6 +362,7 @@ pub fn revert_universal_tx(
     tx_id: [u8; 32],
     amount: u64,
     revert_instruction: RevertInstructions,
+    gas_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -320,8 +387,10 @@ pub fn revert_universal_tx(
     // instruction_id = 3 for SOL revert withdraw (different from regular withdraw)
     let instruction_id: u8 = 3;
     let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
-    // Include txID and recipient in message hash (NO originCaller in revert functions per EVM)
-    let additional: [&[u8]; 2] = [&tx_id[..], &recipient_bytes[..]];
+    let mut gas_fee_buf = [0u8; 8];
+    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    // Include txID, recipient, and gas_fee in message hash (NO originCaller in revert functions per EVM)
+    let additional: [&[u8]; 3] = [&tx_id[..], &recipient_bytes[..], &gas_fee_buf];
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
@@ -357,6 +426,18 @@ pub fn revert_universal_tx(
         amount,
         revert_instruction: revert_instruction.clone(),
     });
+
+    // Store gas_fee as claimable by relayer (accumulates across executions)
+    let claimable = &mut ctx.accounts.claimable_fees;
+    if claimable.accumulated == 0 {
+        // First time initialization
+        claimable.relayer = ctx.accounts.caller.key();
+        claimable.bump = ctx.bumps.claimable_fees;
+    }
+    claimable.accumulated = claimable
+        .accumulated
+        .checked_add(gas_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)
@@ -411,6 +492,16 @@ pub struct RevertUniversalTxToken<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
+    /// Claimable fees - accumulates gas_fee for this relayer
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = 8 + ClaimableFees::LEN,
+        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
+        bump
+    )]
+    pub claimable_fees: Account<'info, ClaimableFees>,
+
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -424,6 +515,7 @@ pub fn revert_universal_tx_token(
     tx_id: [u8; 32],
     amount: u64,
     revert_instruction: RevertInstructions,
+    gas_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -455,8 +547,15 @@ pub fn revert_universal_tx_token(
     let mut mint_bytes = [0u8; 32];
     mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
     let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
-    // Include txID, mint AND recipient in message hash (NO originCaller in revert functions per EVM)
-    let additional: [&[u8]; 3] = [&tx_id[..], &mint_bytes[..], &recipient_bytes[..]];
+    let mut gas_fee_buf = [0u8; 8];
+    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    // Include txID, mint, recipient, and gas_fee in message hash (NO originCaller in revert functions per EVM)
+    let additional: [&[u8]; 4] = [
+        &tx_id[..],
+        &mint_bytes[..],
+        &recipient_bytes[..],
+        &gas_fee_buf,
+    ];
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
@@ -491,6 +590,18 @@ pub fn revert_universal_tx_token(
         amount,
         revert_instruction: revert_instruction.clone(),
     });
+
+    // Store gas_fee as claimable by relayer (accumulates across executions)
+    let claimable = &mut ctx.accounts.claimable_fees;
+    if claimable.accumulated == 0 {
+        // First time initialization
+        claimable.relayer = ctx.accounts.caller.key();
+        claimable.bump = ctx.bumps.claimable_fees;
+    }
+    claimable.accumulated = claimable
+        .accumulated
+        .checked_add(gas_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)

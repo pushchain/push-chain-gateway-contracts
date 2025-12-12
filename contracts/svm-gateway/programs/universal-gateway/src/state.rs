@@ -8,8 +8,8 @@ pub const TSS_SEED: &[u8] = b"tsspda";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
 pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
-pub const STAGING_SEED: &[u8] = b"staging";
-pub const STAGING_ATA_SEED: &[u8] = b"staging_ata";
+pub const CEA_SEED: &[u8] = b"push_identity";
+pub const CLAIMABLE_FEES_SEED: &[u8] = b"claimable_fees";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
 pub const FEED_ID: &str = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
@@ -167,6 +167,19 @@ impl ExecutedTx {
     pub const LEN: usize = 8;
 }
 
+/// Claimable fees per relayer - accumulates gas_fee across multiple executions
+/// Relayer can claim anytime without TSS signature (already approved via execute)
+#[account]
+pub struct ClaimableFees {
+    pub relayer: Pubkey,  // Relayer who executed txs and earned fees
+    pub accumulated: u64, // Total SOL claimable by this relayer
+    pub bump: u8,         // PDA bump
+}
+
+impl ClaimableFees {
+    pub const LEN: usize = 32 + 8 + 1; // Pubkey + u64 + u8
+}
+
 // ============================================
 //    EXECUTE ARBITRARY CALLS (NEW)
 // ============================================
@@ -198,9 +211,9 @@ pub struct ExecuteMessage {
 #[event]
 pub struct UniversalTxExecuted {
     pub tx_id: [u8; 32],
-    pub origin_caller: [u8; 20],
-    pub target: Pubkey, // Target program
-    pub token: Pubkey,  // Token (Pubkey::default() for SOL)
+    pub sender: [u8; 20], // EVM address (same as origin_caller in EVM)
+    pub target: Pubkey,   // Target program
+    pub token: Pubkey,    // Token (Pubkey::default() for SOL)
     pub amount: u64,
     pub payload: Vec<u8>, // ix_data
 }

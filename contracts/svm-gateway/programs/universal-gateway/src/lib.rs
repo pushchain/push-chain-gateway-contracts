@@ -221,6 +221,7 @@ pub mod universal_gateway {
         tx_id: [u8; 32],
         origin_caller: [u8; 20],
         amount: u64,
+        gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -231,6 +232,7 @@ pub mod universal_gateway {
             tx_id,
             origin_caller,
             amount,
+            gas_fee,
             signature,
             recovery_id,
             message_hash,
@@ -246,6 +248,7 @@ pub mod universal_gateway {
         tx_id: [u8; 32],
         origin_caller: [u8; 20],
         amount: u64,
+        gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -256,6 +259,7 @@ pub mod universal_gateway {
             tx_id,
             origin_caller,
             amount,
+            gas_fee,
             signature,
             recovery_id,
             message_hash,
@@ -273,6 +277,7 @@ pub mod universal_gateway {
         tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
+        gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -283,6 +288,7 @@ pub mod universal_gateway {
             tx_id,
             amount,
             revert_instruction,
+            gas_fee,
             signature,
             recovery_id,
             message_hash,
@@ -297,6 +303,7 @@ pub mod universal_gateway {
         tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
+        gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -307,6 +314,7 @@ pub mod universal_gateway {
             tx_id,
             amount,
             revert_instruction,
+            gas_fee,
             signature,
             recovery_id,
             message_hash,
@@ -319,21 +327,21 @@ pub mod universal_gateway {
     // =========================
     /// @notice TSS-verified execute arbitrary Solana instruction with SOL
     /// @param tx_id Transaction ID from Push chain event
-    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
-    /// @param amount Amount of SOL to transfer to staging authority
+    /// @param amount Amount of SOL to transfer to cea authority
     /// @param target_program Target Solana program to invoke
-    /// @param sender EVM sender address
+    /// @param sender EVM sender address (same as origin_caller in EVM)
     /// @param accounts Ordered list of accounts for target program
     /// @param ix_data Instruction data for target program
     pub fn execute_universal_tx(
         ctx: Context<ExecuteUniversalTx>,
         tx_id: [u8; 32],
-        origin_caller: [u8; 20],
         amount: u64,
         target_program: Pubkey,
         sender: [u8; 20],
         accounts: Vec<GatewayAccountMeta>,
         ix_data: Vec<u8>,
+        gas_fee: u64,
+        rent_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -342,12 +350,13 @@ pub mod universal_gateway {
         instructions::execute::execute_universal_tx(
             ctx,
             tx_id,
-            origin_caller,
             amount,
             target_program,
             sender,
             accounts,
             ix_data,
+            gas_fee,
+            rent_fee,
             signature,
             recovery_id,
             message_hash,
@@ -357,21 +366,21 @@ pub mod universal_gateway {
 
     /// @notice TSS-verified execute arbitrary Solana instruction with SPL tokens
     /// @param tx_id Transaction ID from Push chain event
-    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
-    /// @param amount Amount of SPL tokens to transfer to staging ATA
+    /// @param amount Amount of SPL tokens to transfer to cea ATA
     /// @param target_program Target Solana program to invoke
-    /// @param sender EVM sender address
+    /// @param sender EVM sender address (same as origin_caller in EVM)
     /// @param accounts Ordered list of accounts for target program
     /// @param ix_data Instruction data for target program
     pub fn execute_universal_tx_token(
         ctx: Context<ExecuteUniversalTxToken>,
         tx_id: [u8; 32],
-        origin_caller: [u8; 20],
         amount: u64,
         target_program: Pubkey,
         sender: [u8; 20],
         accounts: Vec<GatewayAccountMeta>,
         ix_data: Vec<u8>,
+        gas_fee: u64,
+        rent_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -380,17 +389,23 @@ pub mod universal_gateway {
         instructions::execute::execute_universal_tx_token(
             ctx,
             tx_id,
-            origin_caller,
             amount,
             target_program,
             sender,
             accounts,
             ix_data,
+            gas_fee,
+            rent_fee,
             signature,
             recovery_id,
             message_hash,
             nonce,
         )
+    }
+
+    /// Claim accumulated gas fees (relayer only)
+    pub fn claim_fees(ctx: Context<ClaimFees>) -> Result<()> {
+        instructions::execute::claim_fees(ctx)
     }
 
     // =========================
@@ -445,8 +460,6 @@ pub use state::{
     CONFIG_SEED,
     EXECUTED_TX_SEED,
     FEED_ID,
-    STAGING_ATA_SEED,
-    STAGING_SEED,
     VAULT_SEED,
     WHITELIST_SEED,
 };

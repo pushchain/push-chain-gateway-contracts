@@ -326,7 +326,7 @@ pub fn get_token_rate_limit_optional<'info>(
 
 /// Validate remaining_accounts match signed accounts.
 /// CRITICAL: No account in remaining_accounts can have is_signer == true.
-/// Only gateway PDAs (vault, staging_authority) become signers via invoke_signed.
+/// Only gateway PDAs (vault, cea_authority) become signers via invoke_signed.
 pub fn validate_remaining_accounts(
     signed_accounts: &[GatewayAccountMeta],
     remaining: &[AccountInfo],
@@ -357,7 +357,7 @@ pub fn validate_remaining_accounts(
         }
 
         // CRITICAL: No outer signer allowed in target account list
-        // staging_authority becomes signer only via invoke_signed, not here
+        // cea_authority becomes signer only via invoke_signed, not here
         require!(!actual.is_signer, GatewayError::UnexpectedOuterSigner);
     }
 

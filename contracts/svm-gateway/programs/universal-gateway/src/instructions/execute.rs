@@ -1,12 +1,14 @@
 use crate::errors::GatewayError;
 use crate::instructions::tss::validate_message;
 use crate::state::{
-    Config, ExecutedTx, GatewayAccountMeta, TssPda, UniversalTxExecuted, EXECUTED_TX_SEED,
-    STAGING_SEED, TSS_SEED, VAULT_SEED,
+    ClaimableFees, Config, ExecutedTx, GatewayAccountMeta, RevertInstructions, TssPda, TxType,
+    UniversalTx, UniversalTxExecuted, CEA_SEED, CLAIMABLE_FEES_SEED, EXECUTED_TX_SEED, TSS_SEED,
+    VAULT_SEED,
 };
 use crate::utils::validate_remaining_accounts;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
+    hash::hash,
     instruction::{AccountMeta as SolanaAccountMeta, Instruction},
     program::invoke_signed,
     program_pack::Pack,
@@ -23,7 +25,7 @@ use anchor_spl::{
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32])]
+#[instruction(tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
 pub struct ExecuteUniversalTx<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -42,14 +44,15 @@ pub struct ExecuteUniversalTx<'info> {
     )]
     pub vault_sol: SystemAccount<'info>,
 
-    /// Staging authority PDA - holds SOL for this specific tx
-    /// This PDA will receive SOL from vault and can sign for target program
+    /// CEA (Chain Executor Account) - persistent identity per Push Chain user
+    /// This PDA represents the user on Solana and can sign for target programs
+    /// Auto-created by Solana on first transfer, persists across transactions
     #[account(
         mut,
-        seeds = [STAGING_SEED, tx_id.as_ref()],
+        seeds = [CEA_SEED, sender.as_ref()],
         bump,
     )]
-    pub staging_authority: SystemAccount<'info>,
+    pub cea_authority: SystemAccount<'info>,
 
     #[account(
         mut,
@@ -67,6 +70,16 @@ pub struct ExecuteUniversalTx<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
+    /// Claimable fees - accumulates gas_fee for this relayer
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = 8 + ClaimableFees::LEN,
+        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
+        bump
+    )]
+    pub claimable_fees: Account<'info, ClaimableFees>,
+
     /// CHECK: Target program (validated against signed message)
     pub destination_program: UncheckedAccount<'info>,
 
@@ -76,12 +89,13 @@ pub struct ExecuteUniversalTx<'info> {
 pub fn execute_universal_tx(
     ctx: Context<ExecuteUniversalTx>,
     tx_id: [u8; 32],
-    origin_caller: [u8; 20],
     amount: u64,
     target_program: Pubkey,
     sender: [u8; 20],
     accounts: Vec<GatewayAccountMeta>,
     ix_data: Vec<u8>,
+    gas_fee: u64,
+    rent_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -106,13 +120,20 @@ pub fn execute_universal_tx(
     ix_data_buf.extend_from_slice(&ix_data); // Raw bytes
 
     // 3. Validate TSS signature and message hash using unified validate_message
-    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [tx_id, target_program, sender, accounts_buf, ix_data_buf]
-    let additional: [&[u8]; 5] = [
+    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
+    let mut gas_fee_buf = [0u8; 8];
+    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    let mut rent_fee_buf = [0u8; 8];
+    rent_fee_buf.copy_from_slice(&rent_fee.to_be_bytes());
+
+    let additional: [&[u8]; 7] = [
         &tx_id[..],
         &target_program.to_bytes(),
         &sender[..],
         &accounts_buf,
         &ix_data_buf,
+        &gas_fee_buf,
+        &rent_fee_buf,
     ];
     validate_message(
         &mut ctx.accounts.tss_pda,
@@ -143,36 +164,55 @@ pub fn execute_universal_tx(
     // For simplicity, we rely on account creation as replay protection
     // Note: Nonce is already updated in validate_message (atomic with verification)
 
-    // 7. Transfer SOL from vault_sol → staging_authority (only if amount > 0)
-    // If amount = 0, skip transfer - allows pure function calls without funds
-    if amount > 0 {
-        let vault_bump = config.vault_bump;
-        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+    // 7. Transfer rent_fee to CEA first (for target contract rent)
+    // This SOL is from gas_fee burned on Push Chain, allocated for target program rent
+    let vault_bump = config.vault_bump;
+    let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
 
-        let transfer_ix = system_instruction::transfer(
+    if rent_fee > 0 {
+        let rent_transfer_ix = system_instruction::transfer(
             &ctx.accounts.vault_sol.key(),
-            &ctx.accounts.staging_authority.key(),
-            amount,
+            &ctx.accounts.cea_authority.key(),
+            rent_fee,
         );
 
         invoke_signed(
-            &transfer_ix,
+            &rent_transfer_ix,
             &[
                 ctx.accounts.vault_sol.to_account_info(),
-                ctx.accounts.staging_authority.to_account_info(),
+                ctx.accounts.cea_authority.to_account_info(),
                 ctx.accounts.system_program.to_account_info(),
             ],
             &[vault_seeds],
         )?;
     }
 
-    // 8. Build CPI instruction for target program
-    // staging_authority must appear as signer inside CPI
-    let staging_key = ctx.accounts.staging_authority.key();
+    // 8. Transfer amount to CEA (main transfer)
+    if amount > 0 {
+        let amount_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault_sol.key(),
+            &ctx.accounts.cea_authority.key(),
+            amount,
+        );
+
+        invoke_signed(
+            &amount_transfer_ix,
+            &[
+                ctx.accounts.vault_sol.to_account_info(),
+                ctx.accounts.cea_authority.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
+    }
+
+    // 9. Build CPI instruction for target program
+    // cea_authority must appear as signer inside CPI
+    let cea_key = ctx.accounts.cea_authority.key();
     let cpi_metas: Vec<SolanaAccountMeta> = accounts
         .iter()
         .map(|a| {
-            let is_signer = a.pubkey == staging_key;
+            let is_signer = a.pubkey == cea_key;
             if a.is_writable {
                 SolanaAccountMeta::new(a.pubkey, is_signer)
             } else {
@@ -181,23 +221,51 @@ pub fn execute_universal_tx(
         })
         .collect();
 
+    // 9. Check if target is gateway itself (for CEA withdrawals)
+    let cea_bump = ctx.bumps.cea_authority;
+    let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
+
+    if target_program == *ctx.program_id {
+        // Gateway self-call: interpret ix_data as a normal gateway instruction
+        // and handle CEA withdrawal in-place (no CPI).
+        return handle_cea_withdrawal(&ctx, tx_id, sender, &ix_data, cea_seeds);
+    }
+
     let cpi_ix = Instruction {
         program_id: target_program,
         accounts: cpi_metas,
         data: ix_data.clone(),
     };
 
-    // 9. Invoke target program with staging_authority as signer
-    // staging_authority is always available (PDA) even when amount = 0, for signing if needed
-    let staging_bump = ctx.bumps.staging_authority;
-    let staging_seeds: &[&[u8]] = &[STAGING_SEED, tx_id.as_ref(), &[staging_bump]];
+    // 10. Invoke target program with cea_authority as signer
+    invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
 
-    invoke_signed(&cpi_ix, ctx.remaining_accounts, &[staging_seeds])?;
+    // Note: CEA balances persist (no auto-drain) - matches EVM CEA behavior
+    // Users can withdraw via withdrawFundsFromCea() when needed
 
-    // 10. Emit event
+    // 12. Store relayer fee (gas_fee - rent_fee) as claimable by relayer.
+    // rent_fee is a subset of gas_fee; vault should only ever pay TOTAL = gas_fee for fees.
+    // Enforce gas_fee >= rent_fee to avoid underflow / overpay.
+    require!(gas_fee >= rent_fee, GatewayError::InvalidAmount);
+    let relayer_fee = gas_fee
+        .checked_sub(rent_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
+
+    let claimable = &mut ctx.accounts.claimable_fees;
+    if claimable.accumulated == 0 {
+        // First time initialization
+        claimable.relayer = ctx.accounts.caller.key();
+        claimable.bump = ctx.bumps.claimable_fees;
+    }
+    claimable.accumulated = claimable
+        .accumulated
+        .checked_add(relayer_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
+
+    // 13. Emit execution event
     emit!(UniversalTxExecuted {
         tx_id,
-        origin_caller,
+        sender,
         target: target_program,
         token: Pubkey::default(), // SOL
         amount,
@@ -212,7 +280,7 @@ pub fn execute_universal_tx(
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32])]
+#[instruction(tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
 pub struct ExecuteUniversalTxToken<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -239,20 +307,21 @@ pub struct ExecuteUniversalTxToken<'info> {
     )]
     pub vault_ata: Account<'info, TokenAccount>,
 
-    /// Staging authority PDA for this tx
+    /// CEA (Chain Executor Account) - persistent identity per Push Chain user
+    /// This PDA represents the user on Solana and can sign for target programs
     #[account(
         mut,
-        seeds = [STAGING_SEED, tx_id.as_ref()],
+        seeds = [CEA_SEED, sender.as_ref()],
         bump,
     )]
     /// CHECK: PDA, no data account needed
-    pub staging_authority: SystemAccount<'info>,
+    pub cea_authority: SystemAccount<'info>,
 
-    /// Staging ATA for this tx+mint
-    /// Created per-tx, closed after if empty (rent reclaim)
-    /// CHECK: Will be created as ATA(staging_authority, mint)
+    /// CEA ATA for this user+mint
+    /// Created per-tx, closed after (rent reclaim)
+    /// CHECK: Will be created as ATA(cea_authority, mint)
     #[account(mut)]
-    pub staging_ata: UncheckedAccount<'info>,
+    pub cea_ata: UncheckedAccount<'info>,
 
     /// Token mint
     pub mint: Account<'info, Mint>,
@@ -273,8 +342,26 @@ pub struct ExecuteUniversalTxToken<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
+    /// Claimable fees - accumulates gas_fee for this relayer
+    #[account(
+        init_if_needed,
+        payer = caller,
+        space = 8 + ClaimableFees::LEN,
+        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
+        bump
+    )]
+    pub claimable_fees: Account<'info, ClaimableFees>,
+
     /// CHECK: Target program (validated against signed message)
     pub destination_program: UncheckedAccount<'info>,
+
+    /// Vault SOL PDA (needed for rent_fee transfer to CEA)
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault_sol: SystemAccount<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -285,12 +372,13 @@ pub struct ExecuteUniversalTxToken<'info> {
 pub fn execute_universal_tx_token(
     ctx: Context<ExecuteUniversalTxToken>,
     tx_id: [u8; 32],
-    origin_caller: [u8; 20],
     amount: u64,
     target_program: Pubkey,
     sender: [u8; 20],
     accounts: Vec<GatewayAccountMeta>,
     ix_data: Vec<u8>,
+    gas_fee: u64,
+    rent_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -315,13 +403,20 @@ pub fn execute_universal_tx_token(
     ix_data_buf.extend_from_slice(&ix_data); // Raw bytes
 
     // 3. Validate TSS signature and message hash using unified validate_message
-    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [tx_id, target_program, sender, accounts_buf, ix_data_buf]
-    let additional: [&[u8]; 5] = [
+    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
+    let mut gas_fee_buf = [0u8; 8];
+    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    let mut rent_fee_buf = [0u8; 8];
+    rent_fee_buf.copy_from_slice(&rent_fee.to_be_bytes());
+
+    let additional: [&[u8]; 7] = [
         &tx_id[..],
         &target_program.to_bytes(),
         &sender[..],
         &accounts_buf,
         &ix_data_buf,
+        &gas_fee_buf,
+        &rent_fee_buf,
     ];
     validate_message(
         &mut ctx.accounts.tss_pda,
@@ -349,63 +444,84 @@ pub fn execute_universal_tx_token(
 
     // Note: Nonce is already updated in validate_message (atomic with verification)
 
-    // 5. Handle token operations only if amount > 0
-    // If amount = 0, skip all token operations - allows pure function calls without funds
+    // 5. Transfer rent_fee (SOL) from vault to CEA (for target contract rent)
+    // This is always in SOL, regardless of token type.
+    // rent_fee is a subset of gas_fee; vault must never pay more than gas_fee for fees.
+    if rent_fee > 0 {
+        let vault_bump = config.vault_bump;
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+
+        let rent_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault_sol.key(),
+            &ctx.accounts.cea_authority.key(),
+            rent_fee,
+        );
+
+        invoke_signed(
+            &rent_transfer_ix,
+            &[
+                ctx.accounts.vault_sol.to_account_info(),
+                ctx.accounts.cea_authority.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
+    }
+
+    // 6. Create cea_ata if needed (required for any SPL operation, even if amount = 0)
+    // For example, unstake operations need CEA ATA to receive tokens even when amount = 0
+    if ctx.accounts.cea_ata.data_is_empty() {
+        // Manually create ATA using associated token program
+        // ATA address = findProgramAddress([authority, TOKEN_PROGRAM_ID, mint], ASSOCIATED_TOKEN_PROGRAM_ID)
+        let create_ata_ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: anchor_spl::associated_token::ID,
+            accounts: vec![
+                SolanaAccountMeta::new(ctx.accounts.caller.key(), true),
+                SolanaAccountMeta::new(ctx.accounts.cea_ata.key(), false),
+                SolanaAccountMeta::new_readonly(ctx.accounts.cea_authority.key(), false),
+                SolanaAccountMeta::new_readonly(ctx.accounts.mint.key(), false),
+                SolanaAccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
+                SolanaAccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
+                SolanaAccountMeta::new_readonly(ctx.accounts.rent.key(), false),
+                SolanaAccountMeta::new_readonly(ctx.accounts.associated_token_program.key(), false),
+            ],
+            data: vec![0], // Create instruction discriminator
+        };
+
+        anchor_lang::solana_program::program::invoke(
+            &create_ata_ix,
+            &[
+                ctx.accounts.caller.to_account_info(),
+                ctx.accounts.cea_ata.to_account_info(),
+                ctx.accounts.cea_authority.to_account_info(),
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.rent.to_account_info(),
+                ctx.accounts.associated_token_program.to_account_info(),
+            ],
+        )?;
+    }
+
+    // SECURITY: Ensure provided cea_ata really belongs to cea_authority + mint
+    {
+        let cea_account_data = ctx.accounts.cea_ata.try_borrow_data()?;
+        let cea_account = SplAccount::unpack(&cea_account_data)
+            .map_err(|_| error!(GatewayError::InvalidAccount))?;
+        require!(
+            cea_account.owner == ctx.accounts.cea_authority.key(),
+            GatewayError::InvalidOwner
+        );
+        require!(
+            cea_account.mint == ctx.accounts.mint.key(),
+            GatewayError::InvalidMint
+        );
+    }
+
+    // 7. Handle token operations only if amount > 0
+    // If amount = 0, skip token transfer - allows operations like unstake without vault transfer
     if amount > 0 {
-        // Create staging_ata if needed
-        // Check if staging_ata is uninitialized (data length == 0)
-        if ctx.accounts.staging_ata.data_is_empty() {
-            // Manually create ATA using system program
-            // ATA address = findProgramAddress([authority, TOKEN_PROGRAM_ID, mint], ASSOCIATED_TOKEN_PROGRAM_ID)
-            let create_ata_ix = anchor_lang::solana_program::instruction::Instruction {
-                program_id: anchor_spl::associated_token::ID,
-                accounts: vec![
-                    SolanaAccountMeta::new(ctx.accounts.caller.key(), true),
-                    SolanaAccountMeta::new(ctx.accounts.staging_ata.key(), false),
-                    SolanaAccountMeta::new_readonly(ctx.accounts.staging_authority.key(), false),
-                    SolanaAccountMeta::new_readonly(ctx.accounts.mint.key(), false),
-                    SolanaAccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
-                    SolanaAccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
-                    SolanaAccountMeta::new_readonly(ctx.accounts.rent.key(), false),
-                    SolanaAccountMeta::new_readonly(
-                        ctx.accounts.associated_token_program.key(),
-                        false,
-                    ),
-                ],
-                data: vec![0], // Create instruction discriminator
-            };
-
-            anchor_lang::solana_program::program::invoke(
-                &create_ata_ix,
-                &[
-                    ctx.accounts.caller.to_account_info(),
-                    ctx.accounts.staging_ata.to_account_info(),
-                    ctx.accounts.staging_authority.to_account_info(),
-                    ctx.accounts.mint.to_account_info(),
-                    ctx.accounts.system_program.to_account_info(),
-                    ctx.accounts.token_program.to_account_info(),
-                    ctx.accounts.rent.to_account_info(),
-                    ctx.accounts.associated_token_program.to_account_info(),
-                ],
-            )?;
-        }
-
-        // SECURITY: Ensure provided staging_ata really belongs to staging_authority + mint
-        {
-            let staging_account_data = ctx.accounts.staging_ata.try_borrow_data()?;
-            let staging_account = SplAccount::unpack(&staging_account_data)
-                .map_err(|_| error!(GatewayError::InvalidAccount))?;
-            require!(
-                staging_account.owner == ctx.accounts.staging_authority.key(),
-                GatewayError::InvalidOwner
-            );
-            require!(
-                staging_account.mint == ctx.accounts.mint.key(),
-                GatewayError::InvalidMint
-            );
-        }
-
-        // Transfer tokens from vault_ata → staging_ata
+        // Transfer tokens from vault_ata → cea_ata
         let vault_bump = config.vault_bump;
         let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
 
@@ -414,7 +530,7 @@ pub fn execute_universal_tx_token(
                 ctx.accounts.token_program.to_account_info(),
                 token::Transfer {
                     from: ctx.accounts.vault_ata.to_account_info(),
-                    to: ctx.accounts.staging_ata.to_account_info(),
+                    to: ctx.accounts.cea_ata.to_account_info(),
                     authority: ctx.accounts.vault_authority.to_account_info(),
                 },
                 &[vault_seeds],
@@ -423,12 +539,12 @@ pub fn execute_universal_tx_token(
         )?;
     }
 
-    // 6. Build CPI instruction for target program
-    let staging_key = ctx.accounts.staging_authority.key();
+    // 8. Build CPI instruction for target program
+    let cea_key = ctx.accounts.cea_authority.key();
     let cpi_metas: Vec<SolanaAccountMeta> = accounts
         .iter()
         .map(|a| {
-            let is_signer = a.pubkey == staging_key;
+            let is_signer = a.pubkey == cea_key;
             if a.is_writable {
                 SolanaAccountMeta::new(a.pubkey, is_signer)
             } else {
@@ -437,63 +553,316 @@ pub fn execute_universal_tx_token(
         })
         .collect();
 
+    // 8. Check if target is gateway itself (for CEA withdrawals)
+    let cea_bump = ctx.bumps.cea_authority;
+    let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
+
+    if target_program == *ctx.program_id {
+        // Gateway self-call: interpret ix_data as a normal gateway instruction
+        // and handle CEA withdrawal in-place (no CPI).
+        return handle_cea_withdrawal_token(&ctx, tx_id, sender, &ix_data, cea_seeds);
+    }
+
     let cpi_ix = Instruction {
         program_id: target_program,
         accounts: cpi_metas,
         data: ix_data.clone(),
     };
 
-    // 7. Invoke target program with staging_authority as signer
-    // staging_authority is always available (PDA) even when amount = 0, for signing if needed
-    let staging_bump = ctx.bumps.staging_authority;
-    let staging_seeds: &[&[u8]] = &[STAGING_SEED, tx_id.as_ref(), &[staging_bump]];
+    // 9. Invoke target program with cea_authority as signer
+    invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
 
-    invoke_signed(&cpi_ix, ctx.remaining_accounts, &[staging_seeds])?;
+    // Note: CEA ATA and SOL balances persist (no auto-drain, no closing) - matches EVM CEA behavior
+    // Users can withdraw via withdrawFundsFromCea() when needed
 
-    // 8. Return remaining tokens (if any) to vault and close staging_ata (rent reclaim)
-    // Only needed if we created staging_ata (amount > 0)
-    if amount > 0 {
-        let staging_ata_data = ctx.accounts.staging_ata.try_borrow_data()?;
-        let mut staging_slice: &[u8] = &staging_ata_data;
-        let staging_ata_account = TokenAccount::try_deserialize(&mut staging_slice)?;
-        let remaining = staging_ata_account.amount;
-        drop(staging_ata_data); // Release borrow before CPI
+    // 12. Store relayer fee (gas_fee - rent_fee) as claimable by relayer (accumulates across executions)
+    require!(gas_fee >= rent_fee, GatewayError::InvalidAmount);
+    let relayer_fee = gas_fee
+        .checked_sub(rent_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
 
-        if remaining > 0 {
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    token::Transfer {
-                        from: ctx.accounts.staging_ata.to_account_info(),
-                        to: ctx.accounts.vault_ata.to_account_info(),
-                        authority: ctx.accounts.staging_authority.to_account_info(),
-                    },
-                    &[staging_seeds],
-                ),
-                remaining,
-            )?;
-        }
-
-        token::close_account(CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            CloseAccount {
-                account: ctx.accounts.staging_ata.to_account_info(),
-                destination: ctx.accounts.caller.to_account_info(), // Rent back to caller
-                authority: ctx.accounts.staging_authority.to_account_info(),
-            },
-            &[staging_seeds],
-        ))?;
+    let claimable = &mut ctx.accounts.claimable_fees;
+    if claimable.accumulated == 0 {
+        // First time initialization
+        claimable.relayer = ctx.accounts.caller.key();
+        claimable.bump = ctx.bumps.claimable_fees;
     }
+    claimable.accumulated = claimable
+        .accumulated
+        .checked_add(relayer_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
 
-    // 9. Emit event
+    // 13. Emit execution event
     emit!(UniversalTxExecuted {
         tx_id,
-        origin_caller,
+        sender,
         target: target_program,
         token: ctx.accounts.mint.key(),
         amount,
         payload: ix_data,
     });
+
+    Ok(())
+}
+
+// ============================================
+//    CEA WITHDRAWAL HANDLERS
+// ============================================
+
+/// Args for CEA withdrawal when target_program == gateway itself.
+/// Layout: [8-byte discriminator][borsh(WithdrawFromCeaArgs)].
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct WithdrawFromCeaArgs {
+    pub token: Pubkey, // Pubkey::default() for SOL; mint for SPL
+    pub amount: u64,   // 0 => withdraw full balance
+}
+
+/// Handle withdrawal from CEA (SOL) when target_program == gateway itself
+fn handle_cea_withdrawal(
+    ctx: &Context<ExecuteUniversalTx>,
+    tx_id: [u8; 32],
+    sender: [u8; 20],
+    ix_data: &[u8],
+    cea_seeds: &[&[u8]],
+) -> Result<()> {
+    // ix_data must be at least 8 bytes for the Anchor-style discriminator
+    require!(ix_data.len() >= 8, GatewayError::InvalidInput);
+
+    // First 8 bytes = discriminator for "global:withdraw_from_cea"
+    let discr = &ix_data[..8];
+    let expected = hash(b"global:withdraw_from_cea").to_bytes();
+    require!(discr == &expected[..8], GatewayError::InvalidInput);
+
+    // Remaining bytes are Borsh-encoded args
+    let args = WithdrawFromCeaArgs::try_from_slice(&ix_data[8..])
+        .map_err(|_| error!(GatewayError::InvalidInput))?;
+
+    // Handle SOL withdrawal: token must be default (native)
+    if args.token == Pubkey::default() {
+        let cea_balance = ctx.accounts.cea_authority.lamports();
+        let withdraw_amount = if args.amount == 0 {
+            cea_balance
+        } else {
+            require!(
+                args.amount <= cea_balance,
+                GatewayError::InsufficientBalance
+            );
+            args.amount
+        };
+
+        if withdraw_amount > 0 {
+            // Transfer from CEA to vault
+            let config = &ctx.accounts.config;
+            let vault_bump = config.vault_bump;
+            let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+
+            let transfer_ix = system_instruction::transfer(
+                &ctx.accounts.cea_authority.key(),
+                &ctx.accounts.vault_sol.key(),
+                withdraw_amount,
+            );
+
+            invoke_signed(
+                &transfer_ix,
+                &[
+                    ctx.accounts.cea_authority.to_account_info(),
+                    ctx.accounts.vault_sol.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+                &[cea_seeds],
+            )?;
+
+            // Emit FUNDS event to unlock funds on Push Chain
+            emit!(UniversalTx {
+                sender: ctx.accounts.cea_authority.key(),
+                recipient: sender,
+                token: Pubkey::default(),
+                amount: withdraw_amount,
+                payload: vec![],
+                revert_instruction: RevertInstructions {
+                    fund_recipient: ctx.accounts.cea_authority.key(),
+                    revert_msg: vec![],
+                },
+                tx_type: TxType::Funds,
+                signature_data: vec![],
+            });
+        }
+    } else {
+        // For SOL execute, SPL withdrawals are invalid in this path
+        return Err(error!(GatewayError::InvalidToken)); // SOL withdrawal only for execute_universal_tx
+    }
+
+    // Emit execution event
+    emit!(UniversalTxExecuted {
+        tx_id,
+        sender,
+        target: *ctx.program_id,
+        token: Pubkey::default(),
+        amount: 0, // Withdrawal doesn't have an amount in execute context
+        payload: vec![],
+    });
+
+    Ok(())
+}
+
+/// Handle withdrawal from CEA (SPL) when target_program == gateway itself
+fn handle_cea_withdrawal_token(
+    ctx: &Context<ExecuteUniversalTxToken>,
+    tx_id: [u8; 32],
+    sender: [u8; 20],
+    ix_data: &[u8],
+    cea_seeds: &[&[u8]],
+) -> Result<()> {
+    // ix_data must be at least 8 bytes for the Anchor-style discriminator
+    require!(ix_data.len() >= 8, GatewayError::InvalidInput);
+
+    // First 8 bytes = discriminator for "global:withdraw_from_cea"
+    let discr = &ix_data[..8];
+    let expected = hash(b"global:withdraw_from_cea").to_bytes();
+    require!(discr == &expected[..8], GatewayError::InvalidInput);
+
+    // Remaining bytes are Borsh-encoded args
+    let args = WithdrawFromCeaArgs::try_from_slice(&ix_data[8..])
+        .map_err(|_| error!(GatewayError::InvalidInput))?;
+
+    require!(
+        args.token == ctx.accounts.mint.key(),
+        GatewayError::InvalidMint
+    );
+
+    // Check CEA ATA balance
+    if ctx.accounts.cea_ata.data_is_empty() {
+        return Err(error!(GatewayError::InsufficientBalance));
+    }
+
+    let cea_ata_data = ctx.accounts.cea_ata.try_borrow_data()?;
+    let mut cea_slice: &[u8] = &cea_ata_data;
+    let cea_ata_account = TokenAccount::try_deserialize(&mut cea_slice)?;
+    let cea_balance = cea_ata_account.amount;
+    drop(cea_ata_data);
+
+    let withdraw_amount = if args.amount == 0 {
+        cea_balance
+    } else {
+        require!(
+            args.amount <= cea_balance,
+            GatewayError::InsufficientBalance
+        );
+        args.amount
+    };
+
+    if withdraw_amount > 0 {
+        // Transfer from CEA ATA to vault ATA
+        let config = &ctx.accounts.config;
+        let vault_bump = config.vault_bump;
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.cea_ata.to_account_info(),
+                    to: ctx.accounts.vault_ata.to_account_info(),
+                    authority: ctx.accounts.cea_authority.to_account_info(),
+                },
+                &[cea_seeds],
+            ),
+            withdraw_amount,
+        )?;
+
+        // Emit FUNDS event to unlock funds on Push Chain
+        emit!(UniversalTx {
+            sender: ctx.accounts.cea_authority.key(),
+            recipient: sender,
+            token: ctx.accounts.mint.key(),
+            amount: withdraw_amount,
+            payload: vec![],
+            revert_instruction: RevertInstructions {
+                fund_recipient: ctx.accounts.cea_authority.key(),
+                revert_msg: vec![],
+            },
+            tx_type: TxType::Funds,
+            signature_data: vec![],
+        });
+    }
+
+    // Emit execution event
+    emit!(UniversalTxExecuted {
+        tx_id,
+        sender,
+        target: *ctx.program_id,
+        token: ctx.accounts.mint.key(),
+        amount: 0, // Withdrawal doesn't have an amount in execute context
+        payload: vec![],
+    });
+
+    Ok(())
+}
+
+// ============================================
+//    CLAIM FEES INSTRUCTION
+// ============================================
+
+/// Claim accumulated gas fees by relayer
+/// No TSS signature needed - fees were approved when execute was signed
+#[derive(Accounts)]
+pub struct ClaimFees<'info> {
+    #[account(mut)]
+    pub relayer: Signer<'info>,
+
+    /// Claimable fees account - must belong to this relayer
+    #[account(
+        mut,
+        seeds = [CLAIMABLE_FEES_SEED, relayer.key().as_ref()],
+        bump = claimable_fees.bump,
+        constraint = claimable_fees.relayer == relayer.key() @ GatewayError::Unauthorized,
+        constraint = claimable_fees.accumulated > 0 @ GatewayError::InvalidAmount,
+    )]
+    pub claimable_fees: Account<'info, ClaimableFees>,
+
+    /// Vault SOL PDA - source of fee payment
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault_sol: SystemAccount<'info>,
+
+    /// Config account to get vault bump
+    #[account(
+        seeds = [b"config"],
+        bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn claim_fees(ctx: Context<ClaimFees>) -> Result<()> {
+    let amount = ctx.accounts.claimable_fees.accumulated;
+
+    // Transfer SOL from vault to relayer
+    let vault_bump = ctx.accounts.config.vault_bump;
+    let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+
+    let transfer_ix = system_instruction::transfer(
+        &ctx.accounts.vault_sol.key(),
+        &ctx.accounts.relayer.key(),
+        amount,
+    );
+
+    invoke_signed(
+        &transfer_ix,
+        &[
+            ctx.accounts.vault_sol.to_account_info(),
+            ctx.accounts.relayer.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+        ],
+        &[vault_seeds],
+    )?;
+
+    // Reset accumulated to 0 (keep account open for future claims)
+    ctx.accounts.claimable_fees.accumulated = 0;
 
     Ok(())
 }
