@@ -25,4 +25,9 @@ interface IPC20 {
     function allowance(address owner, address spender) external view returns (uint256);
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
 
+    /**
+     * @notice special PC-20 functions
+     */
+    function mint(address to, uint256 amount) external;
+    function burn(address from, uint256 amount) external;
 }

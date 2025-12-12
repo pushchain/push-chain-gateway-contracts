@@ -18,7 +18,7 @@ import { IPRC20 } from "./interfaces/IPRC20.sol";
 import { IPC20 } from "./interfaces/IPC20.sol";
 import { IPC721 } from "./interfaces/IPC721.sol";
 import { IVaultPC } from "./interfaces/IVaultPC.sol";
-import { TX_TYPE } from "./libraries/Types.sol";
+import { TX_TYPE, RevertInstructions } from "./libraries/Types.sol";
 import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
 import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
 
@@ -114,7 +114,7 @@ contract UniversalGatewayPC is
       RevertInstructions calldata revertInstruction
   ) external payable whenNotPaused nonReentrant {
       if (target.length == 0) revert Errors.InvalidInput();
-      if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
+      if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
       if (token == address(0) && (amount != 0 || tokenId != 0)) revert Errors.ZeroAddress();
       if (token == address(0) && payload.length == 0) revert Errors.InvalidTxType();
 
@@ -204,7 +204,8 @@ contract UniversalGatewayPC is
               gasLimitUsed,
               payload,
               protocolFee,
-              revertInstruction
+              revertInstruction.revertRecipient,
+              payload.length > 0 ? TX_TYPE.FUNDS_AND_PAYLOAD : TX_TYPE.FUNDS
           );
       } else {
           // NONE, PC20, PC721 use native PC for fees
@@ -262,7 +263,8 @@ contract UniversalGatewayPC is
               gasLimitUsed,
               finalPayload,
               protocolFee,
-              revertInstruction
+              revertInstruction.revertRecipient,
+              payload.length > 0 ? TX_TYPE.FUNDS_AND_PAYLOAD : TX_TYPE.FUNDS
           );
       }
   }

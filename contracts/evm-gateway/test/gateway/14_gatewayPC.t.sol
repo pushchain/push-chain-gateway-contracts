@@ -9,7 +9,7 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 
 import { UniversalGatewayPC } from "../../src/UniversalGatewayPC.sol";
 import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.sol";
-import { TX_TYPE } from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions } from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { MockPRC20 } from "../mocks/MockPRC20.sol";
 import { MockPC20 } from "../mocks/MockPC20.sol";
@@ -78,6 +78,13 @@ contract UniversalGatewayPCTest is Test {
     // =========================
     function calculateExpectedGasFee(uint256 gasLimit) internal view returns (uint256) {
         return DEFAULT_GAS_PRICE * gasLimit + DEFAULT_PROTOCOL_FEE;
+    }
+
+    function buildRevertInstructions(address recipient) internal pure returns (RevertInstructions memory) {
+        return RevertInstructions({
+            revertRecipient: recipient,
+            revertMsg: bytes("")
+        });
     }
 
     function testInitializeSuccess() public {
@@ -312,6 +319,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 150_000;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Ensure user has enough balance
         uint256 userBalance = prc20Token.balanceOf(user1);
@@ -338,6 +346,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 150_000;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.recordLogs();
         vm.prank(user1);
@@ -352,15 +361,17 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 150_000;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
 
-        // Expect the UniversalTxWithdraw event with TX_TYPE.FUNDS
-        vm.expectEmit(true, true, false, true);
-        emit IUniversalGatewayPC.UniversalTxWithdraw(
+        // Expect the UniversalTxOutbound event with TX_TYPE.FUNDS
+        vm.expectEmit(false, true, true, true);
+        emit IUniversalGatewayPC.UniversalTxOutbound(
+            bytes32(0), // txId (will be computed)
             user1, // sender
-            SOURCE_CHAIN_ID, // chainId
             address(prc20Token), // token
+            SOURCE_CHAIN_ID, // chainNamespace
             to, // target
             amount, // amount
             address(gasToken), // gasToken
@@ -373,7 +384,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         vm.prank(user1);
-        gateway.withdraw(to, address(prc20Token), amount, gasLimit, revertRecipient);
+        gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
     }
 
     function testWithdrawSuccessWithDefaultGasLimit() public {
@@ -381,6 +392,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 0; // Use default gas limit
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -399,6 +411,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = bytes(""); // Empty target
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -410,6 +423,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
@@ -421,6 +435,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
@@ -432,6 +447,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = address(0); // Zero recipient
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
@@ -446,6 +462,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert();
@@ -457,6 +474,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Calculate required gas fee
         uint256 requiredGasFee = calculateExpectedGasFee(gasLimit);
@@ -483,6 +501,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Remove gas token allowance
         vm.prank(user1);
@@ -498,6 +517,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
@@ -514,6 +534,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -533,6 +554,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.recordLogs();
         vm.prank(user1);
@@ -548,15 +570,17 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
 
-        // Expect the UniversalTxWithdraw event with TX_TYPE.FUNDS_AND_PAYLOAD
-        vm.expectEmit(true, true, false, true);
-        emit IUniversalGatewayPC.UniversalTxWithdraw(
+        // Expect the UniversalTxOutbound event with TX_TYPE.FUNDS_AND_PAYLOAD
+        vm.expectEmit(false, true, true, true);
+        emit IUniversalGatewayPC.UniversalTxOutbound(
+            bytes32(0), // txId (will be computed)
             user1, // sender
-            SOURCE_CHAIN_ID, // chainId
             address(prc20Token), // token
+            SOURCE_CHAIN_ID, // chainNamespace
             target, // target
             amount, // amount
             address(gasToken), // gasToken
@@ -569,7 +593,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         vm.prank(user1);
-        gateway.withdrawAndExecute(target, address(prc20Token), amount, payload, gasLimit, revertRecipient);
+        gateway.sendUniversalTxOutbound(target, address(prc20Token), amount, 0, gasLimit, payload, "", revertCfg);
     }
 
     function testWithdrawAndExecuteSuccessWithDefaultGasLimit() public {
@@ -578,6 +602,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -597,6 +622,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = bytes(""); // Empty payload
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -625,6 +651,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -644,6 +671,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = bytes(""); // Empty target
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -656,6 +684,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.ZeroAddress.selector);
@@ -668,6 +697,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidAmount.selector);
@@ -680,6 +710,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = address(0); // Zero recipient
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert(Errors.InvalidRecipient.selector);
@@ -695,6 +726,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert();
@@ -707,6 +739,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Calculate required gas fee
         uint256 requiredGasFee = calculateExpectedGasFee(gasLimit);
@@ -734,6 +767,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Remove gas token allowance
         vm.prank(user1);
@@ -750,6 +784,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         vm.expectRevert("MockPRC20: insufficient balance");
@@ -761,6 +796,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 initialBalance = prc20Token.balanceOf(user1);
 
@@ -807,6 +843,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Create a contract that calls the gateway
         MockReentrantContract reentrantContract =
@@ -835,6 +872,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Create a contract that calls the gateway
         MockReentrantContract reentrantContract =
@@ -851,7 +889,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Call should succeed (reentrancy protection is for preventing recursive calls during execution)
         vm.prank(address(reentrantContract));
-        reentrantContract.attemptReentrancyWithExecute(target, amount, payload, gasLimit, revertRecipient);
+        reentrantContract.attemptReentrancyWithExecute(target, amount, payload, gasLimit, revertCfg);
 
         // Verify the withdrawal succeeded
         assertEq(prc20Token.balanceOf(address(reentrantContract)), 0);
@@ -862,6 +900,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = 1_000_000; // Large gas limit
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
@@ -885,6 +924,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Test specific gas limits individually
         _testGasFeeForLimit(amount, to, revertRecipient, 50_000);
@@ -897,6 +937,7 @@ contract UniversalGatewayPCTest is Test {
     function _testGasFeeForLimit(uint256 amount, bytes memory to, address revertRecipient, uint256 gasLimit) internal {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         vm.prank(user1);
         gateway.sendUniversalTxOutbound(to, address(prc20Token), amount, 0, gasLimit, "", "", revertCfg);
@@ -922,6 +963,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Create token with unconfigured chain ID (no gas token set for this chain)
         string memory unconfiguredChainId = "999"; // Chain ID not configured in universalCore
@@ -978,6 +1020,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Create token with a chain ID that has gas token but no gas price configured
         string memory chainWithTokenNoPrice = "777";
@@ -1027,6 +1070,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
         bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
+        RevertInstructions memory revertCfg = buildRevertInstructions(revertRecipient);
 
         // Create failing token
         MockPRC20 failingToken = _createFailingToken();
@@ -1389,7 +1433,7 @@ contract UniversalGatewayPCTest is Test {
 
         // 3) Find the UniversalTxOutbound event and extract txId from topics[1]
         bytes32 eventSig = keccak256(
-            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,address,uint8)"
         );
         
         bytes32 actualTxId;
@@ -1462,7 +1506,7 @@ contract UniversalGatewayPCTest is Test {
 
         // 3) Find the UniversalTxOutbound event and extract txId from topics[1]
         bytes32 eventSig = keccak256(
-            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,address,uint8)"
         );
         
         bytes32 actualTxId;
@@ -1523,7 +1567,7 @@ contract UniversalGatewayPCTest is Test {
 
         // 3) Find the UniversalTxOutbound event and extract txId from topics[1]
         bytes32 eventSig = keccak256(
-            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,address,uint8)"
         );
         
         bytes32 actualTxId;
@@ -1597,7 +1641,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Find the UniversalTxOutbound event
         bytes32 eventSig = keccak256(
-            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,address,uint8)"
         );
         
         bytes memory emittedPayload;
@@ -1615,8 +1659,9 @@ contract UniversalGatewayPCTest is Test {
                     ,  // skip gasLimit
                     emittedPayload,
                     ,  // skip protocolFee
-                       // skip revertInstruction
-                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                    ,  // skip revertRecipient
+                       // skip txType
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, address, TX_TYPE));
                 found = true;
                 break;
             }
@@ -1690,7 +1735,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Find the UniversalTxOutbound event
         bytes32 eventSig = keccak256(
-            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,address,uint8)"
         );
         
         bytes memory emittedPayload;
@@ -1708,8 +1753,9 @@ contract UniversalGatewayPCTest is Test {
                     ,  // skip gasLimit
                     emittedPayload,
                     ,  // skip protocolFee
-                       // skip revertInstruction
-                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                    ,  // skip revertRecipient
+                       // skip txType
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, address, TX_TYPE));
                 found = true;
                 break;
             }
@@ -1731,6 +1777,7 @@ contract UniversalGatewayPCTest is Test {
             address(pc721),
             pc721.name(),
             pc721.symbol(),
+            tokenId,  // tokenId
             pc721.tokenURI(tokenId)  // tokenURI for the specific NFT
         );
 
@@ -1782,7 +1829,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Find the UniversalTxOutbound event
         bytes32 eventSig = keccak256(
-            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,address,uint8)"
         );
         
         bytes memory emittedPayload;
@@ -1799,8 +1846,9 @@ contract UniversalGatewayPCTest is Test {
                     ,  // skip gasLimit
                     emittedPayload,
                     ,  // skip protocolFee
-                       // skip revertInstruction
-                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                    ,  // skip revertRecipient
+                       // skip txType
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, address, TX_TYPE));
                 found = true;
                 break;
             }
@@ -1866,7 +1914,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Find the UniversalTxOutbound event
         bytes32 eventSig = keccak256(
-            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,(address,bytes))"
+            "UniversalTxOutbound(bytes32,address,address,string,bytes,uint256,address,uint256,uint256,bytes,uint256,address,uint8)"
         );
         
         bytes memory emittedPayload;
@@ -1883,8 +1931,9 @@ contract UniversalGatewayPCTest is Test {
                     ,  // skip gasLimit
                     emittedPayload,
                     ,  // skip protocolFee
-                       // skip revertInstruction
-                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, RevertInstructions));
+                    ,  // skip revertRecipient
+                       // skip txType
+                ) = abi.decode(logs[i].data, (string, bytes, uint256, address, uint256, uint256, bytes, uint256, address, TX_TYPE));
                 found = true;
                 break;
             }
@@ -1904,6 +1953,7 @@ contract UniversalGatewayPCTest is Test {
             address(pc721),
             pc721.name(),
             pc721.symbol(),
+            tokenId,  // tokenId
             pc721.tokenURI(tokenId)  // tokenURI for the specific NFT
         );
 

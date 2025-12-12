@@ -684,7 +684,7 @@ contract UniversalGateway is
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txID] = true;
+        isExecuted[txIDHash] = true;
 
         // Check for magic marker and handle PC20/PC721 minting
         bytes memory strippedPayload = payload;
@@ -862,7 +862,7 @@ contract UniversalGateway is
     /// @dev Unified helper to execute a low-level call to target
     ///      Call can be executed with native value or ERC20 token. 
     ///      Reverts with Errors.ExecutionFailed() if the call fails (no bubbling).
-    function _executeCall(address target, bytes calldata payload, uint256 value) internal returns (bytes memory result) {
+    function _executeCall(address target, bytes memory payload, uint256 value) internal returns (bytes memory result) {
         (bool success, bytes memory ret) = target.call{value: value}(payload);
         if (!success) revert Errors.ExecutionFailed();
         return ret;

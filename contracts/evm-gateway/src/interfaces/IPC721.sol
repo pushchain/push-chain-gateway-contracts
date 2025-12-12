@@ -82,4 +82,10 @@ interface IPC721 {
         uint256 tokenId,
         bytes calldata data
     ) external;
+
+    /**
+     * @notice special PC-20 functions
+     */
+    function mint(address to, uint256 tokenId) external;
+    function burn(uint256 tokenId) external;
 }
