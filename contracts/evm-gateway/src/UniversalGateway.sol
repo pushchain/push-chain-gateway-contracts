@@ -649,6 +649,16 @@ contract UniversalGateway is
 
         isExecuted[txIDHash] = true;
 
+        // Check for magic marker and handle PC20/PC721 minting
+        // Execute but mint to gateway since the logic covers the transfer
+        bytes memory strippedPayload = payload;
+        if (payload.length >= 4) {
+            bytes4 magic = bytes4(payload[:4]);
+            if (magic == MAGIC_PCAS) {
+                strippedPayload = _handlePCAssetAllocation(amount, payload);
+            }
+        }
+        
         _resetApproval(token, target);             // reset approval to zero
         _safeApprove(token, target, amount);       // approve target to spend amount
         _executeCall(target, payload, 0);          // execute call with required amount
@@ -686,15 +696,6 @@ contract UniversalGateway is
 
         isExecuted[txIDHash] = true;
 
-        // Check for magic marker and handle PC20/PC721 minting
-        bytes memory strippedPayload = payload;
-        if (payload.length >= 4) {
-            bytes4 magic = bytes4(payload[:4]);
-            if (magic == MAGIC_PCAS) {
-                strippedPayload = _handleMagicMarker(target, amount, payload);
-            }
-        }
-        
         _executeCall(target, strippedPayload, amount);
         
         emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, strippedPayload);
@@ -1112,7 +1113,7 @@ contract UniversalGateway is
     /// @param amount           Amount of native tokens (used for PC20 minting amount)
     /// @param payload          Full payload with magic marker
     /// @return                 Stripped payload without magic marker
-    function _handleMagicMarker(address target, uint256 amount, bytes calldata payload) internal returns (bytes memory) {
+    function _handlePCAssetAllocation(uint256 amount, bytes calldata payload) internal returns (bytes memory) {
         // Decode based on the kind to handle different structures
         bytes4 magic = bytes4(payload[:4]);
         uint8 version = uint8(bytes1(payload[4:5]));
@@ -1146,7 +1147,7 @@ contract UniversalGateway is
             }
             
             // Mint tokens to target using the amount parameter
-            IPC20(pc20Address).mint(target, amount);
+            IPC20(pc20Address).mint(address(this), amount);
             
         } else if (kind == META_KIND_PC721) {
             // PC721: abi.encode(magic, version, kind, token, name, symbol, tokenId, tokenURI)
@@ -1172,7 +1173,7 @@ contract UniversalGateway is
             }
             
             // Mint NFT to target
-            IPC721(pc721Address).mint(target, tokenId);
+            IPC721(pc721Address).mint(address(this), tokenId);
             
         } else {
             revert Errors.InvalidInput();
