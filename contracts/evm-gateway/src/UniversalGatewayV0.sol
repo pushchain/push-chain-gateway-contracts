@@ -208,7 +208,6 @@ contract UniversalGatewayV0 is
      
     /// @notice Allows the admin to set the TSS address
     /// @param newTSS The new TSS address
-    /// Todo: TSS Implementation could be changed based on ESDCA vs BLS sign schemes.
     function setTSSAddress(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTSS == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
@@ -315,6 +314,8 @@ contract UniversalGatewayV0 is
     // =========================
     //  UG_2: UNIVERSAL TRANSACTION
     // =========================
+
+    /// @inheritdoc IUniversalGatewayV0
     function sendUniversalTx(UniversalTxRequest calldata req) external payable nonReentrant whenNotPaused {
         uint256 nativeValue = msg.value;
         TX_TYPE txType = _fetchTxType(req, nativeValue);
@@ -857,9 +858,14 @@ contract UniversalGatewayV0 is
     ///                     - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.
     ///                     - Resets the window when a new block is observed.
     /// @param amountWei    native amount (in wei) to be accounted against the current block's USD budget
-    function _checkBlockUSDCap(uint256 amountWei) public {
+    function _checkBlockUSDCap(uint256 amountWei) private {
         uint256 cap = BLOCK_USD_CAP;
-        if (cap == 0) return; // disabled
+        if (cap == 0) return;
+
+        if (block.number != _lastBlockNumber) {
+            _lastBlockNumber = block.number;
+            _consumedUSDinBlock = 0;
+        }
 
         uint256 usd1e18 = quoteEthAmountInUsd1e18(amountWei);
 
@@ -1096,10 +1102,6 @@ contract UniversalGatewayV0 is
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
-            // // Sanity Check : recipient is address(0) // @audit - TBD , for now all recipients allowed for FUNDS
-            // if (req.recipient != address(0)) {
-            //     revert Errors.InvalidRecipient();
-            // }
             _sendTxWithFunds(req, nativeValue, txType);
         }
         // Route 3: Invalid
