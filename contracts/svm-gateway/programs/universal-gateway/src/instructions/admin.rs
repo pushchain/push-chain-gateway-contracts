@@ -38,12 +38,6 @@ pub fn unpause(ctx: Context<PauseAction>) -> Result<()> {
     Ok(())
 }
 
-pub fn set_tss_address(ctx: Context<AdminAction>, new_tss: Pubkey) -> Result<()> {
-    require!(new_tss != Pubkey::default(), GatewayError::ZeroAddress);
-    ctx.accounts.config.tss_address = new_tss;
-    Ok(())
-}
-
 pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap_usd: u128, max_cap_usd: u128) -> Result<()> {
     require!(min_cap_usd <= max_cap_usd, GatewayError::InvalidCapRange);
     let config = &mut ctx.accounts.config;

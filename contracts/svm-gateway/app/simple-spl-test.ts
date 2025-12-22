@@ -18,6 +18,8 @@ const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS")
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
+const RATE_LIMIT_CONFIG_SEED = "rate_limit_config";
+const RATE_LIMIT_SEED = "rate_limit";
 
 // Load keypairs
 const adminKeypair = Keypair.fromSecretKey(
@@ -108,10 +110,33 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
         [Buffer.from(WHITELIST_SEED)],
         PROGRAM_ID
     );
+    const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(RATE_LIMIT_CONFIG_SEED)],
+        PROGRAM_ID
+    );
+
+    // Helper to get token rate limit PDA
+    const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
+        const [pda] = PublicKey.findProgramAddressSync(
+            [Buffer.from(RATE_LIMIT_SEED), tokenMint.toBuffer()],
+            PROGRAM_ID
+        );
+        return pda;
+    };
 
     const admin = adminKeypair.publicKey;
     const user = userKeypair.publicKey;
     const mint = new PublicKey(mintAddress);
+
+    // Get price feed from config (or use dummy if not set)
+    let priceFeed: PublicKey;
+    try {
+        const config = await program.account.config.fetch(configPda);
+        priceFeed = config.pythPriceFeed;
+    } catch {
+        // If config doesn't exist or price feed not set, use a dummy
+        priceFeed = Keypair.generate().publicKey;
+    }
 
     console.log(`Program ID: ${PROGRAM_ID.toString()}`);
     console.log(`Admin: ${admin.toString()}`);
@@ -165,17 +190,58 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     console.log(`📊 Vault SPL balance BEFORE: ${vaultTokenBalanceBefore.toString()} tokens`);
     console.log(`📤 Depositing ${amount} tokens to ${recipient.toString()}`);
 
-    // Perform the deposit
+    // Convert recipient to EVM address format (20 bytes)
+    const recipientEvm = Array.from(Buffer.alloc(20));
+    recipient.toBuffer().copy(Buffer.from(recipientEvm), 0, Math.min(32, recipient.toBuffer().length));
+
+    // Create UniversalTxRequest for FUNDS route
+    const fundsReq = {
+        recipient: recipientEvm,
+        token: mint,
+        amount: depositAmount,
+        payload: Buffer.from([]), // Empty payload for FUNDS route
+        revertInstruction: revertSettings,
+        signatureData: Buffer.from([]), // Empty for FUNDS route
+    };
+
+    // Get token rate limit PDA
+    const splTokenRateLimitPda = getTokenRateLimitPda(mint);
+
+    // Initialize token rate limit if needed (with very large threshold to effectively disable)
+    try {
+        await program.account.tokenRateLimit.fetch(splTokenRateLimitPda);
+    } catch {
+        // Not initialized, create it
+        const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
+        try {
+            await program.methods
+                .setTokenRateLimit(veryLargeThreshold)
+                .accounts({
+                    config: configPda,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: splTokenRateLimitPda,
+                    admin: admin,
+                    systemProgram: SystemProgram.programId,
+                })
+                .rpc();
+        } catch (error) {
+            // If it fails, continue anyway - rate limit might already be set or config might not exist
+            console.log(`⚠️  Could not initialize token rate limit (continuing anyway): ${error.message}`);
+        }
+    }
+
+    // Perform the deposit using sendUniversalTx
     const depositTx = await userProgram.methods
-        .sendFunds(recipient, mint, depositAmount, revertSettings)
+        .sendUniversalTx(fundsReq, new anchor.BN(0)) // No native SOL for SPL funds
         .accounts({
             config: configPda,
             vault: vaultPda,
             user: user,
-            tokenWhitelist: whitelistPda,
             userTokenAccount: userTokenAccount.address,
             gatewayTokenAccount: vaultAta,
-            bridgeToken: mint,
+            priceUpdate: priceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: splTokenRateLimitPda,
             tokenProgram: spl.TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
         })
