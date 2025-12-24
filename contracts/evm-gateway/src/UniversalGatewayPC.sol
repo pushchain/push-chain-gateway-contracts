@@ -16,7 +16,7 @@ pragma solidity 0.8.26;
 import { Errors } from "./libraries/Errors.sol";
 import { IPRC20 } from "./interfaces/IPRC20.sol";
 import { IVaultPC } from "./interfaces/IVaultPC.sol";
-import { TX_TYPE } from "./libraries/Types.sol";
+import { TX_TYPE, UniversalOutboundTxRequest } from "./libraries/Types.sol";
 import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
 import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
 
@@ -77,77 +77,66 @@ contract UniversalGatewayPC is
         _unpause();
     }
 
-    /// @inheritdoc IUniversalGatewayPC
-    function withdraw(
-        bytes calldata to,
-        address token,
-        uint256 amount,
-        uint256 gasLimit,
-        address revertRecipient
-    ) external whenNotPaused nonReentrant {
-        _validateCommon(to, token, amount, revertRecipient);
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) 
+        external 
+        whenNotPaused 
+        nonReentrant 
+    {
+        _validateCommon(req.target, req.token, req.amount, req.revertRecipient);
+
+        // Determine TX_TYPE based on user input
+        TX_TYPE txType = _fetchTxType(req);
 
         // Compute fees + collect from caller into the UEM fee sink
         (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
-            _calculateGasFeesWithLimit(token, gasLimit);
-        
-        _moveFees(msg.sender, gasToken, gasFee);
-        _burnPRC20(msg.sender, token, amount);
-
-        string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
-        emit UniversalTxWithdraw(
-            msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee, revertRecipient, TX_TYPE.FUNDS
-        );
-    }
-
-    /// @inheritdoc IUniversalGatewayPC
-    function withdrawAndExecute(
-        bytes calldata target,
-        address token,
-        uint256 amount,
-        bytes calldata payload,
-        uint256 gasLimit,
-        address revertRecipient
-    ) external whenNotPaused nonReentrant {
-        _validateCommon(target, token, amount, revertRecipient);
-
-        // Compute fees + collect from caller into the UEM fee sink
-        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
-            _calculateGasFeesWithLimit(token, gasLimit);
+            _calculateGasFeesWithLimit(req.token, req.gasLimit);
         _moveFees(msg.sender, gasToken, gasFee);
 
-        _burnPRC20(msg.sender, token, amount);
+        _burnPRC20(msg.sender, req.token, req.amount);
 
-        string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
-        emit UniversalTxWithdraw(
-            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, revertRecipient, TX_TYPE.FUNDS_AND_PAYLOAD
-        );
-    }
-
-    function sendUniversalTxOutbound(
-        bytes calldata target,
-        address token,
-        uint256 amount,
-        uint256 gasLimit,
-        bytes calldata payload,
-        address revertRecipient
-    ) external whenNotPaused nonReentrant {
-        _validateCommon(target, token, amount, revertRecipient);
-
-        // Compute fees + collect from caller into the UEM fee sink
-        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
-            _calculateGasFeesWithLimit(token, gasLimit);
-        _moveFees(msg.sender, gasToken, gasFee);
-
-        _burnPRC20(msg.sender, token, amount);
-
-        string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
-        emit UniversalTxWithdraw(
-            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, revertRecipient, TX_TYPE.FUNDS_AND_PAYLOAD
+        string memory chainId = IPRC20(req.token).SOURCE_CHAIN_ID();
+        emit UniversalTxOutbound(
+            msg.sender, chainId, req.token, req.target, req.amount, gasToken, gasFee, gasLimitUsed, req.payload, protocolFee, req.revertRecipient, txType
         );
     }
 
     // ========= Helpers =========
+
+    /**
+     * @notice                  Infers the TX_TYPE for an outbound universal request from Push Chain.
+     * @dev                     Determines TX_TYPE based on the presence of payload and amount:
+     *                          - If NO payload: TX_TYPE.FUNDS (funds-only withdrawal)
+     *                          - If payload AND amount > 0: TX_TYPE.FUNDS_AND_PAYLOAD (funds + execution)
+     *                          - If payload AND amount == 0: TX_TYPE.GAS_AND_PAYLOAD (execution-only)
+     * @param req               UniversalOutboundTxRequest struct
+     * @return inferred         The inferred TX_TYPE for routing
+     */
+    function _fetchTxType(UniversalOutboundTxRequest calldata req)
+        private
+        pure
+        returns (TX_TYPE inferred)
+    {
+        bool hasPayload = req.payload.length > 0;
+        bool hasFunds = req.amount > 0;
+
+        // Case 1: No payload → FUNDS (funds-only withdrawal)
+        if (!hasPayload) {
+            return TX_TYPE.FUNDS;
+        }
+
+        // Case 2: Payload + Funds → FUNDS_AND_PAYLOAD (funds + execution)
+        if (hasPayload && hasFunds) {
+            return TX_TYPE.FUNDS_AND_PAYLOAD;
+        }
+
+        // Case 3: Payload only (no funds) → GAS_AND_PAYLOAD (execution-only)
+        if (hasPayload && !hasFunds) {
+            return TX_TYPE.GAS_AND_PAYLOAD;
+        }
+
+        // Should never reach here due to the logic above, but added for safety
+        revert Errors.InvalidInput();
+    }
 
     /// @notice                 Validates the common parameters.
     /// @dev                    Uses UniversalCore to fetch gasToken, gasFee and protocolFee.
