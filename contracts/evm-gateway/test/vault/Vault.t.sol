@@ -37,15 +37,15 @@ contract VaultTest is Test {
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultWithdraw(
-        bytes indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount
+        bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount
     );
     event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
     event VaultRevert(address indexed token, RevertInstructions indexed revertInstruction, uint256 amount);
 
-    bytes txID = abi.encodePacked(uint256(1));
+    bytes32 txID = bytes32(uint256(1));
 
-    function _tx(uint256 id) internal pure returns (bytes memory) {
-        return abi.encodePacked(id);
+    function _tx(uint256 id) internal pure returns (bytes32) {
+        return bytes32(id);
     }
 
     function setUp() public {

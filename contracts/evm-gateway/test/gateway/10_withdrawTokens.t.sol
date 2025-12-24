@@ -44,7 +44,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testOnlyTSS_NonTSSShouldRevert() public {
         // Non-TSS user should not be able to call TSS functions
-        bytes memory txID = abi.encodePacked(bytes32(uint256(1)));
+        bytes32 txID = bytes32(uint256(1));
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(Errors.WithdrawFailed.selector));
         gateway.revertUniversalTx(txID, 1 ether, RevertInstructions(user1, ""));
@@ -52,7 +52,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testOnlyTSS_TSSShouldSucceed() public {
         // TSS should be able to call TSS functions
-        bytes memory txID = abi.encodePacked(bytes32(uint256(2)));
+        bytes32 txID = bytes32(uint256(2));
         uint256 initialBalance = user1.balance;
 
         vm.deal(tss, 1 ether);
@@ -67,7 +67,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     // =========================
 
     function testWithdrawFunds_NativeETH_Success() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(3)));
+        bytes32 txID = bytes32(uint256(3));
         uint256 withdrawAmount = 2 ether;
         uint256 initialRecipientBalance = user1.balance;
 
@@ -84,7 +84,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdrawFunds_ERC20Token_Success() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(4)));
+        bytes32 txID = bytes32(uint256(4));
         uint256 withdrawAmount = 100e6; // 100 USDC
         uint256 initialGatewayBalance = usdc.balanceOf(address(gateway));
         uint256 initialRecipientBalance = usdc.balanceOf(user1);
@@ -104,21 +104,21 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdrawFunds_InvalidRecipient_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(5)));
+        bytes32 txID = bytes32(uint256(5));
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
         gateway.revertUniversalTx(txID, 1 ether, RevertInstructions(address(0), ""));
     }
 
     function testWithdrawFunds_InvalidAmount_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(6)));
+        bytes32 txID = bytes32(uint256(6));
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         gateway.revertUniversalTx(txID, 0, RevertInstructions(user1, ""));
     }
 
     function testWithdrawFunds_InsufficientBalance_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(7)));
+        bytes32 txID = bytes32(uint256(7));
         uint256 amount = 1 ether;
         uint256 wrongValue = 0.5 ether;
 
@@ -129,7 +129,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdrawFunds_ERC20InsufficientBalance_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(8)));
+        bytes32 txID = bytes32(uint256(8));
         uint256 excessiveAmount = usdc.balanceOf(address(gateway)) + 1;
 
         vm.prank(tss);
@@ -142,7 +142,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     // =========================
 
     function testRevertWithdrawFunds_NativeETH_Success() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(9)));
+        bytes32 txID = bytes32(uint256(9));
         uint256 withdrawAmount = 1.5 ether;
         uint256 initialRecipientBalance = user1.balance;
 
@@ -161,7 +161,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_ERC20Token_Success() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(10)));
+        bytes32 txID = bytes32(uint256(10));
         uint256 withdrawAmount = 200e6; // 200 USDC
         uint256 initialGatewayBalance = usdc.balanceOf(address(gateway));
         uint256 initialRecipientBalance = usdc.balanceOf(user1);
@@ -181,7 +181,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_InvalidRecipient_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(11)));
+        bytes32 txID = bytes32(uint256(11));
         RevertInstructions memory revertCfg = revertCfg(address(0)); // Invalid user1
 
         vm.prank(tss);
@@ -190,7 +190,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_InvalidAmount_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(12)));
+        bytes32 txID = bytes32(uint256(12));
         RevertInstructions memory revertCfg = revertCfg(user1);
 
         vm.prank(tss);
@@ -199,7 +199,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_InsufficientBalance_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(13)));
+        bytes32 txID = bytes32(uint256(13));
         uint256 amount = 1 ether;
         uint256 wrongValue = 0.8 ether;
         RevertInstructions memory revertCfg = revertCfg(user1);
@@ -215,7 +215,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     // =========================
 
     function testWithdrawFunds_WhenPaused_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(14)));
+        bytes32 txID = bytes32(uint256(14));
         // Pause the contract
         vm.prank(admin);
         gateway.pause();
@@ -226,7 +226,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertWithdrawFunds_WhenPaused_Revert() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(15)));
+        bytes32 txID = bytes32(uint256(15));
         // Pause the contract
         vm.prank(admin);
         gateway.pause();
@@ -239,7 +239,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdrawFunds_ReentrancyProtection() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(16)));
+        bytes32 txID = bytes32(uint256(16));
         // This test ensures the nonReentrant modifier is working
         // We can't easily test reentrancy without a malicious contract,
         // but the modifier is there and will be covered by the test execution
@@ -260,14 +260,14 @@ contract GatewayTSSFunctionsTest is BaseTest {
         // Withdraw USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
         gateway.revertUniversalTxToken(
-            abi.encodePacked(bytes32(uint256(17))), address(usdc), usdcAmount, RevertInstructions(user1, "")
+            bytes32(uint256(17)), address(usdc), usdcAmount, RevertInstructions(user1, "")
         );
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
         // Withdraw TokenA (requires VAULT_ROLE)
         uint256 initialTokenABalance = tokenA.balanceOf(user1);
         gateway.revertUniversalTxToken(
-            abi.encodePacked(bytes32(uint256(18))), address(tokenA), tokenAAmount, RevertInstructions(user1, "")
+            bytes32(uint256(18)), address(tokenA), tokenAAmount, RevertInstructions(user1, "")
         );
         assertEq(tokenA.balanceOf(user1), initialTokenABalance + tokenAAmount);
 
@@ -276,7 +276,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.deal(tss, ethAmount);
         vm.prank(tss);
         gateway.revertUniversalTx{ value: ethAmount }(
-            abi.encodePacked(bytes32(uint256(19))), ethAmount, RevertInstructions(user1, "")
+            bytes32(uint256(19)), ethAmount, RevertInstructions(user1, "")
         );
         assertEq(user1.balance, initialEthBalance + ethAmount);
     }
@@ -290,14 +290,14 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Revert USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
-        gateway.revertUniversalTxToken(abi.encodePacked(bytes32(uint256(20))), address(usdc), usdcAmount, revertCfg);
+        gateway.revertUniversalTxToken(bytes32(uint256(20)), address(usdc), usdcAmount, revertCfg);
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
         // Revert ETH (requires TSS_ROLE)
         uint256 initialEthBalance = user1.balance;
         vm.deal(tss, ethAmount);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: ethAmount }(abi.encodePacked(bytes32(uint256(21))), ethAmount, revertCfg);
+        gateway.revertUniversalTx{ value: ethAmount }(bytes32(uint256(21)), ethAmount, revertCfg);
         assertEq(user1.balance, initialEthBalance + ethAmount);
     }
 
@@ -306,7 +306,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     // =========================
 
     function testRevertUniversalTx_ReplayProtection_Native() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(22)));
+        bytes32 txID = bytes32(uint256(22));
         uint256 amount = 1 ether;
 
         // First call should succeed
@@ -322,7 +322,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testRevertUniversalTxToken_ReplayProtection() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(23)));
+        bytes32 txID = bytes32(uint256(23));
         uint256 amount = 100e6;
 
         // First call should succeed
@@ -338,7 +338,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     // =========================
 
     function testWithdraw_Native_Success() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(24)));
+        bytes32 txID = bytes32(uint256(24));
         uint256 amount = 5 ether;
         address originCaller = user2;
 
@@ -355,7 +355,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_OnlyTSS() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(25)));
+        bytes32 txID = bytes32(uint256(25));
         uint256 amount = 1 ether;
 
         vm.deal(user1, amount);
@@ -365,7 +365,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_ReplayProtection() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(26)));
+        bytes32 txID = bytes32(uint256(26));
         uint256 amount = 2 ether;
 
         // First call should succeed
@@ -381,7 +381,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_ZeroRecipient_Reverts() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(27)));
+        bytes32 txID = bytes32(uint256(27));
         uint256 amount = 1 ether;
 
         vm.deal(tss, amount);
@@ -391,7 +391,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_ZeroOriginCaller_Reverts() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(28)));
+        bytes32 txID = bytes32(uint256(28));
         uint256 amount = 1 ether;
 
         vm.deal(tss, amount);
@@ -401,7 +401,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_ZeroAmount_Reverts() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(29)));
+        bytes32 txID = bytes32(uint256(29));
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
@@ -409,7 +409,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_AmountMismatch_Reverts() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(30)));
+        bytes32 txID = bytes32(uint256(30));
         uint256 amount = 1 ether;
         uint256 wrongValue = 0.5 ether;
 
@@ -420,7 +420,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_WhenPaused_Reverts() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(31)));
+        bytes32 txID = bytes32(uint256(31));
         uint256 amount = 1 ether;
 
         vm.prank(admin);
@@ -433,7 +433,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
     }
 
     function testWithdraw_Native_EmitsCorrectEvent() public {
-        bytes memory txID = abi.encodePacked(bytes32(uint256(32)));
+        bytes32 txID = bytes32(uint256(32));
         uint256 amount = 3 ether;
         address originCaller = user2;
         address recipient = user1;
@@ -454,11 +454,11 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.deal(tss, amount1);
         vm.prank(tss);
-        gateway.withdraw{ value: amount1 }(abi.encodePacked(bytes32(uint256(33))), user2, user1, amount1);
+        gateway.withdraw{ value: amount1 }(bytes32(uint256(33)), user2, user1, amount1);
 
         vm.deal(tss, amount2);
         vm.prank(tss);
-        gateway.withdraw{ value: amount2 }(abi.encodePacked(bytes32(uint256(34))), user2, user1, amount2);
+        gateway.withdraw{ value: amount2 }(bytes32(uint256(34)), user2, user1, amount2);
 
         assertEq(user1.balance, initialBalance + amount1 + amount2);
     }
