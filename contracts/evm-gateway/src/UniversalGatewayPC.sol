@@ -41,6 +41,9 @@ contract UniversalGatewayPC is
     /// @notice VaultPC on Push Chain (custody vault for fees collected from outbound flows).
     IVaultPC public VAULT_PC;
 
+    /// @notice Nonce for outbound transactions.
+    uint256 public nonce;
+
     /// @notice                 Initializes the contract.
     /// @param admin            address of the admin.
     /// @param pauser           address of the pauser.
@@ -95,8 +98,23 @@ contract UniversalGatewayPC is
         _burnPRC20(msg.sender, req.token, req.amount);
 
         string memory chainId = IPRC20(req.token).SOURCE_CHAIN_ID();
+
+        uint256 _nonce = nonce;
+        nonce = _nonce + 1;
+
+        bytes32 txID = keccak256(
+            abi.encode(
+                msg.sender,
+                req.token,
+                req.amount,
+                keccak256(req.payload),
+                chainId,
+               _nonce
+            )
+        );
+
         emit UniversalTxOutbound(
-            msg.sender, chainId, req.token, req.target, req.amount, gasToken, gasFee, gasLimitUsed, req.payload, protocolFee, req.revertRecipient, txType
+            txID, msg.sender, chainId, req.token, req.target, req.amount, gasToken, gasFee, gasLimitUsed, req.payload, protocolFee, req.revertRecipient, txType
         );
     }
 

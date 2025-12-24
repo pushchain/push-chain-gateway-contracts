@@ -23,6 +23,7 @@ interface IUniversalGatewayPC {
     /// @param payload          Optional payload for arbitrary call on origin chain (empty for funds-only) on external chain
     /// @param protocolFee      Flat protocol fee portion (as defined by PRC20), included inside gasFee on external chain
     event UniversalTxOutbound(
+        bytes32 indexed txID,
         address indexed sender,
         string chainId,
         address indexed token,
