@@ -126,7 +126,7 @@ contract Vault is
     //          WITHDRAW
     // =========================
     /// @inheritdoc IVault
-    function withdraw(bytes calldata txID, address originCaller, address token, address to, uint256 amount)
+    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount)
         external
         nonReentrant
         whenNotPaused
@@ -143,7 +143,7 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function withdrawAndExecute(bytes calldata txID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
+    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
         external
         nonReentrant
         whenNotPaused
@@ -164,7 +164,7 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function revertWithdraw(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertWithdraw(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertInstruction)
         external
         nonReentrant
         whenNotPaused
