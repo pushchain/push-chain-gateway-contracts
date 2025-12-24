@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-test_counter = "4mpHkerNsaJPp35fyT5bkoXxuEBczGq6HUKTtrzFcptx"
+test_counter = "9LfpvcY2CYcNWEc2ip2ZwwKivEALbF3knwimXrbLubT2"
 universal_gateway = "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp"
 # universal_gateway = "CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS"
 [registry]

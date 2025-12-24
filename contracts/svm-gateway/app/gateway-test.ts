@@ -24,8 +24,8 @@ import { assert } from "chai";
 import { instructionToPayloadFields, encodeExecutePayload, decodeExecutePayload } from "./execute-payload";
 import { signTssMessage, buildExecuteAdditionalData, TssInstruction } from "../tests/helpers/tss";
 
-const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
-const TEST_COUNTER_PROGRAM_ID = new PublicKey("BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L");
+const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+// TEST_COUNTER_PROGRAM_ID is now read from the IDL dynamically (see counterProgram below)
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const WHITELIST_SEED = "whitelist";
@@ -55,7 +55,7 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 
 anchor.setProvider(adminProvider);
 
-const COUNTER_KEYPAIR_PATH = "./counter-devnet-keypair.json";
+// Counter is now a PDA - no keypair needed
 
 function loadOrCreateKeypair(filepath: string): Keypair {
     if (fs.existsSync(filepath)) {
@@ -1553,20 +1553,39 @@ async function run() {
 
     // 13.5 Execute tests via payload encode/decode pipeline
     console.log("\n=== 13.5 Testing execute_universal_tx via payload encode/decode pipeline ===");
-    const counterKeypair = loadOrCreateKeypair(COUNTER_KEYPAIR_PATH);
 
+    // Counter is now a PDA - derive it from seeds
+    const [counterPda, counterBump] = PublicKey.findProgramAddressSync(
+        [Buffer.from("counter")],
+        counterProgram.programId
+    );
+
+    // Check if counter account exists and is owned by the correct program
+    let counterAccountExists = false;
     try {
-        await counterProgram.account.counter.fetch(counterKeypair.publicKey);
-        console.log("Counter account already initialized");
-    } catch {
+        const accountInfo = await connection.getAccountInfo(counterPda);
+        if (accountInfo && accountInfo.owner.equals(counterProgram.programId)) {
+            await counterProgram.account.counter.fetch(counterPda);
+            console.log("Counter account already initialized with correct program");
+            counterAccountExists = true;
+        } else if (accountInfo) {
+            console.log(`⚠️ Counter account exists but owned by different program: ${accountInfo.owner.toBase58()}`);
+            console.log(`   Expected: ${counterProgram.programId.toBase58()}`);
+            console.log(`   This shouldn't happen with a PDA, but will reinitialize...`);
+        }
+    } catch (error) {
+        // Account doesn't exist or fetch failed, will initialize below
+    }
+
+    if (!counterAccountExists) {
         const initCounterTx = await counterProgram.methods
             .initialize(new anchor.BN(0))
             .accounts({
-                counter: counterKeypair.publicKey,
+                counter: counterPda,
                 authority: admin,  // Admin is authority, but relayer signs execute txs
                 systemProgram: SystemProgram.programId,
             })
-            .signers([adminKeypair, counterKeypair])
+            .signers([adminKeypair])
             .rpc();
         console.log(`✅ Counter initialized for execute tests: ${initCounterTx}`);
     }
@@ -1607,7 +1626,7 @@ async function run() {
         const incrementIx = await counterProgram.methods
             .increment(new anchor.BN(3))
             .accounts({
-                counter: counterKeypair.publicKey,
+                counter: counterPda,
                 authority: admin,  // Admin is authority, but relayer signs the execute tx
             })
             .instruction();
@@ -1660,7 +1679,7 @@ async function run() {
             isSigner: false,
         }));
 
-        const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        const counterBefore = await counterProgram.account.counter.fetch(counterPda);
         const execTx = await relayerProgram.methods
             .executeUniversalTx(
                 Array.from(solTxIdBytes),
@@ -1693,7 +1712,7 @@ async function run() {
             .rpc();
 
         console.log(`✅ executeUniversalTx (SOL) succeeded: ${execTx}`);
-        const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+        const counterAfter = await counterProgram.account.counter.fetch(counterPda);
         console.log(`Counter value: ${counterBefore.value.toNumber()} → ${counterAfter.value.toNumber()}`);
     }
 
@@ -1719,7 +1738,7 @@ async function run() {
         const receiveSplIx = await counterProgram.methods
             .receiveSpl(executeAmount)
             .accounts({
-                counter: counterKeypair.publicKey,
+                counter: counterPda,
                 ceaAta: ceaAtaForSpl,  // CEA ATA
                 recipientAta: executeRecipientAta.address,
                 ceaAuthority: ceaAuthority,  // CEA authority
@@ -1857,7 +1876,7 @@ async function run() {
     const securityCounterIx = await counterProgram.methods
         .increment(new anchor.BN(1))
         .accounts({
-            counter: counterKeypair.publicKey,
+            counter: counterPda,
             authority: admin,
         })
         .instruction();
@@ -1940,7 +1959,7 @@ async function run() {
     const securityCounterIx2 = await counterProgram.methods
         .increment(new anchor.BN(1))
         .accounts({
-            counter: counterKeypair.publicKey,
+            counter: counterPda,
             authority: admin,
         })
         .instruction();
@@ -2024,7 +2043,7 @@ async function run() {
     const securityCounterIx3 = await counterProgram.methods
         .increment(new anchor.BN(1))
         .accounts({
-            counter: counterKeypair.publicKey,
+            counter: counterPda,
             authority: admin,
         })
         .instruction();
@@ -2105,7 +2124,7 @@ async function run() {
     const securityCounterIx4 = await counterProgram.methods
         .increment(new anchor.BN(1))
         .accounts({
-            counter: counterKeypair.publicKey,
+            counter: counterPda,
             authority: admin,
         })
         .instruction();
@@ -2136,7 +2155,7 @@ async function run() {
 
     // ATTACK: Pass fewer accounts
     const fewerRemaining = [
-        { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+        { pubkey: counterPda, isWritable: true, isSigner: false },
         // Missing admin/authority!
     ];
 

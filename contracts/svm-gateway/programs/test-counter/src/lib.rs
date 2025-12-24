@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount};
 
-declare_id!("4mpHkerNsaJPp35fyT5bkoXxuEBczGq6HUKTtrzFcptx");
+declare_id!("9LfpvcY2CYcNWEc2ip2ZwwKivEALbF3knwimXrbLubT2");
 
 #[program]
 pub mod test_counter {
@@ -240,6 +240,8 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         space = 8 + Counter::LEN,
+        seeds = [b"counter"],
+        bump
     )]
     pub counter: Account<'info, Counter>,
 
@@ -253,6 +255,8 @@ pub struct Initialize<'info> {
 pub struct UpdateCounter<'info> {
     #[account(
         mut,
+        seeds = [b"counter"],
+        bump,
         has_one = authority @ CounterError::Unauthorized,
     )]
     pub counter: Account<'info, Counter>,
@@ -263,7 +267,11 @@ pub struct UpdateCounter<'info> {
 
 #[derive(Accounts)]
 pub struct StakeSol<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"counter"],
+        bump
+    )]
     pub counter: Account<'info, Counter>,
 
     /// CHECK: Authority (CEA from gateway)
@@ -284,7 +292,11 @@ pub struct StakeSol<'info> {
 
 #[derive(Accounts)]
 pub struct UnstakeSol<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"counter"],
+        bump
+    )]
     pub counter: Account<'info, Counter>,
 
     /// CHECK: Authority (CEA from gateway)
@@ -304,7 +316,11 @@ pub struct UnstakeSol<'info> {
 
 #[derive(Accounts)]
 pub struct StakeSpl<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"counter"],
+        bump
+    )]
     pub counter: Account<'info, Counter>,
 
     /// CHECK: Authority (CEA from gateway)
@@ -331,7 +347,11 @@ pub struct StakeSpl<'info> {
 
 #[derive(Accounts)]
 pub struct UnstakeSpl<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"counter"],
+        bump
+    )]
     pub counter: Account<'info, Counter>,
 
     /// CHECK: Authority (CEA from gateway)
@@ -356,7 +376,11 @@ pub struct UnstakeSpl<'info> {
 
 #[derive(Accounts)]
 pub struct ReceiveSol<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"counter"],
+        bump
+    )]
     pub counter: Account<'info, Counter>,
 
     /// CHECK: Recipient account that will receive SOL
@@ -372,7 +396,11 @@ pub struct ReceiveSol<'info> {
 
 #[derive(Accounts)]
 pub struct ReceiveSpl<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"counter"],
+        bump
+    )]
     pub counter: Account<'info, Counter>,
 
     /// CHECK: CEA ATA from gateway (will have tokens)

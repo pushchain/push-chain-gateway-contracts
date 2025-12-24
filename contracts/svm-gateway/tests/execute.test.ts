@@ -151,7 +151,8 @@ describe("Universal Gateway - Execute Tests", () => {
     let vaultUsdtAccount: PublicKey;
     let recipientUsdtAccount: PublicKey;
 
-    let counterKeypair: Keypair; // Test counter account (not a PDA)
+    let counterPda: PublicKey; // Test counter account (PDA)
+    let counterBump: number; // Bump seed for counter PDA
     let counterAuthority: Keypair; // Authority for counter
 
     let currentNonce = 0;
@@ -277,17 +278,21 @@ describe("Universal Gateway - Execute Tests", () => {
             await provider.sendAndConfirm(new anchor.web3.Transaction().add(createRecipientAtaIx), [admin]);
         }
         // Initialize test counter with dedicated authority (not signer in execute tests)
-        counterKeypair = Keypair.generate();
+        // Counter is now a PDA - derive it from seeds
+        [counterPda, counterBump] = PublicKey.findProgramAddressSync(
+            [Buffer.from("counter")],
+            counterProgram.programId
+        );
 
         try {
             await counterProgram.methods
                 .initialize(new anchor.BN(0))
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: counterAuthority.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
-                .signers([counterAuthority, counterKeypair])
+                .signers([counterAuthority])
                 .rpc();
         } catch (e: any) {
             // Counter might already be initialized
@@ -326,7 +331,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterIx = await counterProgram.methods
                 .increment(incrementAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: counterAuthority.publicKey,
                 })
                 .instruction();
@@ -352,7 +357,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             console.log("SOL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
 
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
@@ -406,7 +411,7 @@ describe("Universal Gateway - Execute Tests", () => {
             await syncNonceFromChain();
             expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
 
-            const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             console.log("SOL-only payload with zero amount counterAfter", counterAfter.value.toNumber());
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
@@ -423,7 +428,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const fundAmount = asLamports(1);
             const counterIx = await counterProgram.methods
                 .increment(new anchor.BN(0))
-                .accounts({ counter: counterKeypair.publicKey, authority: counterAuthority.publicKey })
+                .accounts({ counter: counterPda, authority: counterAuthority.publicKey })
                 .instruction();
             const fundAccounts = instructionAccountsToGatewayMetas(counterIx);
 
@@ -569,7 +574,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterIx = await counterProgram.methods
                 .increment(new anchor.BN(1))
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: counterAuthority.publicKey,
                 })
                 .instruction();
@@ -695,7 +700,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterIx = await counterProgram.methods
                 .receiveSpl(amount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     ceaAta: await getCeaAta(sender, mockUSDT.mint.publicKey),
                     recipientAta: recipientUsdtAccount,
                     ceaAuthority: getCeaAuthorityPda(sender),
@@ -730,7 +735,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
             console.log("SPL token transfer to test-counter counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
@@ -796,7 +801,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const executedTx = await gatewayProgram.account.executedTx.fetch(getExecutedTxPda(txId));
             expect(executedTx).to.not.be.null;
 
-            const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + amount.toNumber(),
             );
@@ -818,7 +823,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterIx = await counterProgram.methods
                 .receiveSpl(amount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     ceaAta: await getCeaAta(sender, mockUSDT.mint.publicKey),
                     recipientAta: recipientUsdtAccount,
                     ceaAuthority: getCeaAuthorityPda(sender),
@@ -927,7 +932,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterIx = await counterProgram.methods
                 .increment(incrementAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: counterAuthority.publicKey,
                 })
                 .instruction();
@@ -955,7 +960,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
             console.log("SPL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
@@ -1016,7 +1021,7 @@ describe("Universal Gateway - Execute Tests", () => {
             await syncNonceFromChain();
             expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
 
-            const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
             );
@@ -1054,7 +1059,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
             .increment(new anchor.BN(0))
-            .accounts({ counter: counterKeypair.publicKey, authority: counterAuthority.publicKey })
+            .accounts({ counter: counterPda, authority: counterAuthority.publicKey })
             .instruction();
         const fundAccounts = instructionAccountsToGatewayMetas(counterIx);
         const sigFund = await signTssMessage({
@@ -1226,7 +1231,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterIx = await counterProgram.methods
                 .increment(incrementAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: counterAuthority.publicKey,
                 })
                 .instruction();
@@ -1273,7 +1278,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
             await gatewayProgram.methods
@@ -1329,7 +1334,7 @@ describe("Universal Gateway - Execute Tests", () => {
             await syncNonceFromChain();
             expect(currentNonce).to.equal(nonce + 1);
 
-            const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
             );
@@ -1344,7 +1349,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterIx = await counterProgram.methods
                 .receiveSpl(amount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     ceaAta: await getCeaAta(sender, mockUSDT.mint.publicKey),
                     recipientAta: recipientUsdtAccount,
                     ceaAuthority: getCeaAuthorityPda(sender),
@@ -1395,7 +1400,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const counterBefore = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
@@ -1458,7 +1463,7 @@ describe("Universal Gateway - Execute Tests", () => {
             await syncNonceFromChain();
             expect(currentNonce).to.equal(nonce + 1);
 
-            const counterAfter = await counterProgram.account.counter.fetch(counterKeypair.publicKey);
+            const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + amount.toNumber(),
             );
@@ -1507,7 +1512,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -1585,7 +1590,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -1613,7 +1618,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 // ATTACK: Pass FEWER accounts than signed
                 const fewerRemaining = [
-                    { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                    { pubkey: counterPda, isWritable: true, isSigner: false },
                     // Missing counterAuthority!
                 ];
 
@@ -1661,7 +1666,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -1690,7 +1695,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 // ATTACK: Mark writable account as read-only in remaining_accounts
                 const wrongWritableRemaining = [
-                    { pubkey: counterKeypair.publicKey, isWritable: false, isSigner: false }, // Should be writable!
+                    { pubkey: counterPda, isWritable: false, isSigner: false }, // Should be writable!
                     { pubkey: counterAuthority.publicKey, isWritable: false, isSigner: false },
                 ];
 
@@ -1738,7 +1743,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -1767,7 +1772,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 // ATTACK: Reorder accounts (swap counter and authority)
                 const reorderedRemaining = [
                     { pubkey: counterAuthority.publicKey, isWritable: false, isSigner: false }, // Wrong position!
-                    { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                    { pubkey: counterPda, isWritable: true, isSigner: false },
                 ];
 
                 await expectExecuteRevert(
@@ -1816,7 +1821,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -1893,7 +1898,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -1965,7 +1970,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -2042,7 +2047,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const nonExecutableAccount = Keypair.generate().publicKey;
 
                 const accounts: GatewayAccountMeta[] = [
-                    { pubkey: counterKeypair.publicKey, isWritable: true },
+                    { pubkey: counterPda, isWritable: true },
                 ];
 
                 // Calculate fees dynamically
@@ -2096,7 +2101,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts([
-                                { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                                { pubkey: counterPda, isWritable: true, isSigner: false },
                             ])
                             .signers([admin])
                             .rpc();
@@ -2112,14 +2117,14 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 // ATTACK: Include vault PDA in remaining_accounts
                 const maliciousAccounts: GatewayAccountMeta[] = [
-                    { pubkey: counterKeypair.publicKey, isWritable: true },
+                    { pubkey: counterPda, isWritable: true },
                     { pubkey: vaultPda, isWritable: true }, // Protected account!
                 ];
 
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -2144,7 +2149,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 });
 
                 const maliciousRemaining = [
-                    { pubkey: counterKeypair.publicKey, isWritable: true, isSigner: false },
+                    { pubkey: counterPda, isWritable: true, isSigner: false },
                     { pubkey: vaultPda, isWritable: true, isSigner: false }, // Vault should never be passed!
                 ];
 
@@ -2192,7 +2197,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const counterIx = await counterProgram.methods
                     .increment(new anchor.BN(1))
                     .accounts({
-                        counter: counterKeypair.publicKey,
+                        counter: counterPda,
                         authority: counterAuthority.publicKey,
                     })
                     .instruction();
@@ -2311,7 +2316,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const stakeIx = await counterProgram.methods
                 .stakeSol(stakeAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user1Cea,
                     stake: user1Stake,
                     systemProgram: SystemProgram.programId,
@@ -2386,7 +2391,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const stakeIx2 = await counterProgram.methods
                 .stakeSol(stakeAmount2)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user1Cea,
                     stake: user1Stake,
                     systemProgram: SystemProgram.programId,
@@ -2465,7 +2470,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const unstakeIx = await counterProgram.methods
                 .unstakeSol(unstakeAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user1Cea,
                     stake: user1Stake,
                     systemProgram: SystemProgram.programId,
@@ -2563,7 +2568,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const stakeIx = await counterProgram.methods
                 .stakeSol(stakeAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user2Cea,
                     stake: user2Stake,
                     systemProgram: SystemProgram.programId,
@@ -2640,7 +2645,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const unstakeIx = await counterProgram.methods
                 .unstakeSol(unstakeAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user2Cea,
                     stake: user2Stake,
                     systemProgram: SystemProgram.programId,
@@ -2718,7 +2723,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const stakeIx = await counterProgram.methods
                 .stakeSpl(stakeAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user3Cea,
                     stake: user3Stake,
                     mint: mockUSDT.mint.publicKey,
@@ -2811,7 +2816,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const unstakeIx = await counterProgram.methods
                 .unstakeSpl(unstakeAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user3Cea,
                     stake: user3Stake,
                     mint: mockUSDT.mint.publicKey,
@@ -2943,7 +2948,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const stakeIx = await counterProgram.methods
                 .stakeSpl(stakeAmount)
                 .accounts({
-                    counter: counterKeypair.publicKey,
+                    counter: counterPda,
                     authority: user4Cea,
                     stake: user4Stake,
                     mint: mockUSDT.mint.publicKey,
