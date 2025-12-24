@@ -78,6 +78,15 @@ interface IUniversalGatewayPC {
         address revertRecipient
     ) external;
 
+    function sendUniversalTxOutbound(
+        bytes calldata target,
+        address token,
+        uint256 amount,
+        uint256 gasLimit,
+        bytes calldata payload,
+        address revertRecipient
+    ) external;
+
     // ========= View Functions =========
     function UNIVERSAL_CORE() external view returns (address);
 }

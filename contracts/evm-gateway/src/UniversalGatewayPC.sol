@@ -124,6 +124,29 @@ contract UniversalGatewayPC is
         );
     }
 
+    function sendUniversalTxOutbound(
+        bytes calldata target,
+        address token,
+        uint256 amount,
+        uint256 gasLimit,
+        bytes calldata payload,
+        address revertRecipient
+    ) external whenNotPaused nonReentrant {
+        _validateCommon(target, token, amount, revertRecipient);
+
+        // Compute fees + collect from caller into the UEM fee sink
+        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
+            _calculateGasFeesWithLimit(token, gasLimit);
+        _moveFees(msg.sender, gasToken, gasFee);
+
+        _burnPRC20(msg.sender, token, amount);
+
+        string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
+        emit UniversalTxWithdraw(
+            msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, revertRecipient, TX_TYPE.FUNDS_AND_PAYLOAD
+        );
+    }
+
     // ========= Helpers =========
 
     /// @notice                 Validates the common parameters.
