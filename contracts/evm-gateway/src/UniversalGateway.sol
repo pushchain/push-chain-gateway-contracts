@@ -498,6 +498,7 @@ contract UniversalGateway is
     /// @inheritdoc IUniversalGateway
     function revertUniversalTxToken(
         bytes32 txID,
+        bytes32 universalTxID,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
@@ -515,12 +516,13 @@ contract UniversalGateway is
         isExecuted[txID] = true;
         IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
         
-        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(txID, universalTxID, revertInstruction.revertRecipient, token, amount, revertInstruction);
     }
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     )
@@ -539,7 +541,7 @@ contract UniversalGateway is
         (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(txID, universalTxID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================
@@ -549,6 +551,7 @@ contract UniversalGateway is
     /// @inheritdoc IUniversalGateway
     function withdraw(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address to,
         uint256 amount
@@ -563,12 +566,13 @@ contract UniversalGateway is
         (bool ok,) = payable(to).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit WithdrawToken(txID, originCaller, address(0), to, amount);
+        emit WithdrawToken(txID, universalTxID, originCaller, address(0), to, amount);
     }
 
     /// @inheritdoc IUniversalGateway
     function withdrawTokens(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address token,
         address to,
@@ -584,7 +588,7 @@ contract UniversalGateway is
 
         isExecuted[txID] = true;
         IERC20(token).safeTransfer(to, amount);
-        emit WithdrawToken(txID, originCaller, token, to, amount);
+        emit WithdrawToken(txID, universalTxID, originCaller, token, to, amount);
     }
 
     /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
@@ -600,6 +604,7 @@ contract UniversalGateway is
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address token,
         address target,
@@ -627,7 +632,7 @@ contract UniversalGateway is
             IERC20(token).safeTransfer(VAULT, remainingBalance);
         }
         
-        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, token, amount, payload);
     }
     
     /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
@@ -639,6 +644,7 @@ contract UniversalGateway is
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address target,
         uint256 amount,
@@ -654,7 +660,7 @@ contract UniversalGateway is
         
         _executeCall(target, payload, amount);
         
-        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, address(0), amount, payload);
     }
 
     // =========================

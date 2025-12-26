@@ -49,33 +49,36 @@ interface IVault {
      * @notice              TSS-only withdraw to an external recipient on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
      * @param txID          unique transaction identifier on external chain
+     * @param universalTxID universal transaction identifier
      * @param originCaller  original caller/user on source chain ( Push Chain)
      * @param token         ERC20 token to transfer (must be supported by gateway) on external chain
      * @param to            recipient address on external chain
      * @param amount        amount of token to transfer on external chain
      */
-    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdraw(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 
     /**
      * @notice              TSS-only withdraw and execute transaction via gateway on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
-     * @param txID          unique transaction identifier on external chain     
+     * @param txID          unique transaction identifier on external chain
+     * @param universalTxID universal transaction identifier
      * @param originCaller  original caller/user on source chain ( Push Chain)
      * @param token         ERC20 token to transfer (must be supported by gateway) on external chain
      * @param target        contract to call via gateway on external chain
      * @param amount        token amount to transfer and use in execution on external chain
      * @param data          calldata for the target execution on external chain
      */
-    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data) external;
+    function withdrawAndExecute(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address target, uint256 amount, bytes calldata data) external;
 
     /**
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
      * @param txID              unique transaction identifier (for replay protection)
+     * @param universalTxID     universal transaction identifier
      * @param token             ERC20 token to refund (must be supported) on external chain
      * @param amount            amount to refund on external chain
      * @param revertInstruction revert instruction containing revertRecipient and revertMsg
      */
-    function revertWithdraw(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertInstruction) external;
+    function revertWithdraw(bytes32 txID, bytes32 universalTxID, address token, uint256 amount, RevertInstructions calldata revertInstruction) external;
 }
 

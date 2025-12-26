@@ -45,19 +45,21 @@ contract GatewayTSSFunctionsTest is BaseTest {
     function testOnlyTSS_NonTSSShouldRevert() public {
         // Non-TSS user should not be able to call TSS functions
         bytes32 txID = bytes32(uint256(1));
+        bytes32 universalTxID = bytes32(uint256(1001));
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(Errors.WithdrawFailed.selector));
-        gateway.revertUniversalTx(txID, 1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx(txID, universalTxID, 1 ether, RevertInstructions(user1, ""));
     }
 
     function testOnlyTSS_TSSShouldSucceed() public {
         // TSS should be able to call TSS functions
         bytes32 txID = bytes32(uint256(2));
+        bytes32 universalTxID = bytes32(uint256(1002));
         uint256 initialBalance = user1.balance;
 
         vm.deal(tss, 1 ether);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: 1 ether }(txID, 1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{ value: 1 ether }(txID, universalTxID, 1 ether, RevertInstructions(user1, ""));
 
         assertEq(user1.balance, initialBalance + 1 ether);
     }
@@ -68,16 +70,17 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testWithdrawFunds_NativeETH_Success() public {
         bytes32 txID = bytes32(uint256(3));
+        bytes32 universalTxID = bytes32(uint256(1003));
         uint256 withdrawAmount = 2 ether;
         uint256 initialRecipientBalance = user1.balance;
 
         // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.RevertUniversalTx(txID, user1, address(0), withdrawAmount, RevertInstructions(user1, ""));
+        emit IUniversalGateway.RevertUniversalTx(txID, universalTxID, user1, address(0), withdrawAmount, RevertInstructions(user1, ""));
 
         vm.deal(tss, withdrawAmount);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: withdrawAmount }(txID, withdrawAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{ value: withdrawAmount }(txID, universalTxID, withdrawAmount, RevertInstructions(user1, ""));
 
         // Check balances
         assertEq(user1.balance, initialRecipientBalance + withdrawAmount);
@@ -85,6 +88,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testWithdrawFunds_ERC20Token_Success() public {
         bytes32 txID = bytes32(uint256(4));
+        bytes32 universalTxID = bytes32(uint256(1004));
         uint256 withdrawAmount = 100e6; // 100 USDC
         uint256 initialGatewayBalance = usdc.balanceOf(address(gateway));
         uint256 initialRecipientBalance = usdc.balanceOf(user1);
@@ -92,11 +96,11 @@ contract GatewayTSSFunctionsTest is BaseTest {
         // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.RevertUniversalTx(
-            txID, user1, address(usdc), withdrawAmount, RevertInstructions(user1, "")
+            txID, universalTxID, user1, address(usdc), withdrawAmount, RevertInstructions(user1, "")
         );
 
         // revertUniversalTxToken requires VAULT_ROLE (test contract has this role)
-        gateway.revertUniversalTxToken(txID, address(usdc), withdrawAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(txID, universalTxID, address(usdc), withdrawAmount, RevertInstructions(user1, ""));
 
         // Check balances
         assertEq(usdc.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
@@ -105,36 +109,40 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testWithdrawFunds_InvalidRecipient_Revert() public {
         bytes32 txID = bytes32(uint256(5));
+        bytes32 universalTxID = bytes32(uint256(1005));
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
-        gateway.revertUniversalTx(txID, 1 ether, RevertInstructions(address(0), ""));
+        gateway.revertUniversalTx(txID, universalTxID, 1 ether, RevertInstructions(address(0), ""));
     }
 
     function testWithdrawFunds_InvalidAmount_Revert() public {
         bytes32 txID = bytes32(uint256(6));
+        bytes32 universalTxID = bytes32(uint256(1006));
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertUniversalTx(txID, 0, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx(txID, universalTxID, 0, RevertInstructions(user1, ""));
     }
 
     function testWithdrawFunds_InsufficientBalance_Revert() public {
         bytes32 txID = bytes32(uint256(7));
+        bytes32 universalTxID = bytes32(uint256(1007));
         uint256 amount = 1 ether;
         uint256 wrongValue = 0.5 ether;
 
         vm.deal(tss, wrongValue);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertUniversalTx{ value: wrongValue }(txID, amount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{ value: wrongValue }(txID, universalTxID, amount, RevertInstructions(user1, ""));
     }
 
     function testWithdrawFunds_ERC20InsufficientBalance_Revert() public {
         bytes32 txID = bytes32(uint256(8));
+        bytes32 universalTxID = bytes32(uint256(1008));
         uint256 excessiveAmount = usdc.balanceOf(address(gateway)) + 1;
 
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertUniversalTxToken(txID, address(usdc), excessiveAmount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(txID, universalTxID, address(usdc), excessiveAmount, RevertInstructions(user1, ""));
     }
 
     // =========================
@@ -143,6 +151,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testRevertWithdrawFunds_NativeETH_Success() public {
         bytes32 txID = bytes32(uint256(9));
+        bytes32 universalTxID = bytes32(uint256(1009));
         uint256 withdrawAmount = 1.5 ether;
         uint256 initialRecipientBalance = user1.balance;
 
@@ -150,11 +159,11 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.RevertUniversalTx(txID, user1, address(0), withdrawAmount, revertCfg);
+        emit IUniversalGateway.RevertUniversalTx(txID, universalTxID, user1, address(0), withdrawAmount, revertCfg);
 
         vm.deal(tss, withdrawAmount);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: withdrawAmount }(txID, withdrawAmount, revertCfg);
+        gateway.revertUniversalTx{ value: withdrawAmount }(txID, universalTxID, withdrawAmount, revertCfg);
 
         // Check balances
         assertEq(user1.balance, initialRecipientBalance + withdrawAmount);
@@ -162,6 +171,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testRevertWithdrawFunds_ERC20Token_Success() public {
         bytes32 txID = bytes32(uint256(10));
+        bytes32 universalTxID = bytes32(uint256(1010));
         uint256 withdrawAmount = 200e6; // 200 USDC
         uint256 initialGatewayBalance = usdc.balanceOf(address(gateway));
         uint256 initialRecipientBalance = usdc.balanceOf(user1);
@@ -170,10 +180,10 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Expect RevertUniversalTx event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.RevertUniversalTx(txID, user1, address(usdc), withdrawAmount, revertCfg);
+        emit IUniversalGateway.RevertUniversalTx(txID, universalTxID, user1, address(usdc), withdrawAmount, revertCfg);
 
         // revertUniversalTxToken requires VAULT_ROLE (test contract has this role)
-        gateway.revertUniversalTxToken(txID, address(usdc), withdrawAmount, revertCfg);
+        gateway.revertUniversalTxToken(txID, universalTxID, address(usdc), withdrawAmount, revertCfg);
 
         // Check balances
         assertEq(usdc.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
@@ -182,24 +192,27 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testRevertWithdrawFunds_InvalidRecipient_Revert() public {
         bytes32 txID = bytes32(uint256(11));
+        bytes32 universalTxID = bytes32(uint256(1011));
         RevertInstructions memory revertCfg = revertCfg(address(0)); // Invalid user1
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidRecipient.selector));
-        gateway.revertUniversalTx(txID, 1 ether, revertCfg);
+        gateway.revertUniversalTx(txID, universalTxID, 1 ether, revertCfg);
     }
 
     function testRevertWithdrawFunds_InvalidAmount_Revert() public {
         bytes32 txID = bytes32(uint256(12));
+        bytes32 universalTxID = bytes32(uint256(1012));
         RevertInstructions memory revertCfg = revertCfg(user1);
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertUniversalTx(txID, 0, revertCfg);
+        gateway.revertUniversalTx(txID, universalTxID, 0, revertCfg);
     }
 
     function testRevertWithdrawFunds_InsufficientBalance_Revert() public {
         bytes32 txID = bytes32(uint256(13));
+        bytes32 universalTxID = bytes32(uint256(1013));
         uint256 amount = 1 ether;
         uint256 wrongValue = 0.8 ether;
         RevertInstructions memory revertCfg = revertCfg(user1);
@@ -207,7 +220,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.deal(tss, wrongValue);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.revertUniversalTx{ value: wrongValue }(txID, amount, revertCfg);
+        gateway.revertUniversalTx{ value: wrongValue }(txID, universalTxID, amount, revertCfg);
     }
 
     // =========================
@@ -216,17 +229,19 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testWithdrawFunds_WhenPaused_Revert() public {
         bytes32 txID = bytes32(uint256(14));
+        bytes32 universalTxID = bytes32(uint256(1014));
         // Pause the contract
         vm.prank(admin);
         gateway.pause();
 
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertUniversalTx(txID, 1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx(txID, universalTxID, 1 ether, RevertInstructions(user1, ""));
     }
 
     function testRevertWithdrawFunds_WhenPaused_Revert() public {
         bytes32 txID = bytes32(uint256(15));
+        bytes32 universalTxID = bytes32(uint256(1015));
         // Pause the contract
         vm.prank(admin);
         gateway.pause();
@@ -235,17 +250,18 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertUniversalTx(txID, 1 ether, revertCfg);
+        gateway.revertUniversalTx(txID, universalTxID, 1 ether, revertCfg);
     }
 
     function testWithdrawFunds_ReentrancyProtection() public {
         bytes32 txID = bytes32(uint256(16));
+        bytes32 universalTxID = bytes32(uint256(1016));
         // This test ensures the nonReentrant modifier is working
         // We can't easily test reentrancy without a malicious contract,
         // but the modifier is there and will be covered by the test execution
         vm.deal(tss, 1 ether);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: 1 ether }(txID, 1 ether, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{ value: 1 ether }(txID, universalTxID, 1 ether, RevertInstructions(user1, ""));
 
         // If we get here without reverting, the reentrancy protection is working
         assertTrue(true);
@@ -260,14 +276,14 @@ contract GatewayTSSFunctionsTest is BaseTest {
         // Withdraw USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
         gateway.revertUniversalTxToken(
-            bytes32(uint256(17)), address(usdc), usdcAmount, RevertInstructions(user1, "")
+            bytes32(uint256(17)), bytes32(uint256(1017)), address(usdc), usdcAmount, RevertInstructions(user1, "")
         );
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
         // Withdraw TokenA (requires VAULT_ROLE)
         uint256 initialTokenABalance = tokenA.balanceOf(user1);
         gateway.revertUniversalTxToken(
-            bytes32(uint256(18)), address(tokenA), tokenAAmount, RevertInstructions(user1, "")
+            bytes32(uint256(18)), bytes32(uint256(1018)), address(tokenA), tokenAAmount, RevertInstructions(user1, "")
         );
         assertEq(tokenA.balanceOf(user1), initialTokenABalance + tokenAAmount);
 
@@ -276,7 +292,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.deal(tss, ethAmount);
         vm.prank(tss);
         gateway.revertUniversalTx{ value: ethAmount }(
-            bytes32(uint256(19)), ethAmount, RevertInstructions(user1, "")
+            bytes32(uint256(19)), bytes32(uint256(1019)), ethAmount, RevertInstructions(user1, "")
         );
         assertEq(user1.balance, initialEthBalance + ethAmount);
     }
@@ -290,14 +306,14 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         // Revert USDC (requires VAULT_ROLE)
         uint256 initialUsdcBalance = usdc.balanceOf(user1);
-        gateway.revertUniversalTxToken(bytes32(uint256(20)), address(usdc), usdcAmount, revertCfg);
+        gateway.revertUniversalTxToken(bytes32(uint256(20)), bytes32(uint256(1020)), address(usdc), usdcAmount, revertCfg);
         assertEq(usdc.balanceOf(user1), initialUsdcBalance + usdcAmount);
 
         // Revert ETH (requires TSS_ROLE)
         uint256 initialEthBalance = user1.balance;
         vm.deal(tss, ethAmount);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: ethAmount }(bytes32(uint256(21)), ethAmount, revertCfg);
+        gateway.revertUniversalTx{ value: ethAmount }(bytes32(uint256(21)), bytes32(uint256(1021)), ethAmount, revertCfg);
         assertEq(user1.balance, initialEthBalance + ethAmount);
     }
 
@@ -307,30 +323,32 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testRevertUniversalTx_ReplayProtection_Native() public {
         bytes32 txID = bytes32(uint256(22));
+        bytes32 universalTxID = bytes32(uint256(1022));
         uint256 amount = 1 ether;
 
         // First call should succeed
         vm.deal(tss, amount);
         vm.prank(tss);
-        gateway.revertUniversalTx{ value: amount }(txID, amount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{ value: amount }(txID, universalTxID, amount, RevertInstructions(user1, ""));
 
         // Second call with same txID should revert
         vm.deal(tss, amount);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
-        gateway.revertUniversalTx{ value: amount }(txID, amount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTx{ value: amount }(txID, universalTxID, amount, RevertInstructions(user1, ""));
     }
 
     function testRevertUniversalTxToken_ReplayProtection() public {
         bytes32 txID = bytes32(uint256(23));
+        bytes32 universalTxID = bytes32(uint256(1023));
         uint256 amount = 100e6;
 
         // First call should succeed
-        gateway.revertUniversalTxToken(txID, address(usdc), amount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(txID, universalTxID, address(usdc), amount, RevertInstructions(user1, ""));
 
         // Second call with same txID should revert
         vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
-        gateway.revertUniversalTxToken(txID, address(usdc), amount, RevertInstructions(user1, ""));
+        gateway.revertUniversalTxToken(txID, universalTxID, address(usdc), amount, RevertInstructions(user1, ""));
     }
 
     // =========================
@@ -339,88 +357,96 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
     function testWithdraw_Native_Success() public {
         bytes32 txID = bytes32(uint256(24));
+        bytes32 universalTxID = bytes32(uint256(1024));
         uint256 amount = 5 ether;
         address originCaller = user2;
 
         uint256 initialBalance = user1.balance;
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, originCaller, address(0), user1, amount);
+        emit IUniversalGateway.WithdrawToken(txID, universalTxID, originCaller, address(0), user1, amount);
 
         vm.deal(tss, amount);
         vm.prank(tss);
-        gateway.withdraw{ value: amount }(txID, originCaller, user1, amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, originCaller, user1, amount);
 
         assertEq(user1.balance, initialBalance + amount);
     }
 
     function testWithdraw_Native_OnlyTSS() public {
         bytes32 txID = bytes32(uint256(25));
+        bytes32 universalTxID = bytes32(uint256(1025));
         uint256 amount = 1 ether;
 
         vm.deal(user1, amount);
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(Errors.WithdrawFailed.selector));
-        gateway.withdraw{ value: amount }(txID, user1, user2, amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, user1, user2, amount);
     }
 
     function testWithdraw_Native_ReplayProtection() public {
         bytes32 txID = bytes32(uint256(26));
+        bytes32 universalTxID = bytes32(uint256(1026));
         uint256 amount = 2 ether;
 
         // First call should succeed
         vm.deal(tss, amount);
         vm.prank(tss);
-        gateway.withdraw{ value: amount }(txID, user1, user2, amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, user1, user2, amount);
 
         // Second call with same txID should revert
         vm.deal(tss, amount);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
-        gateway.withdraw{ value: amount }(txID, user1, user2, amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, user1, user2, amount);
     }
 
     function testWithdraw_Native_ZeroRecipient_Reverts() public {
         bytes32 txID = bytes32(uint256(27));
+        bytes32 universalTxID = bytes32(uint256(1027));
         uint256 amount = 1 ether;
 
         vm.deal(tss, amount);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
-        gateway.withdraw{ value: amount }(txID, user1, address(0), amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, user1, address(0), amount);
     }
 
     function testWithdraw_Native_ZeroOriginCaller_Reverts() public {
         bytes32 txID = bytes32(uint256(28));
+        bytes32 universalTxID = bytes32(uint256(1028));
         uint256 amount = 1 ether;
 
         vm.deal(tss, amount);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
-        gateway.withdraw{ value: amount }(txID, address(0), user1, amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, address(0), user1, amount);
     }
 
     function testWithdraw_Native_ZeroAmount_Reverts() public {
         bytes32 txID = bytes32(uint256(29));
+        bytes32 universalTxID = bytes32(uint256(1029));
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.withdraw(txID, user1, user2, 0);
+        gateway.withdraw(txID, universalTxID, user1, user2, 0);
     }
 
     function testWithdraw_Native_AmountMismatch_Reverts() public {
         bytes32 txID = bytes32(uint256(30));
+        bytes32 universalTxID = bytes32(uint256(1030));
         uint256 amount = 1 ether;
         uint256 wrongValue = 0.5 ether;
 
         vm.deal(tss, wrongValue);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.withdraw{ value: wrongValue }(txID, user1, user2, amount);
+        gateway.withdraw{ value: wrongValue }(txID, universalTxID, user1, user2, amount);
     }
 
     function testWithdraw_Native_WhenPaused_Reverts() public {
         bytes32 txID = bytes32(uint256(31));
+        bytes32 universalTxID = bytes32(uint256(1031));
         uint256 amount = 1 ether;
 
         vm.prank(admin);
@@ -429,21 +455,22 @@ contract GatewayTSSFunctionsTest is BaseTest {
         vm.deal(tss, amount);
         vm.prank(tss);
         vm.expectRevert();
-        gateway.withdraw{ value: amount }(txID, user1, user2, amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, user1, user2, amount);
     }
 
     function testWithdraw_Native_EmitsCorrectEvent() public {
         bytes32 txID = bytes32(uint256(32));
+        bytes32 universalTxID = bytes32(uint256(1032));
         uint256 amount = 3 ether;
         address originCaller = user2;
         address recipient = user1;
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, originCaller, address(0), recipient, amount);
+        emit IUniversalGateway.WithdrawToken(txID, universalTxID, originCaller, address(0), recipient, amount);
 
         vm.deal(tss, amount);
         vm.prank(tss);
-        gateway.withdraw{ value: amount }(txID, originCaller, recipient, amount);
+        gateway.withdraw{ value: amount }(txID, universalTxID, originCaller, recipient, amount);
     }
 
     function testWithdraw_Native_MultipleSequentialWithdrawals() public {
@@ -454,11 +481,11 @@ contract GatewayTSSFunctionsTest is BaseTest {
 
         vm.deal(tss, amount1);
         vm.prank(tss);
-        gateway.withdraw{ value: amount1 }(bytes32(uint256(33)), user2, user1, amount1);
+        gateway.withdraw{ value: amount1 }(bytes32(uint256(33)), bytes32(uint256(1033)), user2, user1, amount1);
 
         vm.deal(tss, amount2);
         vm.prank(tss);
-        gateway.withdraw{ value: amount2 }(bytes32(uint256(34)), user2, user1, amount2);
+        gateway.withdraw{ value: amount2 }(bytes32(uint256(34)), bytes32(uint256(1034)), user2, user1, amount2);
 
         assertEq(user1.balance, initialBalance + amount1 + amount2);
     }
