@@ -56,8 +56,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
-import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
 contract UniversalGateway is
@@ -644,33 +644,45 @@ contract UniversalGateway is
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (token == address(0)) revert Errors.InvalidInput(); // This function is for ERC20 tokens only
-        
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         isExecuted[txIDHash] = true;
 
         // Check for magic marker and handle PC20/PC721 minting
-        // Execute but mint to gateway since the logic covers the transfer
         bytes memory strippedPayload = payload;
+        address actualToken = token;
+        bool isPCAS = false;
+        
         if (payload.length >= 4) {
             bytes4 magic = bytes4(payload[:4]);
             if (magic == MAGIC_PCAS) {
-                strippedPayload = _handlePCAssetAllocation(amount, payload);
+                (actualToken, strippedPayload) = _handlePCAssetAllocation(amount, payload);
+                isPCAS = true;
             }
+        }        
+
+        // Check the balance after PC20 mint (only for PC20, not PC721)
+        // For PC20: actualToken is the PC20 address, check if we have enough balance
+        // For PC721: skip balance check as it's an NFT (already minted in _handlePCAssetAllocation)
+        if (isPCAS) {
+            // PC assets are already minted, balance check happens in approval/transfer
+        } else {
+            // Regular ERC20 token, check balance
+            if (IERC20(actualToken).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
         }
+
         
-        _resetApproval(token, target);             // reset approval to zero
-        _safeApprove(token, target, amount);       // approve target to spend amount
-        _executeCall(target, payload, 0);          // execute call with required amount
-        _resetApproval(token, target);             // reset approval back to zero
+        _resetApproval(actualToken, target);             // reset approval to zero
+        _safeApprove(actualToken, target, amount);       // approve target to spend amount
+        _executeCall(target, strippedPayload, 0);        // execute call with stripped payload
+        _resetApproval(actualToken, target);             // reset approval back to zero
         
         // Return any remaining tokens to the Vault
-        uint256 remainingBalance = IERC20(token).balanceOf(address(this));
+        uint256 remainingBalance = IERC20(actualToken).balanceOf(address(this));
         if (remainingBalance > 0) {
-            IERC20(token).safeTransfer(VAULT, remainingBalance);
+            IERC20(actualToken).safeTransfer(VAULT, remainingBalance);
         }
         
-        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
+        emit UniversalTxExecuted(txID, originCaller, target, token, amount, strippedPayload);
     }
     
     /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
@@ -696,9 +708,9 @@ contract UniversalGateway is
 
         isExecuted[txIDHash] = true;
 
-        _executeCall(target, strippedPayload, amount);
+        _executeCall(target, payload, amount);
         
-        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, strippedPayload);
+        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
     }
 
     // =========================
@@ -1108,18 +1120,16 @@ contract UniversalGateway is
     }
 
 
-    /// @notice                 Handle magic marker in payload and mint PC20/PC721 tokens
-    /// @param target           Target address to receive minted tokens
+    /// @notice                 Handle PC20/PC721 asset allocation based on magic marker
     /// @param amount           Amount of native tokens (used for PC20 minting amount)
     /// @param payload          Full payload with magic marker
-    /// @return                 Stripped payload without magic marker
-    function _handlePCAssetAllocation(uint256 amount, bytes calldata payload) internal returns (bytes memory) {
-        // Decode based on the kind to handle different structures
-        bytes4 magic = bytes4(payload[:4]);
-        uint8 version = uint8(bytes1(payload[4:5]));
-        uint8 kind = uint8(bytes1(payload[5:6]));
+    /// @return pcAssetAddress  Address of the created/existing PC20 or PC721 token
+    /// @return strippedPayload Stripped payload without magic marker
+    function _handlePCAssetAllocation(uint256 amount, bytes calldata payload) internal returns (address pcAssetAddress, bytes memory strippedPayload) {
+        // First decode to get magic, version, and kind
+        (bytes4 magic, uint8 version, uint8 kind) = abi.decode(payload, (bytes4, uint8, uint8));
 
-        // Verify magic marker
+        // Verify magic marker and version
         if (magic != MAGIC_PCAS || version != META_VERSION) {
             revert Errors.InvalidInput();
         }
@@ -1149,6 +1159,8 @@ contract UniversalGateway is
             // Mint tokens to target using the amount parameter
             IPC20(pc20Address).mint(address(this), amount);
             
+            pcAssetAddress = pc20Address;
+            
         } else if (kind == META_KIND_PC721) {
             // PC721: abi.encode(magic, version, kind, token, name, symbol, tokenId, tokenURI)
             (
@@ -1175,6 +1187,8 @@ contract UniversalGateway is
             // Mint NFT to target
             IPC721(pc721Address).mint(address(this), tokenId);
             
+            pcAssetAddress = pc721Address;
+            
         } else {
             revert Errors.InvalidInput();
         }
@@ -1184,10 +1198,10 @@ contract UniversalGateway is
         
         // Return the remaining payload after the magic marker
         if (payload.length > enrichedLength) {
-            return payload[enrichedLength:];
+            strippedPayload = payload[enrichedLength:];
+        } else {
+            strippedPayload = "";
         }
-        
-        return "";
     }
 
     /// @notice                 Calculate the length of the enriched payload

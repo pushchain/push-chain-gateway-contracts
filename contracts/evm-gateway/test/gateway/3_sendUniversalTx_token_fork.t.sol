@@ -11,7 +11,8 @@ import { IWETH } from "../../src/interfaces/IWETH.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 // USDT interface for non-standard transfer and approve functions
 interface TetherToken {
