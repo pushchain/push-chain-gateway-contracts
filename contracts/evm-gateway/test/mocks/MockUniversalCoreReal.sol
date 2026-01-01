@@ -35,6 +35,11 @@ contract MockUniversalCoreReal is IUniversalCore {
     /// @notice Default deadline in minutes for swaps
     uint256 public defaultDeadlineMins = 20;
 
+    /// @notice Protocol fees for different token types
+    uint256 private _pc20ProtocolFee = 100e18; // 100 PC default
+    uint256 private _pc721ProtocolFee = 50e18; // 50 PC default
+    uint256 private _defaultProtocolFee = 75e18; // 75 PC default
+
     /// @notice Uniswap V3 addresses.
     address public uniswapV3FactoryAddress;
     address public uniswapV3SwapRouterAddress;
@@ -58,6 +63,10 @@ contract MockUniversalCoreReal is IUniversalCore {
 
     // Supported tokens mapping
     mapping(address => bool) private _supportedTokens;
+
+    // Chain support mappings
+    mapping(string => bool) private _pc20SupportedChains;
+    mapping(string => bool) private _pc721SupportedChains;
 
     // ========= Events =========
     event SetGasPrice(string indexed chainID, uint256 price);
@@ -261,7 +270,11 @@ contract MockUniversalCoreReal is IUniversalCore {
         gasFee = price * BASE_GAS_LIMIT + IPRC20(_prc20).PC_PROTOCOL_FEE();
     }
 
-    function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit) public view returns (address gasToken, uint256 gasFee) {
+    function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit)
+        public
+        view
+        returns (address gasToken, uint256 gasFee)
+    {
         string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_ID();
 
         gasToken = gasTokenPRC20ByChainId[chainID];
@@ -279,6 +292,42 @@ contract MockUniversalCoreReal is IUniversalCore {
         uint256 oldLimit = BASE_GAS_LIMIT;
         BASE_GAS_LIMIT = gasLimit;
         emit BaseGasLimitUpdated(oldLimit, gasLimit);
+    }
+
+    // ========= Protocol Fee Functions =========
+    function PC20_PROTOCOL_FEES() external view returns (uint256 fee) {
+        return _pc20ProtocolFee;
+    }
+
+    function PC721_PROTOCOL_FEES() external view returns (uint256 fee) {
+        return _pc721ProtocolFee;
+    }
+
+    function DEFAULT_PROTOCOL_FEES() external view returns (uint256 fee) {
+        return _defaultProtocolFee;
+    }
+
+    function setProtocolFees(uint256 pc20Fee, uint256 pc721Fee, uint256 defaultFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pc20ProtocolFee = pc20Fee;
+        _pc721ProtocolFee = pc721Fee;
+        _defaultProtocolFee = defaultFee;
+    }
+
+    // ========= Chain Support Functions =========
+    function isPC20SupportedOnChain(string calldata chainNamespace) external view returns (bool supported) {
+        return _pc20SupportedChains[chainNamespace];
+    }
+
+    function isPC721SupportedOnChain(string calldata chainNamespace) external view returns (bool supported) {
+        return _pc721SupportedChains[chainNamespace];
+    }
+
+    function setPC20SupportOnChain(string calldata chainNamespace, bool supported) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pc20SupportedChains[chainNamespace] = supported;
+    }
+
+    function setPC721SupportOnChain(string calldata chainNamespace, bool supported) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pc721SupportedChains[chainNamespace] = supported;
     }
 
     // ========= Test Helper Functions =========

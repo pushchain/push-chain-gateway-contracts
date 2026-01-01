@@ -18,10 +18,10 @@ import {IUniversalGateway}          from "./interfaces/IUniversalGateway.sol";
 import {IERC20}                     from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20}                  from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ContextUpgradeable}         from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
-import {PausableUpgradeable}        from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {PausableUpgradeable}        from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import {Initializable}              from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable}   from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 
 contract Vault is
@@ -126,7 +126,7 @@ contract Vault is
     //          WITHDRAW
     // =========================
     /// @inheritdoc IVault
-    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount)
+    function withdraw(bytes calldata txID, address originCaller, address token, address to, uint256 amount)
         external
         nonReentrant
         whenNotPaused
@@ -143,7 +143,7 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
+    function withdrawAndExecute(bytes calldata txID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
         external
         nonReentrant
         whenNotPaused
@@ -164,13 +164,13 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function revertWithdraw(bytes32 txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction)
+    function revertWithdraw(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertInstruction)
         external
         nonReentrant
         whenNotPaused
         onlyRole(TSS_ROLE)
     {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
+        if (token == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
         _enforceSupported(token);
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
@@ -178,7 +178,7 @@ contract Vault is
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(txID, token, amount, revertInstruction);
 
-        emit VaultRevert(token, to, amount, revertInstruction);
+        emit VaultRevert(token, revertInstruction, amount);
     }
 
     // =========================

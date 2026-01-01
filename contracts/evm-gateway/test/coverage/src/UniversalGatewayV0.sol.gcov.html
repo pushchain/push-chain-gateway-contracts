@@ -469,7 +469,7 @@
 <span id="L398"><span class="lineNum">     398</span>                 :             :         RevertSettings calldata _revertCFG,</span>
 <span id="L399"><span class="lineNum">     399</span>                 :             :         TX_TYPE _txType</span>
 <span id="L400"><span class="lineNum">     400</span>                 :             :     ) internal {</span>
-<span id="L401"><span class="lineNum">     401</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L401"><span class="lineNum">     401</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (_revertCFG.revertRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
 <span id="L402"><span class="lineNum">     402</span>                 :             : </span>
 <span id="L403"><span class="lineNum">     403</span>                 :<span class="tlaUNC">           0 :         emit TxWithGas({</span></span>
 <span id="L404"><span class="lineNum">     404</span>                 :             :             sender: _caller,</span>
@@ -600,7 +600,7 @@
 <span id="L529"><span class="lineNum">     529</span>                 :             :         TX_TYPE _txType,</span>
 <span id="L530"><span class="lineNum">     530</span>                 :             :         bytes memory _signatureData</span>
 <span id="L531"><span class="lineNum">     531</span>                 :             :     ) internal {</span>
-<span id="L532"><span class="lineNum">     532</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (_revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L532"><span class="lineNum">     532</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (_revertCFG.revertRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
 <span id="L533"><span class="lineNum">     533</span>                 :             :         /// for recipient == address(0), the funds are being moved to UEA of the msg.sender on Push Chain.</span>
 <span id="L534"><span class="lineNum">     534</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (_recipient == address(0)){</span></span>
 <span id="L535"><span class="lineNum">     535</span>                 :             :             if (</span>
@@ -651,16 +651,16 @@
 <span id="L580"><span class="lineNum">     580</span>                 :             :         uint256 amount,</span>
 <span id="L581"><span class="lineNum">     581</span>                 :             :         RevertSettings calldata revertCFG</span>
 <span id="L582"><span class="lineNum">     582</span>                 :             :     ) external nonReentrant whenNotPaused onlyTSS {</span>
-<span id="L583"><span class="lineNum">     583</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (revertCFG.fundRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
+<span id="L583"><span class="lineNum">     583</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (revertCFG.revertRecipient == address(0)) revert Errors.InvalidRecipient();</span></span>
 <span id="L584"><span class="lineNum">     584</span>            [<span class="tlaUNC" title="Branch 0 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (amount == 0) revert Errors.InvalidAmount();</span></span>
 <span id="L585"><span class="lineNum">     585</span>                 :             : </span>
 <span id="L586"><span class="lineNum">     586</span>         [<span class="tlaUNC" title="Branch 0 was not executed"> # </span><span class="tlaUNC" title="Branch 1 was not executed"> # </span>]:<span class="tlaUNC">           0 :         if (token == address(0)) {</span></span>
-<span id="L587"><span class="lineNum">     587</span>                 :<span class="tlaUNC">           0 :             _handleNativeWithdraw(revertCFG.fundRecipient, amount);</span></span>
+<span id="L587"><span class="lineNum">     587</span>                 :<span class="tlaUNC">           0 :             _handleNativeWithdraw(revertCFG.revertRecipient, amount);</span></span>
 <span id="L588"><span class="lineNum">     588</span>                 :             :         } else {</span>
-<span id="L589"><span class="lineNum">     589</span>                 :<span class="tlaUNC">           0 :             _handleTokenWithdraw(token, revertCFG.fundRecipient, amount);</span></span>
+<span id="L589"><span class="lineNum">     589</span>                 :<span class="tlaUNC">           0 :             _handleTokenWithdraw(token, revertCFG.revertRecipient, amount);</span></span>
 <span id="L590"><span class="lineNum">     590</span>                 :             :         }</span>
 <span id="L591"><span class="lineNum">     591</span>                 :             : </span>
-<span id="L592"><span class="lineNum">     592</span>                 :<span class="tlaUNC">           0 :         emit WithdrawFunds(revertCFG.fundRecipient, amount, token);</span></span>
+<span id="L592"><span class="lineNum">     592</span>                 :<span class="tlaUNC">           0 :         emit WithdrawFunds(revertCFG.revertRecipient, amount, token);</span></span>
 <span id="L593"><span class="lineNum">     593</span>                 :             :     }</span>
 <span id="L594"><span class="lineNum">     594</span>                 :             : </span>
 <span id="L595"><span class="lineNum">     595</span>                 :             :     // =========================</span>
