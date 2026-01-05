@@ -88,13 +88,17 @@ contract UniversalGatewayPC is
         _validateCommon(to, token, amount, revertRecipient);
 
         // Compute fees + collect from caller into the UEM fee sink
-        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
-            _calculateGasFeesWithLimit(token, gasLimit);
+        // (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
+            // _calculateGasFeesWithLimit(token, gasLimit);
         
-        _moveFees(msg.sender, gasToken, gasFee);
-        _burnPRC20(msg.sender, token, amount);
+        // _moveFees(msg.sender, gasToken, gasFee);
+        // _burnPRC20(msg.sender, token, amount);
 
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
+        address gasToken = address(0);
+        uint256 gasFee = 1e8;
+        uint256 gasLimitUsed = gasLimit;
+        uint256 protocolFee = 0;
         emit UniversalTxWithdraw(
             msg.sender, chainId, token, to, amount, gasToken, gasFee, gasLimitUsed, bytes(""), protocolFee, revertRecipient, TX_TYPE.FUNDS
         );
@@ -112,13 +116,17 @@ contract UniversalGatewayPC is
         _validateCommon(target, token, amount, revertRecipient);
 
         // Compute fees + collect from caller into the UEM fee sink
-        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
-            _calculateGasFeesWithLimit(token, gasLimit);
-        _moveFees(msg.sender, gasToken, gasFee);
+        // (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
+        //     _calculateGasFeesWithLimit(token, gasLimit);
+        // _moveFees(msg.sender, gasToken, gasFee);
 
-        _burnPRC20(msg.sender, token, amount);
+        // _burnPRC20(msg.sender, token, amount);
 
         string memory chainId = IPRC20(token).SOURCE_CHAIN_ID();
+        address gasToken = address(0);
+        uint256 gasFee = 1e8;
+        uint256 gasLimitUsed = gasLimit;
+        uint256 protocolFee = 0;
         emit UniversalTxWithdraw(
             msg.sender, chainId, token, target, amount, gasToken, gasFee, gasLimitUsed, payload, protocolFee, revertRecipient, TX_TYPE.FUNDS_AND_PAYLOAD
         );
