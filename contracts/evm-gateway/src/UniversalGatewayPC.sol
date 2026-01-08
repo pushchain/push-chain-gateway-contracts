@@ -85,19 +85,20 @@ contract UniversalGatewayPC is
         whenNotPaused 
         nonReentrant 
     {
-        _validateCommon(req.target, req.token, req.amount, req.revertRecipient);
+        // _validateCommon(req.target, req.token, req.amount, req.revertRecipient);
 
         // Determine TX_TYPE based on user input
         TX_TYPE txType = _fetchTxType(req);
 
         // Compute fees + collect from caller into the UEM fee sink
-        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
-            _calculateGasFeesWithLimit(req.token, req.gasLimit);
-        _moveFees(msg.sender, gasToken, gasFee);
+        // (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
+        //     _calculateGasFeesWithLimit(req.token, req.gasLimit);
+        // _moveFees(msg.sender, gasToken, gasFee);
 
-        _burnPRC20(msg.sender, req.token, req.amount);
+        // _burnPRC20(msg.sender, req.token, req.amount);
 
-        string memory chainId = IPRC20(req.token).SOURCE_CHAIN_ID();
+        string memory chainId = "eip155:11155111";
+        uint256 gas = 21000;
 
         uint256 _nonce = nonce;
         nonce = _nonce + 1;
@@ -114,7 +115,7 @@ contract UniversalGatewayPC is
         );
 
         emit UniversalTxOutbound(
-            txID, msg.sender, chainId, req.token, req.target, req.amount, gasToken, gasFee, gasLimitUsed, req.payload, protocolFee, req.revertRecipient, txType
+            txID, msg.sender, chainId, req.token, req.target, req.amount, address(1), gas, gas, req.payload, gas, req.revertRecipient, txType
         );
     }
 
