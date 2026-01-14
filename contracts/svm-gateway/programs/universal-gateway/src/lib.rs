@@ -150,10 +150,12 @@ pub mod universal_gateway {
     // =========================
     /// @notice TSS-verified withdraw of native SOL (EVM parity: `withdraw`)
     /// @param tx_id Transaction ID for tracking
+    /// @param universal_tx_id Universal transaction ID from source chain
     /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
     pub fn withdraw(
         ctx: Context<Withdraw>,
         tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         origin_caller: [u8; 20],
         amount: u64,
         gas_fee: u64,
@@ -165,6 +167,7 @@ pub mod universal_gateway {
         instructions::withdraw::withdraw(
             ctx,
             tx_id,
+            universal_tx_id,
             origin_caller,
             amount,
             gas_fee,
@@ -175,12 +178,14 @@ pub mod universal_gateway {
         )
     }
 
-    /// @notice TSS-verified withdraw of SPL tokens (EVM parity: `withdrawFunds`)
+    /// @notice TSS-verified withdraw of SPL tokens (EVM parity: `withdrawTokens`)
     /// @param tx_id Transaction ID for tracking
+    /// @param universal_tx_id Universal transaction ID from source chain
     /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
-    pub fn withdraw_funds(
-        ctx: Context<WithdrawFunds>,
+    pub fn withdraw_tokens(
+        ctx: Context<WithdrawTokens>,
         tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         origin_caller: [u8; 20],
         amount: u64,
         gas_fee: u64,
@@ -189,9 +194,10 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::withdraw_funds(
+        instructions::withdraw::withdraw_tokens(
             ctx,
             tx_id,
+            universal_tx_id,
             origin_caller,
             amount,
             gas_fee,
@@ -207,9 +213,11 @@ pub mod universal_gateway {
     // =========================
     /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
     /// @param tx_id Transaction ID for tracking
+    /// @param universal_tx_id Universal transaction ID from source chain
     pub fn revert_universal_tx(
         ctx: Context<RevertUniversalTx>,
         tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
         gas_fee: u64,
@@ -221,6 +229,7 @@ pub mod universal_gateway {
         instructions::withdraw::revert_universal_tx(
             ctx,
             tx_id,
+            universal_tx_id,
             amount,
             revert_instruction,
             gas_fee,
@@ -233,9 +242,11 @@ pub mod universal_gateway {
 
     /// @notice TSS-verified revert withdraw for SPL tokens (EVM parity: `revertUniversalTxToken`)
     /// @param tx_id Transaction ID for tracking
+    /// @param universal_tx_id Universal transaction ID from source chain
     pub fn revert_universal_tx_token(
         ctx: Context<RevertUniversalTxToken>,
         tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
         gas_fee: u64,
@@ -247,6 +258,7 @@ pub mod universal_gateway {
         instructions::withdraw::revert_universal_tx_token(
             ctx,
             tx_id,
+            universal_tx_id,
             amount,
             revert_instruction,
             gas_fee,
@@ -262,6 +274,7 @@ pub mod universal_gateway {
     // =========================
     /// @notice TSS-verified execute arbitrary Solana instruction with SOL
     /// @param tx_id Transaction ID from Push chain event
+    /// @param universal_tx_id Universal transaction ID from source chain
     /// @param amount Amount of SOL to transfer to cea authority
     /// @param target_program Target Solana program to invoke
     /// @param sender EVM sender address (same as origin_caller in EVM)
@@ -270,6 +283,7 @@ pub mod universal_gateway {
     pub fn execute_universal_tx(
         ctx: Context<ExecuteUniversalTx>,
         tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         target_program: Pubkey,
         sender: [u8; 20],
@@ -285,6 +299,7 @@ pub mod universal_gateway {
         instructions::execute::execute_universal_tx(
             ctx,
             tx_id,
+            universal_tx_id,
             amount,
             target_program,
             sender,
@@ -301,6 +316,7 @@ pub mod universal_gateway {
 
     /// @notice TSS-verified execute arbitrary Solana instruction with SPL tokens
     /// @param tx_id Transaction ID from Push chain event
+    /// @param universal_tx_id Universal transaction ID from source chain
     /// @param amount Amount of SPL tokens to transfer to cea ATA
     /// @param target_program Target Solana program to invoke
     /// @param sender EVM sender address (same as origin_caller in EVM)
@@ -309,6 +325,7 @@ pub mod universal_gateway {
     pub fn execute_universal_tx_token(
         ctx: Context<ExecuteUniversalTxToken>,
         tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         target_program: Pubkey,
         sender: [u8; 20],
@@ -324,6 +341,7 @@ pub mod universal_gateway {
         instructions::execute::execute_universal_tx_token(
             ctx,
             tx_id,
+            universal_tx_id,
             amount,
             target_program,
             sender,
@@ -338,11 +356,6 @@ pub mod universal_gateway {
         )
     }
 
-    /// Claim accumulated gas fees (relayer only)
-    pub fn claim_fees(ctx: Context<ClaimFees>) -> Result<()> {
-        instructions::execute::claim_fees(ctx)
-    }
-
     // =========================
     //         UTILS
     // =========================
@@ -353,6 +366,12 @@ pub mod universal_gateway {
     }
 }
 
+/// Accounts for get_sol_price view function
+#[derive(Accounts)]
+pub struct GetSolPrice<'info> {
+    pub price_update: Account<'info, pyth_solana_receiver_sdk::price_update::PriceUpdateV2>,
+}
+
 // Re-export account structs and types
 pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
@@ -361,9 +380,9 @@ pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::{ExecuteUniversalTx, ExecuteUniversalTxToken};
 pub use instructions::initialize::Initialize;
 pub use instructions::withdraw::{
-    RevertUniversalTx, RevertUniversalTxToken, Withdraw, WithdrawFunds,
+    RevertUniversalTx, RevertUniversalTxToken, Withdraw, WithdrawTokens,
 };
-pub use utils::{GetSolPrice, PriceData};
+pub use utils::PriceData;
 
 pub use state::{
     // Events

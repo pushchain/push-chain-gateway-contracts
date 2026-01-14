@@ -1,9 +1,8 @@
 use crate::errors::GatewayError;
 use crate::instructions::tss::validate_message;
 use crate::state::{
-    ClaimableFees, Config, ExecutedTx, GatewayAccountMeta, RevertInstructions, TssPda, TxType,
-    UniversalTx, UniversalTxExecuted, CEA_SEED, CLAIMABLE_FEES_SEED, EXECUTED_TX_SEED, TSS_SEED,
-    VAULT_SEED,
+    Config, ExecutedTx, GatewayAccountMeta, RevertInstructions, TssPda, TxType, UniversalTx,
+    UniversalTxExecuted, CEA_SEED, EXECUTED_TX_SEED, TSS_SEED, VAULT_SEED,
 };
 use crate::utils::validate_remaining_accounts;
 use anchor_lang::prelude::*;
@@ -25,7 +24,7 @@ use anchor_spl::{
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
+#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
 pub struct ExecuteUniversalTx<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -61,6 +60,8 @@ pub struct ExecuteUniversalTx<'info> {
     )]
     pub tss_pda: Account<'info, TssPda>,
 
+    /// Executed transaction tracker (replay protection)
+    /// Relayer pays for this account creation and gets reimbursed via gas_fee
     #[account(
         init,
         payer = caller,
@@ -69,16 +70,6 @@ pub struct ExecuteUniversalTx<'info> {
         bump
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
-
-    /// Claimable fees - accumulates gas_fee for this relayer
-    #[account(
-        init_if_needed,
-        payer = caller,
-        space = 8 + ClaimableFees::LEN,
-        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
-        bump
-    )]
-    pub claimable_fees: Account<'info, ClaimableFees>,
 
     /// CHECK: Target program (validated against signed message)
     pub destination_program: UncheckedAccount<'info>,
@@ -89,6 +80,7 @@ pub struct ExecuteUniversalTx<'info> {
 pub fn execute_universal_tx(
     ctx: Context<ExecuteUniversalTx>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     amount: u64,
     target_program: Pubkey,
     sender: [u8; 20],
@@ -104,7 +96,14 @@ pub fn execute_universal_tx(
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
 
-    // 1. Build serialized accounts buffer (with length prefix)
+    // 1. Validate remaining_accounts match accounts parameter
+    validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
+
+    let cea_key = ctx.accounts.cea_authority.key();
+
+    // 2. Build serialized accounts buffer (with length prefix) for TSS validation
+    // Format: [u32 BE: count] + [32 bytes: pubkey, 1 byte: is_writable] * count
+    // This MUST match the format used in buildExecuteAdditionalData (off-chain)
     let mut accounts_buf = Vec::new();
     let accounts_count = accounts.len() as u32;
     accounts_buf.extend_from_slice(&accounts_count.to_be_bytes()); // u32 BE length prefix
@@ -113,20 +112,21 @@ pub fn execute_universal_tx(
         accounts_buf.push(if account.is_writable { 1 } else { 0 }); // is_writable (1 byte)
     }
 
-    // 2. Build serialized ix_data buffer (with length prefix)
+    // 3. Build serialized ix_data buffer (with length prefix)
     let mut ix_data_buf = Vec::new();
     let ix_data_length = ix_data.len() as u32;
     ix_data_buf.extend_from_slice(&ix_data_length.to_be_bytes()); // u32 BE length prefix
     ix_data_buf.extend_from_slice(&ix_data); // Raw bytes
 
-    // 3. Validate TSS signature and message hash using unified validate_message
-    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
+    // 4. Validate TSS signature and message hash using unified validate_message
+    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
     let mut rent_fee_buf = [0u8; 8];
     rent_fee_buf.copy_from_slice(&rent_fee.to_be_bytes());
 
-    let additional: [&[u8]; 7] = [
+    let additional: [&[u8]; 8] = [
+        &universal_tx_id[..],
         &tx_id[..],
         &target_program.to_bytes(),
         &sender[..],
@@ -146,7 +146,7 @@ pub fn execute_universal_tx(
         recovery_id,
     )?;
 
-    // 4. Verify target program matches and is executable
+    // 5. Verify target program matches and is executable
     require!(
         ctx.accounts.destination_program.key() == target_program,
         GatewayError::TargetProgramMismatch
@@ -156,15 +156,20 @@ pub fn execute_universal_tx(
         GatewayError::InvalidProgram
     );
 
-    // 5. Validate remaining_accounts match signed accounts
-    validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
+    // Note: Account validation is done during derivation (step 1)
+    // TSS signature enforces: account count, pubkeys, and is_writable flags
+    // Outer signer check is done during derivation
 
     // 6. Replay protection - account existence check
     // (init_if_needed will fail if account already exists with different data)
     // For simplicity, we rely on account creation as replay protection
     // Note: Nonce is already updated in validate_message (atomic with verification)
 
-    // 7. Transfer rent_fee to CEA first (for target contract rent)
+    // 7. Validate rent_fee <= gas_fee (rent_fee is a subset of gas_fee)
+    // User burns gas_fee on Push Chain, which is split into rent_fee (for CEA) and relayer_fee (for caller)
+    require!(rent_fee <= gas_fee, GatewayError::InvalidAmount);
+
+    // 8. Transfer rent_fee to CEA (for target contract rent)
     // This SOL is from gas_fee burned on Push Chain, allocated for target program rent
     let vault_bump = config.vault_bump;
     let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
@@ -187,7 +192,7 @@ pub fn execute_universal_tx(
         )?;
     }
 
-    // 8. Transfer amount to CEA (main transfer)
+    // 9. Transfer amount to CEA (main transfer)
     if amount > 0 {
         let amount_transfer_ix = system_instruction::transfer(
             &ctx.accounts.vault_sol.key(),
@@ -206,9 +211,38 @@ pub fn execute_universal_tx(
         )?;
     }
 
-    // 9. Build CPI instruction for target program
+    // 10. Transfer relayer_fee (gas_fee - rent_fee) to caller BEFORE self-call check
+    // This ensures the caller gets paid even for self-withdraw operations.
+    // Relayer pays: executed_tx rent (~890k) + CEA ATA rent if created (~2M) + compute fees
+    // Relayer receives: relayer_fee = gas_fee - rent_fee (reimbursement for gateway costs)
+    // Vault total payout: rent_fee (to CEA) + relayer_fee (to caller) = gas_fee (matches user burn)
+    let relayer_fee = gas_fee
+        .checked_sub(rent_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
+
+    if relayer_fee > 0 {
+        let vault_bump = config.vault_bump;
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+
+        let fee_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault_sol.key(),
+            &ctx.accounts.caller.key(),
+            relayer_fee,
+        );
+
+        invoke_signed(
+            &fee_transfer_ix,
+            &[
+                ctx.accounts.vault_sol.to_account_info(),
+                ctx.accounts.caller.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
+    }
+
+    // 11. Build CPI instruction for target program
     // cea_authority must appear as signer inside CPI
-    let cea_key = ctx.accounts.cea_authority.key();
     let cpi_metas: Vec<SolanaAccountMeta> = accounts
         .iter()
         .map(|a| {
@@ -221,14 +255,14 @@ pub fn execute_universal_tx(
         })
         .collect();
 
-    // 9. Check if target is gateway itself (for CEA withdrawals)
+    // 12. Check if target is gateway itself (for CEA withdrawals)
     let cea_bump = ctx.bumps.cea_authority;
     let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
 
     if target_program == *ctx.program_id {
         // Gateway self-call: interpret ix_data as a normal gateway instruction
         // and handle CEA withdrawal in-place (no CPI).
-        return handle_cea_withdrawal(&ctx, tx_id, sender, &ix_data, cea_seeds);
+        return handle_cea_withdrawal(&ctx, tx_id, universal_tx_id, sender, &ix_data, cea_seeds);
     }
 
     let cpi_ix = Instruction {
@@ -237,33 +271,15 @@ pub fn execute_universal_tx(
         data: ix_data.clone(),
     };
 
-    // 10. Invoke target program with cea_authority as signer
+    // 13. Invoke target program with cea_authority as signer
     invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
 
     // Note: CEA balances persist (no auto-drain) - matches EVM CEA behavior
     // Users can withdraw via withdrawFundsFromCea() when needed
 
-    // 12. Store relayer fee (gas_fee - rent_fee) as claimable by relayer.
-    // rent_fee is a subset of gas_fee; vault should only ever pay TOTAL = gas_fee for fees.
-    // Enforce gas_fee >= rent_fee to avoid underflow / overpay.
-    require!(gas_fee >= rent_fee, GatewayError::InvalidAmount);
-    let relayer_fee = gas_fee
-        .checked_sub(rent_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
-
-    let claimable = &mut ctx.accounts.claimable_fees;
-    if claimable.accumulated == 0 {
-        // First time initialization
-        claimable.relayer = ctx.accounts.caller.key();
-        claimable.bump = ctx.bumps.claimable_fees;
-    }
-    claimable.accumulated = claimable
-        .accumulated
-        .checked_add(relayer_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
-
     // 13. Emit execution event
     emit!(UniversalTxExecuted {
+        universal_tx_id,
         tx_id,
         sender,
         target: target_program,
@@ -280,7 +296,7 @@ pub fn execute_universal_tx(
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
+#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
 pub struct ExecuteUniversalTxToken<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -333,6 +349,16 @@ pub struct ExecuteUniversalTxToken<'info> {
     )]
     pub tss_pda: Account<'info, TssPda>,
 
+    /// Vault SOL PDA (needed for rent_fee transfer to CEA and gas_fee reimbursement to relayer)
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault_sol: SystemAccount<'info>,
+
+    /// Executed transaction tracker (replay protection)
+    /// Relayer pays for this account creation and gets reimbursed via gas_fee
     #[account(
         init,
         payer = caller,
@@ -342,26 +368,8 @@ pub struct ExecuteUniversalTxToken<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
-    /// Claimable fees - accumulates gas_fee for this relayer
-    #[account(
-        init_if_needed,
-        payer = caller,
-        space = 8 + ClaimableFees::LEN,
-        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
-        bump
-    )]
-    pub claimable_fees: Account<'info, ClaimableFees>,
-
     /// CHECK: Target program (validated against signed message)
     pub destination_program: UncheckedAccount<'info>,
-
-    /// Vault SOL PDA (needed for rent_fee transfer to CEA)
-    #[account(
-        mut,
-        seeds = [VAULT_SEED],
-        bump = config.vault_bump,
-    )]
-    pub vault_sol: SystemAccount<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -372,6 +380,7 @@ pub struct ExecuteUniversalTxToken<'info> {
 pub fn execute_universal_tx_token(
     ctx: Context<ExecuteUniversalTxToken>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     amount: u64,
     target_program: Pubkey,
     sender: [u8; 20],
@@ -387,7 +396,14 @@ pub fn execute_universal_tx_token(
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
 
-    // 1. Build serialized accounts buffer (with length prefix)
+    // 1. Validate remaining_accounts match accounts parameter
+    validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
+
+    let cea_key = ctx.accounts.cea_authority.key();
+
+    // 2. Build serialized accounts buffer (with length prefix) for TSS validation
+    // Format: [u32 BE: count] + [32 bytes: pubkey, 1 byte: is_writable] * count
+    // This MUST match the format used in buildExecuteAdditionalData (off-chain)
     let mut accounts_buf = Vec::new();
     let accounts_count = accounts.len() as u32;
     accounts_buf.extend_from_slice(&accounts_count.to_be_bytes()); // u32 BE length prefix
@@ -396,20 +412,21 @@ pub fn execute_universal_tx_token(
         accounts_buf.push(if account.is_writable { 1 } else { 0 }); // is_writable (1 byte)
     }
 
-    // 2. Build serialized ix_data buffer (with length prefix)
+    // 3. Build serialized ix_data buffer (with length prefix)
     let mut ix_data_buf = Vec::new();
     let ix_data_length = ix_data.len() as u32;
     ix_data_buf.extend_from_slice(&ix_data_length.to_be_bytes()); // u32 BE length prefix
     ix_data_buf.extend_from_slice(&ix_data); // Raw bytes
 
-    // 3. Validate TSS signature and message hash using unified validate_message
-    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
+    // 4. Validate TSS signature and message hash using unified validate_message
+    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
     let mut rent_fee_buf = [0u8; 8];
     rent_fee_buf.copy_from_slice(&rent_fee.to_be_bytes());
 
-    let additional: [&[u8]; 7] = [
+    let additional: [&[u8]; 8] = [
+        &universal_tx_id[..],
         &tx_id[..],
         &target_program.to_bytes(),
         &sender[..],
@@ -429,7 +446,7 @@ pub fn execute_universal_tx_token(
         recovery_id,
     )?;
 
-    // 4. Verify target program matches and is executable
+    // 5. Verify target program matches and is executable
     require!(
         ctx.accounts.destination_program.key() == target_program,
         GatewayError::TargetProgramMismatch
@@ -439,14 +456,17 @@ pub fn execute_universal_tx_token(
         GatewayError::InvalidProgram
     );
 
-    // 5. Validate remaining_accounts match signed accounts
-    validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
+    // Note: Account validation is done during derivation (step 1)
+    // TSS signature enforces: account count, pubkeys, and is_writable flags
+    // Outer signer check is done during derivation
+    // Nonce is already updated in validate_message (atomic with verification)
 
-    // Note: Nonce is already updated in validate_message (atomic with verification)
+    // 6. Validate rent_fee <= gas_fee (rent_fee is a subset of gas_fee)
+    // User burns gas_fee on Push Chain, which is split into rent_fee (for CEA) and relayer_fee (for caller)
+    require!(rent_fee <= gas_fee, GatewayError::InvalidAmount);
 
-    // 5. Transfer rent_fee (SOL) from vault to CEA (for target contract rent)
+    // 7. Transfer rent_fee (SOL) from vault to CEA (for target contract rent)
     // This is always in SOL, regardless of token type.
-    // rent_fee is a subset of gas_fee; vault must never pay more than gas_fee for fees.
     if rent_fee > 0 {
         let vault_bump = config.vault_bump;
         let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
@@ -468,7 +488,7 @@ pub fn execute_universal_tx_token(
         )?;
     }
 
-    // 6. Create cea_ata if needed (required for any SPL operation, even if amount = 0)
+    // 8. Create cea_ata if needed (required for any SPL operation, even if amount = 0)
     // For example, unstake operations need CEA ATA to receive tokens even when amount = 0
     if ctx.accounts.cea_ata.data_is_empty() {
         // Manually create ATA using associated token program
@@ -518,7 +538,7 @@ pub fn execute_universal_tx_token(
         );
     }
 
-    // 7. Handle token operations only if amount > 0
+    // 9. Handle token operations only if amount > 0
     // If amount = 0, skip token transfer - allows operations like unstake without vault transfer
     if amount > 0 {
         // Transfer tokens from vault_ata → cea_ata
@@ -539,8 +559,37 @@ pub fn execute_universal_tx_token(
         )?;
     }
 
-    // 8. Build CPI instruction for target program
-    let cea_key = ctx.accounts.cea_authority.key();
+    // 10. Transfer relayer_fee (gas_fee - rent_fee) to caller BEFORE self-call check
+    // This ensures the caller gets paid even for self-withdraw operations.
+    // Relayer pays: executed_tx rent (~890k) + CEA ATA rent if created (~2M) + compute fees
+    // Relayer receives: relayer_fee = gas_fee - rent_fee (reimbursement for gateway costs)
+    // Vault total payout: rent_fee (to CEA) + relayer_fee (to caller) = gas_fee (matches user burn)
+    let relayer_fee = gas_fee
+        .checked_sub(rent_fee)
+        .ok_or(GatewayError::InvalidAmount)?;
+
+    if relayer_fee > 0 {
+        let vault_bump = config.vault_bump;
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+
+        let fee_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault_sol.key(),
+            &ctx.accounts.caller.key(),
+            relayer_fee,
+        );
+
+        invoke_signed(
+            &fee_transfer_ix,
+            &[
+                ctx.accounts.vault_sol.to_account_info(),
+                ctx.accounts.caller.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
+    }
+
+    // 11. Build CPI instruction for target program
     let cpi_metas: Vec<SolanaAccountMeta> = accounts
         .iter()
         .map(|a| {
@@ -553,14 +602,21 @@ pub fn execute_universal_tx_token(
         })
         .collect();
 
-    // 8. Check if target is gateway itself (for CEA withdrawals)
+    // 12. Check if target is gateway itself (for CEA withdrawals)
     let cea_bump = ctx.bumps.cea_authority;
     let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
 
     if target_program == *ctx.program_id {
         // Gateway self-call: interpret ix_data as a normal gateway instruction
         // and handle CEA withdrawal in-place (no CPI).
-        return handle_cea_withdrawal_token(&ctx, tx_id, sender, &ix_data, cea_seeds);
+        return handle_cea_withdrawal_token(
+            &ctx,
+            tx_id,
+            universal_tx_id,
+            sender,
+            &ix_data,
+            cea_seeds,
+        );
     }
 
     let cpi_ix = Instruction {
@@ -569,31 +625,15 @@ pub fn execute_universal_tx_token(
         data: ix_data.clone(),
     };
 
-    // 9. Invoke target program with cea_authority as signer
+    // 13. Invoke target program with cea_authority as signer
     invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
 
     // Note: CEA ATA and SOL balances persist (no auto-drain, no closing) - matches EVM CEA behavior
     // Users can withdraw via withdrawFundsFromCea() when needed
 
-    // 12. Store relayer fee (gas_fee - rent_fee) as claimable by relayer (accumulates across executions)
-    require!(gas_fee >= rent_fee, GatewayError::InvalidAmount);
-    let relayer_fee = gas_fee
-        .checked_sub(rent_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
-
-    let claimable = &mut ctx.accounts.claimable_fees;
-    if claimable.accumulated == 0 {
-        // First time initialization
-        claimable.relayer = ctx.accounts.caller.key();
-        claimable.bump = ctx.bumps.claimable_fees;
-    }
-    claimable.accumulated = claimable
-        .accumulated
-        .checked_add(relayer_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
-
     // 13. Emit execution event
     emit!(UniversalTxExecuted {
+        universal_tx_id,
         tx_id,
         sender,
         target: target_program,
@@ -621,6 +661,7 @@ pub struct WithdrawFromCeaArgs {
 fn handle_cea_withdrawal(
     ctx: &Context<ExecuteUniversalTx>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     sender: [u8; 20],
     ix_data: &[u8],
     cea_seeds: &[&[u8]],
@@ -694,6 +735,7 @@ fn handle_cea_withdrawal(
 
     // Emit execution event
     emit!(UniversalTxExecuted {
+        universal_tx_id,
         tx_id,
         sender,
         target: *ctx.program_id,
@@ -709,6 +751,7 @@ fn handle_cea_withdrawal(
 fn handle_cea_withdrawal_token(
     ctx: &Context<ExecuteUniversalTxToken>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     sender: [u8; 20],
     ix_data: &[u8],
     cea_seeds: &[&[u8]],
@@ -788,6 +831,7 @@ fn handle_cea_withdrawal_token(
 
     // Emit execution event
     emit!(UniversalTxExecuted {
+        universal_tx_id,
         tx_id,
         sender,
         target: *ctx.program_id,
@@ -795,74 +839,6 @@ fn handle_cea_withdrawal_token(
         amount: 0, // Withdrawal doesn't have an amount in execute context
         payload: vec![],
     });
-
-    Ok(())
-}
-
-// ============================================
-//    CLAIM FEES INSTRUCTION
-// ============================================
-
-/// Claim accumulated gas fees by relayer
-/// No TSS signature needed - fees were approved when execute was signed
-#[derive(Accounts)]
-pub struct ClaimFees<'info> {
-    #[account(mut)]
-    pub relayer: Signer<'info>,
-
-    /// Claimable fees account - must belong to this relayer
-    #[account(
-        mut,
-        seeds = [CLAIMABLE_FEES_SEED, relayer.key().as_ref()],
-        bump = claimable_fees.bump,
-        constraint = claimable_fees.relayer == relayer.key() @ GatewayError::Unauthorized,
-        constraint = claimable_fees.accumulated > 0 @ GatewayError::InvalidAmount,
-    )]
-    pub claimable_fees: Account<'info, ClaimableFees>,
-
-    /// Vault SOL PDA - source of fee payment
-    #[account(
-        mut,
-        seeds = [VAULT_SEED],
-        bump = config.vault_bump,
-    )]
-    pub vault_sol: SystemAccount<'info>,
-
-    /// Config account to get vault bump
-    #[account(
-        seeds = [b"config"],
-        bump,
-    )]
-    pub config: Account<'info, Config>,
-
-    pub system_program: Program<'info, System>,
-}
-
-pub fn claim_fees(ctx: Context<ClaimFees>) -> Result<()> {
-    let amount = ctx.accounts.claimable_fees.accumulated;
-
-    // Transfer SOL from vault to relayer
-    let vault_bump = ctx.accounts.config.vault_bump;
-    let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
-
-    let transfer_ix = system_instruction::transfer(
-        &ctx.accounts.vault_sol.key(),
-        &ctx.accounts.relayer.key(),
-        amount,
-    );
-
-    invoke_signed(
-        &transfer_ix,
-        &[
-            ctx.accounts.vault_sol.to_account_info(),
-            ctx.accounts.relayer.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        &[vault_seeds],
-    )?;
-
-    // Reset accumulated to 0 (keep account open for future claims)
-    ctx.accounts.claimable_fees.accumulated = 0;
 
     Ok(())
 }

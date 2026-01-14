@@ -45,16 +45,6 @@ pub struct Withdraw<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
-    /// Claimable fees - accumulates gas_fee for this relayer
-    #[account(
-        init_if_needed,
-        payer = caller,
-        space = 8 + ClaimableFees::LEN,
-        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
-        bump
-    )]
-    pub claimable_fees: Account<'info, ClaimableFees>,
-
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -65,6 +55,7 @@ pub struct Withdraw<'info> {
 pub fn withdraw(
     ctx: Context<Withdraw>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     origin_caller: [u8; 20], // EVM address (20 bytes) from Push Chain
     amount: u64,
     gas_fee: u64,
@@ -90,8 +81,9 @@ pub fn withdraw(
     let recipient_bytes = ctx.accounts.recipient.key().to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    // Include txID, origin_caller (EVM address), recipient, and gas_fee in message hash
-    let additional: [&[u8]; 4] = [
+    // Include universal_tx_id, txID, origin_caller (EVM address), recipient, and gas_fee in message hash
+    let additional: [&[u8]; 5] = [
+        &universal_tx_id[..],
         &tx_id[..],
         &origin_caller[..],
         &recipient_bytes[..],
@@ -121,6 +113,7 @@ pub fn withdraw(
     )?;
 
     emit!(crate::state::WithdrawToken {
+        universal_tx_id,
         tx_id,
         origin_caller,
         token: Pubkey::default(),
@@ -128,17 +121,25 @@ pub fn withdraw(
         amount,
     });
 
-    // Store gas_fee as claimable by relayer (accumulates across executions)
-    let claimable = &mut ctx.accounts.claimable_fees;
-    if claimable.accumulated == 0 {
-        // First time initialization
-        claimable.relayer = ctx.accounts.caller.key();
-        claimable.bump = ctx.bumps.claimable_fees;
+    // Transfer gas_fee directly to caller
+    if gas_fee > 0 {
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
+        let fee_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault.key(),
+            &ctx.accounts.caller.key(),
+            gas_fee,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &fee_transfer_ix,
+            &[
+                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.caller.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
     }
-    claimable.accumulated = claimable
-        .accumulated
-        .checked_add(gas_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)
@@ -148,7 +149,7 @@ pub fn withdraw(
 
 #[derive(Accounts)]
 #[instruction(tx_id: [u8; 32])]
-pub struct WithdrawFunds<'info> {
+pub struct WithdrawTokens<'info> {
     #[account(
         seeds = [CONFIG_SEED],
         bump = config.bump,
@@ -192,27 +193,26 @@ pub struct WithdrawFunds<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
-    /// Claimable fees - accumulates gas_fee for this relayer
-    #[account(
-        init_if_needed,
-        payer = caller,
-        space = 8 + ClaimableFees::LEN,
-        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
-        bump
-    )]
-    pub claimable_fees: Account<'info, ClaimableFees>,
-
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
+
+    /// Vault SOL PDA (needed for gas_fee transfer to caller)
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault_sol: SystemAccount<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
-pub fn withdraw_funds(
-    ctx: Context<WithdrawFunds>,
+pub fn withdraw_tokens(
+    ctx: Context<WithdrawTokens>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     origin_caller: [u8; 20], // EVM address (20 bytes) from Push Chain
     amount: u64,
     gas_fee: u64,
@@ -236,8 +236,9 @@ pub fn withdraw_funds(
     let recipient_bytes = ctx.accounts.recipient_token_account.key().to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    // Include txID, origin_caller (EVM address), mint, recipient, and gas_fee in message hash
-    let additional: [&[u8]; 5] = [
+    // Include universal_tx_id, txID, origin_caller (EVM address), mint, recipient, and gas_fee in message hash
+    let additional: [&[u8]; 6] = [
+        &universal_tx_id[..],
         &tx_id[..],
         &origin_caller[..],
         &mint_bytes[..],
@@ -272,6 +273,7 @@ pub fn withdraw_funds(
     // ATA creation is handled off-chain by the client (standard practice)
 
     emit!(crate::state::WithdrawToken {
+        universal_tx_id,
         tx_id,
         origin_caller,
         token: ctx.accounts.token_mint.key(),
@@ -279,17 +281,25 @@ pub fn withdraw_funds(
         amount,
     });
 
-    // Store gas_fee as claimable by relayer (accumulates across executions)
-    let claimable = &mut ctx.accounts.claimable_fees;
-    if claimable.accumulated == 0 {
-        // First time initialization
-        claimable.relayer = ctx.accounts.caller.key();
-        claimable.bump = ctx.bumps.claimable_fees;
+    // Transfer gas_fee directly to caller
+    if gas_fee > 0 {
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
+        let fee_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault_sol.key(),
+            &ctx.accounts.caller.key(),
+            gas_fee,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &fee_transfer_ix,
+            &[
+                ctx.accounts.vault_sol.to_account_info(),
+                ctx.accounts.caller.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
     }
-    claimable.accumulated = claimable
-        .accumulated
-        .checked_add(gas_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)
@@ -340,16 +350,6 @@ pub struct RevertUniversalTx<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
-    /// Claimable fees - accumulates gas_fee for this relayer
-    #[account(
-        init_if_needed,
-        payer = caller,
-        space = 8 + ClaimableFees::LEN,
-        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
-        bump
-    )]
-    pub claimable_fees: Account<'info, ClaimableFees>,
-
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -360,6 +360,7 @@ pub struct RevertUniversalTx<'info> {
 pub fn revert_universal_tx(
     ctx: Context<RevertUniversalTx>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     amount: u64,
     revert_instruction: RevertInstructions,
     gas_fee: u64,
@@ -389,8 +390,13 @@ pub fn revert_universal_tx(
     let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    // Include txID, recipient, and gas_fee in message hash (NO originCaller in revert functions per EVM)
-    let additional: [&[u8]; 3] = [&tx_id[..], &recipient_bytes[..], &gas_fee_buf];
+    // Include universal_tx_id, txID, recipient, and gas_fee in message hash (NO originCaller in revert functions per EVM)
+    let additional: [&[u8]; 4] = [
+        &universal_tx_id[..],
+        &tx_id[..],
+        &recipient_bytes[..],
+        &gas_fee_buf,
+    ];
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
@@ -420,6 +426,7 @@ pub fn revert_universal_tx(
 
     // Emit revert withdraw event (EVM parity: RevertUniversalTx)
     emit!(crate::state::RevertUniversalTx {
+        universal_tx_id,
         tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: Pubkey::default(),
@@ -427,17 +434,25 @@ pub fn revert_universal_tx(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Store gas_fee as claimable by relayer (accumulates across executions)
-    let claimable = &mut ctx.accounts.claimable_fees;
-    if claimable.accumulated == 0 {
-        // First time initialization
-        claimable.relayer = ctx.accounts.caller.key();
-        claimable.bump = ctx.bumps.claimable_fees;
+    // Transfer gas_fee directly to caller
+    if gas_fee > 0 {
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
+        let fee_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault.key(),
+            &ctx.accounts.caller.key(),
+            gas_fee,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &fee_transfer_ix,
+            &[
+                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.caller.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
     }
-    claimable.accumulated = claimable
-        .accumulated
-        .checked_add(gas_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)
@@ -492,19 +507,17 @@ pub struct RevertUniversalTxToken<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
-    /// Claimable fees - accumulates gas_fee for this relayer
-    #[account(
-        init_if_needed,
-        payer = caller,
-        space = 8 + ClaimableFees::LEN,
-        seeds = [CLAIMABLE_FEES_SEED, caller.key().as_ref()],
-        bump
-    )]
-    pub claimable_fees: Account<'info, ClaimableFees>,
-
     /// The caller/relayer who pays for the transaction (including executed_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
+
+    /// Vault SOL PDA (needed for gas_fee transfer to caller)
+    #[account(
+        mut,
+        seeds = [VAULT_SEED],
+        bump = config.vault_bump,
+    )]
+    pub vault_sol: SystemAccount<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -513,6 +526,7 @@ pub struct RevertUniversalTxToken<'info> {
 pub fn revert_universal_tx_token(
     ctx: Context<RevertUniversalTxToken>,
     tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     amount: u64,
     revert_instruction: RevertInstructions,
     gas_fee: u64,
@@ -549,8 +563,9 @@ pub fn revert_universal_tx_token(
     let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    // Include txID, mint, recipient, and gas_fee in message hash (NO originCaller in revert functions per EVM)
-    let additional: [&[u8]; 4] = [
+    // Include universal_tx_id, txID, mint, recipient, and gas_fee in message hash (NO originCaller in revert functions per EVM)
+    let additional: [&[u8]; 5] = [
+        &universal_tx_id[..],
         &tx_id[..],
         &mint_bytes[..],
         &recipient_bytes[..],
@@ -584,6 +599,7 @@ pub fn revert_universal_tx_token(
 
     // Emit revert withdraw event (EVM parity: RevertUniversalTx)
     emit!(crate::state::RevertUniversalTx {
+        universal_tx_id,
         tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: ctx.accounts.token_mint.key(),
@@ -591,17 +607,25 @@ pub fn revert_universal_tx_token(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Store gas_fee as claimable by relayer (accumulates across executions)
-    let claimable = &mut ctx.accounts.claimable_fees;
-    if claimable.accumulated == 0 {
-        // First time initialization
-        claimable.relayer = ctx.accounts.caller.key();
-        claimable.bump = ctx.bumps.claimable_fees;
+    // Transfer gas_fee directly to caller
+    if gas_fee > 0 {
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
+        let fee_transfer_ix = system_instruction::transfer(
+            &ctx.accounts.vault_sol.key(),
+            &ctx.accounts.caller.key(),
+            gas_fee,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &fee_transfer_ix,
+            &[
+                ctx.accounts.vault_sol.to_account_info(),
+                ctx.accounts.caller.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
     }
-    claimable.accumulated = claimable
-        .accumulated
-        .checked_add(gas_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
 
     // Account creation via `init` constraint marks txID as executed
     // (atomic transaction ensures account only exists if execution succeeded)

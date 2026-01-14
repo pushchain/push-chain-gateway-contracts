@@ -370,12 +370,7 @@ pub fn validate_remaining_accounts(
 
 /// View function for SOL price (locker-compatible)
 /// Anyone can fetch SOL price in USD
+/// This is the core utility function - the Anchor account struct wrapper is in instructions/price.rs
 pub fn get_sol_price(price_update: &Account<PriceUpdateV2>) -> Result<PriceData> {
     calculate_sol_price(price_update)
-}
-
-/// Accounts for get_sol_price view function (locker-compatible)
-#[derive(Accounts)]
-pub struct GetSolPrice<'info> {
-    pub price_update: Account<'info, PriceUpdateV2>,
 }

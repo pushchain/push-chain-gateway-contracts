@@ -9,7 +9,6 @@ pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
 pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
 pub const CEA_SEED: &[u8] = b"push_identity";
-pub const CLAIMABLE_FEES_SEED: &[u8] = b"claimable_fees";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
 pub const FEED_ID: &str = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
@@ -167,19 +166,6 @@ impl ExecutedTx {
     pub const LEN: usize = 8;
 }
 
-/// Claimable fees per relayer - accumulates gas_fee across multiple executions
-/// Relayer can claim anytime without TSS signature (already approved via execute)
-#[account]
-pub struct ClaimableFees {
-    pub relayer: Pubkey,  // Relayer who executed txs and earned fees
-    pub accumulated: u64, // Total SOL claimable by this relayer
-    pub bump: u8,         // PDA bump
-}
-
-impl ClaimableFees {
-    pub const LEN: usize = 32 + 8 + 1; // Pubkey + u64 + u8
-}
-
 // ============================================
 //    EXECUTE ARBITRARY CALLS (NEW)
 // ============================================
@@ -210,6 +196,7 @@ pub struct ExecuteMessage {
 /// Execute event (parity with EVM `UniversalTxExecuted`).
 #[event]
 pub struct UniversalTxExecuted {
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
     pub tx_id: [u8; 32],
     pub sender: [u8; 20], // EVM address (same as origin_caller in EVM)
     pub target: Pubkey,   // Target program
@@ -235,20 +222,22 @@ pub struct UniversalTx {
 /// Withdraw event (parity with EVM `WithdrawToken`).
 #[event]
 pub struct WithdrawToken {
-    pub tx_id: [u8; 32],         // Transaction ID
-    pub origin_caller: [u8; 20], // Original caller on source chain (EVM address)
-    pub token: Pubkey,           // Token address (Pubkey::default() for native SOL)
-    pub to: Pubkey,              // Recipient address
-    pub amount: u64,             // Amount
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub tx_id: [u8; 32],           // Transaction ID
+    pub origin_caller: [u8; 20],   // Original caller on source chain (EVM address)
+    pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
+    pub to: Pubkey,                // Recipient address
+    pub amount: u64,               // Amount
 }
 
 /// Revert withdraw event (parity with EVM `RevertUniversalTx`).
 #[event]
 pub struct RevertUniversalTx {
-    pub tx_id: [u8; 32],        // Transaction ID
-    pub fund_recipient: Pubkey, // Recipient of reverted funds
-    pub token: Pubkey,          // Token address (Pubkey::default() for native SOL)
-    pub amount: u64,            // Amount
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub tx_id: [u8; 32],           // Transaction ID
+    pub fund_recipient: Pubkey,    // Recipient of reverted funds
+    pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
+    pub amount: u64,               // Amount
     pub revert_instruction: RevertInstructions,
 }
 
