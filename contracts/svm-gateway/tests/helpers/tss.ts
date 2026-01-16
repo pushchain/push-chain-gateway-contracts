@@ -45,11 +45,12 @@ interface SignParams {
     amount?: bigint;
     additional: Uint8Array[];
     chainId?: string; // Use chain_id from TSS account (Solana cluster pubkey string), fallback to TSS_CHAIN_ID
+    universalTxId?: Uint8Array; // Universal Transaction ID (32 bytes) - required for withdraw/revert/execute
     txId?: Uint8Array; // Transaction ID (32 bytes) - required for withdraw/revert
     originCaller?: Uint8Array; // Origin caller EVM address (20 bytes) - required for withdraw only
 }
 
-export async function signTssMessage({ instruction, nonce, amount, additional, chainId, txId, originCaller }: SignParams): Promise<TssSignature> {
+export async function signTssMessage({ instruction, nonce, amount, additional, chainId, universalTxId, txId, originCaller }: SignParams): Promise<TssSignature> {
     // Build message EXACTLY like Rust program
     // Use chain_id from TSS account (Solana cluster pubkey string) or fallback to TSS_CHAIN_ID
     const chainIdToUse = chainId ?? TSS_CHAIN_ID;
@@ -67,8 +68,11 @@ export async function signTssMessage({ instruction, nonce, amount, additional, c
         segments.push(amountBE);
     }
 
-    // For withdraw functions: include tx_id and origin_caller
-    // For revert functions: include tx_id only
+    // For withdraw/revert functions: include universal_tx_id, tx_id, and origin_caller (withdraw only)
+    // Order MUST match Rust: universal_tx_id BEFORE tx_id and origin_caller
+    if (universalTxId) {
+        segments.push(Buffer.from(universalTxId));
+    }
     if (txId) {
         segments.push(Buffer.from(txId));
     }
@@ -103,6 +107,14 @@ export function pubkeyToBytes(pubkey: PublicKey): Uint8Array {
     return pubkey.toBuffer();
 }
 
+/**
+ * Generate a universal transaction ID (32 bytes) for testing
+ * In production, this comes from the source chain (EVM/Push Chain)
+ */
+export function generateUniversalTxId(): Uint8Array {
+    return Buffer.from(Array.from({ length: 32 }, () => Math.floor(Math.random() * 256)));
+}
+
 // =========================
 // EXECUTE MESSAGE HELPERS
 // =========================
@@ -114,18 +126,24 @@ export interface GatewayAccountMeta {
 
 /**
  * Build execute message additional_data buffers (accounts and ix_data with length prefixes)
- * Matches Rust execute.rs lines 92-104
+ * SECURITY CRITICAL: Accounts passed here MUST exactly match accounts in remaining_accounts.
+ * - Same order (as passed to .remainingAccounts())
+ * - Same pubkeys
+ * - Same isWritable flags
+ * Matches Rust execute.rs lines 110-117
  */
 export function buildExecuteAdditionalData(
+    universalTxId: Uint8Array,
     txId: Uint8Array,
     targetProgram: PublicKey,
     sender: Uint8Array,
     accounts: GatewayAccountMeta[],
     ixData: Uint8Array,
-    gasFee: bigint = 0n,
-    rentFee: bigint = 0n
+    gasFee: bigint = BigInt(0),
+    rentFee: bigint = BigInt(0)
 ): Uint8Array[] {
-    // Build accounts buffer with length prefix (u32 BE) - matches Rust line 92-98
+    // Build accounts buffer with length prefix (u32 BE) - matches Rust line 113-117
+    // Format: [u32 BE: count] + [32 bytes: pubkey, 1 byte: is_writable] * count
     const accountsCount = Buffer.alloc(4);
     accountsCount.writeUInt32BE(accounts.length, 0);
     const accountsBuf = Buffer.concat([
@@ -145,17 +163,18 @@ export function buildExecuteAdditionalData(
     // Ensure BigInt conversion with safe defaults
     const gasFeeBigInt = (gasFee !== undefined && gasFee !== null)
         ? (typeof gasFee === 'bigint' ? gasFee : BigInt(gasFee))
-        : 0n;
+        : BigInt(0);
     const rentFeeBigInt = (rentFee !== undefined && rentFee !== null)
         ? (typeof rentFee === 'bigint' ? rentFee : BigInt(rentFee))
-        : 0n;
+        : BigInt(0);
     const gasFeeBuf = Buffer.alloc(8);
     gasFeeBuf.writeBigUInt64BE(gasFeeBigInt, 0);
     const rentFeeBuf = Buffer.alloc(8);
     rentFeeBuf.writeBigUInt64BE(rentFeeBigInt, 0);
 
-    // Matches Rust execute.rs: [tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
+    // Matches Rust execute.rs: [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
     return [
+        universalTxId,           // universal_tx_id (32 bytes)
         txId,                    // tx_id (32 bytes)
         targetProgram.toBuffer(), // target_program (32 bytes)
         sender,                  // sender (20 bytes)

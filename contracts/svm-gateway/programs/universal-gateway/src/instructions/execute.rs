@@ -4,7 +4,6 @@ use crate::state::{
     Config, ExecutedTx, GatewayAccountMeta, RevertInstructions, TssPda, TxType, UniversalTx,
     UniversalTxExecuted, CEA_SEED, EXECUTED_TX_SEED, TSS_SEED, VAULT_SEED,
 };
-use crate::utils::validate_remaining_accounts;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     hash::hash,
@@ -24,7 +23,7 @@ use anchor_spl::{
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
+#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20], account_indices: Vec<u8>, writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64)]
 pub struct ExecuteUniversalTx<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -84,7 +83,8 @@ pub fn execute_universal_tx(
     amount: u64,
     target_program: Pubkey,
     sender: [u8; 20],
-    accounts: Vec<GatewayAccountMeta>,
+    account_indices: Vec<u8>,
+    writable_flags: Vec<u8>, // Writable flags (1 byte per account: 0 or 1)
     ix_data: Vec<u8>,
     gas_fee: u64,
     rent_fee: u64,
@@ -96,12 +96,40 @@ pub fn execute_universal_tx(
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
 
-    // 1. Validate remaining_accounts match accounts parameter
-    validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
+    // Validate indices and flags match
+    let accounts_count = account_indices.len();
+    let expected_writable_flags_len = (accounts_count + 7) / 8; // Ceiling division
+    require!(
+        writable_flags.len() == expected_writable_flags_len,
+        GatewayError::InvalidAccount
+    );
+    require!(
+        account_indices.len() == ctx.remaining_accounts.len(),
+        GatewayError::AccountListLengthMismatch
+    );
+
+    // 1. Reconstruct accounts from remaining_accounts using indices
+    let mut accounts = Vec::new();
+    for (i, &idx) in account_indices.iter().enumerate() {
+        require!(
+            (idx as usize) < ctx.remaining_accounts.len(),
+            GatewayError::InvalidAccount
+        );
+
+        // Decode writable flag from bitpacked flags
+        let byte_idx = i / 8;
+        let bit_idx = 7 - (i % 8); // MSB first
+        let is_writable = (writable_flags[byte_idx] >> bit_idx) & 1 == 1;
+
+        accounts.push(GatewayAccountMeta {
+            pubkey: *ctx.remaining_accounts[idx as usize].key,
+            is_writable,
+        });
+    }
 
     let cea_key = ctx.accounts.cea_authority.key();
 
-    // 2. Build serialized accounts buffer (with length prefix) for TSS validation
+    // 3. Build serialized accounts buffer (with length prefix) for TSS validation
     // Format: [u32 BE: count] + [32 bytes: pubkey, 1 byte: is_writable] * count
     // This MUST match the format used in buildExecuteAdditionalData (off-chain)
     let mut accounts_buf = Vec::new();
@@ -160,16 +188,11 @@ pub fn execute_universal_tx(
     // TSS signature enforces: account count, pubkeys, and is_writable flags
     // Outer signer check is done during derivation
 
-    // 6. Replay protection - account existence check
-    // (init_if_needed will fail if account already exists with different data)
-    // For simplicity, we rely on account creation as replay protection
-    // Note: Nonce is already updated in validate_message (atomic with verification)
-
-    // 7. Validate rent_fee <= gas_fee (rent_fee is a subset of gas_fee)
+    // 8. Validate rent_fee <= gas_fee (rent_fee is a subset of gas_fee)
     // User burns gas_fee on Push Chain, which is split into rent_fee (for CEA) and relayer_fee (for caller)
     require!(rent_fee <= gas_fee, GatewayError::InvalidAmount);
 
-    // 8. Transfer rent_fee to CEA (for target contract rent)
+    // 9. Transfer rent_fee to CEA (for target contract rent)
     // This SOL is from gas_fee burned on Push Chain, allocated for target program rent
     let vault_bump = config.vault_bump;
     let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
@@ -192,7 +215,7 @@ pub fn execute_universal_tx(
         )?;
     }
 
-    // 9. Transfer amount to CEA (main transfer)
+    // 10. Transfer amount to CEA (main transfer)
     if amount > 0 {
         let amount_transfer_ix = system_instruction::transfer(
             &ctx.accounts.vault_sol.key(),
@@ -241,7 +264,7 @@ pub fn execute_universal_tx(
         )?;
     }
 
-    // 11. Build CPI instruction for target program
+    // 12. Build CPI instruction for target program
     // cea_authority must appear as signer inside CPI
     let cpi_metas: Vec<SolanaAccountMeta> = accounts
         .iter()
@@ -255,7 +278,7 @@ pub fn execute_universal_tx(
         })
         .collect();
 
-    // 12. Check if target is gateway itself (for CEA withdrawals)
+    // 13. Check if target is gateway itself (for CEA withdrawals)
     let cea_bump = ctx.bumps.cea_authority;
     let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
 
@@ -296,7 +319,7 @@ pub fn execute_universal_tx(
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20])]
+#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20], account_indices: Vec<u8>, writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64)]
 pub struct ExecuteUniversalTxToken<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -384,7 +407,8 @@ pub fn execute_universal_tx_token(
     amount: u64,
     target_program: Pubkey,
     sender: [u8; 20],
-    accounts: Vec<GatewayAccountMeta>,
+    account_indices: Vec<u8>,
+    writable_flags: Vec<u8>, // Writable flags (1 byte per account: 0 or 1)
     ix_data: Vec<u8>,
     gas_fee: u64,
     rent_fee: u64,
@@ -396,12 +420,40 @@ pub fn execute_universal_tx_token(
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
 
-    // 1. Validate remaining_accounts match accounts parameter
-    validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
+    // Validate indices and flags match
+    let accounts_count = account_indices.len();
+    let expected_writable_flags_len = (accounts_count + 7) / 8; // Ceiling division
+    require!(
+        writable_flags.len() == expected_writable_flags_len,
+        GatewayError::InvalidAccount
+    );
+    require!(
+        account_indices.len() == ctx.remaining_accounts.len(),
+        GatewayError::AccountListLengthMismatch
+    );
+
+    // 1. Reconstruct accounts from remaining_accounts using indices
+    let mut accounts = Vec::new();
+    for (i, &idx) in account_indices.iter().enumerate() {
+        require!(
+            (idx as usize) < ctx.remaining_accounts.len(),
+            GatewayError::InvalidAccount
+        );
+
+        // Decode writable flag from bitpacked flags
+        let byte_idx = i / 8;
+        let bit_idx = 7 - (i % 8); // MSB first
+        let is_writable = (writable_flags[byte_idx] >> bit_idx) & 1 == 1;
+
+        accounts.push(GatewayAccountMeta {
+            pubkey: *ctx.remaining_accounts[idx as usize].key,
+            is_writable,
+        });
+    }
 
     let cea_key = ctx.accounts.cea_authority.key();
 
-    // 2. Build serialized accounts buffer (with length prefix) for TSS validation
+    // 3. Build serialized accounts buffer (with length prefix) for TSS validation
     // Format: [u32 BE: count] + [32 bytes: pubkey, 1 byte: is_writable] * count
     // This MUST match the format used in buildExecuteAdditionalData (off-chain)
     let mut accounts_buf = Vec::new();
@@ -461,11 +513,11 @@ pub fn execute_universal_tx_token(
     // Outer signer check is done during derivation
     // Nonce is already updated in validate_message (atomic with verification)
 
-    // 6. Validate rent_fee <= gas_fee (rent_fee is a subset of gas_fee)
+    // 7. Validate rent_fee <= gas_fee (rent_fee is a subset of gas_fee)
     // User burns gas_fee on Push Chain, which is split into rent_fee (for CEA) and relayer_fee (for caller)
     require!(rent_fee <= gas_fee, GatewayError::InvalidAmount);
 
-    // 7. Transfer rent_fee (SOL) from vault to CEA (for target contract rent)
+    // 8. Transfer rent_fee (SOL) from vault to CEA (for target contract rent)
     // This is always in SOL, regardless of token type.
     if rent_fee > 0 {
         let vault_bump = config.vault_bump;
@@ -488,7 +540,7 @@ pub fn execute_universal_tx_token(
         )?;
     }
 
-    // 8. Create cea_ata if needed (required for any SPL operation, even if amount = 0)
+    // 9. Create cea_ata if needed (required for any SPL operation, even if amount = 0)
     // For example, unstake operations need CEA ATA to receive tokens even when amount = 0
     if ctx.accounts.cea_ata.data_is_empty() {
         // Manually create ATA using associated token program
@@ -538,7 +590,7 @@ pub fn execute_universal_tx_token(
         );
     }
 
-    // 9. Handle token operations only if amount > 0
+    // 10. Handle token operations only if amount > 0
     // If amount = 0, skip token transfer - allows operations like unstake without vault transfer
     if amount > 0 {
         // Transfer tokens from vault_ata → cea_ata
@@ -589,7 +641,7 @@ pub fn execute_universal_tx_token(
         )?;
     }
 
-    // 11. Build CPI instruction for target program
+    // 12. Build CPI instruction for target program
     let cpi_metas: Vec<SolanaAccountMeta> = accounts
         .iter()
         .map(|a| {
@@ -602,7 +654,7 @@ pub fn execute_universal_tx_token(
         })
         .collect();
 
-    // 12. Check if target is gateway itself (for CEA withdrawals)
+    // 13. Check if target is gateway itself (for CEA withdrawals)
     let cea_bump = ctx.bumps.cea_authority;
     let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
 
