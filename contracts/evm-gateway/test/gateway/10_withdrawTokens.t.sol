@@ -364,7 +364,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         uint256 initialBalance = user1.balance;
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, universalTxID, originCaller, address(0), user1, amount);
+        emit IUniversalGateway.UniversalTxExecuted(txID, universalTxID, originCaller, user1, address(0), amount, bytes(""));
 
         vm.deal(tss, amount);
         vm.prank(tss);
@@ -466,7 +466,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         address recipient = user1;
 
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, universalTxID, originCaller, address(0), recipient, amount);
+        emit IUniversalGateway.UniversalTxExecuted(txID, universalTxID, originCaller, recipient, address(0), amount, bytes(""));
 
         vm.deal(tss, amount);
         vm.prank(tss);
