@@ -752,6 +752,13 @@ contract UniversalGatewayV0 is
         return (uint256(priceInUSD) * scale, dec);
     }
 
+    function getEthUsdPrice_old() public view returns (uint256, uint8) {
+        (, int256 price, , , ) = ethUsdFeed.latestRoundData();
+        uint8 decimals = ethUsdFeed.decimals();
+        require(price > 0, "Invalid price");
+        return (uint256(price), decimals); // 8 decimals
+    }
+
     /// @notice Converts an ETH amount (in wei) to USD with 18 decimals via Chainlink price.
     /// @dev Uses getEthUsdPrice which returns USD(1e18) per ETH and computes:
     ///         usd1e18 = (amountWei * price1e18) / 1e18.
