@@ -113,18 +113,13 @@ export function decodeExecutePayload(buf: Buffer): ExecutePayloadFields {
 }
 
 /**
- * Helper to convert accounts to indices and writable flags for Solana transaction
+ * Helper to convert accounts to writable flags for Solana transaction
  * This is used by the backend to prepare parameters for execute function
- * Bitpacked approach: indices as Vec<u8>, writable flags as bitpacked Vec<u8> (1 bit per account, MSB first)
+ * Bitpacked approach: writable flags as bitpacked Vec<u8> (1 bit per account, MSB first)
+ * Accounts are mapped by position: remaining_accounts[i] maps to bit i in writable_flags
  */
-export function accountsToIndicesAndFlags(accounts: GatewayAccountMeta[]): {
-    indices: Buffer;
-    writableFlags: Buffer;
-} {
-    // Sequential indices (0, 1, 2, ...) as Buffer
-    const indices = Buffer.from(accounts.map((_, i) => i));
-
-    // Bitpack writable flags
+export function accountsToWritableFlags(accounts: GatewayAccountMeta[]): Buffer {
+    // Bitpack writable flags (MSB first)
     const writableBitsetLen = Math.ceil(accounts.length / 8);
     const writableFlags = Buffer.alloc(writableBitsetLen, 0);
     for (let i = 0; i < accounts.length; i++) {
@@ -134,8 +129,7 @@ export function accountsToIndicesAndFlags(accounts: GatewayAccountMeta[]): {
             writableFlags[byteIdx] |= (1 << bitIdx);
         }
     }
-
-    return { indices, writableFlags };
+    return writableFlags;
 }
 
 /**
