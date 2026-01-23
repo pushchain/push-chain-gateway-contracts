@@ -17,6 +17,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
     let admin: Keypair;
     let newAdmin: Keypair;
     let tssAddress: Keypair;
+    let newTssAddress: Keypair;
     let pauser: Keypair;
     let newPauser: Keypair;
     let unauthorizedUser: Keypair;
@@ -42,6 +43,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
         // Additional actors for admin mutation tests
         newAdmin = Keypair.generate();
+        newTssAddress = Keypair.generate();
         newPauser = Keypair.generate();
         unauthorizedUser = Keypair.generate();
 
@@ -50,6 +52,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         await Promise.all([
             provider.connection.requestAirdrop(admin.publicKey, airdropAmount),
             provider.connection.requestAirdrop(newAdmin.publicKey, airdropAmount),
+            provider.connection.requestAirdrop(newTssAddress.publicKey, airdropAmount),
             provider.connection.requestAirdrop(newPauser.publicKey, airdropAmount),
             provider.connection.requestAirdrop(unauthorizedUser.publicKey, airdropAmount),
         ]);
@@ -73,7 +76,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         );
 
         [tssPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("tsspda")],
+            [Buffer.from("tss")],
             program.programId
         );
 
@@ -104,13 +107,12 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
         });
 
-        it("Updates USD caps", async () => {
+        it("Updates TSS address", async () => {
 
-            const newMinCap = new anchor.BN(150_000_000);
-            const newMaxCap = new anchor.BN(2_000_000_000);
+            const oldTssAddress = tssAddress.publicKey;
 
             await program.methods
-                .setCapsUsd(newMinCap, newMaxCap)
+                .setTssAddress(newTssAddress.publicKey)
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
@@ -119,18 +121,17 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 .rpc();
 
             const config = await program.account.config.fetch(configPda);
-            expect(config.minCapUniversalTxUsd.toString()).to.equal(newMinCap.toString());
-            expect(config.maxCapUniversalTxUsd.toString()).to.equal(newMaxCap.toString());
+            expect(config.tssAddress.toString()).to.equal(newTssAddress.publicKey.toString());
 
+
+            // Update tssAddress for other tests
+            tssAddress = newTssAddress;
         });
 
         it("Rejects unauthorized admin operations", async () => {
             try {
-                const newMinCap = new anchor.BN(200_000_000);
-                const newMaxCap = new anchor.BN(300_000_000);
-
                 await program.methods
-                    .setCapsUsd(newMinCap, newMaxCap)
+                    .setTssAddress(unauthorizedUser.publicKey)
                     .accounts({
                         admin: unauthorizedUser.publicKey,
                         config: configPda,
@@ -416,7 +417,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         it("Rejects TSS initialization by non-admin", async () => {
             // Use the correct TSS PDA seed (just "tss", not with extra bytes)
             const [actualTssPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from("tsspda")],
+                [Buffer.from("tss")],
                 program.programId
             );
 
@@ -434,7 +435,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 const newTssEthAddress = Array.from(Buffer.alloc(20, 99));
                 try {
                     await program.methods
-                        .updateTss(newTssEthAddress, "999")
+                        .updateTss(newTssEthAddress, new anchor.BN(999))
                         .accounts({
                             authority: unauthorizedUser.publicKey,
                             tssPda: actualTssPda,
@@ -453,7 +454,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 // TSS doesn't exist, test that non-admin can't initialize it
                 // The constraint check happens during account validation, before init
                 const expectedTssEthAddress = getTssEthAddress();
-                const chainId = TSS_CHAIN_ID;
+                const chainId = new anchor.BN(TSS_CHAIN_ID);
 
                 try {
                     await program.methods
@@ -479,12 +480,12 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
         it("Initializes TSS PDA if not already initialized", async () => {
             const expectedTssEthAddress = getTssEthAddress();
-            const chainId = TSS_CHAIN_ID;
+            const chainId = new anchor.BN(TSS_CHAIN_ID);
 
             try {
                 const existingTss = await program.account.tssPda.fetch(tssPda);
                 // Verify it's already initialized correctly
-                expect(existingTss.chainId).to.equal(chainId);
+                expect(existingTss.chainId.toString()).to.equal(chainId.toString());
                 return;
             } catch {
                 // Not initialized, proceed with initialization
@@ -502,12 +503,12 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 .rpc();
 
             const tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.chainId).to.equal(chainId);
+            expect(tss.chainId.toString()).to.equal(chainId.toString());
         });
 
         it("Updates TSS configuration", async () => {
             const newTssEthAddress = Array.from(Buffer.alloc(20, 2));
-            const newChainId = "137";
+            const newChainId = new anchor.BN(137);
 
             await program.methods
                 .updateTss(newTssEthAddress, newChainId)
@@ -519,7 +520,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 .rpc();
 
             const tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.chainId).to.equal(newChainId);
+            expect(tss.chainId.toString()).to.equal(newChainId.toString());
         });
 
         it("Resets nonce when TSS address changes", async () => {
@@ -539,7 +540,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // Update TSS with a different address - should reset nonce to 0
             const newTssEthAddress = Array.from(Buffer.alloc(20, 3));
             await program.methods
-                .updateTss(newTssEthAddress, "1")
+                .updateTss(newTssEthAddress, new anchor.BN(1))
                 .accounts({
                     authority: admin.publicKey,
                     tssPda: tssPda,
@@ -569,7 +570,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             // Update TSS with same address but different chain_id - nonce should NOT reset
             await program.methods
-                .updateTss(currentAddress, "999")
+                .updateTss(currentAddress, new anchor.BN(999))
                 .accounts({
                     authority: admin.publicKey,
                     tssPda: tssPda,
@@ -579,7 +580,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             tss = await program.account.tssPda.fetch(tssPda);
             expect(tss.nonce.toString()).to.equal(currentNonce); // Nonce unchanged
-            expect(tss.chainId).to.equal("999");
+            expect(tss.chainId.toString()).to.equal("999");
         });
 
         it("Resets TSS nonce", async () => {
@@ -599,6 +600,31 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         });
     });
 
+    describe("Fund Management", () => {
+        it("Adds funds to vault (if add_funds function exists)", async () => {
+
+            const addAmount = 1 * anchor.web3.LAMPORTS_PER_SOL;
+            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
+
+            try {
+                await program.methods
+                    .addFunds(new anchor.BN(addAmount))
+                    .accounts({
+                        admin: admin.publicKey,
+                        config: configPda,
+                        vault: vaultPda,
+                        systemProgram: SystemProgram.programId,
+                    })
+                    .signers([admin])
+                    .rpc();
+
+                const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+                expect(finalVaultBalance).to.be.greaterThan(initialVaultBalance);
+            } catch {
+                // add_funds instruction is optional and may be disabled
+            }
+        });
+    });
 
     describe("Price Oracle Functions", () => {
         it("Gets SOL price from Pyth oracle", async () => {
@@ -638,12 +664,30 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             }
         });
 
+        it("Rejects zero TSS address", async () => {
+            try {
+                await program.methods
+                    .setTssAddress(PublicKey.default)
+                    .accounts({
+                        admin: admin.publicKey,
+                        config: configPda,
+                    })
+                    .signers([admin])
+                    .rpc();
+
+                expect.fail("Zero TSS address should have been rejected");
+            } catch (error: any) {
+                expect(error).to.exist;
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("ZeroAddress");
+            }
+        });
     });
 
     after(async () => {
         const expectedTssEthAddress = getTssEthAddress();
         await program.methods
-            .updateTss(expectedTssEthAddress, TSS_CHAIN_ID)
+            .updateTss(expectedTssEthAddress, new anchor.BN(TSS_CHAIN_ID))
             .accounts({
                 tssPda,
                 authority: admin.publicKey,

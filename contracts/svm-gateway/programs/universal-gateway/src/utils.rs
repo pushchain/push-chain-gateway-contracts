@@ -1,10 +1,8 @@
 use crate::errors::GatewayError;
 use crate::state::{
-    Config, EpochUsage, ExecuteMessage, GatewayAccountMeta, RateLimitConfig, TokenRateLimit,
-    UniversalPayload, FEED_ID, RATE_LIMIT_SEED,
+    Config, EpochUsage, RateLimitConfig, TokenRateLimit, UniversalPayload, FEED_ID, RATE_LIMIT_SEED,
 };
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::keccak;
 use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -316,61 +314,4 @@ pub fn get_token_rate_limit_optional<'info>(
             Ok(None)
         }
     }
-}
-
-// =========================
-// EXECUTE VALIDATION
-// =========================
-// Note: Execute functions now use the unified validate_message from tss.rs
-// This ensures a single standard for all TSS-signed messages (withdraw, revert, execute)
-
-/// Validate remaining_accounts match signed accounts.
-/// CRITICAL: No account in remaining_accounts can have is_signer == true.
-/// Only gateway PDAs (vault, cea_authority) become signers via invoke_signed.
-pub fn validate_remaining_accounts(
-    signed_accounts: &[GatewayAccountMeta],
-    remaining: &[AccountInfo],
-) -> Result<()> {
-    require!(
-        remaining.len() == signed_accounts.len(),
-        GatewayError::AccountListLengthMismatch
-    );
-
-    for (signed, actual) in signed_accounts.iter().zip(remaining.iter()) {
-        // Validate pubkey matches
-        require!(
-            actual.key == &signed.pubkey,
-            GatewayError::AccountPubkeyMismatch
-        );
-
-        // Validate writable flag matches
-        // Signed metadata requires the account to be writable -> actual must also be writable.
-        // It's safe if actual is writable while signed metadata marks it read-only;
-        // CPI metas are built from signed metadata, so the target instruction won't
-        // gain extra write privileges.
-        if signed.is_writable && !actual.is_writable {
-            msg!(
-                "Account writable mismatch: {} expected writable",
-                signed.pubkey
-            );
-            return err!(GatewayError::AccountWritableFlagMismatch);
-        }
-
-        // CRITICAL: No outer signer allowed in target account list
-        // cea_authority becomes signer only via invoke_signed, not here
-        require!(!actual.is_signer, GatewayError::UnexpectedOuterSigner);
-    }
-
-    Ok(())
-}
-
-// =========================
-// PRICE VIEW FUNCTION
-// =========================
-
-/// View function for SOL price (locker-compatible)
-/// Anyone can fetch SOL price in USD
-/// This is the core utility function - the Anchor account struct wrapper is in instructions/price.rs
-pub fn get_sol_price(price_update: &Account<PriceUpdateV2>) -> Result<PriceData> {
-    calculate_sol_price(price_update)
 }
