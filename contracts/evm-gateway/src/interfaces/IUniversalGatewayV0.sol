@@ -46,13 +46,6 @@ interface IUniversalGatewayV0 {
         bytes signatureData
     );
 
-    /// @notice         Caps updated event
-    event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
-
-    /// @notice         Rate-limit / config events
-    event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
-    event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
-
     /// @notice         Revert universal transaction event
     event RevertUniversalTx(
         bytes indexed txID,
@@ -64,7 +57,7 @@ interface IUniversalGatewayV0 {
 
     /// @notice         Universal tx execution event
     event UniversalTxExecuted(
-        bytes indexed txID,
+        bytes32 indexed txID,
         bytes32 indexed universalTxID,
         address indexed originCaller,
         address target,

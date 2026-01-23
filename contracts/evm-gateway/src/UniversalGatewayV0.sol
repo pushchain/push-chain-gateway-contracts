@@ -558,7 +558,7 @@ contract UniversalGatewayV0 is
 
     /// @inheritdoc IUniversalGatewayV0
     function withdraw(
-        bytes calldata txID,
+        bytes32 txID,
         bytes32 universalTxID,
         address originCaller,
         address to,
@@ -578,7 +578,7 @@ contract UniversalGatewayV0 is
     }
     //@inheritdocs IUniversalGatewayV0
     function withdrawTokens(
-        bytes calldata txID,
+        bytes32 txID,
         bytes32 universalTxID,
         address originCaller,
         address token,
@@ -611,6 +611,7 @@ contract UniversalGatewayV0 is
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address token,
         address target,
@@ -632,7 +633,7 @@ contract UniversalGatewayV0 is
         _executeCall(target, payload, 0);          // execute call with required amount
         _resetApproval(token, target);             // reset approval back to zero
         
-        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, token, amount, payload);
     }
     
     /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
@@ -644,6 +645,7 @@ contract UniversalGatewayV0 is
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address target,
         uint256 amount,
@@ -659,7 +661,7 @@ contract UniversalGatewayV0 is
         
         _executeCall(target, payload, amount);
         
-        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, address(0), amount, payload);
     }
 
     // =========================
