@@ -10,6 +10,7 @@ import { PublicKey, Keypair } from "@solana/web3.js";
 export let admin: Keypair | null = null;
 export let tssAddress: Keypair | null = null;
 export let pauser: Keypair | null = null;
+export let counterAuthority: Keypair | null = null;
 
 // Mock tokens (created once in setup.test.ts)
 export let mockUSDT: any = null;
@@ -49,6 +50,10 @@ export function setMockPriceFeed(feed: PublicKey) {
     mockPriceFeed = feed;
 }
 
+export function setCounterAuthority(keypair: Keypair) {
+    counterAuthority = keypair;
+}
+
 // Getter functions (with validation)
 export function getAdmin(): Keypair {
     if (!admin) throw new Error("Admin not initialized - did setup.test.ts run?");
@@ -85,5 +90,13 @@ export function getMockPriceFeed(): PublicKey {
         return dummyPythFeed;
     }
     return mockPriceFeed;
+}
+
+export function getCounterAuthority(): Keypair {
+    if (!counterAuthority) {
+        // Generate and cache if not set
+        counterAuthority = Keypair.generate();
+    }
+    return counterAuthority;
 }
 
