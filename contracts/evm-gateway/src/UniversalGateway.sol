@@ -497,7 +497,8 @@ contract UniversalGateway is
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTxToken(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
@@ -507,21 +508,21 @@ contract UniversalGateway is
         whenNotPaused
         onlyRole(VAULT_ROLE)
     {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
         
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
         
-        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(txID, universalTxID, revertInstruction.revertRecipient, token, amount, revertInstruction);
     }
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTx(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     )
@@ -531,17 +532,16 @@ contract UniversalGateway is
         whenNotPaused
         onlyTSS
     {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(txID, universalTxID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================
@@ -550,35 +550,35 @@ contract UniversalGateway is
 
     /// @inheritdoc IUniversalGateway
     function withdraw(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address to,
         uint256 amount
     ) external payable nonReentrant whenNotPaused onlyTSS {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
         if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
         
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         (bool ok,) = payable(to).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit WithdrawToken(txID, originCaller, address(0), to, amount);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, address(0), amount, bytes(""));
     }
 
     /// @inheritdoc IUniversalGateway
     function withdrawTokens(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address token,
         address to,
         uint256 amount
     ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
         if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
@@ -586,9 +586,9 @@ contract UniversalGateway is
         
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         IERC20(token).safeTransfer(to, amount);
-        emit WithdrawToken(txID, originCaller, token, to, amount);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, token, amount, bytes(""));
     }
 
     /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
@@ -603,15 +603,15 @@ contract UniversalGateway is
     /// @param amount          amount of token to send along
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address token,
         address target,
         uint256 amount,
         bytes calldata payload
     ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
@@ -619,7 +619,7 @@ contract UniversalGateway is
         
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
 
         _resetApproval(token, target);             // reset approval to zero
         _safeApprove(token, target, amount);       // approve target to spend amount
@@ -632,7 +632,7 @@ contract UniversalGateway is
             IERC20(token).safeTransfer(VAULT, remainingBalance);
         }
         
-        emit UniversalTxExecuted(txID, originCaller, target, token, amount, payload);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, token, amount, payload);
     }
     
     /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
@@ -643,24 +643,24 @@ contract UniversalGateway is
     /// @param amount          amount of native token to send along
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address target,
         uint256 amount,
         bytes calldata payload
     ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         
         _executeCall(target, payload, amount);
         
-        emit UniversalTxExecuted(txID, originCaller, target, address(0), amount, payload);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, address(0), amount, payload);
     }
 
     // =========================

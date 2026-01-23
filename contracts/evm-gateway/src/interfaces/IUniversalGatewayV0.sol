@@ -46,17 +46,28 @@ interface IUniversalGatewayV0 {
         bytes signatureData
     );
 
-    /// @notice                     Universal tx execution event that is executed on External Chains.
-    /// @param txID                 Unique transaction identifier
-    /// @param originCaller         Original caller/user on source chain ( Push Chain)
-    /// @param target               Target contract address to execute call
-    /// @param token                Token address being sent
-    /// @param amount               Amount of token being sent
-    /// @param data                 Calldata to be executed on target contract on external chain
+    /// @notice         Caps updated event
+    event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
+
+    /// @notice         Rate-limit / config events
+    event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
+    event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
+
+    /// @notice         Revert universal transaction event
+    event RevertUniversalTx(
+        bytes indexed txID,
+        address indexed to,
+        address indexed token,
+        uint256 amount,
+        RevertInstructions revertInstruction
+    );
+
+    /// @notice         Universal tx execution event
     event UniversalTxExecuted(
-        bytes32 txID,
+        bytes indexed txID,
+        bytes32 indexed universalTxID,
         address indexed originCaller,
-        address indexed target,
+        address target,
         address token,
         uint256 amount,
         bytes data
@@ -224,15 +235,14 @@ interface IUniversalGatewayV0 {
     ///@return                     True if the token is supported, false otherwise
     function isSupportedToken(address token) external view returns (bool);
 
-    ///@notice                     Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
-    ///@dev                        Uses the current ETH/USD price from {getEthUsdPrice}.
-    ///@return minValue            Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
-    ///@return maxValue            Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
-    function getMinMaxValueForNative() external view returns (uint256 minValue, uint256 maxValue);
+    function revertUniversalTx(bytes calldata txID, uint256 amount, RevertInstructions calldata revertCFG)
+        external
+        payable;
 
-    ///@notice             Returns both the total token amount used and remaining in the current epoch.
-    ///@param token        token address to query (use address(0) for native)
-    ///@return used        amount already consumed in the current epoch (in token's natural units)
-    ///@return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
-    function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining);
+    function revertUniversalTxToken(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
+        external;
+
+    function withdraw(bytes calldata txID, bytes32 universalTxID, address originCaller, address to, uint256 amount) external payable;
+
+    function withdrawTokens(bytes calldata txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 }
