@@ -10,6 +10,7 @@ async function decodeTx(sig, label) {
         const coder = new anchor.BorshEventCoder(idl);
 
         const tx = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        console.log("tx.version", tx.version);
         if (!tx) {
             console.log(`${label}: Transaction not found. Check if signature is correct and network matches.`);
             return;
@@ -38,9 +39,9 @@ async function decodeTx(sig, label) {
             const isUniversalTx = disc.equals(UNIVERSAL_TX_DISCRIMINATOR);
             console.log(`  [${idx}] discriminator=${disc.toString('hex')} data_len=${buf.length - 8} ${isUniversalTx ? '(UniversalTx)' : ''}`);
             if (isUniversalTx) {
-                // Try to manually parse the event to see payload
+                // Show full event data for comparison
                 const eventData = buf.slice(8);
-                console.log(`    Raw event data (first 100 bytes): ${eventData.slice(0, 100).toString('hex')}`);
+                console.log(`    Raw event data (FULL, ${eventData.length} bytes): ${eventData.toString('hex')}`);
             }
         });
 
@@ -131,9 +132,39 @@ async function decodeTx(sig, label) {
             return;
         }
 
-        console.log(`${label}: Found ${uniEvents.length} UniversalTx event(s), processing the one with payload...`);
+        console.log(`${label}: Found ${uniEvents.length} UniversalTx event(s)`);
 
-        // Find the event with a non-empty payload
+        // Helper function to decode tx_type
+        function decodeTxType(e) {
+            const txType = e.tx_type !== undefined ? e.tx_type : e.txType;
+            if (txType === undefined) return 'Unknown';
+            if (typeof txType === 'object' && txType !== null) {
+                const keys = Object.keys(txType);
+                if (keys.length > 0) {
+                    return keys[0].charAt(0).toUpperCase() + keys[0].slice(1);
+                }
+            } else if (typeof txType === 'number') {
+                const txTypeNames = ['Gas', 'GasAndPayload', 'Funds', 'FundsAndPayload'];
+                return txTypeNames[txType] || `Unknown(${txType})`;
+            }
+            return String(txType);
+        }
+
+        // Show ALL events first
+        console.log(`\n=== All ${uniEvents.length} UniversalTx Event(s) ===`);
+        uniEvents.forEach((ev, idx) => {
+            const e = ev.data;
+            const payloadBytes = Array.isArray(e.payload) ? Buffer.from(e.payload) : Buffer.isBuffer(e.payload) ? e.payload : Buffer.from(e.payload || []);
+            const txTypeName = decodeTxType(e);
+            console.log(`\nEvent ${idx + 1}:`);
+            console.log(`  - tx_type: ${txTypeName}`);
+            console.log(`  - sender: ${e.sender}`);
+            console.log(`  - token: ${e.token}`);
+            console.log(`  - amount: ${e.amount}`);
+            console.log(`  - payload length: ${payloadBytes.length} bytes`);
+        });
+
+        // Find the event with a non-empty payload for detailed decoding
         let uni = uniEvents.find(e => e.data.payload && (Array.isArray(e.data.payload) ? e.data.payload.length > 0 : Buffer.isBuffer(e.data.payload) ? e.data.payload.length > 0 : true));
         if (!uni) {
             // If none have payload, use the largest one (likely has the payload)
@@ -144,6 +175,7 @@ async function decodeTx(sig, label) {
             });
         }
 
+        console.log(`\n=== Detailed Decode of Event with Payload ===`);
         const e = uni.data;
         console.log(`${label}: Found UniversalTx event`);
         console.log(`  - sender: ${e.sender}`);
@@ -151,31 +183,35 @@ async function decodeTx(sig, label) {
         console.log(`  - token: ${e.token}`);
         console.log(`  - amount: ${e.amount}`);
 
+        // Show revert_instruction if present
+        if (e.revert_instruction || e.revertInstruction) {
+            const revert = e.revert_instruction || e.revertInstruction;
+            console.log(`  - revert_instruction:`);
+            console.log(`    - fund_recipient: ${revert.fund_recipient || revert.fundRecipient || 'N/A'}`);
+            if (revert.revert_msg || revert.revertContext) {
+                const msg = revert.revert_msg || revert.revertContext;
+                const msgBuf = Array.isArray(msg) ? Buffer.from(msg) : Buffer.isBuffer(msg) ? msg : Buffer.from(msg || []);
+                console.log(`    - revert_msg length: ${msgBuf.length} bytes`);
+                if (msgBuf.length > 0) {
+                    console.log(`    - revert_msg (hex): ${msgBuf.toString('hex')}`);
+                }
+            }
+        }
+
+        // Show signature_data if present
+        if (e.signature_data || e.signatureData) {
+            const sigData = e.signature_data || e.signatureData;
+            const sigBuf = Array.isArray(sigData) ? Buffer.from(sigData) : Buffer.isBuffer(sigData) ? sigData : Buffer.from(sigData || []);
+            console.log(`  - signature_data length: ${sigBuf.length} bytes`);
+            if (sigBuf.length > 0) {
+                console.log(`  - signature_data (hex): ${sigBuf.toString('hex')}`);
+            }
+        }
+
         // Try both snake_case and camelCase for tx_type
         const txType = e.tx_type !== undefined ? e.tx_type : e.txType;
-        if (txType !== undefined) {
-            // Anchor deserializes enums as objects: { gas: {} }, { gasAndPayload: {} }, etc.
-            let txTypeName = 'Unknown';
-            if (typeof txType === 'object' && txType !== null) {
-                // Get the first key (enum variant name)
-                const keys = Object.keys(txType);
-                if (keys.length > 0) {
-                    // Convert camelCase to PascalCase for display
-                    const variant = keys[0];
-                    txTypeName = variant.charAt(0).toUpperCase() + variant.slice(1);
-                }
-            } else if (typeof txType === 'number') {
-                // Fallback: if it's a number, map it
-                const txTypeNames = ['Gas', 'GasAndPayload', 'Funds', 'FundsAndPayload'];
-                txTypeName = txTypeNames[txType] || `Unknown(${txType})`;
-            } else {
-                txTypeName = String(txType);
-            }
+        const txTypeName = decodeTxType(e);
             console.log(`  - tx_type: ${txTypeName}`);
-        } else {
-            console.log(`  - tx_type: undefined (field not found in event data)`);
-            console.log(`  - Available fields: ${Object.keys(e).join(', ')}`);
-        }
 
         // Handle payload - it might be an array, buffer, or already deserialized
         let payloadBytes;
@@ -217,10 +253,31 @@ async function decodeTx(sig, label) {
         console.log(`  - Attempting to decode payload as Borsh (${payloadBytes.length} bytes)...`);
         const payload = decodeUniversalPayload(payloadBytes);
 
+        // Build complete event data for comparison
+        const eventData = {
+            sender: e.sender.toString(),
+            recipient: "0x" + Buffer.from(e.recipient).toString('hex'),
+            token: e.token.toString(),
+            amount: e.amount.toString(),
+            tx_type: txTypeName,
+            payload: payload,
+            revert_instruction: e.revert_instruction || e.revertInstruction ? {
+                fund_recipient: (e.revert_instruction || e.revertInstruction).fund_recipient || (e.revert_instruction || e.revertInstruction).fundRecipient,
+                revert_msg: e.revert_instruction || e.revertInstruction ? (() => {
+                    const msg = (e.revert_instruction || e.revertInstruction).revert_msg || (e.revert_instruction || e.revertInstruction).revertContext;
+                    const msgBuf = Array.isArray(msg) ? Buffer.from(msg) : Buffer.isBuffer(msg) ? msg : Buffer.from(msg || []);
+                    return msgBuf.length > 0 ? "0x" + msgBuf.toString('hex') : null;
+                })() : null
+            } : null,
+            signature_data: (() => {
+                const sigData = e.signature_data || e.signatureData;
+                const sigBuf = Array.isArray(sigData) ? Buffer.from(sigData) : Buffer.isBuffer(sigData) ? sigData : Buffer.from(sigData || []);
+                return sigBuf.length > 0 ? "0x" + sigBuf.toString('hex') : null;
+            })()
+        };
+
         console.log(`\n${label}:`);
-        console.log(JSON.stringify({
-            payload
-        }, null, 2));
+        console.log(JSON.stringify(eventData, null, 2));
     } catch (err) {
         console.error(`${label} Error:`, err?.message || String(err));
     }
