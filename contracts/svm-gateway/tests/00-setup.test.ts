@@ -157,24 +157,24 @@ describe("Universal Gateway - Setup Tests", () => {
         expect(tokenAddresses).to.include(mockUSDT.mint.publicKey.toString());
         expect(tokenAddresses).to.include(mockUSDC.mint.publicKey.toString());
 
-        const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], program.programId);
+        const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tss")], program.programId);
         const expectedTssEthAddress = getTssEthAddress();
-        const expectedChainId = TSS_CHAIN_ID; // String: Solana cluster pubkey
+        const expectedChainId = TSS_CHAIN_ID;
 
         try {
             const existingTss = await program.account.tssPda.fetch(tssPda);
             const storedAddress = Buffer.from(existingTss.tssEthAddress);
             const expectedAddress = Buffer.from(expectedTssEthAddress);
-            if (!storedAddress.equals(expectedAddress) || existingTss.chainId !== expectedChainId) {
+            if (!storedAddress.equals(expectedAddress) || existingTss.chainId.toNumber() !== expectedChainId) {
                 await program.methods
-                    .updateTss(expectedTssEthAddress, expectedChainId)
+                    .updateTss(expectedTssEthAddress, new anchor.BN(expectedChainId))
                     .accounts({ tssPda, authority: admin.publicKey })
                     .signers([admin])
                     .rpc();
             }
         } catch {
             await program.methods
-                .initTss(expectedTssEthAddress, expectedChainId)
+                .initTss(expectedTssEthAddress, new anchor.BN(expectedChainId))
                 .accounts({
                     tssPda,
                     authority: admin.publicKey,
