@@ -5,7 +5,7 @@ import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import * as sharedState from "./shared-state";
-import { signTssMessage, TssInstruction } from "./helpers/tss";
+import { signTssMessage, TssInstruction, generateUniversalTxId } from "./helpers/tss";
 
 const USDT_DECIMALS = 6;
 const TOKEN_MULTIPLIER = BigInt(10 ** USDT_DECIMALS);
@@ -52,13 +52,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
     let currentNonce = 0;
     let txIdCounter = 0; // Counter to ensure unique tx_ids across tests
 
-    const getClaimableFeesPda = (caller: PublicKey): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("claimable_fees"), caller.toBuffer()],
-            program.programId
-        );
-        return pda;
-    };
 
     const syncNonceFromChain = async () => {
         const account = await program.account.tssPda.fetch(tssPda);
@@ -260,6 +253,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -267,6 +261,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -274,10 +269,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const initialVault = await provider.connection.getBalance(vaultPda);
             const initialRecipient = await provider.connection.getBalance(recipient.publicKey);
+            const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
             await program.methods
                 .withdraw(
                     txId,
+                    universalTxId,
                     originCaller,
                     new anchor.BN(withdrawLamports),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -292,7 +289,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -301,9 +297,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const finalVault = await provider.connection.getBalance(vaultPda);
             const finalRecipient = await provider.connection.getBalance(recipient.publicKey);
+            const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
 
-            expect(finalVault).to.equal(initialVault - withdrawLamports);
+            expect(finalVault).to.equal(initialVault - withdrawLamports - Number(DEFAULT_GAS_FEE)); // Vault pays withdraw amount + gas fee
             expect(finalRecipient).to.equal(initialRecipient + withdrawLamports);
+            // Caller should receive gas_fee (minus rent for executed_tx account creation)
+            const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
+            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
+            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
+            expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
 
             await syncNonceFromChain();
         });
@@ -313,6 +315,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -320,6 +323,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -332,6 +336,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -346,7 +351,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         tssPda,
                         recipient: recipient.publicKey,
                         executedTx: executedTxPda,
-                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                     })
@@ -369,6 +373,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -376,6 +381,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -385,6 +391,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -422,6 +429,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -429,6 +437,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(excessive),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -438,6 +447,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(excessive),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -464,13 +474,14 @@ describe("Universal Gateway - Withdraw Tests", () => {
         });
     });
 
-    describe("withdraw_funds", () => {
+    describe("withdraw_tokens", () => {
         it("transfers SPL tokens with a valid signature", async () => {
             const withdrawTokens = 1_000;
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -479,6 +490,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSpl,
                 nonce: currentNonce,
                 amount: withdrawRaw,
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -486,10 +498,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const initialVault = await mockUSDT.getBalance(vaultUsdtAccount);
             const initialRecipient = await mockUSDT.getBalance(recipientUsdtAccount);
+            const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
             await program.methods
-                .withdrawFunds(
+                .withdrawTokens(
                     txId,
+                    universalTxId,
                     originCaller,
                     new anchor.BN(Number(withdrawRaw)),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -507,7 +521,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     recipientTokenAccount: recipientUsdtAccount,
                     tokenMint: mockUSDT.mint.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -517,9 +530,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const finalVault = await mockUSDT.getBalance(vaultUsdtAccount);
             const finalRecipient = await mockUSDT.getBalance(recipientUsdtAccount);
+            const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
 
             expect(finalVault).to.equal(initialVault - withdrawTokens);
             expect(finalRecipient).to.equal(initialRecipient + withdrawTokens);
+            // Caller should receive gas_fee (minus rent for executed_tx account creation)
+            const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
+            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
+            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
+            expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
 
             await syncNonceFromChain();
         });
@@ -530,6 +549,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -538,6 +558,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSpl,
                 nonce: currentNonce,
                 amount: withdrawRaw,
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(mockUSDT.mint.publicKey), toBytes(recipientUsdtAccount), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -548,8 +569,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             await expectRejection(
                 program.methods
-                    .withdrawFunds(
+                    .withdrawTokens(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(Number(withdrawRaw)),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -567,7 +589,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientUsdtAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
-                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -587,6 +608,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
 
             const revertInstruction = {
@@ -599,15 +621,18 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(revertAmount),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
 
             const initialRecipient = await provider.connection.getBalance(recipient.publicKey);
+            const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
             await program.methods
                 .revertUniversalTx(
                     txId,
+                    universalTxId,
                     new anchor.BN(revertAmount),
                     revertInstruction,
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -622,7 +647,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -630,7 +654,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .rpc();
 
             const finalRecipient = await provider.connection.getBalance(recipient.publicKey);
+            const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
             expect(finalRecipient).to.equal(initialRecipient + revertAmount);
+            // Caller should receive gas_fee (minus rent for executed_tx account creation)
+            const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
+            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
+            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
+            expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
 
             await syncNonceFromChain();
         });
@@ -641,6 +671,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
 
             const revertInstruction = {
@@ -656,14 +687,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
             const initialRecipientBalance = await mockUSDT.getBalance(recipientRevertAccount);
+            const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
             await program.methods
                 .revertUniversalTxToken(
                     txId,
+                    universalTxId,
                     new anchor.BN(Number(revertRaw)),
                     revertInstruction,
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -681,7 +715,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -690,7 +723,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .rpc();
 
             const finalRecipientBalance = await mockUSDT.getBalance(recipientRevertAccount);
+            const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
             expect(finalRecipientBalance).to.equal(initialRecipientBalance + revertTokens);
+            // Caller should receive gas_fee (minus rent for executed_tx account creation)
+            const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
+            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
+            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
+            expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
 
             await syncNonceFromChain();
         });
@@ -701,6 +740,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -708,6 +748,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(0),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -717,6 +758,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(0),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -746,6 +788,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -753,6 +796,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -762,6 +806,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -790,7 +835,8 @@ describe("Universal Gateway - Withdraw Tests", () => {
         it("rejects withdrawals with zero originCaller", async () => {
             await setNonceOnChain(currentNonce);
 
-            const txId = generateTxId(); // Unique tx_id for this test
+            const txId = generateTxId();
+            const universalTxId = generateUniversalTxId(); // Unique tx_id for this test
             const zeroOriginCaller = Array.from(Buffer.alloc(20, 0)); // All zeros
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -806,6 +852,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(zeroOriginCaller),
@@ -815,6 +862,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         zeroOriginCaller,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -855,6 +903,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
             const zeroRecipient = PublicKey.default;
@@ -874,6 +923,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -912,6 +962,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -919,15 +970,18 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
 
             // First withdrawal should succeed
+            const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
             await program.methods
                 .withdraw(
                     txId,
+                    universalTxId,
                     originCaller,
                     new anchor.BN(withdrawLamports),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -942,12 +996,19 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([relayer])
                 .rpc();
+
+            // Verify caller received gas fee
+            const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
+            const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
+            // Caller pays for executed_tx account rent, receives gas_fee (transaction fees vary, so we use tolerance)
+            const actualRentForExecutedTx = await provider.connection.getMinimumBalanceForRentExemption(8);
+            const expectedCallerGain = -actualRentForExecutedTx + Number(DEFAULT_GAS_FEE);
+            expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 15000); // Allow for transaction fees
 
             // Verify executed_tx account exists after success
             // The account is a PDA derived from [b"executed_tx", tx_id], so existence = tx_id was executed
@@ -963,6 +1024,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -972,6 +1034,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1017,6 +1080,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
@@ -1024,6 +1088,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -1038,6 +1103,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await program.methods
                     .withdraw(
                         txId,
+                        universalTxId,
                         originCaller,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1076,6 +1142,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.WithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
@@ -1084,6 +1151,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await program.methods
                 .withdraw(
                     txId,
+                    universalTxId,
                     originCaller,
                     new anchor.BN(withdrawLamports),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1098,7 +1166,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -1118,6 +1185,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
 
             const revertInstruction = {
@@ -1129,6 +1197,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(0),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
@@ -1137,6 +1206,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .revertUniversalTx(
                         txId,
+                        universalTxId,
                         new anchor.BN(0),
                         revertInstruction,
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1166,6 +1236,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
             const revertAmount = anchor.web3.LAMPORTS_PER_SOL;
 
@@ -1188,6 +1259,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await program.methods
                     .revertUniversalTx(
                         txId,
+                        universalTxId,
                         new anchor.BN(revertAmount),
                         revertInstruction,
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1235,6 +1307,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             }
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
 
             const revertInstruction = {
@@ -1246,6 +1319,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(revertAmount),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
@@ -1254,6 +1328,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await program.methods
                 .revertUniversalTx(
                     txId,
+                    universalTxId,
                     new anchor.BN(revertAmount),
                     revertInstruction,
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1268,7 +1343,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipient: recipient.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -1289,6 +1363,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSol,
                 nonce: currentNonce,
                 amount: BigInt(revertAmount),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
@@ -1297,6 +1372,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await program.methods
                     .revertUniversalTx(
                         txId,
+                        universalTxId,
                         new anchor.BN(revertAmount),
                         revertInstruction,
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1311,7 +1387,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         tssPda,
                         recipient: recipient.publicKey,
                         executedTx: executedTxPda,
-                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                     })
@@ -1342,6 +1417,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
 
             const revertInstruction = {
@@ -1355,6 +1431,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: BigInt(0),
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
@@ -1363,6 +1440,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .revertUniversalTxToken(
                         txId,
+                        universalTxId,
                         new anchor.BN(0),
                         revertInstruction,
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1380,7 +1458,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
-                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -1397,6 +1474,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
             const revertTokens = 500;
             const revertRaw = BigInt(revertTokens) * TOKEN_MULTIPLIER;
@@ -1412,6 +1490,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(mockUSDT.mint.publicKey), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
@@ -1420,6 +1499,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 program.methods
                     .revertUniversalTxToken(
                         txId,
+                        universalTxId,
                         new anchor.BN(Number(revertRaw)),
                         revertInstruction,
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1437,7 +1517,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
-                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -1456,6 +1535,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
+            const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
 
             const revertInstruction = {
@@ -1469,6 +1549,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
@@ -1477,6 +1558,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             await program.methods
                 .revertUniversalTxToken(
                     txId,
+                    universalTxId,
                     new anchor.BN(Number(revertRaw)),
                     revertInstruction,
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1494,7 +1576,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
                     executedTx: executedTxPda,
-                    claimableFees: getClaimableFeesPda(relayer.publicKey),
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -1516,6 +1597,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 instruction: TssInstruction.RevertWithdrawSpl,
                 nonce: currentNonce,
                 amount: revertRaw,
+                universalTxId: new Uint8Array(universalTxId),
                 additional: [toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
             });
@@ -1524,6 +1606,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await program.methods
                     .revertUniversalTxToken(
                         txId,
+                        universalTxId,
                         new anchor.BN(Number(revertRaw)),
                         revertInstruction,
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -1541,7 +1624,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
                         executedTx: executedTxPda,
-                        claimableFees: getClaimableFeesPda(relayer.publicKey),
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,

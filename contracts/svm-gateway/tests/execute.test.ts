@@ -5,7 +5,7 @@ import { TestCounter } from "../target/types/test_counter";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { encodeExecutePayload, decodeExecutePayload, instructionToPayloadFields, accountsToIndicesAndFlags } from "../app/execute-payload";
+import { encodeExecutePayload, decodeExecutePayload, instructionToPayloadFields, accountsToWritableFlags } from "../app/execute-payload";
 import * as sharedState from "./shared-state";
 import { signTssMessage, buildExecuteAdditionalData, TssInstruction, GatewayAccountMeta, generateUniversalTxId } from "./helpers/tss";
 import { createHash } from "crypto";
@@ -138,9 +138,9 @@ const instructionAccountsToRemaining = (ix: anchor.web3.TransactionInstruction) 
         isSigner: false,
     }));
 
-// Helper to convert accounts to indices and writable flags for execute calls
-const accountsToIndicesFlags = (accounts: GatewayAccountMeta[]) => {
-    return accountsToIndicesAndFlags(accounts);
+// Helper to convert accounts to writable flags for execute calls
+const accountsToWritableFlagsOnly = (accounts: GatewayAccountMeta[]) => {
+    return accountsToWritableFlags(accounts);
 };
 
 describe("Universal Gateway - Execute Tests", () => {
@@ -210,6 +210,16 @@ describe("Universal Gateway - Execute Tests", () => {
         return pda;
     };
 
+    const getStakeAta = async (stakePda: PublicKey, mint: PublicKey): Promise<PublicKey> => {
+        return getAssociatedTokenAddress(
+            mint,
+            stakePda,
+            true, // allowOwnerOffCurve (stake PDA is off-curve)
+            TOKEN_PROGRAM_ID,
+            ASSOCIATED_TOKEN_PROGRAM_ID
+        );
+    };
+
     const getCeaAta = async (sender: number[], mint: PublicKey): Promise<PublicKey> => {
         const ceaAuthority = getCeaAuthorityPda(sender);
         return getAssociatedTokenAddress(mint, ceaAuthority, true);
@@ -221,7 +231,7 @@ describe("Universal Gateway - Execute Tests", () => {
         mockUSDT = sharedState.getMockUSDT();
 
         recipient = Keypair.generate();
-        counterAuthority = Keypair.generate();
+        counterAuthority = sharedState.getCounterAuthority();
 
         const airdropLamports = 100 * anchor.web3.LAMPORTS_PER_SOL;
         await Promise.all([
@@ -377,8 +387,8 @@ describe("Universal Gateway - Execute Tests", () => {
             console.log("SOL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
 
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
-            // Convert accounts to indices and writable flags for Solana transaction
-            const { indices, writableFlags } = accountsToIndicesAndFlags(accounts);
+            // Convert accounts to writable flags for Solana transaction
+            const writableFlags = accountsToWritableFlagsOnly(accounts);
 
             await gatewayProgram.methods
                 .executeUniversalTx(
@@ -387,7 +397,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     executeAmount,
                     counterProgram.programId,
                     Array.from(sender),
-                    indices,
                     writableFlags,
                     Buffer.from(counterIx.data),
                     new anchor.BN(Number(gasFee)),
@@ -476,7 +485,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const { indices: fundIndices, writableFlags: fundWritableFlags } = accountsToIndicesFlags(fundAccounts);
+            const fundWritableFlags = accountsToWritableFlagsOnly(fundAccounts);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txIdFund),
@@ -484,7 +493,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     fundAmount,
                     counterProgram.programId,
                     Array.from(sender),
-                    fundIndices,
                     fundWritableFlags,
                     Buffer.from(counterIx.data),
                     new anchor.BN(Number(gasFeeFund)),
@@ -546,7 +554,7 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const callerBalanceBeforeWithdraw = await provider.connection.getBalance(admin.publicKey);
-            const { indices: withdrawIndices, writableFlags: withdrawWritableFlags } = accountsToIndicesFlags([]);
+            const withdrawWritableFlags = accountsToWritableFlagsOnly([]);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txIdWithdraw),
@@ -554,7 +562,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     new anchor.BN(0),
                     gatewayProgram.programId,
                     Array.from(sender),
-                    withdrawIndices,
                     withdrawWritableFlags,
                     withdrawIxData,
                     new anchor.BN(Number(gasFeeWithdraw)),
@@ -636,7 +643,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const { indices: indices1, writableFlags: writableFlags1 } = accountsToIndicesFlags(accounts);
+            const writableFlags1 = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId),
@@ -644,7 +651,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     amount,
                     counterProgram.programId,
                     Array.from(sender),
-                    indices1,
                     writableFlags1,
                     Buffer.from(counterIx.data),
                     new anchor.BN(Number(gasFee)),
@@ -689,7 +695,7 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             try {
-                const { indices: indices2, writableFlags: writableFlags2 } = accountsToIndicesFlags(accounts);
+                const writableFlags2 = accountsToWritableFlagsOnly(accounts);
                 await gatewayProgram.methods
                     .executeUniversalTx(
                         Array.from(txId),
@@ -697,7 +703,6 @@ describe("Universal Gateway - Execute Tests", () => {
                         amount,
                         counterProgram.programId,
                         Array.from(sender),
-                        indices2,
                         writableFlags2,
                         Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig2.signature),
                         sig2.recoveryId,
@@ -778,7 +783,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
             console.log("SPL token transfer to test-counter counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
-            const { indices: splIndices1, writableFlags: splWritableFlags1 } = accountsToIndicesFlags(accounts);
+            const splWritableFlags1 = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId),
@@ -786,7 +791,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     amount,
                     counterProgram.programId,
                     Array.from(sender),
-                    splIndices1,
                     splWritableFlags1,
                     Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
@@ -796,7 +800,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 .accounts({
                     caller: admin.publicKey,
                     config: configPda,
-                    vaultAuthority: vaultPda,
                     vaultAta: vaultUsdtAccount,
                     vaultSol: vaultPda,
                     ceaAuthority: getCeaAuthorityPda(sender),
@@ -914,7 +917,7 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             try {
-                const { indices: splIndices2, writableFlags: splWritableFlags2 } = accountsToIndicesFlags(accounts);
+                const splWritableFlags2 = accountsToWritableFlagsOnly(accounts);
                 await gatewayProgram.methods
                     .executeUniversalTxToken(
                         Array.from(txId),
@@ -922,7 +925,6 @@ describe("Universal Gateway - Execute Tests", () => {
                         amount,
                         counterProgram.programId,
                         Array.from(sender),
-                        splIndices2,
                         splWritableFlags2,
                         Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                         sig.recoveryId,
@@ -932,7 +934,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     .accounts({
                         caller: admin.publicKey,
                         config: configPda,
-                        vaultAuthority: vaultPda,
                         vaultAta: vaultUsdtAccount,
                         vaultSol: vaultPda,
                         ceaAuthority: getCeaAuthorityPda(sender),
@@ -958,11 +959,10 @@ describe("Universal Gateway - Execute Tests", () => {
                     error.error?.code ||
                     error.message;
                 // Execution flow:
-                // 1. Step 1 (line 415): Derive accounts from remaining_accounts (excludes ceaAta - Anchor deduplicated) ✅
-                // 2. Step 4 (line 458): TSS validation passes (uses remaining_accounts without ceaAta) ✅
-                // 3. Step 8 (line 546-559): Owner check fails (uses ctx.accounts.cea_ata = maliciousAta) ❌
-                // Expected: InvalidOwner (line 553)
-                expect(errorCode).to.equal("InvalidOwner");
+                // 1. Anchor's associated_token constraint validates cea_ata owner matches cea_authority
+                // 2. If owner mismatches, Anchor throws ConstraintTokenOwner (not our custom InvalidOwner)
+                // Expected: ConstraintTokenOwner (Anchor's constraint validation)
+                expect(errorCode).to.equal("ConstraintTokenOwner");
             }
 
             // Nonce already consumed when validate_message ran; refresh cached value
@@ -1014,7 +1014,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
             console.log("SPL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
-            const { indices: splIndices4, writableFlags: splWritableFlags4 } = accountsToIndicesFlags(accounts);
+            const splWritableFlags4 = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId),
@@ -1022,7 +1022,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     amount,
                     counterProgram.programId,
                     Array.from(sender),
-                    splIndices4,
                     splWritableFlags4,
                     Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
@@ -1032,7 +1031,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 .accounts({
                     caller: admin.publicKey,
                     config: configPda,
-                    vaultAuthority: vaultPda,
                     vaultAta: vaultUsdtAccount,
                     vaultSol: vaultPda,
                     ceaAuthority: getCeaAuthorityPda(sender),
@@ -1131,7 +1129,7 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         const callerBalanceBeforeFund = await provider.connection.getBalance(admin.publicKey);
-        const { indices: fundIndicesSpl, writableFlags: fundWritableFlagsSpl } = accountsToIndicesFlags(fundAccounts);
+        const fundWritableFlagsSpl = accountsToWritableFlagsOnly(fundAccounts);
         await gatewayProgram.methods
             .executeUniversalTxToken(
                 Array.from(txIdFund),
@@ -1139,7 +1137,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 fundAmount,
                 counterProgram.programId,
                 Array.from(sender),
-                fundIndicesSpl,
                 fundWritableFlagsSpl,
                 Buffer.from(counterIx.data),
                 gasFeeBn,
@@ -1152,7 +1149,6 @@ describe("Universal Gateway - Execute Tests", () => {
             .accounts({
                 caller: admin.publicKey,
                 config: configPda,
-                vaultAuthority: vaultPda,
                 vaultAta: vaultUsdtAccount,
                 vaultSol: vaultPda,
                 ceaAuthority: cea,
@@ -1224,7 +1220,7 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         const callerBalanceBeforeWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
-        const { indices: withdrawIndicesSpl, writableFlags: withdrawWritableFlagsSpl } = accountsToIndicesFlags([]);
+        const withdrawWritableFlagsSpl = accountsToWritableFlagsOnly([]);
         await gatewayProgram.methods
             .executeUniversalTxToken(
                 Array.from(txIdWithdraw),
@@ -1232,7 +1228,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 new anchor.BN(0),
                 gatewayProgram.programId,
                 Array.from(sender),
-                withdrawIndicesSpl,
                 withdrawWritableFlagsSpl,
                 withdrawIxData,
                 new anchor.BN(Number(gasFeeWithdrawSpl)),
@@ -1245,7 +1240,6 @@ describe("Universal Gateway - Execute Tests", () => {
             .accounts({
                 caller: admin.publicKey,
                 config: configPda,
-                vaultAuthority: vaultPda,
                 vaultAta: vaultUsdtAccount,
                 vaultSol: vaultPda,
                 ceaAuthority: cea,
@@ -1343,7 +1337,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
-            const { indices: decodedIndices, writableFlags: decodedWritableFlags } = accountsToIndicesFlags(decoded.accounts);
+            const decodedWritableFlags = accountsToWritableFlagsOnly(decoded.accounts);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId),
@@ -1351,7 +1345,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     new anchor.BN(Number(amount)),
                     targetProgram,
                     Array.from(sender),
-                    decodedIndices,
                     decodedWritableFlags,
                     Buffer.from(decoded.ixData),
                     new anchor.BN(Number(gasFee)),
@@ -1472,7 +1465,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const recipientTokenBefore = await mockUSDT.getBalance(recipientUsdtAccount);
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
-            const { indices: accountsForSigningIndices, writableFlags: accountsForSigningWritableFlags } = accountsToIndicesFlags(accountsForSigning);
+            const accountsForSigningWritableFlags = accountsToWritableFlagsOnly(accountsForSigning);
             await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId),
@@ -1480,7 +1473,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     new anchor.BN(amount.toString()),
                     targetProgram,
                     Array.from(sender),
-                    accountsForSigningIndices,
                     accountsForSigningWritableFlags,
                     Buffer.from(decoded.ixData),
                     new anchor.BN(Number(gasFee)),
@@ -1493,7 +1485,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 .accounts({
                     caller: admin.publicKey,
                     config: configPda,
-                    vaultAuthority: vaultPda,
                     vaultAta: vaultUsdtAccount,
                     vaultSol: vaultPda,
                     ceaAuthority: getCeaAuthorityPda(Array.from(sender)),
@@ -1610,7 +1601,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     { pubkey: counterAuthority.publicKey, isWritable: false, isSigner: false },
                 ];
 
-                const { indices: correctIndices, writableFlags: correctWritableFlags } = accountsToIndicesFlags(correctAccounts);
+                const correctWritableFlags = accountsToWritableFlagsOnly(correctAccounts);
                 await expectExecuteRevert(
                     "Account substitution",
                     async () => {
@@ -1621,7 +1612,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                correctIndices,
                                 correctWritableFlags,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -1688,9 +1678,10 @@ describe("Universal Gateway - Execute Tests", () => {
                     // Missing counterAuthority!
                 ];
 
-                // Create indices for correct accounts (2 accounts), but pass fewer remaining accounts (1 account)
-                // This should fail with AccountListLengthMismatch because indices.len() != remaining_accounts.len()
-                const { indices: correctIndices2, writableFlags: correctWritableFlags2 } = accountsToIndicesFlags(correctAccounts);
+                // Create writable flags for correct accounts (2 accounts), but pass fewer remaining accounts (1 account)
+                // Note: Both 1 and 2 accounts need 1 byte of flags, so length check passes
+                // But TSS hash will fail because we signed 2 accounts but only reconstructed 1
+                const correctWritableFlags2 = accountsToWritableFlagsOnly(correctAccounts);
                 await expectExecuteRevert(
                     "Account count mismatch (fewer)",
                     async () => {
@@ -1701,7 +1692,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                correctIndices2,
                                 correctWritableFlags2,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -1722,7 +1712,7 @@ describe("Universal Gateway - Execute Tests", () => {
                             .signers([admin])
                             .rpc();
                     },
-                    "AccountListLengthMismatch" // Should fail because indices.len() != remaining_accounts.len()
+                    "MessageHashMismatch" // TSS hash fails because we signed 2 accounts but only reconstructed 1
                 );
             });
 
@@ -1769,7 +1759,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     { pubkey: counterAuthority.publicKey, isWritable: false, isSigner: false },
                 ];
 
-                const { indices: correctIndices3, writableFlags: correctWritableFlags3 } = accountsToIndicesFlags(correctAccounts);
+                const correctWritableFlags3 = accountsToWritableFlagsOnly(correctAccounts);
                 await expectExecuteRevert(
                     "Writable flag mismatch",
                     async () => {
@@ -1780,7 +1770,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                correctIndices3,
                                 correctWritableFlags3,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -1801,7 +1790,7 @@ describe("Universal Gateway - Execute Tests", () => {
                             .signers([admin])
                             .rpc();
                     },
-                    "unauthorized signer or writable account" // Solana runtime catches writable privilege escalation before our validation
+                    "AccountWritableFlagMismatch" // validate_remaining_accounts catches writable flag mismatch before TSS validation
                 );
             });
 
@@ -1847,7 +1836,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     { pubkey: counterPda, isWritable: true, isSigner: false },
                 ];
 
-                const { indices: correctIndices4, writableFlags: correctWritableFlags4 } = accountsToIndicesFlags(correctAccounts);
+                const correctWritableFlags4 = accountsToWritableFlagsOnly(correctAccounts);
                 await expectExecuteRevert(
                     "Account reordering",
                     async () => {
@@ -1858,7 +1847,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                correctIndices4,
                                 correctWritableFlags4,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -1879,7 +1867,7 @@ describe("Universal Gateway - Execute Tests", () => {
                             .signers([admin])
                             .rpc();
                     },
-                    "MessageHashMismatch" // Reordered accounts don't match signed message
+                    "AccountWritableFlagMismatch" // validate_remaining_accounts catches writable flag mismatch (from reordering) before TSS validation
                 );
             });
         });
@@ -1930,7 +1918,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const corruptedSignature = Array.from(sig.signature);
                 corruptedSignature[0] ^= 0xFF; // Flip bits
 
-                const { indices: sigIndices, writableFlags: sigWritableFlags } = accountsToIndicesFlags(accounts);
+                const sigWritableFlags = accountsToWritableFlagsOnly(accounts);
                 await expectExecuteRevert(
                     "Invalid signature",
                     async () => {
@@ -1941,7 +1929,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                sigIndices,
                                 sigWritableFlags,
                                 Buffer.from(counterIx.data),
                                 new anchor.BN(Number(gasFee)),
@@ -2012,7 +1999,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     ),
                 });
 
-                const { indices: nonceIndices, writableFlags: nonceWritableFlags } = accountsToIndicesFlags(accounts);
+                const nonceWritableFlags = accountsToWritableFlagsOnly(accounts);
                 await expectExecuteRevert(
                     "Wrong nonce",
                     async () => {
@@ -2023,7 +2010,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                nonceIndices,
                                 nonceWritableFlags,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -2093,7 +2079,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 const tamperedHash = Array.from(sig.messageHash);
                 tamperedHash[0] ^= 0xFF;
 
-                const { indices: hashIndices, writableFlags: hashWritableFlags } = accountsToIndicesFlags(accounts);
+                const hashWritableFlags = accountsToWritableFlagsOnly(accounts);
                 await expectExecuteRevert(
                     "Tampered message hash",
                     async () => {
@@ -2104,7 +2090,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                hashIndices,
                                 hashWritableFlags,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -2169,7 +2154,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     ),
                 });
 
-                const { indices: progIndices, writableFlags: progWritableFlags } = accountsToIndicesFlags(accounts);
+                const progWritableFlags = accountsToWritableFlagsOnly(accounts);
                 await expectExecuteRevert(
                     "Non-executable destination program",
                     async () => {
@@ -2180,7 +2165,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 nonExecutableAccount,
                                 Array.from(sender),
-                                progIndices,
                                 progWritableFlags,
                                 Buffer.from([0x01]),
                                 new anchor.BN(Number(gasFee)),
@@ -2253,7 +2237,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     { pubkey: vaultPda, isWritable: true, isSigner: false }, // Vault should never be passed!
                 ];
 
-                const { indices: maliciousIndices, writableFlags: maliciousWritableFlags } = accountsToIndicesFlags(maliciousAccounts);
+                const maliciousWritableFlags = accountsToWritableFlagsOnly(maliciousAccounts);
                 await expectExecuteRevert(
                     "Gateway vault PDA in remaining accounts",
                     async () => {
@@ -2264,7 +2248,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 counterProgram.programId,
                                 Array.from(sender),
-                                maliciousIndices,
                                 maliciousWritableFlags,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -2337,7 +2320,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 // since message hash validation happens first.
                 const differentProgram = Keypair.generate().publicKey;
 
-                const { indices: targetMismatchIndices, writableFlags: targetMismatchWritableFlags } = accountsToIndicesFlags(accounts);
+                const targetMismatchWritableFlags = accountsToWritableFlagsOnly(accounts);
                 await expectExecuteRevert(
                     "Target program mismatch (caught by message hash validation)",
                     async () => {
@@ -2348,7 +2331,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 new anchor.BN(0),
                                 differentProgram, // Different from signed!
                                 Array.from(sender),
-                                targetMismatchIndices,
                                 targetMismatchWritableFlags,
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
@@ -2397,6 +2379,14 @@ describe("Universal Gateway - Execute Tests", () => {
             return pda;
         };
 
+        const getStakeVaultPda = (authority: PublicKey): PublicKey => {
+            const [pda] = PublicKey.findProgramAddressSync(
+                [Buffer.from("stake_vault"), authority.toBuffer()],
+                counterProgram.programId
+            );
+            return pda;
+        };
+
         it("should verify each user has unique CEA addresses", () => {
             // Verify all CEAs are different
             expect(user1Cea.toString()).to.not.equal(user2Cea.toString());
@@ -2417,6 +2407,7 @@ describe("Universal Gateway - Execute Tests", () => {
             await syncNonceFromChain();
             const stakeAmount = asLamports(1); // 1 SOL
             const user1Stake = getStakePda(user1Cea);
+            const user1StakeVault = getStakeVaultPda(user1Cea);
 
             // Transaction 1: Stake SOL
             const txId1 = generateTxId();
@@ -2427,14 +2418,21 @@ describe("Universal Gateway - Execute Tests", () => {
                     counter: counterPda,
                     authority: user1Cea,
                     stake: user1Stake,
+                    stakeVault: user1StakeVault,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
 
             const accounts = instructionAccountsToGatewayMetas(stakeIx);
 
-            // Calculate fees dynamically (stake account needs rent, so calculate rent_fee for 48 bytes)
-            const stakeRentFee = await calculateRentFeeForAccountSize(provider.connection, 48, BigInt(500_000));
+            // Calculate fees dynamically (stake account needs rent if it doesn't exist or is under-funded)
+            // Stake account size: 8 (discriminator) + 40 (Stake::LEN) = 48 bytes
+            const stakeAccountInfo = await provider.connection.getAccountInfo(user1Stake);
+            const stakeRentExempt = await provider.connection.getMinimumBalanceForRentExemption(48);
+            const needsRent = !stakeAccountInfo || stakeAccountInfo.lamports < stakeRentExempt;
+            const stakeRentFee = needsRent
+                ? BigInt(stakeRentExempt) // Account missing or under-funded, need full rent exemption
+                : BigInt(0); // Account exists and is rent-exempt
             const { gasFee: gasFee1, rentFee: rentFee1 } = await calculateSolExecuteFees(provider.connection, stakeRentFee);
 
             const sig1 = await signTssMessage({
@@ -2454,7 +2452,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const { indices: user1Indices1, writableFlags: user1WritableFlags1 } = accountsToIndicesFlags(accounts);
+            const user1WritableFlags1 = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId1),
@@ -2462,7 +2460,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     stakeAmount,
                     counterProgram.programId,
                     Array.from(user1Sender),
-                    user1Indices1,
                     user1WritableFlags1,
                     Buffer.from(stakeIx.data), new anchor.BN(Number(gasFee1)), new anchor.BN(Number(rentFee1)), Array.from(sig1.signature),
                     sig1.recoveryId,
@@ -2483,10 +2480,14 @@ describe("Universal Gateway - Execute Tests", () => {
                 .signers([admin])
                 .rpc();
 
-            // Verify stake was created
+            // Verify stake was created and SOL was actually transferred
             const stakeAccount = await counterProgram.account.stake.fetch(user1Stake);
             expect(stakeAccount.amount.toNumber()).to.equal(stakeAmount.toNumber());
             expect(stakeAccount.authority.toString()).to.equal(user1Cea.toString());
+
+            // Verify actual SOL balance in stake_vault (must equal staked amount)
+            const stakeVaultBalance = await provider.connection.getBalance(user1StakeVault);
+            expect(stakeVaultBalance).to.equal(stakeAmount.toNumber(), "Stake vault should hold the staked SOL");
 
             console.log("✅ User1 staked 1 SOL successfully");
             console.log("  Stake PDA:", user1Stake.toString());
@@ -2496,6 +2497,7 @@ describe("Universal Gateway - Execute Tests", () => {
         it("User1: should perform multiple transactions with same CEA", async () => {
             await syncNonceFromChain();
             const user1Stake = getStakePda(user1Cea);
+            const user1StakeVault = getStakeVaultPda(user1Cea);
 
             // Transaction 2: Stake more SOL with same CEA (tests identity persistence)
             const txId2 = generateTxId();
@@ -2507,6 +2509,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     counter: counterPda,
                     authority: user1Cea,
                     stake: user1Stake,
+                    stakeVault: user1StakeVault,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -2536,7 +2539,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const ceaBefore = getCeaAuthorityPda(user1Sender);
             expect(ceaBefore.toString()).to.equal(user1Cea.toString());
 
-            const { indices: user1Indices2, writableFlags: user1WritableFlags2 } = accountsToIndicesFlags(accounts);
+            const user1WritableFlags2 = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId2),
@@ -2544,7 +2547,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     stakeAmount2,
                     counterProgram.programId,
                     Array.from(user1Sender),
-                    user1Indices2,
                     user1WritableFlags2,
                     Buffer.from(stakeIx2.data), new anchor.BN(Number(gasFee2)), new anchor.BN(Number(rentFee2)), Array.from(sig2.signature),
                     sig2.recoveryId,
@@ -2580,8 +2582,13 @@ describe("Universal Gateway - Execute Tests", () => {
         it("User1: should unstake SOL and verify FUNDS event emission", async () => {
             await syncNonceFromChain();
             const user1Stake = getStakePda(user1Cea);
+            const user1StakeVault = getStakeVaultPda(user1Cea);
             const stakeAccount = await counterProgram.account.stake.fetch(user1Stake);
             const unstakeAmount = stakeAccount.amount;
+
+            // Get balances before unstake
+            const stakeVaultBalanceBefore = await provider.connection.getBalance(user1StakeVault);
+            const ceaBalanceBefore = await provider.connection.getBalance(user1Cea);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -2591,6 +2598,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     counter: counterPda,
                     authority: user1Cea,
                     stake: user1Stake,
+                    stakeVault: user1StakeVault,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -2616,7 +2624,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const { indices: user1UnstakeIndices, writableFlags: user1UnstakeWritableFlags } = accountsToIndicesFlags(accounts);
+            const user1UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
             const tx = await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId),
@@ -2624,7 +2632,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     new anchor.BN(0),
                     counterProgram.programId,
                     Array.from(user1Sender),
-                    user1UnstakeIndices,
                     user1UnstakeWritableFlags,
                     Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
@@ -2677,14 +2684,28 @@ describe("Universal Gateway - Execute Tests", () => {
                 }
             }
 
+            // Verify actual SOL balance movements
+            const stakeVaultBalanceAfter = await provider.connection.getBalance(user1StakeVault);
+            const ceaBalanceAfter = await provider.connection.getBalance(user1Cea);
+            expect(stakeVaultBalanceAfter).to.equal(stakeVaultBalanceBefore - unstakeAmount.toNumber());
+            expect(ceaBalanceAfter).to.be.greaterThan(ceaBalanceBefore); // CEA received SOL
+
+            // Verify stake account was decremented
+            const stakeAccountAfter = await counterProgram.account.stake.fetch(user1Stake);
+            expect(stakeAccountAfter.amount.toNumber()).to.equal(0);
+
             console.log("✅ User1 unstaked SOL successfully");
             console.log("  Unstaked amount:", unstakeAmount.toNumber());
+            console.log("  Stake vault balance before:", stakeVaultBalanceBefore);
+            console.log("  Stake vault balance after:", stakeVaultBalanceAfter);
+            console.log("  CEA balance increase:", ceaBalanceAfter - ceaBalanceBefore);
         });
 
         it("User2: should stake SOL with different CEA", async () => {
             await syncNonceFromChain();
             const stakeAmount = asLamports(2); // 2 SOL
             const user2Stake = getStakePda(user2Cea);
+            const user2StakeVault = getStakeVaultPda(user2Cea);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -2694,14 +2715,20 @@ describe("Universal Gateway - Execute Tests", () => {
                     counter: counterPda,
                     authority: user2Cea,
                     stake: user2Stake,
+                    stakeVault: user2StakeVault,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
 
             const accounts = instructionAccountsToGatewayMetas(stakeIx);
 
-            // Calculate fees dynamically (stake account needs rent, so calculate rent_fee for 48 bytes)
-            const stakeRentFee = await calculateRentFeeForAccountSize(provider.connection, 48, BigInt(500_000));
+            // Calculate fees dynamically (stake account needs rent if it doesn't exist or is under-funded)
+            const stakeAccountInfo = await provider.connection.getAccountInfo(user2Stake);
+            const stakeRentExempt = await provider.connection.getMinimumBalanceForRentExemption(48);
+            const needsRent = !stakeAccountInfo || stakeAccountInfo.lamports < stakeRentExempt;
+            const stakeRentFee = needsRent
+                ? BigInt(stakeRentExempt) // Account missing or under-funded, need full rent exemption
+                : BigInt(0); // Account exists and is rent-exempt
             const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection, stakeRentFee);
 
             const sig = await signTssMessage({
@@ -2721,7 +2748,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const { indices: user2Indices, writableFlags: user2WritableFlags } = accountsToIndicesFlags(accounts);
+            const user2WritableFlags = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId),
@@ -2729,7 +2756,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     stakeAmount,
                     counterProgram.programId,
                     Array.from(user2Sender),
-                    user2Indices,
                     user2WritableFlags,
                     Buffer.from(stakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
@@ -2765,6 +2791,7 @@ describe("Universal Gateway - Execute Tests", () => {
         it("User2: should unstake own SOL successfully", async () => {
             await syncNonceFromChain();
             const user2Stake = getStakePda(user2Cea);
+            const user2StakeVault = getStakeVaultPda(user2Cea);
             const stakeAccount = await counterProgram.account.stake.fetch(user2Stake);
             const unstakeAmount = stakeAccount.amount;
 
@@ -2776,6 +2803,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     counter: counterPda,
                     authority: user2Cea,
                     stake: user2Stake,
+                    stakeVault: user2StakeVault,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -2802,7 +2830,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const { indices: user2UnstakeIndices, writableFlags: user2UnstakeWritableFlags } = accountsToIndicesFlags(accounts);
+            const user2UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTx(
                     Array.from(txId),
@@ -2810,7 +2838,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     new anchor.BN(0),
                     counterProgram.programId,
                     Array.from(user2Sender),
-                    user2UnstakeIndices,
                     user2UnstakeWritableFlags,
                     Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
@@ -2841,14 +2868,30 @@ describe("Universal Gateway - Execute Tests", () => {
             const stakeAmount = asTokenAmount(50); // 50 USDT
             const user3Stake = getStakePda(user3Cea);
 
-            // Calculate rent fee for stake account (48 bytes)
-            const rentFeeLamports = await calculateRentFeeForAccountSize(provider.connection, 48, BigInt(1_000_000));
+            // Calculate rent fee for stake account (48 bytes) + stake ATA (165 bytes)
+            // Check if accounts are rent-exempt, not just exist
+            const stakeAccountInfo = await provider.connection.getAccountInfo(user3Stake);
+            const stakeRentExempt = await provider.connection.getMinimumBalanceForRentExemption(48);
+            const stakeNeedsRent = !stakeAccountInfo || stakeAccountInfo.lamports < stakeRentExempt;
+            const stakeRentFee = stakeNeedsRent
+                ? BigInt(stakeRentExempt) // Account missing or under-funded
+                : BigInt(0); // Account exists and is rent-exempt
+
+            const stakeAta = await getStakeAta(user3Stake, mockUSDT.mint.publicKey);
+            const stakeAtaInfo = await provider.connection.getAccountInfo(stakeAta);
+            const stakeAtaRentExempt = await provider.connection.getMinimumBalanceForRentExemption(165);
+            const stakeAtaNeedsRent = !stakeAtaInfo || stakeAtaInfo.lamports < stakeAtaRentExempt;
+            const stakeAtaRentFee = stakeAtaNeedsRent
+                ? BigInt(stakeAtaRentExempt) // ATA missing or under-funded
+                : BigInt(0); // ATA exists and is rent-exempt
+
+            const totalRentFee = stakeRentFee + stakeAtaRentFee;
 
             // Check CEA ATA existence BEFORE calculating fees
             const ceaAta = await getCeaAta(user3Sender, mockUSDT.mint.publicKey);
-            const { gasFee: gasFeeLamports, rentFee: calculatedRentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, rentFeeLamports);
+            const { gasFee: gasFeeLamports, rentFee: calculatedRentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, totalRentFee);
 
-            const rentFeeBn = new anchor.BN(rentFeeLamports.toString());
+            const rentFeeBn = new anchor.BN(calculatedRentFee.toString());
             const gasFeeBn = new anchor.BN(gasFeeLamports.toString());
 
             const txId = generateTxId();
@@ -2861,6 +2904,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     stake: user3Stake,
                     mint: mockUSDT.mint.publicKey,
                     authorityAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
+                    stakeAta: await getStakeAta(user3Stake, mockUSDT.mint.publicKey),
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                 })
@@ -2890,11 +2934,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts,
                     stakeIx.data,
                     gasFeeLamports,
-                    rentFeeLamports
+                    calculatedRentFee
                 ),
             });
 
-            const { indices: user3StakeIndices, writableFlags: user3StakeWritableFlags } = accountsToIndicesFlags(accounts);
+            const user3StakeWritableFlags = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId),
@@ -2902,7 +2946,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     stakeAmount, // Must match amountBigInt
                     counterProgram.programId,
                     Array.from(user3Sender),
-                    user3StakeIndices,
                     user3StakeWritableFlags,
                     Buffer.from(stakeIx.data),
                     gasFeeBn,
@@ -2915,7 +2958,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 .accounts({
                     caller: admin.publicKey,
                     config: configPda,
-                    vaultAuthority: vaultPda,
                     vaultAta: vaultUsdtAccount,
                     vaultSol: vaultPda,
                     ceaAuthority: user3Cea,
@@ -2959,6 +3001,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     stake: user3Stake,
                     mint: mockUSDT.mint.publicKey,
                     authorityAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
+                    stakeAta: await getStakeAta(user3Stake, mockUSDT.mint.publicKey),
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                 })
@@ -2996,7 +3039,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 ),
             });
 
-            const { indices: user3UnstakeIndices, writableFlags: user3UnstakeWritableFlags } = accountsToIndicesFlags(accounts);
+            const user3UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
             const tx = await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId),
@@ -3004,7 +3047,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     new anchor.BN(0), // Must match amountBigInt
                     counterProgram.programId,
                     Array.from(user3Sender),
-                    user3UnstakeIndices,
                     user3UnstakeWritableFlags,
                     Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
@@ -3014,7 +3056,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 .accounts({
                     caller: admin.publicKey,
                     config: configPda,
-                    vaultAuthority: vaultPda,
                     vaultAta: vaultUsdtAccount,
                     vaultSol: vaultPda,
                     ceaAuthority: user3Cea,
@@ -3069,8 +3110,24 @@ describe("Universal Gateway - Execute Tests", () => {
                 }
             }
 
+            // Verify actual token balance movements
+            const stakeAta = await getStakeAta(user3Stake, mockUSDT.mint.publicKey);
+            const stakeAtaInfoAfter = await provider.connection.getTokenAccountBalance(stakeAta);
+            const ceaAtaInfoAfter = await provider.connection.getTokenAccountBalance(ceaAta);
+
+            // Stake ATA should be empty (or close to 0 if there was a small balance)
+            expect(Number(stakeAtaInfoAfter.value.amount)).to.be.at.most(1, "Stake ATA should be empty after unstake");
+            // CEA ATA should have received the tokens
+            expect(Number(ceaAtaInfoAfter.value.amount)).to.be.greaterThan(0, "CEA ATA should have received unstaked tokens");
+
+            // Verify stake account was decremented
+            const stakeAccountAfter = await counterProgram.account.stake.fetch(user3Stake);
+            expect(stakeAccountAfter.amount.toNumber()).to.equal(0, "Stake account should be zero after unstake");
+
             console.log("✅ User3 unstaked SPL and CEA ATA persists (not closed)");
             console.log("  CEA ATA address:", ceaAta.toString());
+            console.log("  CEA ATA balance after unstake:", ceaAtaInfoAfter.value.amount);
+            console.log("  Stake ATA balance after unstake:", stakeAtaInfoAfter.value.amount);
         });
 
         it("User4: should NOT be able to unstake User3's funds (cross-user isolation)", async () => {
@@ -3078,14 +3135,30 @@ describe("Universal Gateway - Execute Tests", () => {
             const stakeAmount = asTokenAmount(100);
             const user4Stake = getStakePda(user4Cea);
 
-            // Calculate rent fee for stake account (48 bytes)
-            const rentFeeLamports = await calculateRentFeeForAccountSize(provider.connection, 48, BigInt(1_000_000));
+            // Calculate rent fee for stake account (48 bytes) + stake ATA (165 bytes)
+            // Check if accounts are rent-exempt, not just exist
+            const stakeAccountInfo = await provider.connection.getAccountInfo(user4Stake);
+            const stakeRentExempt = await provider.connection.getMinimumBalanceForRentExemption(48);
+            const stakeNeedsRent = !stakeAccountInfo || stakeAccountInfo.lamports < stakeRentExempt;
+            const stakeRentFee = stakeNeedsRent
+                ? BigInt(stakeRentExempt) // Account missing or under-funded
+                : BigInt(0); // Account exists and is rent-exempt
+
+            const stakeAta = await getStakeAta(user4Stake, mockUSDT.mint.publicKey);
+            const stakeAtaInfo = await provider.connection.getAccountInfo(stakeAta);
+            const stakeAtaRentExempt = await provider.connection.getMinimumBalanceForRentExemption(165);
+            const stakeAtaNeedsRent = !stakeAtaInfo || stakeAtaInfo.lamports < stakeAtaRentExempt;
+            const stakeAtaRentFee = stakeAtaNeedsRent
+                ? BigInt(stakeAtaRentExempt) // ATA missing or under-funded
+                : BigInt(0); // ATA exists and is rent-exempt
+
+            const totalRentFee = stakeRentFee + stakeAtaRentFee;
 
             // Check CEA ATA existence BEFORE calculating fees
             const ceaAta = await getCeaAta(user4Sender, mockUSDT.mint.publicKey);
-            const { gasFee: gasFeeLamports, rentFee: calculatedRentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, rentFeeLamports);
+            const { gasFee: gasFeeLamports, rentFee: calculatedRentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, totalRentFee);
 
-            const rentFeeBn = new anchor.BN(rentFeeLamports.toString());
+            const rentFeeBn = new anchor.BN(calculatedRentFee.toString());
             const gasFeeBn = new anchor.BN(gasFeeLamports.toString());
 
             const txId1 = generateTxId();
@@ -3098,6 +3171,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     stake: user4Stake,
                     mint: mockUSDT.mint.publicKey,
                     authorityAta: await getCeaAta(user4Sender, mockUSDT.mint.publicKey),
+                    stakeAta: await getStakeAta(user4Stake, mockUSDT.mint.publicKey),
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                 })
@@ -3126,11 +3200,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts1,
                     stakeIx.data,
                     gasFeeLamports,
-                    rentFeeLamports
+                    calculatedRentFee
                 ),
             });
 
-            const { indices: accounts1Indices, writableFlags: accounts1WritableFlags } = accountsToIndicesFlags(accounts1);
+            const accounts1WritableFlags = accountsToWritableFlagsOnly(accounts1);
             await gatewayProgram.methods
                 .executeUniversalTxToken(
                     Array.from(txId1),
@@ -3138,7 +3212,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     stakeAmount, // Must match amountBigInt
                     counterProgram.programId,
                     Array.from(user4Sender),
-                    accounts1Indices,
                     accounts1WritableFlags,
                     Buffer.from(stakeIx.data),
                     gasFeeBn,
@@ -3151,7 +3224,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 .accounts({
                     caller: admin.publicKey,
                     config: configPda,
-                    vaultAuthority: vaultPda,
                     vaultAta: vaultUsdtAccount,
                     vaultSol: vaultPda,
                     ceaAuthority: user4Cea,
