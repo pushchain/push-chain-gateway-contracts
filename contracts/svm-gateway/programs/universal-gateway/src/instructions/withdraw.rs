@@ -1,8 +1,10 @@
 use crate::instructions::tss::validate_message;
 use crate::{errors::*, state::*};
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::solana_program::system_instruction;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, spl_token, Mint, Token, TokenAccount, Transfer};
+use spl_token::state::Account as SplAccount;
 
 // =========================
 //        TSS WITHDRAW
@@ -157,16 +159,12 @@ pub struct WithdrawTokens<'info> {
     )]
     pub config: Account<'info, Config>,
 
-    #[account(
-        constraint = whitelist.tokens.contains(&token_mint.key()) @ GatewayError::TokenNotWhitelisted
-    )]
-    pub whitelist: Account<'info, TokenWhitelist>,
-
     /// CHECK: SOL-only PDA, no data
     #[account(mut, seeds = [VAULT_SEED], bump = config.vault_bump)]
     pub vault: UncheckedAccount<'info>,
 
-    /// CHECK: Token vault ATA, derived from vault PDA and token mint
+    /// CHECK: Vault token account - validated at runtime (owner == vault, mint == token_mint)
+    /// Matches deposit flow validation style for consistency
     #[account(mut)]
     pub token_vault: UncheckedAccount<'info>,
 
@@ -255,6 +253,19 @@ pub fn withdraw_tokens(
         &signature,
         recovery_id,
     )?;
+
+    // SECURITY: Validate token_vault is owned by vault and matches token_mint
+    // Matches deposit flow validation style (lines 262-275 in deposit.rs)
+    let data = ctx.accounts.token_vault.try_borrow_data()?.to_vec();
+    let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
+    require!(
+        parsed.owner == ctx.accounts.vault.key(),
+        GatewayError::InvalidOwner
+    );
+    require!(
+        parsed.mint == ctx.accounts.token_mint.key(),
+        GatewayError::InvalidMint
+    );
 
     // Note: Recipient ATA must be created off-chain by the client
     // This is standard practice in Solana programs
@@ -471,16 +482,12 @@ pub struct RevertUniversalTxToken<'info> {
     )]
     pub config: Account<'info, Config>,
 
-    #[account(
-        constraint = whitelist.tokens.contains(&token_mint.key()) @ GatewayError::TokenNotWhitelisted
-    )]
-    pub whitelist: Account<'info, TokenWhitelist>,
-
-    /// CHECK: SOL-only PDA, no data - FIXED: Added vault account
+    /// CHECK: SOL-only PDA, no data
     #[account(mut, seeds = [VAULT_SEED], bump = config.vault_bump)]
     pub vault: UncheckedAccount<'info>,
 
-    /// CHECK: Token vault ATA, derived from vault PDA and token mint
+    /// CHECK: Vault token account - validated at runtime (owner == vault, mint == token_mint)
+    /// Matches deposit flow validation style for consistency
     #[account(mut)]
     pub token_vault: UncheckedAccount<'info>,
 
@@ -581,6 +588,19 @@ pub fn revert_universal_tx_token(
         &signature,
         recovery_id,
     )?;
+
+    // SECURITY: Validate token_vault is owned by vault and matches token_mint
+    // Matches deposit flow validation style (lines 262-275 in deposit.rs)
+    let data = ctx.accounts.token_vault.try_borrow_data()?.to_vec();
+    let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
+    require!(
+        parsed.owner == ctx.accounts.vault.key(),
+        GatewayError::InvalidOwner
+    );
+    require!(
+        parsed.mint == ctx.accounts.token_mint.key(),
+        GatewayError::InvalidMint
+    );
 
     // FIXED: Use vault PDA as authority with correct seeds
     let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
