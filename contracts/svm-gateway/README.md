@@ -11,10 +11,11 @@ Production-ready Solana program for cross-chain asset bridging to Push Chain wit
 ## Core Functions
 
 ### Deposit Functions
-- **`send_tx_with_gas`** - Native SOL gas deposits with USD caps ($1-$10) and signature data
-- **`send_funds`** - SPL token bridging (whitelisted tokens only)
-- **`send_funds_native`** - Native SOL bridging (high value, no caps)
-- **`send_tx_with_funds`** - Combined SPL tokens + gas with payload execution
+- **`send_universal_tx`** - Universal entrypoint for all deposit types (EVM parity)
+  - Routes to GAS (instant) or FUNDS (standard) handlers based on transaction type
+  - Supports native SOL and SPL tokens
+  - Handles gas deposits, funds bridging, and payload execution
+  - Single unified interface replacing legacy functions
 
 ### Admin & TSS Functions
 - **`initialize`** - Deploy gateway with admin/pauser/caps and set Pyth feed
@@ -139,21 +140,37 @@ await program.methods
   .rpc();
 ```
 
-### 3. SPL Token Bridge
+### 3. Universal Transaction (Deposits)
 ```typescript
-// User creates their own ATA first
+// User creates their own ATA first (for SPL tokens)
 const userAta = await spl.getOrCreateAssociatedTokenAccount(
   connection, userKeypair, tokenMint, userPubkey
 );
 
+// Universal transaction request
+const universalTxRequest = {
+  recipient: Array.from(Buffer.from(recipientAddress.slice(2), 'hex')), // EVM address (20 bytes)
+  token: tokenMint, // Pubkey::default() for native SOL, mint address for SPL
+  amount: new anchor.BN(amount),
+  payload: [], // Empty for funds-only, or UniversalPayload for execution
+  revertInstruction: {
+    fundRecipient: userPubkey,
+    revertMsg: Buffer.from("revert message")
+  },
+  signatureData: Buffer.from("signature data")
+};
+
 await program.methods
-  .sendFunds(recipient, tokenMint, amount, revertSettings)
+  .sendUniversalTx(universalTxRequest, nativeAmount) // nativeAmount = msg.value equivalent
   .accounts({
-    config: configPda, vault: vaultPda, user: userPubkey,
-    tokenWhitelist: whitelistPda, 
-    userTokenAccount: userAta.address,
-    gatewayTokenAccount: vaultAta.address,
-    bridgeToken: tokenMint, 
+    config: configPda,
+    vault: vaultPda,
+    user: userPubkey,
+    userTokenAccount: userAta.address, // For SPL tokens
+    gatewayTokenAccount: vaultAta.address, // For SPL tokens
+    priceUpdate: pythPriceFeed,
+    rateLimitConfig: rateLimitConfigPda,
+    tokenRateLimit: tokenRateLimitPda,
     tokenProgram: TOKEN_PROGRAM_ID,
     systemProgram: SystemProgram.programId
   })
