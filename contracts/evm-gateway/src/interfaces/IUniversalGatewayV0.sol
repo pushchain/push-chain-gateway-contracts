@@ -178,7 +178,7 @@ interface IUniversalGatewayV0 {
     /// @param originCaller original caller/user on source chain
     /// @param to           recipient address
     /// @param amount       amount of native token to withdraw
-    function withdraw(bytes32 txID, address originCaller, address to, uint256 amount) external payable;
+    function withdraw(bytes32 txID, bytes32 universalTxID, address originCaller, address to, uint256 amount) external payable;
 
     /// @notice             Withdraw ERC20 token from the gateway
     /// @param txID         unique transaction identifier
@@ -186,7 +186,7 @@ interface IUniversalGatewayV0 {
     /// @param token        token address (ERC20 token)
     /// @param to           recipient address
     /// @param amount       amount of token to withdraw
-    function withdrawTokens(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawTokens(bytes32 txID,bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier
@@ -197,6 +197,7 @@ interface IUniversalGatewayV0 {
     /// @param payload      calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address token,
         address target,
@@ -212,6 +213,7 @@ interface IUniversalGatewayV0 {
     /// @param payload      calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address target,
         uint256 amount,
@@ -228,14 +230,4 @@ interface IUniversalGatewayV0 {
     ///@return                     True if the token is supported, false otherwise
     function isSupportedToken(address token) external view returns (bool);
 
-    function revertUniversalTx(bytes calldata txID, uint256 amount, RevertInstructions calldata revertCFG)
-        external
-        payable;
-
-    function revertUniversalTxToken(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
-        external;
-
-    function withdraw(bytes calldata txID, bytes32 universalTxID, address originCaller, address to, uint256 amount) external payable;
-
-    function withdrawTokens(bytes calldata txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 }
