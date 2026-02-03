@@ -46,15 +46,6 @@ interface IUniversalGatewayV0 {
         bytes signatureData
     );
 
-    /// @notice         Revert universal transaction event
-    event RevertUniversalTx(
-        bytes indexed txID,
-        address indexed to,
-        address indexed token,
-        uint256 amount,
-        RevertInstructions revertInstruction
-    );
-
     /// @notice         Universal tx execution event
     event UniversalTxExecuted(
         bytes32 indexed txID,
@@ -66,21 +57,13 @@ interface IUniversalGatewayV0 {
         bytes data
     );
 
-    /// @notice         W           Withdraw token event
-    /// @param txID                 Unique transaction identifier
-    /// @param originCaller         Original caller/user on source chain ( Push Chain)
-    /// @param token                Token address being sent
-    /// @param to                   Recipient address on Push Chain
-    /// @param amount               Amount of token being sent
-    event WithdrawToken(bytes32 txID, address indexed originCaller, address indexed token, address to, uint256 amount);
-
     /// @notice                     Revert withdraw event: For withdrwals/actions during a revert
     /// @param txID                 Unique transaction identifier
     /// @param to                   Recipient address on external chain
     /// @param token                Token address being reverted
     /// @param amount               Amount of token being reverted
     /// @param revertInstruction    Revert settings configuration
-    event RevertUniversalTx(bytes32 txID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+    event RevertUniversalTx(bytes32 txID, bytes32 indexed universalTxID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
 
     
     // =========================
@@ -160,13 +143,13 @@ interface IUniversalGatewayV0 {
     /// @param token        token address to revert
     /// @param amount       amount of token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTxToken(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertCFG) external;
+    function revertUniversalTxToken(bytes32 txID, bytes32 universalTxID, address token, uint256 amount, RevertInstructions calldata revertCFG) external;
     
     /// @notice             Revert native tokens to the recipient specified in revertInstruction
     /// @param txID         unique transaction identifier (for replay protection)
     /// @param amount       amount of native token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTx(bytes32 txID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
+    function revertUniversalTx(bytes32 txID, bytes32 universalTxID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
 
     
     // =========================
