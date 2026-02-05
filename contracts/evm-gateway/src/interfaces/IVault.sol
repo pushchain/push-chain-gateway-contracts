@@ -21,27 +21,6 @@ interface IVault {
     /// @param newTss       New TSS address
     event TSSUpdated(address indexed oldTss, address indexed newTss);
 
-    /// @notice             Vault withdraw and execute event
-    /// @param token        Token address
-    /// @param target       Target contract address
-    /// @param amount       Amount of token
-    /// @param data         Calldata for the target execution
-    event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
-
-    /// @notice             Vault withdraw event
-    /// @param txID         Unique transaction identifier
-    /// @param originCaller Original caller/user on source chain
-    /// @param token        Token address
-    /// @param to           Recipient address
-    /// @param amount       Amount of token
-    event VaultWithdraw(bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount);
-
-    /// @notice             Vault revert event
-    /// @param token        Token address
-    /// @param revertInstruction Recurrent instruction
-    /// @param amount       Amount of token
-    event VaultRevert(address indexed token, RevertInstructions indexed revertInstruction, uint256 amount);
-
     // =========================
     //          WITHDRAW
     // =========================

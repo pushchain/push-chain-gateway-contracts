@@ -139,7 +139,6 @@ contract Vault is
 
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.withdrawTokens(txID, universalTxID, originCaller, token, to, amount);
-        emit VaultWithdraw(txID, originCaller, token, to, amount);
     }
 
     /// @inheritdoc IVault
@@ -159,8 +158,6 @@ contract Vault is
 
         // Forward execution call to gateway
         gateway.executeUniversalTx(txID, universalTxID, originCaller, token, target, amount, data);
-        
-        emit VaultWithdrawAndExecute(token, target, amount, data);
     }
 
     /// @inheritdoc IVault
@@ -177,8 +174,6 @@ contract Vault is
 
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(txID, universalTxID, token, amount, revertInstruction);
-
-        emit VaultRevert(token, revertInstruction, amount);
     }
 
     // =========================

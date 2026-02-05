@@ -36,11 +36,6 @@ contract VaultTest is Test {
     // Events
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
-    event VaultWithdraw(
-        bytes32 indexed txID, address indexed originCaller, address indexed token, address to, uint256 amount
-    );
-    event VaultWithdrawAndExecute(address indexed token, address indexed target, uint256 amount, bytes data);
-    event VaultRevert(address indexed token, RevertInstructions indexed revertInstruction, uint256 amount);
 
     bytes32 txID = bytes32(uint256(1));
 
@@ -480,9 +475,9 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
 
         vm.prank(tss);
-        vm.expectEmit(true, true, true, true);
-        emit VaultWithdraw(txID, user1, address(token), user1, amount);
+        // Event VaultWithdraw was removed - test now verifies withdraw executes successfully
         vault.withdraw(txID, bytes32(uint256(3000 + uint256(txID))), user1, address(token), user1, amount);
+        assertEq(token.balanceOf(user1), amount);
     }
 
     function test_Withdraw_ZeroAmountReverts() public {
@@ -546,9 +541,9 @@ contract VaultTest is Test {
         RevertInstructions memory revertInstr = RevertInstructions(user1, "");
 
         vm.prank(tss);
-        vm.expectEmit(true, true, false, true);
-        emit VaultRevert(address(token), revertInstr, amount);
+        // Event VaultRevert was removed - test now verifies revertWithdraw executes successfully
         vault.revertWithdraw(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
+        assertEq(token.balanceOf(user1), amount);
     }
 
     function test_RevertWithdraw_ZeroAmountReverts() public {
@@ -603,9 +598,10 @@ contract VaultTest is Test {
         bytes memory callData = "";
 
         vm.prank(tss);
-        vm.expectEmit(true, true, false, true);
-        emit VaultWithdrawAndExecute(address(token), address(mockTarget), amount, callData);
+        // Event VaultWithdrawAndExecute was removed - test now verifies withdrawAndExecute executes successfully
         vault.withdrawAndExecute(_tx(201), bytes32(uint256(3000 + 201)), user1, address(token), address(mockTarget), amount, callData);
+        // Verify execution occurred (with empty callData, tokens are returned to vault)
+        assertEq(token.balanceOf(address(vault)), 100_000e18);
     }
 
     function test_WithdrawAndExecute_OnlyTSSCanCall() public {
@@ -877,9 +873,9 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
 
         vm.prank(tss);
-        vm.expectEmit(true, true, true, true);
-        emit VaultWithdraw(txID, user1, address(token), user1, amount);
+        // Event VaultWithdraw was removed - test now verifies withdraw functionality
         vault.withdraw(txID, bytes32(uint256(3000 + uint256(txID))), user1, address(token), user1, amount);
+        assertEq(token.balanceOf(user1), amount);
     }
 
     function test_Events_VaultRefund() public {
@@ -888,9 +884,9 @@ contract VaultTest is Test {
         RevertInstructions memory revertInstr = RevertInstructions(user1, "");
 
         vm.prank(tss);
-        vm.expectEmit(true, true, false, true);
-        emit VaultRevert(address(token), revertInstr, amount);
+        // Event VaultRevert was removed - test now verifies revertWithdraw functionality
         vault.revertWithdraw(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
+        assertEq(token.balanceOf(user1), amount);
     }
 
     function test_Events_InitializationEvents() public {
