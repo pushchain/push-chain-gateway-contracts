@@ -15,10 +15,10 @@ contract MockUniversalCoreReal is IUniversalCore {
     address public immutable UNIVERSAL_EXECUTOR_MODULE;
 
     /// @notice Map to know the gas price of each chain given a chain id.
-    mapping(string => uint256) public gasPriceByChainId;
+    mapping(string => uint256) public gasPriceByChainNamespace;
 
     /// @notice Map to know the PRC20 address of a token given a chain id, ex pETH, pBNB etc.
-    mapping(string => address) public gasTokenPRC20ByChainId;
+    mapping(string => address) public gasTokenPRC20ByChainNamespace;
 
     /// @notice Map to know Uniswap V3 pool of PC/PRC20 given a chain id.
     mapping(string => address) public gasPCPoolByChainId;
@@ -175,13 +175,13 @@ contract MockUniversalCoreReal is IUniversalCore {
     }
 
     function setGasPrice(string memory chainID, uint256 price) external onlyRole(MANAGER_ROLE) {
-        gasPriceByChainId[chainID] = price;
+        gasPriceByChainNamespace[chainID] = price;
         emit SetGasPrice(chainID, price);
     }
 
     function setGasTokenPRC20(string memory chainID, address prc20) external onlyRole(MANAGER_ROLE) {
         require(prc20 != address(0), "MockUniversalCore: zero address");
-        gasTokenPRC20ByChainId[chainID] = prc20;
+        gasTokenPRC20ByChainNamespace[chainID] = prc20;
         emit SetGasToken(chainID, prc20);
     }
 
@@ -250,12 +250,12 @@ contract MockUniversalCoreReal is IUniversalCore {
     }
 
     function withdrawGasFee(address _prc20) public view returns (address gasToken, uint256 gasFee) {
-        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_ID();
+        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
-        gasToken = gasTokenPRC20ByChainId[chainID];
+        gasToken = gasTokenPRC20ByChainNamespace[chainID];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
 
-        uint256 price = gasPriceByChainId[chainID];
+        uint256 price = gasPriceByChainNamespace[chainID];
         require(price != 0, "MockUniversalCore: zero gas price");
 
         gasFee = price * BASE_GAS_LIMIT + IPRC20(_prc20).PC_PROTOCOL_FEE();
@@ -266,12 +266,12 @@ contract MockUniversalCoreReal is IUniversalCore {
         view
         returns (address gasToken, uint256 gasFee)
     {
-        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_ID();
+        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
-        gasToken = gasTokenPRC20ByChainId[chainID];
+        gasToken = gasTokenPRC20ByChainNamespace[chainID];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
 
-        uint256 price = gasPriceByChainId[chainID];
+        uint256 price = gasPriceByChainNamespace[chainID];
         require(price != 0, "MockUniversalCore: zero gas price");
 
         gasFee = price * gasLimit + IPRC20(_prc20).PC_PROTOCOL_FEE();

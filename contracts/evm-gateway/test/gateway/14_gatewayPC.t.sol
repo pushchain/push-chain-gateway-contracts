@@ -53,7 +53,7 @@ contract UniversalGatewayPCTest is Test {
     uint256 public constant DEFAULT_GAS_LIMIT = 500_000; // Matches UniversalCore.BASE_GAS_LIMIT
     uint256 public constant DEFAULT_PROTOCOL_FEE = 0.01 ether;
     uint256 public constant DEFAULT_GAS_PRICE = 20 gwei;
-    string public constant SOURCE_CHAIN_ID = "1"; // Ethereum mainnet
+    string public constant SOURCE_CHAIN_NAMESPACE = "1"; // Ethereum mainnet
     string public constant SOURCE_TOKEN_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC
 
     // =========================
@@ -420,7 +420,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             bytes(""),
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -429,7 +429,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID, // txID
             user1, // sender
-            SOURCE_CHAIN_ID, // chainId
+            SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             to, // target
             amount, // amount
@@ -735,7 +735,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             payload,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -744,7 +744,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID, // txID
             user1, // sender
-            SOURCE_CHAIN_ID, // chainId
+            SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             target, // target
             amount, // amount
@@ -1285,7 +1285,7 @@ contract UniversalGatewayPCTest is Test {
             "Invalid Token",
             "INV",
             6,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.ERC20,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
@@ -1296,9 +1296,9 @@ contract UniversalGatewayPCTest is Test {
     function _createInvalidCoreWithZeroGasToken() internal returns (MockUniversalCoreReal) {
         MockUniversalCoreReal invalidCore = new MockUniversalCoreReal(uem);
         vm.prank(uem);
-        invalidCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
+        invalidCore.setGasPrice(SOURCE_CHAIN_NAMESPACE, DEFAULT_GAS_PRICE);
         vm.prank(uem);
-        invalidCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(0)); // Zero gas token
+        invalidCore.setGasTokenPRC20(SOURCE_CHAIN_NAMESPACE, address(0)); // Zero gas token
         return invalidCore;
     }
 
@@ -1350,9 +1350,9 @@ contract UniversalGatewayPCTest is Test {
     function _createInvalidCoreWithZeroGasPrice() internal returns (MockUniversalCoreReal) {
         MockUniversalCoreReal invalidCore = new MockUniversalCoreReal(uem);
         vm.prank(uem);
-        invalidCore.setGasPrice(SOURCE_CHAIN_ID, 0); // Zero gas price
+        invalidCore.setGasPrice(SOURCE_CHAIN_NAMESPACE, 0); // Zero gas price
         vm.prank(uem);
-        invalidCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
+        invalidCore.setGasTokenPRC20(SOURCE_CHAIN_NAMESPACE, address(gasToken));
         return invalidCore;
     }
 
@@ -1393,7 +1393,7 @@ contract UniversalGatewayPCTest is Test {
             "Failing Token",
             "FAIL",
             6,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.ERC20,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
@@ -1438,7 +1438,7 @@ contract UniversalGatewayPCTest is Test {
             "Push Chain Native",
             "PC",
             18,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.PC,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
@@ -1450,7 +1450,7 @@ contract UniversalGatewayPCTest is Test {
             "USDC on Push Chain",
             "USDC",
             6,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.ERC20,
             DEFAULT_PROTOCOL_FEE,
             address(universalCore),
@@ -1459,9 +1459,9 @@ contract UniversalGatewayPCTest is Test {
 
         // Configure UniversalCore with gas settings
         vm.prank(uem);
-        universalCore.setGasPrice(SOURCE_CHAIN_ID, DEFAULT_GAS_PRICE);
+        universalCore.setGasPrice(SOURCE_CHAIN_NAMESPACE, DEFAULT_GAS_PRICE);
         vm.prank(uem);
-        universalCore.setGasTokenPRC20(SOURCE_CHAIN_ID, address(gasToken));
+        universalCore.setGasTokenPRC20(SOURCE_CHAIN_NAMESPACE, address(gasToken));
 
         vm.label(address(universalCore), "UniversalCore");
         vm.label(address(prc20Token), "PRC20Token");
@@ -1546,7 +1546,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             bytes(""),
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -1555,7 +1555,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID, // txID
             user1, // sender
-            SOURCE_CHAIN_ID, // chainId
+            SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             target, // target
             amount, // amount
@@ -1595,7 +1595,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             payload,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -1604,7 +1604,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID, // txID
             user1, // sender
-            SOURCE_CHAIN_ID, // chainId
+            SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             target, // target
             amount, // amount
@@ -1763,7 +1763,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             payload,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -1772,7 +1772,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID, // txID
             user1,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             target,
             amount,
@@ -1908,7 +1908,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             bytes(""),
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -1917,7 +1917,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID, // txID
             user1,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             target,
             amount,
@@ -1979,7 +1979,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             payload,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -1988,7 +1988,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID, // txID
             user1,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             target,
             amount,
@@ -2339,7 +2339,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             bytes(""),
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             0
         );
 
@@ -2347,7 +2347,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID1,
             user1,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             target,
             amount,
@@ -2386,7 +2386,7 @@ contract UniversalGatewayPCTest is Test {
             address(prc20Token),
             amount,
             bytes(""),
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             1 // nonce is now 1
         );
 
@@ -2397,7 +2397,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedTxID2,
             user1,
-            SOURCE_CHAIN_ID,
+            SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             target,
             amount,
