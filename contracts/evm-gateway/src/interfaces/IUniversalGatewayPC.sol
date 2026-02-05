@@ -13,7 +13,7 @@ interface IUniversalGatewayPC {
 
     /// @notice                 Single event covering both flows (funds-only and funds+payload).
     /// @param sender           EVM sender on Push Chain (burn initiator) on Push Chain
-    /// @param chainId          Origin chain id string, fetched from PRC20 on external chain
+    /// @param chainNamespace   Origin chain namespace string, fetched from PRC20 on external chain
     /// @param token            PRC20 token address being withdrawn (represents origin ERC20/native) on external chain
     /// @param target           Raw destination address on origin chain (bytes) on external chain
     /// @param amount           Amount burned on Push Chain
@@ -25,7 +25,7 @@ interface IUniversalGatewayPC {
     event UniversalTxOutbound(
         bytes32 indexed txID,
         address indexed sender,
-        string chainId,
+        string chainNamespace,
         address indexed token,
         bytes target,
         uint256 amount,

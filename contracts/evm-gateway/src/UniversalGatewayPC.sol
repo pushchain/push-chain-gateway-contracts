@@ -97,7 +97,7 @@ contract UniversalGatewayPC is
 
         _burnPRC20(msg.sender, req.token, req.amount);
 
-        string memory chainId = IPRC20(req.token).SOURCE_CHAIN_ID();
+        string memory chainNamespace = IPRC20(req.token).SOURCE_CHAIN_NAMESPACE();
 
         uint256 _nonce = nonce;
         nonce = _nonce + 1;
@@ -108,13 +108,13 @@ contract UniversalGatewayPC is
                 req.token,
                 req.amount,
                 keccak256(req.payload),
-                chainId,
+                chainNamespace,
                _nonce
             )
         );
 
         emit UniversalTxOutbound(
-            txID, msg.sender, chainId, req.token, req.target, req.amount, gasToken, gasFee, gasLimitUsed, req.payload, protocolFee, req.revertRecipient, txType
+            txID, msg.sender, chainNamespace, req.token, req.target, req.amount, gasToken, gasFee, gasLimitUsed, req.payload, protocolFee, req.revertRecipient, txType
         );
     }
 

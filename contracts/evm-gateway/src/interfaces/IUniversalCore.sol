@@ -15,14 +15,14 @@ interface IUniversalCore {
      * @param chainId Chain ID
      * @return gasToken Gas token address
      */
-    function gasTokenPRC20ByChainId(string memory chainId) external view returns (address gasToken);
+    function gasTokenPRC20ByChainNamespace(string memory chainId) external view returns (address gasToken);
 
     /**
      * @notice Get gas price for a chain
      * @param chainId Chain ID
      * @return price Gas price
      */
-    function gasPriceByChainId(string memory chainId) external view returns (uint256 price);
+    function gasPriceByChainNamespace(string memory chainId) external view returns (uint256 price);
 
     /**
      * @notice Get base gas limit for a chain
