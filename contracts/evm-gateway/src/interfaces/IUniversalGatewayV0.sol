@@ -46,25 +46,9 @@ interface IUniversalGatewayV0 {
         bytes signatureData
     );
 
-    /// @notice         Caps updated event
-    event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
-
-    /// @notice         Rate-limit / config events
-    event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
-    event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
-
-    /// @notice         Revert universal transaction event
-    event RevertUniversalTx(
-        bytes indexed txID,
-        address indexed to,
-        address indexed token,
-        uint256 amount,
-        RevertInstructions revertInstruction
-    );
-
     /// @notice         Universal tx execution event
     event UniversalTxExecuted(
-        bytes indexed txID,
+        bytes32 indexed txID,
         bytes32 indexed universalTxID,
         address indexed originCaller,
         address target,
@@ -73,21 +57,13 @@ interface IUniversalGatewayV0 {
         bytes data
     );
 
-    /// @notice         W           Withdraw token event
-    /// @param txID                 Unique transaction identifier
-    /// @param originCaller         Original caller/user on source chain ( Push Chain)
-    /// @param token                Token address being sent
-    /// @param to                   Recipient address on Push Chain
-    /// @param amount               Amount of token being sent
-    event WithdrawToken(bytes32 txID, address indexed originCaller, address indexed token, address to, uint256 amount);
-
     /// @notice                     Revert withdraw event: For withdrwals/actions during a revert
     /// @param txID                 Unique transaction identifier
     /// @param to                   Recipient address on external chain
     /// @param token                Token address being reverted
     /// @param amount               Amount of token being reverted
     /// @param revertInstruction    Revert settings configuration
-    event RevertUniversalTx(bytes32 txID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+    event RevertUniversalTx(bytes32 txID, bytes32 indexed universalTxID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
 
     
     // =========================
@@ -167,13 +143,13 @@ interface IUniversalGatewayV0 {
     /// @param token        token address to revert
     /// @param amount       amount of token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTxToken(bytes32 txID, address token, uint256 amount, RevertInstructions calldata revertCFG) external;
+    function revertUniversalTxToken(bytes32 txID, bytes32 universalTxID, address token, uint256 amount, RevertInstructions calldata revertCFG) external;
     
     /// @notice             Revert native tokens to the recipient specified in revertInstruction
     /// @param txID         unique transaction identifier (for replay protection)
     /// @param amount       amount of native token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTx(bytes32 txID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
+    function revertUniversalTx(bytes32 txID, bytes32 universalTxID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
 
     
     // =========================
@@ -185,7 +161,7 @@ interface IUniversalGatewayV0 {
     /// @param originCaller original caller/user on source chain
     /// @param to           recipient address
     /// @param amount       amount of native token to withdraw
-    function withdraw(bytes32 txID, address originCaller, address to, uint256 amount) external payable;
+    function withdraw(bytes32 txID, bytes32 universalTxID, address originCaller, address to, uint256 amount) external payable;
 
     /// @notice             Withdraw ERC20 token from the gateway
     /// @param txID         unique transaction identifier
@@ -193,7 +169,7 @@ interface IUniversalGatewayV0 {
     /// @param token        token address (ERC20 token)
     /// @param to           recipient address
     /// @param amount       amount of token to withdraw
-    function withdrawTokens(bytes32 txID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawTokens(bytes32 txID,bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier
@@ -204,6 +180,7 @@ interface IUniversalGatewayV0 {
     /// @param payload      calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address token,
         address target,
@@ -219,6 +196,7 @@ interface IUniversalGatewayV0 {
     /// @param payload      calldata to be executed on target
     function executeUniversalTx(
         bytes32 txID,
+        bytes32 universalTxID,
         address originCaller,
         address target,
         uint256 amount,
@@ -235,14 +213,4 @@ interface IUniversalGatewayV0 {
     ///@return                     True if the token is supported, false otherwise
     function isSupportedToken(address token) external view returns (bool);
 
-    function revertUniversalTx(bytes calldata txID, uint256 amount, RevertInstructions calldata revertCFG)
-        external
-        payable;
-
-    function revertUniversalTxToken(bytes calldata txID, address token, uint256 amount, RevertInstructions calldata revertCFG)
-        external;
-
-    function withdraw(bytes calldata txID, bytes32 universalTxID, address originCaller, address to, uint256 amount) external payable;
-
-    function withdrawTokens(bytes calldata txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 }
