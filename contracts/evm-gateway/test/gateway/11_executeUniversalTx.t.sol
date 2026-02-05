@@ -794,9 +794,9 @@ contract GatewayExecuteUniversalTxTest is Test {
         uint256 initialRecipientBalance = token.balanceOf(recipient);
         uint256 initialGatewayBalance = token.balanceOf(address(gateway));
 
-        // Expect WithdrawToken event
+        // Expect UniversalTxExecuted event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), recipient, withdrawAmount);
+        emit IUniversalGateway.UniversalTxExecuted(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, recipient, address(token), withdrawAmount, bytes(""));
 
         // Execute as Vault (this contract has VAULT_ROLE)
         gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), recipient, withdrawAmount);
@@ -910,7 +910,7 @@ contract GatewayExecuteUniversalTxTest is Test {
 
         // Expect complete event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.WithdrawToken(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), recipient, AMOUNT);
+        emit IUniversalGateway.UniversalTxExecuted(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, recipient, address(token), AMOUNT, bytes(""));
 
         gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), recipient, AMOUNT);
     }

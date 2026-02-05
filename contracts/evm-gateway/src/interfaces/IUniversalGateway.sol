@@ -68,13 +68,6 @@ interface IUniversalGateway {
     /// @param newVault              New Vault address
     event VaultUpdated(address indexed oldVault, address indexed newVault);
 
-    /// @notice                     Withdraw token event
-    /// @param txID                 Unique transaction identifier
-    /// @param originCaller         Original caller/user on source chain ( Push Chain)
-    /// @param token                Token address being sent
-    /// @param to                   Recipient address on Push Chain
-    /// @param amount               Amount of token being sent
-    event WithdrawToken(bytes32 indexed txID, bytes32 indexed universalTxID, address indexed originCaller, address token, address to, uint256 amount);
 
     /// @notice                     Revert withdraw event: For withdrwals/actions during a revert
     /// @param txID                 Unique transaction identifier

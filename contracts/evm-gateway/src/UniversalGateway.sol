@@ -566,7 +566,7 @@ contract UniversalGateway is
         (bool ok,) = payable(to).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit WithdrawToken(txID, universalTxID, originCaller, address(0), to, amount);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, address(0), amount, bytes(""));
     }
 
     /// @inheritdoc IUniversalGateway
@@ -588,7 +588,7 @@ contract UniversalGateway is
 
         isExecuted[txID] = true;
         IERC20(token).safeTransfer(to, amount);
-        emit WithdrawToken(txID, universalTxID, originCaller, token, to, amount);
+        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, token, amount, bytes(""));
     }
 
     /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
