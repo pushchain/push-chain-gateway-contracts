@@ -529,7 +529,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.sendUniversalTxOutbound(req);
     }
 
@@ -912,9 +912,14 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
+        // Payload-only transactions (amount=0 with payload) are NOW SUPPORTED
+        uint256 nonceBefore = gateway.nonce();
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendUniversalTxOutbound(req);
+
+        // Verify transaction succeeded
+        assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
     }
 
     function testWithdrawAndExecuteRevertInvalidRecipient() public {
@@ -1636,11 +1641,14 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // GAS_AND_PAYLOAD is not supported on UniversalGatewayPC (amount must be > 0)
-        // This should revert with InvalidAmount
+        // Payload-only transactions (amount=0 with payload) are NOW SUPPORTED for GAS_AND_PAYLOAD
+        uint256 nonceBefore = gateway.nonce();
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendUniversalTxOutbound(req);
+
+        // Verify transaction succeeded
+        assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
     }
 
     // Test Group B: Edge Cases for _fetchTxType() (8 tests)
@@ -1707,11 +1715,14 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // GAS_AND_PAYLOAD is not supported on UniversalGatewayPC (amount must be > 0)
-        // This should revert with InvalidAmount
+        // Payload-only transactions (amount=0 with payload) are NOW SUPPORTED for GAS_AND_PAYLOAD
+        uint256 nonceBefore = gateway.nonce();
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendUniversalTxOutbound(req);
+
+        // Verify transaction succeeded
+        assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
     }
 
     function testFetchTxType_GAS_AND_PAYLOAD_LargePayload() public {
@@ -1733,11 +1744,14 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // GAS_AND_PAYLOAD is not supported on UniversalGatewayPC (amount must be > 0)
-        // This should revert with InvalidAmount
+        // Payload-only transactions (amount=0 with payload) are NOW SUPPORTED for GAS_AND_PAYLOAD
+        uint256 nonceBefore = gateway.nonce();
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendUniversalTxOutbound(req);
+
+        // Verify transaction succeeded
+        assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
     }
 
     function testFetchTxType_FUNDS_AND_PAYLOAD_MinimalPayload() public {
@@ -1832,9 +1846,9 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // This should revert with InvalidAmount since amount = 0 and no payload
+        // This should revert with InvalidInput since amount = 0 and no payload (empty transaction)
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.sendUniversalTxOutbound(req);
     }
 
@@ -1949,11 +1963,14 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // GAS_AND_PAYLOAD is not supported on UniversalGatewayPC (amount must be > 0)
-        // This should revert with InvalidAmount
+        // Payload-only transactions (amount=0 with payload) are NOW SUPPORTED for GAS_AND_PAYLOAD
+        uint256 nonceBefore = gateway.nonce();
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendUniversalTxOutbound(req);
+
+        // Verify transaction succeeded and emitted correct TX_TYPE
+        assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
     }
 
     function testEventEmission_CorrectTxType_FUNDS_AND_PAYLOAD() public {
@@ -2064,11 +2081,15 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // GAS_AND_PAYLOAD is not supported on UniversalGatewayPC (amount must be > 0)
-        // This should revert with InvalidAmount
+        // Payload-only transactions (amount=0 with payload) are NOW SUPPORTED
+        // This enables users to execute payloads using existing CEA funds without burning tokens
+        uint256 nonceBefore = gateway.nonce();
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendUniversalTxOutbound(req);
+
+        // Verify transaction succeeded
+        assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
     }
 
     function testValidation_ZeroAmountNoPayload_RevertsInValidation() public {
@@ -2086,9 +2107,9 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // Should revert with InvalidAmount (from _validateCommon)
+        // Should revert with InvalidInput (from _fetchTxType for empty transactions)
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.sendUniversalTxOutbound(req);
     }
 
@@ -2135,11 +2156,18 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // GAS_AND_PAYLOAD is not supported on UniversalGatewayPC (amount must be > 0)
-        // This should revert with InvalidAmount
+        // Payload-only transactions (amount=0 with payload) are NOW SUPPORTED for GAS_AND_PAYLOAD
+        // Gas fees are still charged even when amount=0
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
+        uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
+        uint256 nonceBefore = gateway.nonce();
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InvalidAmount.selector);
         gateway.sendUniversalTxOutbound(req);
+
+        // Verify transaction succeeded and gas fee was charged
+        assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
+        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + expectedGasFee, "Gas fee should be charged");
     }
 
     function testGasFee_FUNDS_AND_PAYLOAD_CorrectCalculation() public {

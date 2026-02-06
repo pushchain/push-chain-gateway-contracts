@@ -80,14 +80,14 @@ contract UniversalGatewayPC is
         _unpause();
     }
 
-    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) 
-        external 
-        whenNotPaused 
-        nonReentrant 
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req)
+        external
+        whenNotPaused
+        nonReentrant
     {
-        _validateCommon(req.target, req.token, req.amount, req.revertRecipient);
+        _validateCommon(req.target, req.token, req.revertRecipient);
 
-        // Determine TX_TYPE based on user input
+        // Determine TX_TYPE based on user input (rejects empty transactions internally)
         TX_TYPE txType = _fetchTxType(req);
 
         // Compute fees + collect from caller into the UEM fee sink
@@ -95,7 +95,10 @@ contract UniversalGatewayPC is
             _calculateGasFeesWithLimit(req.token, req.gasLimit);
         _moveFees(msg.sender, gasToken, gasFee);
 
-        _burnPRC20(msg.sender, req.token, req.amount);
+        // Only burn tokens if amount > 0 (supports payload-only transactions where CEA already has funds)
+        if (req.amount > 0) {
+            _burnPRC20(msg.sender, req.token, req.amount);
+        }
 
         string memory chainNamespace = IPRC20(req.token).SOURCE_CHAIN_NAMESPACE();
 
@@ -123,9 +126,10 @@ contract UniversalGatewayPC is
     /**
      * @notice                  Infers the TX_TYPE for an outbound universal request from Push Chain.
      * @dev                     Determines TX_TYPE based on the presence of payload and amount:
-     *                          - If NO payload: TX_TYPE.FUNDS (funds-only withdrawal)
+     *                          - If NO payload AND funds > 0: TX_TYPE.FUNDS (funds-only withdrawal)
      *                          - If payload AND amount > 0: TX_TYPE.FUNDS_AND_PAYLOAD (funds + execution)
      *                          - If payload AND amount == 0: TX_TYPE.GAS_AND_PAYLOAD (execution-only)
+     *                          - If NO payload AND NO funds: Reverts with InvalidInput (empty transaction)
      * @param req               UniversalOutboundTxRequest struct
      * @return inferred         The inferred TX_TYPE for routing
      */
@@ -137,8 +141,8 @@ contract UniversalGatewayPC is
         bool hasPayload = req.payload.length > 0;
         bool hasFunds = req.amount > 0;
 
-        // Case 1: No payload → FUNDS (funds-only withdrawal)
-        if (!hasPayload) {
+        // Case 1: No payload + Funds → FUNDS (funds-only withdrawal)
+        if (!hasPayload && hasFunds) {
             return TX_TYPE.FUNDS;
         }
 
@@ -152,25 +156,23 @@ contract UniversalGatewayPC is
             return TX_TYPE.GAS_AND_PAYLOAD;
         }
 
-        // Should never reach here due to the logic above, but added for safety
+        // Case 4: No payload + No funds → Invalid (empty transaction)
         revert Errors.InvalidInput();
     }
 
     /// @notice                 Validates the common parameters.
-    /// @dev                    Uses UniversalCore to fetch gasToken, gasFee and protocolFee.
+    /// @dev                    Validates target, token, and revertRecipient addresses.
+    ///                         Amount validation is handled in sendUniversalTxOutbound() to support payload-only transactions.
     /// @param rawTarget        raw destination address on origin chain.
     /// @param token            PRC20 token address on Push Chain.
-    /// @param amount           amount to withdraw (burn on Push, unlock at origin).
-    /// @param revertRecipient    address to receive funds in case of revert.
+    /// @param revertRecipient  address to receive funds in case of revert.
     function _validateCommon(
         bytes calldata rawTarget,
         address token,
-        uint256 amount,
         address revertRecipient
     ) internal pure {
         if (rawTarget.length == 0) revert Errors.InvalidInput();
         if (token == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
         if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
     }
 
