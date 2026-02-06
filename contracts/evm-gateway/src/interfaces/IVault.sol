@@ -21,6 +21,24 @@ interface IVault {
     /// @param newTss       New TSS address
     event TSSUpdated(address indexed oldTss, address indexed newTss);
 
+    /// @notice             Universal tx executed event
+    /// @param txID         Unique transaction identifier
+    /// @param universalTxID universal transaction identifier
+    /// @param originCaller original caller/user on source chain ( Push Chain)
+    /// @param target       Target contract address to execute call
+    /// @param token        Token address being sent
+    /// @param amount       Amount of token being sent
+    /// @param data         Calldata to be executed on target contract on external chain
+    event VaultUniversalTxExecuted(bytes32 indexed txID, bytes32 indexed universalTxID, address indexed originCaller, address target, address token, uint256 amount, bytes data);
+   
+    /// @notice             Universal tx reverted event
+    /// @param txID         Unique transaction identifier
+    /// @param universalTxID universal transaction identifier
+    /// @param token        Token address being reverted
+    /// @param amount       Amount of token being reverted
+    /// @param revertInstruction revert instruction containing revertRecipient and revertMsg
+    event VaultUniversalTxReverted(bytes32 indexed txID, bytes32 indexed universalTxID, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+
     // =========================
     //          WITHDRAW
     // =========================

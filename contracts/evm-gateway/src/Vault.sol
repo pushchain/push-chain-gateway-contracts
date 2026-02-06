@@ -171,6 +171,8 @@ contract Vault is
 
             ICEA(cea).executeUniversalTx{value: amount}(txID, universalTxID, originCaller, target, amount, data);
         }
+
+        emit VaultUniversalTxExecuted(txID, universalTxID, originCaller, target, token, amount, data);
     }
 
     /// @inheritdoc IVault
@@ -187,6 +189,8 @@ contract Vault is
 
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(txID, universalTxID, token, amount, revertInstruction);
+
+        emit VaultUniversalTxReverted(txID, universalTxID, token, amount, revertInstruction);
     }
 
     // =========================

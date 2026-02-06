@@ -39,6 +39,8 @@ contract VaultTest is Test {
     // Events
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
+    event VaultUniversalTxExecuted(bytes32 indexed txID, bytes32 indexed universalTxID, address indexed originCaller, address target, address token, uint256 amount, bytes data);
+    event VaultUniversalTxReverted(bytes32 indexed txID, bytes32 indexed universalTxID, address indexed token, uint256 amount, RevertInstructions revertInstruction);
 
     bytes32 txID = bytes32(uint256(1));
 
@@ -588,11 +590,14 @@ contract VaultTest is Test {
     function test_RevertWithdraw_EmitsEvent() public {
         uint256 amount = 1000e18;
 
-        RevertInstructions memory revertInstr = RevertInstructions(user1, "");
+        RevertInstructions memory revertInstr = RevertInstructions(user1, "test revert message");
+
+        vm.expectEmit(true, true, true, true);
+        emit VaultUniversalTxReverted(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
 
         vm.prank(tss);
-        // Event VaultRevert was removed - test now verifies revertWithdraw executes successfully
         vault.revertUniversalTxToken(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
+
         assertEq(token.balanceOf(user1), amount);
     }
 
@@ -1103,6 +1108,57 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectRevert();
         vault.executeUniversalTx{value: amount}(_tx(334), bytes32(uint256(3334)), uea, address(0), address(mockRevertingTarget), amount, data);
+    }
+
+    // I. Event Emissions (4 tests)
+    function test_ExecuteUniversalTx_ERC20_EmitsEvent() public {
+        address uea = makeAddr("eventERC20Uea");
+        uint256 amount = 100e18;
+        bytes memory data = abi.encodeWithSignature("someFunction()");
+
+        vm.expectEmit(true, true, true, true);
+        emit VaultUniversalTxExecuted(_tx(335), bytes32(uint256(3335)), uea, address(mockTarget), address(token), amount, data);
+
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(335), bytes32(uint256(3335)), uea, address(token), address(mockTarget), amount, data);
+    }
+
+    function test_ExecuteUniversalTx_Native_EmitsEvent() public {
+        address uea = makeAddr("eventNativeUea");
+        uint256 amount = 1 ether;
+        bytes memory data = abi.encodeWithSignature("receiveETH()");
+
+        vm.deal(tss, amount);
+
+        vm.expectEmit(true, true, true, true);
+        emit VaultUniversalTxExecuted(_tx(336), bytes32(uint256(3336)), uea, address(mockTarget), address(0), amount, data);
+
+        vm.prank(tss);
+        vault.executeUniversalTx{value: amount}(_tx(336), bytes32(uint256(3336)), uea, address(0), address(mockTarget), amount, data);
+    }
+
+    function test_ExecuteUniversalTx_EmitsEvent_WithEmptyPayload() public {
+        address uea = makeAddr("eventEmptyPayloadUea");
+        uint256 amount = 50e18;
+        bytes memory data = "";
+
+        vm.expectEmit(true, true, true, true);
+        emit VaultUniversalTxExecuted(_tx(337), bytes32(uint256(3337)), uea, address(mockTarget), address(token), amount, data);
+
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(337), bytes32(uint256(3337)), uea, address(token), address(mockTarget), amount, data);
+    }
+
+    function test_ExecuteUniversalTx_EmitsEvent_WithComplexPayload() public {
+        address uea = makeAddr("eventComplexPayloadUea");
+        uint256 amount = 100e18;
+        bytes memory data = abi.encodeWithSignature("transfer(address,uint256)", user1, 50e18);
+
+        vm.expectEmit(true, true, true, true);
+        emit VaultUniversalTxExecuted(_tx(338), bytes32(uint256(3338)), uea, address(mockTarget), address(token), amount, data);
+
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(338), bytes32(uint256(3338)), uea, address(token), address(mockTarget), amount, data);
     }
 
     // ============================================================================
