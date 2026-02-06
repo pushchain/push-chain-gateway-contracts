@@ -37,17 +37,17 @@ interface IVault {
     function withdrawTokens(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 
     /**
-     * @notice              TSS-only withdraw and execute transaction via gateway on external chains
-     * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
-     * @param txID          unique transaction identifier on external chain
+     * @notice              Handles outbound execution via CEA (the only execution path on source chains)
+     * @dev                 Routes all outbound executions through user's CEA contract
+     * @param txID          Unique transaction identifier
      * @param universalTxID universal transaction identifier
-     * @param originCaller  original caller/user on source chain ( Push Chain)
-     * @param token         ERC20 token to transfer (must be supported by gateway) on external chain
-     * @param target        contract to call via gateway on external chain
-     * @param amount        token amount to transfer and use in execution on external chain
-     * @param data          calldata for the target execution on external chain
+     * @param originCaller    UEA address on Push Chain
+     * @param token         Token address (address(0) for native)
+     * @param target        Target contract to execute on
+     * @param amount        Amount of token/native to execute with
+     * @param data          Calldata to execute on target
      */
-    function executeUniversalTx(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address target, uint256 amount, bytes calldata data) external;
+    function executeUniversalTx(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address target, uint256 amount, bytes calldata data) external payable;
 
     /**
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains
