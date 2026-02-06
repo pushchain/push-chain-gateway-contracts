@@ -122,51 +122,7 @@ forge verify-contract --chain sepolia \
    - Scans `v3FeeOrder` for optimal direct `tokenIn/WETH` pool
    - Uses `_findV3PoolWithNative(tokenIn)` to locate pools
 
-### Directory Structure
 
-```
-src/
-├── UniversalGateway.sol           # Main gateway implementation
-├── UniversalGatewayV0.sol         # Legacy version
-├── UniversalGatewayPC.sol         # Push Chain side
-├── Vault.sol / VaultPC.sol        # Vault contracts
-├── interfaces/                     # All contract interfaces
-│   ├── IUniversalGateway.sol      # Main gateway interface
-│   ├── IUniversalGatewayV0.sol
-│   ├── IUniversalGatewayPC.sol
-│   ├── IVault.sol / IVaultPC.sol
-│   └── IWETH.sol, ISwapRouterSepolia.sol, etc.
-└── libraries/
-    ├── Types.sol                   # Core enums and structs (TX_TYPE, RevertInstructions, UniversalPayload, etc.)
-    ├── TypesV0.sol                 # Legacy types
-    └── Errors.sol                  # Custom error definitions
-
-test/
-├── BaseTest.t.sol                  # Abstract base test with setup, mocks, and helpers
-├── gateway/                        # Main test suite (15+ test files)
-│   ├── 1_adminActions.t.sol       # Admin setter tests
-│   ├── 2-9_sendUniversalTx*.t.sol # Transaction routing tests
-│   ├── 10_withdrawTokens.t.sol    # TSS withdrawal tests
-│   ├── 11_executeUniversalTx.t.sol # Execution tests
-│   ├── 12_rateLimit_BlockBased.t.sol # Block-based rate limit tests
-│   ├── 13_rateLimit_EpochBased.t.sol # Epoch-based rate limit tests
-│   └── 14_gatewayPC.t.sol         # Push Chain gateway tests
-├── oracle/                         # Oracle integration tests
-├── vault/                          # Vault tests
-└── mocks/                          # Mock contracts (MockERC20, MockAggregatorV3, etc.)
-
-script/
-├── 1_DeployGatewayWithProxy.sol    # Deploy proxy + implementation + admin
-├── 2_DeployGatewayImpl.sol         # Deploy new implementation only
-├── 3_UpgradeGatewayNewImpl.sol     # Upgrade to new implementation
-└── DeployCommands.md               # Deployment and verification command reference
-
-docs/
-├── 1_PUSH_CHAIN.md                 # Push Chain overview
-├── 2_UniversalGateway.md           # Gateway architecture and design
-├── 3_UniversalGatewayPC.md         # Push Chain side gateway
-└── 4_OutboundTx_Flows.md           # Outbound transaction flows
-```
 
 ## Development Patterns
 
@@ -247,3 +203,107 @@ When upgrading the gateway:
 3. **Unified Interface**: Single entry point (`sendUniversalTx`) handles all transaction types
 4. **Deterministic Routing**: Transaction routing is algorithmic and predictable based on fixed rules
 5. **Defense in Depth**: Multiple layers of protection (pausability, reentrancy guards, rate limits, oracle checks, role-based access control)
+
+## UniversalGatewayPC - Outbound Transaction Handling
+
+**UniversalGatewayPC** is deployed on Push Chain and handles outbound transactions from Push Chain to external chains. It supports three TX_TYPE values (GAS is not supported on outbound).
+
+### TX_TYPE Inference on Push Chain (`_fetchTxType()`)
+
+The gateway automatically infers TX_TYPE based on the request structure. **Users never specify TX_TYPE explicitly.**
+
+**Inference Logic** (`src/UniversalGatewayPC.sol:141-166`):
+
+```solidity
+function _fetchTxType(UniversalOutboundTxRequest calldata req) private pure returns (TX_TYPE)
+{
+    bool hasPayload = req.payload.length > 0;
+    bool hasFunds = req.amount > 0;
+
+    // Case 1: No payload + Funds → FUNDS (funds-only withdrawal)
+    if (!hasPayload && hasFunds) {
+        return TX_TYPE.FUNDS;
+    }
+
+    // Case 2: Payload + Funds → FUNDS_AND_PAYLOAD (funds + execution)
+    if (hasPayload && hasFunds) {
+        return TX_TYPE.FUNDS_AND_PAYLOAD;
+    }
+
+    // Case 3: Payload only (no funds) → GAS_AND_PAYLOAD (execution-only)
+    if (hasPayload && !hasFunds) {
+        return TX_TYPE.GAS_AND_PAYLOAD;
+    }
+
+    // Case 4: No payload + No funds → Invalid (empty transaction)
+    revert Errors.InvalidInput();
+}
+```
+
+### TX_TYPE Decision Matrix
+
+| Payload (`req.payload.length`) | Amount (`req.amount`) | TX_TYPE | Behavior |
+|--------------------------------|----------------------|---------|----------|
+| Empty (0 bytes) | > 0 | **FUNDS** | Burns tokens, unlocks on origin chain |
+| Non-empty | > 0 | **FUNDS_AND_PAYLOAD** | Burns tokens, executes payload on origin chain |
+| Non-empty | 0 | **GAS_AND_PAYLOAD** | No burn, executes payload using existing CEA funds |
+| Empty (0 bytes) | 0 | **❌ Reverts** | Empty transaction rejected with `InvalidInput` |
+
+### Payload-Only Transaction Support (NEW)
+
+**Key Feature**: Users can send **payload-only transactions** without burning additional tokens.
+
+**Use Case**: Execute payloads on the origin chain using funds already held in the user's CEA (Chain Execution Account), without requiring additional token burns from Push Chain.
+
+### Validation Flow
+
+**Function**: `_validateCommon(req.target, req.token, req.revertRecipient)`
+
+
+**Note**: Amount validation is intentionally NOT in `_validateCommon()` because it's context-dependent:
+- For `FUNDS`: Amount must be > 0
+- For `GAS_AND_PAYLOAD`: Amount can be 0 (payload-only execution)
+
+Amount validation happens in `_fetchTxType()` which rejects empty transactions (amount=0 AND no payload).
+
+### Important Implementation Notes
+
+1. **Empty Transaction Rejection**: Transactions with both `amount = 0` AND `payload.length = 0` are rejected by `_fetchTxType()` with `Errors.InvalidInput()`
+
+2. **Conditional Token Burn**: Tokens are only burned when `amount > 0`. For payload-only transactions (GAS_AND_PAYLOAD with amount=0), the burn is skipped entirely.
+
+3. **Gas Fees Always Required**: Even for payload-only transactions, users must pay gas fees via `_moveFees()` to prevent spam/DoS.
+
+4. **Supported TX_TYPEs on Push Chain**:
+   - ✅ `TX_TYPE.FUNDS` - Withdraw tokens only
+   - ✅ `TX_TYPE.FUNDS_AND_PAYLOAD` - Withdraw + execute
+   - ✅ `TX_TYPE.GAS_AND_PAYLOAD` - Execute using existing CEA funds (amount=0)
+   - ❌ `TX_TYPE.GAS` - Not supported (inbound only)
+
+### Testing Guidelines
+
+When testing UniversalGatewayPC:
+
+**Payload-Only Tests** (should succeed):
+- `req.amount = 0` with `req.payload = abi.encodeWithSignature("function()")`
+- Verify `TX_TYPE.GAS_AND_PAYLOAD` is emitted
+- Verify no token burn occurs
+- Verify gas fees are still collected
+- Verify nonce increments
+
+**Empty Transaction Tests** (should revert):
+- `req.amount = 0` with `req.payload = bytes("")`
+- Expect revert with `Errors.InvalidInput.selector`
+- Test in `_fetchTxType()` directly and via `sendUniversalTxOutbound()`
+
+**Standard Transaction Tests**:
+- `req.amount > 0` with empty payload → `TX_TYPE.FUNDS`
+- `req.amount > 0` with payload → `TX_TYPE.FUNDS_AND_PAYLOAD`
+
+### Related Files
+
+- `src/UniversalGatewayPC.sol:83-119` - `sendUniversalTxOutbound()` main function
+- `src/UniversalGatewayPC.sol:141-166` - `_fetchTxType()` inference logic
+- `src/UniversalGatewayPC.sol:168-182` - `_validateCommon()` validation
+- `test/gateway/14_gatewayPC.t.sol` - Comprehensive test suite (79 tests)
+- `test/gateway/9_sendUniversalTxFetchTxType.t.sol` - TX_TYPE inference tests (27 tests)
