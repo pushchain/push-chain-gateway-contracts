@@ -1,6 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+/*
+ * DEPRECATED: This test file is no longer active.
+ *
+ * executeUniversalTx() has been removed from UniversalGateway.sol
+ * Execution now happens via CEA (Chain Execution Account) pattern in Vault.sol
+ *
+ * See:
+ * - src/Vault.sol:149-174 for new execution implementation
+ * - test/vault/Vault.t.sol for CEA execution tests
+ *
+ * This file is preserved for historical reference only.
+ */
+
 import { Test } from "forge-std/Test.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";

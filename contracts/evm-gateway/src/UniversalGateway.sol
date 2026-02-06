@@ -591,77 +591,6 @@ contract UniversalGateway is
         emit UniversalTxExecuted(txID, universalTxID, originCaller, to, token, amount, bytes(""));
     }
 
-    /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
-    /// @dev                   Allows outbound payload execution from Push Chain to external chains.
-    ///                        - The tokens used for payload execution, are to be burnt on Push Chain.
-    ///                        - approval and reset of approval is handled by the gateway.
-    ///                        - tokens are transferred from Vault to Gateway before calling this function
-    /// @param txID            unique transaction identifier
-    /// @param originCaller    original caller/user on source chain
-    /// @param token           token address (ERC20 token)
-    /// @param target          target contract address to execute call
-    /// @param amount          amount of token to send along
-    /// @param payload         calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address originCaller,
-        address token,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
-        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (token == address(0)) revert Errors.InvalidInput(); // This function is for ERC20 tokens only
-        
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-
-        isExecuted[txID] = true;
-
-        _resetApproval(token, target);             // reset approval to zero
-        _safeApprove(token, target, amount);       // approve target to spend amount
-        _executeCall(target, payload, 0);          // execute call with required amount
-        _resetApproval(token, target);             // reset approval back to zero
-        
-        // Return any remaining tokens to the Vault
-        uint256 remainingBalance = IERC20(token).balanceOf(address(this));
-        if (remainingBalance > 0) {
-            IERC20(token).safeTransfer(VAULT, remainingBalance);
-        }
-        
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, token, amount, payload);
-    }
-    
-    /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
-    /// @dev                   Allows outbound payload execution from Push Chain to external chains with native tokens.
-    /// @param txID            unique transaction identifier
-    /// @param originCaller    original caller/user on source chain
-    /// @param target          target contract address to execute call
-    /// @param amount          amount of native token to send along
-    /// @param payload         calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address originCaller,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
-        if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (msg.value != amount) revert Errors.InvalidAmount();
-
-        isExecuted[txID] = true;
-        
-        _executeCall(target, payload, amount);
-        
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, address(0), amount, payload);
-    }
 
     // =========================
     //  UG_5: PUBLIC HELPERS
@@ -791,45 +720,6 @@ contract UniversalGateway is
         }
     }
 
-    /// @dev Safely reset approval to zero before granting any new allowance to target contract.
-    function _resetApproval(address token, address spender) internal {
-        (bool success, bytes memory returnData) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, 0));
-        if (!success) {
-            // Some non-standard tokens revert on zero-approval; treat as reset-ok to avoid breaking the flow.
-            return;
-        }
-        // If token returns a boolean, ensure it is true; if no return data, assume success (USDT-style).
-        if (returnData.length > 0) {
-            bool approved = abi.decode(returnData, (bool));
-            if (!approved) revert Errors.InvalidData();
-        }
-    }
-
-    /// @dev Safely approve ERC20 token spending to a target contract.
-    ///      Low-level call must succeed AND (if returns data) decode to true; otherwise revert.
-    function _safeApprove(address token, address spender, uint256 amount) internal {
-        (bool success, bytes memory returnData) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, amount));
-        if (!success) {
-            revert Errors.InvalidData(); // approval failed
-        }
-        if (returnData.length > 0) {
-            bool approved = abi.decode(returnData, (bool));
-            if (!approved) {
-                revert Errors.InvalidData(); // approval failed
-            }
-        }
-    }
-
-    /// @dev Unified helper to execute a low-level call to target
-    ///      Call can be executed with native value or ERC20 token. 
-    ///      Reverts with Errors.ExecutionFailed() if the call fails (no bubbling).
-    function _executeCall(address target, bytes calldata payload, uint256 value) internal returns (bytes memory result) {
-        (bool success, bytes memory ret) = target.call{value: value}(payload);
-        if (!success) revert Errors.ExecutionFailed();
-        return ret;
-    }
 
     /// @dev                Enforce per-block USD budget for GAS routes using two-scalar accounting.
     ///                     - `BLOCK_USD_CAP` is denominated in USD(1e18). When 0, the feature is disabled.

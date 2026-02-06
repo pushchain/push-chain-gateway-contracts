@@ -183,37 +183,6 @@ interface IUniversalGateway {
     /// @param amount       amount of token to withdraw
     function withdrawTokens(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
 
-    /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
-    /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param token        token address (ERC20 token)
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address originCaller,
-        address token,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external;
-    
-    /// @notice             Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
-    /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of native token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address originCaller,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external payable;
 
 
     // =========================
