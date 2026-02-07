@@ -3,9 +3,10 @@ import { Program } from "@coral-xyz/anchor";
 import { UniversalGateway } from "../target/types/universal_gateway";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import * as sharedState from "./shared-state";
 import { signTssMessage, TssInstruction, generateUniversalTxId } from "./helpers/tss";
+import { ensureTestSetup } from "./helpers/test-setup";
 
 const USDT_DECIMALS = 6;
 const TOKEN_MULTIPLIER = BigInt(10 ** USDT_DECIMALS);
@@ -29,6 +30,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
     const provider = anchor.getProvider() as anchor.AnchorProvider;
     const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+
+    before(async () => {
+        await ensureTestSetup();
+    });
 
     let admin: Keypair;
     let pauser: Keypair;
@@ -160,9 +165,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
         admin = sharedState.getAdmin();
         pauser = sharedState.getPauser();
         mockUSDT = sharedState.getMockUSDT();
+        user1 = sharedState.getUser1(); // Use shared user1 from test-setup
 
         recipient = Keypair.generate();
-        user1 = Keypair.generate();
         relayer = Keypair.generate(); // Relayer who calls and pays for transactions
 
         const airdropLamports = 10 * anchor.web3.LAMPORTS_PER_SOL;
@@ -181,8 +186,19 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
         mockPriceFeed = sharedState.getMockPriceFeed();
 
+        // Get or create user1's USDT account (ATA is deterministic, so this will reuse if exists)
         user1UsdtAccount = await mockUSDT.createTokenAccount(user1.publicKey);
-        await mockUSDT.mintTo(user1UsdtAccount, 10_000);
+
+        // Check current balance and mint if needed
+        const currentBalance = await mockUSDT.getBalance(user1UsdtAccount);
+        const requiredBalance = 10_000 * 1_000_000; // 10,000 tokens in raw units
+        if (currentBalance < requiredBalance) {
+            // Mint enough to reach 10,000 tokens
+            const tokensToMint = 10_000 - (currentBalance / 1_000_000);
+            if (tokensToMint > 0) {
+                await mockUSDT.mintTo(user1UsdtAccount, tokensToMint);
+            }
+        }
 
         vaultUsdtAccount = await mockUSDT.createTokenAccount(vaultPda, true);
         recipientUsdtAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
@@ -191,7 +207,81 @@ describe("Universal Gateway - Withdraw Tests", () => {
         const tokens = whitelist.tokens.map((token: PublicKey) => token.toString());
         expect(tokens).to.include(mockUSDT.mint.publicKey.toString());
 
+        // Seed vault with native SOL using sendUniversalTx (FUNDS route)
+        const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+
+        // Initialize native SOL token rate limit if needed
+        try {
+            await program.account.tokenRateLimit.fetch(nativeSolTokenRateLimitPda);
+        } catch {
+            const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
+            await program.methods
+                .setTokenRateLimit(veryLargeThreshold)
+                .accounts({
+                    config: configPda,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: nativeSolTokenRateLimitPda,
+                    tokenMint: PublicKey.default,
+                    admin: admin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        }
+
+        // Deposit 8 SOL to vault for withdrawal tests (leave room for transaction fees)
+        const solDepositAmount = 8 * anchor.web3.LAMPORTS_PER_SOL;
+        const solFundsReq = {
+            recipient: Array.from(Buffer.alloc(20, 0)), // Must be zero for FUNDS
+            token: PublicKey.default,
+            amount: new anchor.BN(solDepositAmount),
+            payload: Buffer.from([]),
+            revertInstruction: {
+                fundRecipient: user1.publicKey,
+                revertMsg: Buffer.from("seed vault sol")
+            },
+            signatureData: Buffer.from([]),
+        };
+
+        // Check user1 balance before deposit
+        const user1BalanceBefore = await provider.connection.getBalance(user1.publicKey);
+        const vaultBalanceBefore = await provider.connection.getBalance(vaultPda);
+
+        try {
+            await program.methods
+                .sendUniversalTx(solFundsReq, new anchor.BN(solDepositAmount))
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    userTokenAccount: vaultPda, // Dummy account for native SOL routes
+                    gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+                    user: user1.publicKey,
+                    priceUpdate: mockPriceFeed,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: nativeSolTokenRateLimitPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([user1])
+                .rpc();
+        } catch (error: any) {
+            throw new Error(`Failed to deposit SOL to vault: ${error.message || error}`);
+        }
+
+        // Verify vault was seeded with SOL
+        const vaultBalanceAfterDeposit = await provider.connection.getBalance(vaultPda);
+        const user1BalanceAfter = await provider.connection.getBalance(user1.publicKey);
+
+        if (vaultBalanceAfterDeposit < vaultBalanceBefore + solDepositAmount * 0.9) { // Allow 10% for fees
+            throw new Error(
+                `Vault deposit failed. Vault before: ${vaultBalanceBefore}, after: ${vaultBalanceAfterDeposit}, ` +
+                `expected at least ${vaultBalanceBefore + solDepositAmount * 0.9}. ` +
+                `User1 balance before: ${user1BalanceBefore}, after: ${user1BalanceAfter}`
+            );
+        }
+
         // Seed vault with SPL tokens using sendUniversalTx (FUNDS route)
+        // user1 has 10,000 tokens minted in test-setup.ts
         const depositAmount = asTokenAmount(5_000);
         const recipientEvm = Array.from(Buffer.alloc(20, 1)); // EVM address (20 bytes)
         const fundsReq = {
@@ -220,6 +310,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: splTokenRateLimitPda,
+                    tokenMint: mockUSDT.mint.publicKey,
                     admin: admin.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -227,22 +318,44 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .rpc();
         }
 
-        await program.methods
-            .sendUniversalTx(fundsReq, new anchor.BN(0)) // No native SOL for SPL funds
-            .accounts({
-                config: configPda,
-                vault: vaultPda,
-                user: user1.publicKey,
-                userTokenAccount: user1UsdtAccount,
-                gatewayTokenAccount: vaultUsdtAccount,
-                priceUpdate: mockPriceFeed,
-                rateLimitConfig: rateLimitConfigPda,
-                tokenRateLimit: splTokenRateLimitPda,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-            })
-            .signers([user1])
-            .rpc();
+        // Verify SPL deposit
+        const vaultUsdtBalanceBefore = await mockUSDT.getBalance(vaultUsdtAccount);
+
+        try {
+            await program.methods
+                .sendUniversalTx(fundsReq, new anchor.BN(0)) // No native SOL for SPL funds
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    user: user1.publicKey,
+                    userTokenAccount: user1UsdtAccount,
+                    gatewayTokenAccount: vaultUsdtAccount,
+                    priceUpdate: mockPriceFeed,
+                    rateLimitConfig: rateLimitConfigPda,
+                    tokenRateLimit: splTokenRateLimitPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([user1])
+                .rpc();
+        } catch (error: any) {
+            throw new Error(`Failed to deposit SPL tokens to vault: ${error.message || error}`);
+        }
+
+        // Verify vault was seeded with SPL tokens
+        const vaultUsdtBalanceAfter = await mockUSDT.getBalance(vaultUsdtAccount);
+        const user1UsdtBalanceAfter = await mockUSDT.getBalance(user1UsdtAccount);
+
+        // Convert depositAmount from base units to human units (getBalance returns human units)
+        const depositAmountHuman = depositAmount.toNumber() / Number(TOKEN_MULTIPLIER);
+        const expectedVaultBalance = vaultUsdtBalanceBefore + depositAmountHuman;
+        if (vaultUsdtBalanceAfter < expectedVaultBalance) {
+            throw new Error(
+                `SPL deposit failed. ` +
+                `Vault ATA before: ${vaultUsdtBalanceBefore}, after: ${vaultUsdtBalanceAfter}, ` +
+                `expected at least ${expectedVaultBalance}. Deposit amount: ${depositAmountHuman} tokens`
+            );
+        }
 
         await syncNonceFromChain();
     });

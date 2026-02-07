@@ -6,12 +6,17 @@ import { expect } from "chai";
 import * as sharedState from "./shared-state";
 import { createMockUSDT } from "./helpers/mockSpl";
 import { getTssEthAddress, TSS_CHAIN_ID } from "./helpers/tss";
+import { ensureTestSetup } from "./helpers/test-setup";
 
 
 describe("Universal Gateway - Admin Functions Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
     const provider = anchor.getProvider() as anchor.AnchorProvider;
     const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+
+    before(async () => {
+        await ensureTestSetup();
+    });
 
     // Test accounts
     let admin: Keypair;

@@ -6,11 +6,16 @@ import { expect } from "chai";
 import * as sharedState from "./shared-state";
 import { getSolPrice, calculateSolAmount } from "./setup-pricefeed";
 import * as spl from "@solana/spl-token";
+import { ensureTestSetup } from "./helpers/test-setup";
 
 describe("Universal Gateway - Rate Limiting Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
     const provider = anchor.getProvider() as anchor.AnchorProvider;
     const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+
+    before(async () => {
+        await ensureTestSetup();
+    });
 
     let admin: Keypair;
     let user1: Keypair;

@@ -8,6 +8,7 @@ import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_I
 import { accountsToWritableFlags } from "../app/execute-payload";
 import * as sharedState from "./shared-state";
 import { signTssMessage, buildExecuteAdditionalData, TssInstruction, GatewayAccountMeta, generateUniversalTxId } from "./helpers/tss";
+import { ensureTestSetup } from "./helpers/test-setup";
 import { createHash } from "crypto";
 
 // Helper to compute Anchor-style discriminator (first 8 bytes of SHA-256)
@@ -54,6 +55,10 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
     const provider = anchor.getProvider() as anchor.AnchorProvider;
     const gatewayProgram = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
     const counterProgram = anchor.workspace.TestCounter as Program<TestCounter>;
+
+    before(async () => {
+        await ensureTestSetup();
+    });
 
     let admin: Keypair;
     let counterPda: PublicKey;

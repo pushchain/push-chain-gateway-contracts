@@ -6,11 +6,16 @@ import { expect } from "chai";
 import * as sharedState from "./shared-state";
 import { getSolPrice, calculateSolAmount } from "./setup-pricefeed";
 import * as spl from "@solana/spl-token";
+import { ensureTestSetup } from "./helpers/test-setup";
 
 describe("Universal Gateway - send_universal_tx Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
     const provider = anchor.getProvider() as anchor.AnchorProvider;
     const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+
+    before(async () => {
+        await ensureTestSetup();
+    });
 
     let admin: Keypair;
     let tssAddress: Keypair;
@@ -25,7 +30,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
     let mockUSDT: any;
     let mockUSDC: any;
 
-    // Helper to create payload
+    // Helper to create payload (EVM-style: to address, value, calldata, gas params).
     const createPayload = (to: number, vType: any = { signedVerification: {} }) => ({
         to: Array.from(Buffer.alloc(20, to)),
         value: new anchor.BN(0),
@@ -38,13 +43,48 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
         vType,
     });
 
-    // Helper to serialize payload to bytes (for UniversalTxRequest.payload field)
-    // For FUNDS_AND_PAYLOAD validation, we just need a non-empty buffer
-    // The actual serialization format doesn't matter for the validation check
+    /**
+     * Serialize payload as Anchor/Borsh-encoded UniversalPayload (matches program state.rs).
+     * EVM relayer decodes the same format on Push chain. Smaller than JSON.
+     */
     const serializePayload = (payload: any): Buffer => {
-        // Create a non-empty buffer to satisfy FUNDS_AND_PAYLOAD payload requirement
-        // In production, this would be Anchor-serialized bytes of UniversalPayload
-        return Buffer.from(JSON.stringify(payload));
+        // to: exactly 20 bytes (EVM address), match Rust [u8; 20]
+        const toRaw = Buffer.from(new Uint8Array(payload.to));
+        const toBuf = Buffer.alloc(20);
+        toRaw.copy(toBuf, 0, 0, Math.min(20, toRaw.length));
+        const data = Buffer.isBuffer(payload.data) ? payload.data : Buffer.from(payload.data ?? []);
+        const value = BigInt(payload.value.toString());
+        const gasLimit = BigInt(payload.gasLimit.toString());
+        const maxFeePerGas = BigInt(payload.maxFeePerGas.toString());
+        const maxPriorityFeePerGas = BigInt(payload.maxPriorityFeePerGas.toString());
+        const nonce = BigInt(payload.nonce.toString());
+        const deadline = BigInt(payload.deadline.toString());
+        const vTypeDiscriminant = payload.vType?.signedVerification !== undefined ? 0 : 1;
+
+        const dataLen = data.length;
+        const size = 20 + 8 + 4 + dataLen + 8 + 8 + 8 + 8 + 8 + 1;
+        const buf = Buffer.alloc(size);
+        let off = 0;
+        toBuf.copy(buf, off);
+        off += 20;
+        buf.writeBigUInt64LE(value, off);
+        off += 8;
+        buf.writeUInt32LE(dataLen, off);
+        off += 4;
+        data.copy(buf, off);
+        off += dataLen;
+        buf.writeBigUInt64LE(gasLimit, off);
+        off += 8;
+        buf.writeBigUInt64LE(maxFeePerGas, off);
+        off += 8;
+        buf.writeBigUInt64LE(maxPriorityFeePerGas, off);
+        off += 8;
+        buf.writeBigUInt64LE(nonce, off);
+        off += 8;
+        buf.writeBigInt64LE(deadline, off);
+        off += 8;
+        buf.writeUInt8(vTypeDiscriminant, off);
+        return buf;
     };
 
     // Helper to create revert instruction
