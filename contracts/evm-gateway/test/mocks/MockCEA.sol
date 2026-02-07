@@ -84,6 +84,43 @@ contract MockCEA is ICEA {
         require(success, "MockCEA: target call failed");
     }
 
+    /**
+     * @notice Withdrawal function: Transfers tokens to recipient or parks them in CEA
+     * @dev Implements the withdrawal path (empty payload signal)
+     */
+    function withdrawTo(
+        bytes32 txID,
+        bytes32 universalTxID,
+        address originCaller,
+        address token,
+        address to,
+        uint256 amount
+    ) external payable override {
+        // Store call parameters
+        lastTxID = txID;
+        lastUniversalTxID = universalTxID;
+        lastUEA = originCaller;
+        lastToken = token;
+        lastTarget = to;
+        lastAmount = amount;
+        lastPayload = bytes("");
+
+        // Token parking: if to == address(this), keep tokens
+        if (to == address(this)) {
+            return;
+        }
+
+        // Transfer tokens to recipient
+        if (token == address(0)) {
+            // Native token withdrawal
+            (bool success, ) = payable(to).call{value: amount}("");
+            require(success, "MockCEA: native transfer failed");
+        } else {
+            // ERC20 token withdrawal
+            IERC20(token).safeTransfer(to, amount);
+        }
+    }
+
     // Helper to receive native tokens
     receive() external payable {}
 }

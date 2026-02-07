@@ -3,11 +3,12 @@ pragma solidity 0.8.26;
 
 /**
  * @title Vault
- * @notice ERC20 custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
+ * @notice Token custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
  * @dev    - TransparentUpgradeable (OZ Initializable pattern)
- *         - ERC20-only (no native); native is handled by the gateway directly.
+ *         - Handles both ERC20 and native tokens
  *         - Token support is gated by UniversalGateway.isSupportedToken(token) to keep a single source of truth.
- *         - Uses safe-approve -> call -> reset-approval pattern (USDT-safe).
+ *         - Routes withdrawals (empty payload) and executions (non-empty payload) through CEA contracts
+ *         - Uses CEAFactory for deterministic CEA deployment
  */
 
 import {Errors}                     from "./libraries/Errors.sol";
@@ -127,24 +128,8 @@ contract Vault is
     }
 
     // =========================
-    //          WITHDRAW
+    //   WITHDRAW & EXECUTION
     // =========================
-    /// @inheritdoc IVault
-    function withdrawTokens(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount)
-        external
-        nonReentrant
-        whenNotPaused
-        onlyRole(TSS_ROLE)
-    {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
-        _enforceSupported(token);
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-
-        IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.withdrawTokens(txID, universalTxID, originCaller, token, to, amount);
-    }
-
     /// @inheritdoc IVault
     function executeUniversalTx(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
         external
@@ -153,25 +138,22 @@ contract Vault is
         whenNotPaused
         onlyRole(TSS_ROLE)
     {
-        _validateExecutionParams(originCaller, token, target, amount);
-        _enforceSupported(token);
-
+        // Get or deploy CEA (required for both withdrawal and execution paths)
         (address cea, bool isDeployed) = CEAFactory.getCEAForUEA(originCaller);
-
         if (!isDeployed) {
             cea = CEAFactory.deployCEA(originCaller);
         }
 
-        if (token != address(0)) {
-            if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-            IERC20(token).safeTransfer(cea, amount);
-            ICEA(cea).executeUniversalTx(txID, universalTxID, originCaller, token, target, amount, data);
+        // Route based on payload: empty payload = withdrawal, non-empty = execution
+        if (data.length == 0) {
+            // Withdrawal path
+            _handleTokenWithdrawal(txID, universalTxID, originCaller, token, target, amount, cea);
         } else {
-            if (msg.value != amount) revert Errors.InvalidAmount();
-
-            ICEA(cea).executeUniversalTx{value: amount}(txID, universalTxID, originCaller, target, amount, data);
+            // Execution path
+            _handleUniversalTxExecution(txID, universalTxID, originCaller, token, target, amount, data, cea);
         }
 
+        // Emit event (same for both paths)
         emit VaultUniversalTxExecuted(txID, universalTxID, originCaller, target, token, amount, data);
     }
 
@@ -217,6 +199,97 @@ contract Vault is
             if (msg.value != amount) revert Errors.InvalidAmount();
         } else {
             if (msg.value != 0) revert Errors.InvalidAmount();
+        }
+    }
+
+    /**
+     * @dev Handles token withdrawal (empty payload case)
+     * @param txID Transaction ID
+     * @param universalTxID Universal transaction ID
+     * @param originCaller UEA address on Push Chain
+     * @param token Token address (address(0) for native)
+     * @param to Recipient address (user or CEA itself for parking)
+     * @param amount Amount to withdraw
+     * @param cea CEA address (already deployed or newly created)
+     */
+    function _handleTokenWithdrawal(
+        bytes32 txID,
+        bytes32 universalTxID,
+        address originCaller,
+        address token,
+        address to,
+        uint256 amount,
+        address cea
+    ) private {
+        // Validations (reuses existing validation functions)
+        _validateExecutionParams(originCaller, token, to, amount);
+        _enforceSupported(token);
+
+        // Withdrawal-specific validation: amount must be non-zero
+        if (amount == 0) revert Errors.InvalidAmount();
+
+        // Transfer tokens to CEA and trigger withdrawTo
+        if (token == address(0)) {
+            // Native token withdrawal
+            ICEA(cea).withdrawTo{value: amount}(
+                txID,
+                universalTxID,
+                originCaller,
+                token,
+                to,
+                amount
+            );
+        } else {
+            // ERC20 token withdrawal
+            if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+            IERC20(token).safeTransfer(cea, amount);
+
+            ICEA(cea).withdrawTo(
+                txID,
+                universalTxID,
+                originCaller,
+                token,
+                to,
+                amount
+            );
+        }
+    }
+
+    /**
+     * @dev Handles payload execution (non-empty payload case)
+     * @notice Contains the existing execution logic from executeUniversalTx
+     * @param txID Transaction ID
+     * @param universalTxID Universal transaction ID
+     * @param originCaller UEA address on Push Chain
+     * @param token Token address (address(0) for native)
+     * @param target Target contract address
+     * @param amount Amount of tokens
+     * @param data Payload to execute
+     * @param cea CEA address (already deployed or newly created)
+     */
+    function _handleUniversalTxExecution(
+        bytes32 txID,
+        bytes32 universalTxID,
+        address originCaller,
+        address token,
+        address target,
+        uint256 amount,
+        bytes calldata data,
+        address cea
+    ) private {
+        // Validations (existing logic)
+        _validateExecutionParams(originCaller, token, target, amount);
+        _enforceSupported(token);
+
+        // Execute based on token type (existing logic)
+        if (token != address(0)) {
+            // ERC20 execution
+            if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+            IERC20(token).safeTransfer(cea, amount);
+            ICEA(cea).executeUniversalTx(txID, universalTxID, originCaller, token, target, amount, data);
+        } else {
+            // Native execution
+            ICEA(cea).executeUniversalTx{value: amount}(txID, universalTxID, originCaller, target, amount, data);
         }
     }
 }

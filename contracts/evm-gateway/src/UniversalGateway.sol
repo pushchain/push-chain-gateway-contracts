@@ -545,55 +545,7 @@ contract UniversalGateway is
     }
 
     // =========================
-    //  UG_4: WITHDRAW AND PAYLOAD EXECUTION PATHS
-    // =========================
-
-    /// @inheritdoc IUniversalGateway
-    function withdraw(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address originCaller,
-        address to,
-        uint256 amount
-    ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
-        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (msg.value != amount) revert Errors.InvalidAmount();
-        
-        isExecuted[txID] = true;
-        (bool ok,) = payable(to).call{ value: amount }("");
-        if (!ok) revert Errors.WithdrawFailed();
-        
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, address(0), amount, bytes(""));
-    }
-
-    /// @inheritdoc IUniversalGateway
-    function withdrawTokens(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address originCaller,
-        address token,
-        address to,
-        uint256 amount
-    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
-        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (token == address(0)) revert Errors.InvalidInput();
-        
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-
-        isExecuted[txID] = true;
-        IERC20(token).safeTransfer(to, amount);
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, token, amount, bytes(""));
-    }
-
-
-    // =========================
-    //  UG_5: PUBLIC HELPERS
+    //  UG_4: PUBLIC HELPERS
     // =========================
 
     /// @inheritdoc IUniversalGateway

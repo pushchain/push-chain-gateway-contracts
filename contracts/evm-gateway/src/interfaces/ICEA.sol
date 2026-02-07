@@ -54,4 +54,32 @@ interface ICEA {
         uint256 amount,
         bytes calldata payload
     ) external payable;
+
+    /**
+     * @notice Withdraws tokens to a specified recipient (withdrawal path)
+     *
+     * @dev
+     *  - Only callable by Vault.
+     *  - Called when payload is empty (withdrawal signal).
+     *  - Supports token parking: if `to == address(this)`, tokens remain in CEA.
+     *  - Typical usage pattern:
+     *      1. Vault transfers tokens to CEA (native or ERC20).
+     *      2. Vault calls withdrawTo(txID, universalTxID, originCaller, token, to, amount).
+     *      3. CEA transfers tokens directly to recipient (or parks them if to == address(this)).
+     *
+     * @param txID           Transaction ID of the UniversalTx to execute.
+     * @param universalTxID  Universal transaction identifier from Push Chain.
+     * @param originCaller   UEA address on Push Chain (must match CEA's UEA).
+     * @param token          Token address (address(0) for native tokens).
+     * @param to             Recipient address (can be user, contract, or address(this) for parking).
+     * @param amount         Amount to withdraw (must be > 0).
+     */
+    function withdrawTo(
+        bytes32 txID,
+        bytes32 universalTxID,
+        address originCaller,
+        address token,
+        address to,
+        uint256 amount
+    ) external payable;
 }
