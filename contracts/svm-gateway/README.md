@@ -84,6 +84,23 @@ npm run token:list
 ```
 
 ### Gateway Testing Commands
+#### Run Anchor Tests Directly
+```bash
+# Run all tests
+anchor test
+
+# Run a single test file
+TEST_FILE=tests/execute.test.ts anchor test
+```
+
+#### Run Tests via npm scripts
+```bash
+# Run all tests
+npm test
+
+# Run a single test file
+npm run test:execute
+```
 
 #### Test Deposit Functionality
 ```bash
