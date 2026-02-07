@@ -196,11 +196,11 @@ pub struct ExecuteMessage {
 /// Execute event (parity with EVM `UniversalTxExecuted`).
 #[event]
 pub struct UniversalTxExecuted {
-    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
     pub tx_id: [u8; 32],
-    pub sender: [u8; 20], // EVM address (same as origin_caller in EVM)
-    pub target: Pubkey,   // Target program
-    pub token: Pubkey,    // Token (Pubkey::default() for SOL)
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub sender: [u8; 20],          // EVM address (same as origin_caller in EVM)
+    pub target: Pubkey,            // Target program
+    pub token: Pubkey,             // Token (Pubkey::default() for SOL)
     pub amount: u64,
     pub payload: Vec<u8>, // ix_data
 }
@@ -217,17 +217,6 @@ pub struct UniversalTx {
     pub revert_instruction: RevertInstructions,
     pub tx_type: TxType,
     pub signature_data: Vec<u8>,
-}
-
-/// Withdraw event (parity with EVM `WithdrawToken`).
-#[event]
-pub struct WithdrawToken {
-    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
-    pub tx_id: [u8; 32],           // Transaction ID
-    pub origin_caller: [u8; 20],   // Original caller on source chain (EVM address)
-    pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
-    pub to: Pubkey,                // Recipient address
-    pub amount: u64,               // Amount
 }
 
 /// Revert withdraw event (parity with EVM `RevertUniversalTx`).

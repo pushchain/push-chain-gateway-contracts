@@ -118,18 +118,18 @@ pub fn calculate_usd_amount(lamports: u64, price_data: &PriceData) -> Result<u12
 
     Ok(usd_amount)
 }
+/// TODO: Remove these functions if not needed
+// // Calculate payload hash (matching ETH contract keccak256(abi.encode(payload)))
+// pub fn payload_hash(payload: &UniversalPayload) -> [u8; 32] {
+//     // Use Solana's sha256 to hash the serialized payload (closest to keccak256)
+//     let serialized = payload.try_to_vec().unwrap_or_default();
+//     anchor_lang::solana_program::hash::hash(&serialized).to_bytes()
+// }
 
-// Calculate payload hash (matching ETH contract keccak256(abi.encode(payload)))
-pub fn payload_hash(payload: &UniversalPayload) -> [u8; 32] {
-    // Use Solana's sha256 to hash the serialized payload (closest to keccak256)
-    let serialized = payload.try_to_vec().unwrap_or_default();
-    anchor_lang::solana_program::hash::hash(&serialized).to_bytes()
-}
-
-// Convert payload to bytes (matching ETH contract)
-pub fn payload_to_bytes(payload: &UniversalPayload) -> Vec<u8> {
-    payload.try_to_vec().unwrap_or_default()
-}
+// // Convert payload to bytes (matching ETH contract)
+// pub fn payload_to_bytes(payload: &UniversalPayload) -> Vec<u8> {
+//     payload.try_to_vec().unwrap_or_default()
+// }
 
 // =========================
 // RATE LIMITING FUNCTIONS

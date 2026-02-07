@@ -293,8 +293,8 @@ pub fn execute_universal_tx(
 
     // 13. Emit execution event
     emit!(UniversalTxExecuted {
-        universal_tx_id,
         tx_id,
+        universal_tx_id,    
         sender,
         target: target_program,
         token: Pubkey::default(), // SOL
@@ -615,8 +615,8 @@ pub fn execute_universal_tx_token(
 
     // 13. Emit execution event
     emit!(UniversalTxExecuted {
-        universal_tx_id,
         tx_id,
+        universal_tx_id,
         sender,
         target: target_program,
         token: ctx.accounts.mint.key(),
@@ -717,8 +717,8 @@ fn handle_cea_withdrawal(
 
     // Emit execution event
     emit!(UniversalTxExecuted {
-        universal_tx_id,
         tx_id,
+        universal_tx_id,
         sender,
         target: *ctx.program_id,
         token: Pubkey::default(),
@@ -805,8 +805,8 @@ fn handle_cea_withdrawal_token(
 
     // Emit execution event
     emit!(UniversalTxExecuted {
-        universal_tx_id,
         tx_id,
+        universal_tx_id,
         sender,
         target: *ctx.program_id,
         token: ctx.accounts.mint.key(),

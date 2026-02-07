@@ -114,13 +114,15 @@ pub fn withdraw(
         &[seeds],
     )?;
 
-    emit!(crate::state::WithdrawToken {
-        universal_tx_id,
+    // Emit unified event (EVM parity: UniversalTxExecuted for withdraw)
+    emit!(crate::state::UniversalTxExecuted {
         tx_id,
-        origin_caller,
+        universal_tx_id,
+        sender: origin_caller,
+        target: ctx.accounts.recipient.key(),
         token: Pubkey::default(),
-        to: ctx.accounts.recipient.key(),
         amount,
+        payload: vec![],
     });
 
     // Transfer gas_fee directly to caller
@@ -283,13 +285,15 @@ pub fn withdraw_tokens(
 
     // ATA creation is handled off-chain by the client (standard practice)
 
-    emit!(crate::state::WithdrawToken {
-        universal_tx_id,
+    // Emit unified event (EVM parity: UniversalTxExecuted for withdraw)
+    emit!(crate::state::UniversalTxExecuted {
         tx_id,
-        origin_caller,
+        universal_tx_id,
+        sender: origin_caller,
+        target: ctx.accounts.recipient_token_account.key(),
         token: ctx.accounts.token_mint.key(),
-        to: ctx.accounts.recipient_token_account.key(),
         amount,
+        payload: vec![],
     });
 
     // Transfer gas_fee directly to caller
