@@ -11,7 +11,8 @@ export enum TssInstruction {
     RevertWithdrawSol = 3,
     RevertWithdrawSpl = 4,
     ExecuteSol = 5,
-    ExecuteSpl = 6,
+    ExecuteSpl = 5,   // Unified — now same instruction_id as ExecuteSol
+    Execute = 5,      // Alias for unified execute
 }
 
 // Default to Devnet cluster pubkey if not specified
@@ -141,7 +142,8 @@ export function buildExecuteAdditionalData(
     accounts: GatewayAccountMeta[],
     ixData: Uint8Array,
     gasFee: bigint = BigInt(0),
-    rentFee: bigint = BigInt(0)
+    rentFee: bigint = BigInt(0),
+    token: PublicKey = PublicKey.default
 ): Uint8Array[] {
     // Build accounts buffer with length prefix (u32 BE) - matches Rust line 113-117
     // Format: [u32 BE: count] + [32 bytes: pubkey, 1 byte: is_writable] * count
@@ -173,7 +175,7 @@ export function buildExecuteAdditionalData(
     const rentFeeBuf = Buffer.alloc(8);
     rentFeeBuf.writeBigUInt64BE(rentFeeBigInt, 0);
 
-    // Matches Rust execute.rs: [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
+    // Matches Rust execute.rs: [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee, token]
     return [
         universalTxId,           // universal_tx_id (32 bytes)
         txId,                    // tx_id (32 bytes)
@@ -183,5 +185,6 @@ export function buildExecuteAdditionalData(
         ixDataBuf,               // ix_data with length prefix
         gasFeeBuf,               // gas_fee (8 bytes, u64 BE)
         rentFeeBuf,              // rent_fee (8 bytes, u64 BE)
+        token.toBuffer(),        // token (32 bytes) — Pubkey::default() for SOL, mint for SPL
     ];
 }

@@ -1,6 +1,6 @@
 use crate::errors::GatewayError;
 use crate::state::{
-    Config, EpochUsage, ExecuteMessage, GatewayAccountMeta, RateLimitConfig, TokenRateLimit,
+    Config, EpochUsage, GatewayAccountMeta, RateLimitConfig, TokenRateLimit,
     UniversalPayload, FEED_ID, RATE_LIMIT_SEED,
 };
 use anchor_lang::prelude::*;

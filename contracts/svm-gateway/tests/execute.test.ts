@@ -410,6 +410,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -419,6 +420,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remainingAccounts)
@@ -505,7 +511,8 @@ describe("Universal Gateway - Execute Tests", () => {
                     Array.from(sigFund.signature),
                     sigFund.recoveryId,
                     Array.from(sigFund.messageHash),
-                    new anchor.BN(sigFund.nonce)
+                    new anchor.BN(sigFund.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -515,6 +522,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txIdFund),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remainingAccounts)
@@ -574,7 +586,8 @@ describe("Universal Gateway - Execute Tests", () => {
                     Array.from(sigW.signature),
                     sigW.recoveryId,
                     Array.from(sigW.messageHash),
-                    new anchor.BN(sigW.nonce)
+                    new anchor.BN(sigW.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -584,6 +597,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txIdWithdraw),
                     destinationProgram: gatewayProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([admin])
@@ -664,6 +682,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
                     new anchor.BN(sig1.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -673,6 +692,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda: tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -713,6 +737,7 @@ describe("Universal Gateway - Execute Tests", () => {
                         sig2.recoveryId,
                         Array.from(sig2.messageHash),
                         new anchor.BN(sig2.nonce),
+                        PublicKey.default,
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -722,6 +747,11 @@ describe("Universal Gateway - Execute Tests", () => {
                         tssPda: tssPda,
                         executedTx: getExecutedTxPda(txId),
                         destinationProgram: counterProgram.programId,
+                        vaultAta: null,
+                        ceaAta: null,
+                        mint: null,
+                        tokenProgram: null,
+                        rent: null,
                         systemProgram: SystemProgram.programId,
                     })
                     .remainingAccounts(remaining)
@@ -734,7 +764,7 @@ describe("Universal Gateway - Execute Tests", () => {
         });
     });
 
-    describe("execute_universal_tx_token (SPL)", () => {
+    describe("execute_universal_tx (SPL)", () => {
         it("should execute SPL token transfer to test-counter", async () => {
             await syncNonceFromChain();
             const txId = generateTxId();
@@ -780,7 +810,8 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts,
                     counterIx.data,
                     gasFee,
-                    rentFee
+                    rentFee,
+                    mockUSDT.mint.publicKey
                 ),
             });
 
@@ -790,7 +821,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             const splWritableFlags1 = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
-                .executeUniversalTxToken(
+                .executeUniversalTx(
                     Array.from(txId),
                     Array.from(universalTxId),
                     amount,
@@ -801,6 +832,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -814,7 +846,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
                     tokenProgram: TOKEN_PROGRAM_ID,
-                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 })
@@ -917,14 +948,15 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts,
                     counterIx.data,
                     gasFee,
-                    rentFee
+                    rentFee,
+                    mockUSDT.mint.publicKey
                 ),
             });
 
             try {
                 const splWritableFlags2 = accountsToWritableFlagsOnly(accounts);
                 await gatewayProgram.methods
-                    .executeUniversalTxToken(
+                    .executeUniversalTx(
                         Array.from(txId),
                         Array.from(universalTxId),
                         amount,
@@ -935,6 +967,7 @@ describe("Universal Gateway - Execute Tests", () => {
                         sig.recoveryId,
                         Array.from(sig.messageHash),
                         new anchor.BN(sig.nonce),
+                        mockUSDT.mint.publicKey,
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -948,7 +981,6 @@ describe("Universal Gateway - Execute Tests", () => {
                         executedTx: getExecutedTxPda(txId),
                         destinationProgram: counterProgram.programId,
                         tokenProgram: TOKEN_PROGRAM_ID,
-                        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
                         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                     })
@@ -963,11 +995,9 @@ describe("Universal Gateway - Execute Tests", () => {
                     error.code ||
                     error.error?.code ||
                     error.message;
-                // Execution flow:
-                // 1. Anchor's associated_token constraint validates cea_ata owner matches cea_authority
-                // 2. If owner mismatches, Anchor throws ConstraintTokenOwner (not our custom InvalidOwner)
-                // Expected: ConstraintTokenOwner (Anchor's constraint validation)
-                expect(errorCode).to.equal("ConstraintTokenOwner");
+                // Execution flow: unified execute validates cea_ata manually (SplAccount::unpack);
+                // if owner mismatches, program returns InvalidAccount (not Anchor's ConstraintTokenOwner).
+                expect(errorCode).to.equal("InvalidAccount");
             }
 
             // Nonce already consumed when validate_message ran; refresh cached value
@@ -1011,7 +1041,8 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts,
                     counterIx.data,
                     gasFee,
-                    rentFee
+                    rentFee,
+                    mockUSDT.mint.publicKey
                 ),
             });
 
@@ -1021,7 +1052,7 @@ describe("Universal Gateway - Execute Tests", () => {
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             const splWritableFlags4 = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
-                .executeUniversalTxToken(
+                .executeUniversalTx(
                     Array.from(txId),
                     Array.from(universalTxId),
                     amount,
@@ -1032,6 +1063,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1045,7 +1077,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
                     tokenProgram: TOKEN_PROGRAM_ID,
-                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 })
@@ -1129,14 +1160,15 @@ describe("Universal Gateway - Execute Tests", () => {
                 fundAccounts,
                 counterIx.data,
                 gasFeeLamports,
-                rentFeeLamports
+                rentFeeLamports,
+                mockUSDT.mint.publicKey
             ),
         });
 
         const callerBalanceBeforeFund = await provider.connection.getBalance(admin.publicKey);
         const fundWritableFlagsSpl = accountsToWritableFlagsOnly(fundAccounts);
         await gatewayProgram.methods
-            .executeUniversalTxToken(
+            .executeUniversalTx(
                 Array.from(txIdFund),
                 Array.from(universalTxIdFund),
                 fundAmount,
@@ -1150,6 +1182,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sigFund.recoveryId,
                 Array.from(sigFund.messageHash),
                 new anchor.BN(sigFund.nonce),
+                mockUSDT.mint.publicKey,
             )
             .accounts({
                 caller: admin.publicKey,
@@ -1165,7 +1198,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 tokenProgram: TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .remainingAccounts(instructionAccountsToRemaining(counterIx))
             .signers([admin])
@@ -1220,14 +1252,15 @@ describe("Universal Gateway - Execute Tests", () => {
                 [],
                 withdrawIxData,
                 gasFeeWithdrawSpl,
-                rentFeeWithdrawSpl
+                rentFeeWithdrawSpl,
+                mockUSDT.mint.publicKey
             ),
         });
 
         const callerBalanceBeforeWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
         const withdrawWritableFlagsSpl = accountsToWritableFlagsOnly([]);
         await gatewayProgram.methods
-            .executeUniversalTxToken(
+            .executeUniversalTx(
                 Array.from(txIdWithdraw),
                 Array.from(universalTxIdWithdraw),
                 new anchor.BN(0),
@@ -1241,6 +1274,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sigW.recoveryId,
                 Array.from(sigW.messageHash),
                 new anchor.BN(sigW.nonce),
+                mockUSDT.mint.publicKey,
             )
             .accounts({
                 caller: admin.publicKey,
@@ -1256,7 +1290,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 tokenProgram: TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .signers([admin])
             .rpc();
@@ -1358,6 +1391,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1367,6 +1401,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(Array.from(txId)),
                     destinationProgram: targetProgram,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(
@@ -1462,7 +1501,8 @@ describe("Universal Gateway - Execute Tests", () => {
                     accountsForSigning, // Includes ceaAta (matches remaining_accounts)
                     decoded.ixData,
                     gasFee,
-                    rentFee
+                    rentFee,
+                    mockUSDT.mint.publicKey
                 ),
             });
 
@@ -1472,7 +1512,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const accountsForSigningWritableFlags = accountsToWritableFlagsOnly(accountsForSigning);
             await gatewayProgram.methods
-                .executeUniversalTxToken(
+                .executeUniversalTx(
                     Array.from(txId),
                     Array.from(universalTxId),
                     new anchor.BN(amount.toString()),
@@ -1486,6 +1526,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1501,7 +1542,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(remainingAccounts) // Includes ceaAta (needed for CPI)
                 .signers([admin])
@@ -1622,6 +1662,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1631,6 +1672,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(substitutedRemaining) // Substituted accounts!
@@ -1702,6 +1748,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1711,6 +1758,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(fewerRemaining)
@@ -1780,6 +1832,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1789,6 +1842,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(wrongWritableRemaining)
@@ -1857,6 +1915,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1866,6 +1925,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(reorderedRemaining)
@@ -1942,6 +2006,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1951,6 +2016,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2020,6 +2090,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(wrongNonce), // Wrong nonce!
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2029,6 +2100,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2100,6 +2176,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 tamperedHash, // Tampered!
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2109,6 +2186,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2178,6 +2260,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2187,6 +2270,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: nonExecutableAccount,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2258,6 +2346,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2267,6 +2356,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: counterProgram.programId,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(maliciousRemaining)
@@ -2341,6 +2435,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
+                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2350,6 +2445,11 @@ describe("Universal Gateway - Execute Tests", () => {
                                 tssPda,
                                 executedTx: getExecutedTxPda(txId),
                                 destinationProgram: differentProgram,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2470,6 +2570,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
                     new anchor.BN(sig1.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2479,6 +2580,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId1),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
@@ -2557,6 +2663,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig2.recoveryId,
                     Array.from(sig2.messageHash),
                     new anchor.BN(sig2.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2566,6 +2673,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId2),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx2))
@@ -2642,6 +2754,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2651,6 +2764,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
@@ -2766,6 +2884,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2775,6 +2894,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
@@ -2848,6 +2972,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2857,6 +2982,11 @@ describe("Universal Gateway - Execute Tests", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
@@ -2939,13 +3069,14 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts,
                     stakeIx.data,
                     gasFeeLamports,
-                    calculatedRentFee
+                    calculatedRentFee,
+                    mockUSDT.mint.publicKey
                 ),
             });
 
             const user3StakeWritableFlags = accountsToWritableFlagsOnly(accounts);
             await gatewayProgram.methods
-                .executeUniversalTxToken(
+                .executeUniversalTx(
                     Array.from(txId),
                     Array.from(universalTxId),
                     stakeAmount, // Must match amountBigInt
@@ -2959,6 +3090,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
+                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2972,7 +3104,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
                     tokenProgram: TOKEN_PROGRAM_ID,
-                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 })
@@ -3040,13 +3171,14 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts,
                     unstakeIx.data,
                     gasFee,
-                    rentFee
+                    rentFee,
+                    mockUSDT.mint.publicKey
                 ),
             });
 
             const user3UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
             const tx = await gatewayProgram.methods
-                .executeUniversalTxToken(
+                .executeUniversalTx(
                     Array.from(txId),
                     Array.from(universalTxId),
                     new anchor.BN(0), // Must match amountBigInt
@@ -3057,6 +3189,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce), // Must match onChainNonce
+                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -3070,7 +3203,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
                     tokenProgram: TOKEN_PROGRAM_ID,
-                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 })
@@ -3205,13 +3337,14 @@ describe("Universal Gateway - Execute Tests", () => {
                     accounts1,
                     stakeIx.data,
                     gasFeeLamports,
-                    calculatedRentFee
+                    calculatedRentFee,
+                    mockUSDT.mint.publicKey
                 ),
             });
 
             const accounts1WritableFlags = accountsToWritableFlagsOnly(accounts1);
             await gatewayProgram.methods
-                .executeUniversalTxToken(
+                .executeUniversalTx(
                     Array.from(txId1),
                     Array.from(universalTxId1),
                     stakeAmount, // Must match amountBigInt
@@ -3225,6 +3358,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
                     new anchor.BN(sig1.nonce), // Must match onChainNonce
+                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -3238,7 +3372,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     executedTx: getExecutedTxPda(txId1),
                     destinationProgram: counterProgram.programId,
                     tokenProgram: TOKEN_PROGRAM_ID,
-                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 })

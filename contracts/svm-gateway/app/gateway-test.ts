@@ -1711,6 +1711,7 @@ async function run() {
                 sig.recoveryId,
                 sig.messageHash,
                 sig.nonce,
+                PublicKey.default,
             )
             .accounts({
                 caller: relayer,  // Relayer is now both fee payer and caller
@@ -1720,6 +1721,11 @@ async function run() {
                 tssPda,
                 executedTx,
                 destinationProgram: targetProgram,
+                vaultAta: null,
+                ceaAta: null,
+                mint: null,
+                tokenProgram: null,
+                rent: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(remainingAccounts)
@@ -1754,7 +1760,7 @@ async function run() {
     }
 
     async function runExecuteSplTest() {
-        console.log("👉 execute_universal_tx_token (SPL) via encoded payload");
+        console.log("👉 execute_universal_tx (SPL) via encoded payload");
         const tssAfterSol: any = await (program.account as any).tssPda.fetch(tssPda);
         const splTxIdBytes = anchor.web3.Keypair.generate().publicKey.toBytes();
         const senderBytes = Buffer.alloc(20, 0x22);
@@ -1821,7 +1827,8 @@ async function run() {
                 decoded.accounts,
                 decoded.ixData,
                 gasFee,  // From fee calculation
-                rentFee  // From payload
+                rentFee,  // From payload
+                mint
             ),
         });
 
@@ -1844,7 +1851,7 @@ async function run() {
         const executedTxRentSpl = await getExecutedTxRent(connection);
 
         const execSplTx = await relayerProgram.methods
-            .executeUniversalTxToken(
+            .executeUniversalTx(
                 Array.from(splTxIdBytes),
                 Array.from(universalTxIdSplForSigning),
                 new anchor.BN(amount.toString()),
@@ -1858,6 +1865,7 @@ async function run() {
                 sig.recoveryId,
                 sig.messageHash,
                 sig.nonce,
+                mint,
             )
             .accounts({
                 caller: relayer,  // Relayer is now both fee payer and caller
@@ -1873,12 +1881,11 @@ async function run() {
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .remainingAccounts(remainingAccounts)
             .rpc();
 
-        console.log(`✅ executeUniversalTxToken (SPL) succeeded: ${execSplTx}`);
+        console.log(`✅ executeUniversalTx (SPL) succeeded: ${execSplTx}`);
 
         // Verify execution results
         const recipientTokenAfter = (await spl.getAccount(userProvider.connection as any, executeRecipientAta.address)).amount;
@@ -2012,6 +2019,7 @@ async function run() {
                     securitySig1.recoveryId,
                     securitySig1.messageHash,
                     securitySig1.nonce,
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2021,6 +2029,11 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId1),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(substitutedRemaining)
@@ -2093,6 +2106,7 @@ async function run() {
                     securitySig2.recoveryId,
                     securitySig2.messageHash,
                     securitySig2.nonce,
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2102,6 +2116,11 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId2),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts2.map((a) => ({
@@ -2175,6 +2194,7 @@ async function run() {
                     securitySig3.recoveryId,
                     securitySig3.messageHash,
                     new anchor.BN(wrongNonce), // Wrong nonce!
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2184,6 +2204,11 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId3),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts3.map((a) => ({
@@ -2263,6 +2288,7 @@ async function run() {
                     securitySig4.recoveryId,
                     securitySig4.messageHash,
                     securitySig4.nonce,
+                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2272,6 +2298,11 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId4),
                     destinationProgram: counterProgram.programId,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(fewerRemaining)
@@ -2349,7 +2380,8 @@ async function run() {
                 accounts,
                 batchIx.data,
                 gasFee,
-                rentFee
+                rentFee,
+                isSpl ? mint : PublicKey.default
             ),
         });
 
@@ -2362,6 +2394,11 @@ async function run() {
             tssPda,
             executedTx: getExecutedTxPda(testTxId),
             destinationProgram: counterProgram.programId,
+            vaultAta: null,
+            ceaAta: null,
+            mint: null,
+            tokenProgram: null,
+            rent: null,
             systemProgram: SystemProgram.programId,
         };
 
@@ -2375,7 +2412,7 @@ async function run() {
                 spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             );
             gatewayIx = await relayerProgram.methods
-                .executeUniversalTxToken(
+                .executeUniversalTx(
                     Array.from(testTxId),
                     Array.from(universalTxId),
                     new anchor.BN(0),
@@ -2389,6 +2426,7 @@ async function run() {
                     sig.recoveryId,
                     sig.messageHash,
                     sig.nonce,
+                    mint,
                 )
                 .accounts({
                     ...baseAccounts,
@@ -2396,7 +2434,6 @@ async function run() {
                     ceaAta: ceaAta,
                     mint,
                     tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 })
                 .remainingAccounts(
@@ -2423,6 +2460,7 @@ async function run() {
                     sig.recoveryId,
                     sig.messageHash,
                     sig.nonce,
+                    PublicKey.default,
                 )
                 .accounts(baseAccounts)
                 .remainingAccounts(
@@ -2561,7 +2599,7 @@ async function run() {
     console.log(`   ✅ SOL MAX: dummy=${maxSolResult.dummyAccounts} targetN=${maxSolResult.actualTargetAccounts} raw=${maxSolResult.rawDataSize} full=${maxSolResult.fullIxDataSize} txSize=${maxSolResult.txSize}`);
 
     // Test SPL execute limits (using serialize().length as authoritative oracle)
-    console.log(`\n📊 SPL Execute (execute_universal_tx_token) - Finding maximum capacity...`);
+    console.log(`\n📊 SPL Execute (execute_universal_tx) - Finding maximum capacity...`);
 
     // First find max accounts with a reasonable ix_data size (70 bytes = 50 raw + 20 overhead)
     const maxSplByAccounts = await findMaxTargetAccounts(70, true);
@@ -2651,6 +2689,7 @@ async function run() {
                 heavySig.recoveryId,
                 heavySig.messageHash,
                 heavySig.nonce,
+                PublicKey.default,
             )
             .accounts({
                 caller: relayer,
@@ -2660,6 +2699,11 @@ async function run() {
                 tssPda,
                 executedTx: getExecutedTxPda(heavyTxId),
                 destinationProgram: counterProgram.programId,
+                vaultAta: null,
+                ceaAta: null,
+                mint: null,
+                tokenProgram: null,
+                rent: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(heavyAccounts.map(a => ({
@@ -2738,7 +2782,8 @@ async function run() {
             heavyAccountsSpl,
             batchIxSpl.data,
             gasFeeHeavySpl,
-            rentFeeHeavySpl
+            rentFeeHeavySpl,
+            mint
         ),
     });
 
@@ -2747,7 +2792,7 @@ async function run() {
 
     try {
         await relayerProgram.methods
-            .executeUniversalTxToken(
+            .executeUniversalTx(
                 Array.from(heavyTxIdSpl),
                 Array.from(universalTxIdHeavySpl),
                 new anchor.BN(0),
@@ -2761,6 +2806,7 @@ async function run() {
                 heavySigSpl.recoveryId,
                 heavySigSpl.messageHash,
                 heavySigSpl.nonce,
+                mint,
             )
             .accounts({
                 caller: relayer,
@@ -2776,7 +2822,6 @@ async function run() {
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .remainingAccounts(heavyAccountsSpl.map(a => ({
                 pubkey: a.pubkey,

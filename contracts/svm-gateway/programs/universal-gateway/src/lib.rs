@@ -243,6 +243,7 @@ pub mod universal_gateway {
     /// @param sender EVM sender address (same as origin_caller in EVM)
     /// @param accounts Ordered list of accounts for target program
     /// @param ix_data Instruction data for target program
+    /// @param token Pubkey::default() for native SOL, mint address for SPL tokens
     pub fn execute_universal_tx(
         ctx: Context<ExecuteUniversalTx>,
         tx_id: [u8; 32],
@@ -258,6 +259,7 @@ pub mod universal_gateway {
         recovery_id: u8,
         message_hash: [u8; 32],
         nonce: u64,
+        token: Pubkey,
     ) -> Result<()> {
         instructions::execute::execute_universal_tx(
             ctx,
@@ -274,48 +276,7 @@ pub mod universal_gateway {
             recovery_id,
             message_hash,
             nonce,
-        )
-    }
-
-    /// @notice TSS-verified execute arbitrary Solana instruction with SPL tokens
-    /// @param tx_id Transaction ID from Push chain event
-    /// @param universal_tx_id Universal transaction ID from source chain
-    /// @param amount Amount of SPL tokens to transfer to cea ATA
-    /// @param target_program Target Solana program to invoke
-    /// @param sender EVM sender address (same as origin_caller in EVM)
-    /// @param accounts Ordered list of accounts for target program
-    /// @param ix_data Instruction data for target program
-    pub fn execute_universal_tx_token(
-        ctx: Context<ExecuteUniversalTxToken>,
-        tx_id: [u8; 32],
-        universal_tx_id: [u8; 32],
-        amount: u64,
-        target_program: Pubkey,
-        sender: [u8; 20],
-        writable_flags: Vec<u8>,
-        ix_data: Vec<u8>,
-        gas_fee: u64,
-        rent_fee: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-        nonce: u64,
-    ) -> Result<()> {
-        instructions::execute::execute_universal_tx_token(
-            ctx,
-            tx_id,
-            universal_tx_id,
-            amount,
-            target_program,
-            sender,
-            writable_flags,
-            ix_data,
-            gas_fee,
-            rent_fee,
-            signature,
-            recovery_id,
-            message_hash,
-            nonce,
+            token,
         )
     }
 
@@ -340,7 +301,7 @@ pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
-pub use instructions::execute::{ExecuteUniversalTx, ExecuteUniversalTxToken};
+pub use instructions::execute::ExecuteUniversalTx;
 pub use instructions::initialize::Initialize;
 pub use instructions::withdraw::{
     RevertUniversalTx, RevertUniversalTxToken, Withdraw,
@@ -351,7 +312,6 @@ pub use state::{
     // Events
     CapsUpdated,
     Config,
-    ExecuteMessage,
     ExecutedTx,
     GatewayAccountMeta,
     RevertInstructions,
