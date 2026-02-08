@@ -857,28 +857,7 @@ contract VaultTest is Test {
         vm.expectRevert(Errors.NotSupported.selector);
         vault.executeUniversalTx(_tx(316), bytes32(uint256(3316)), user1, address(unsupportedToken), address(mockTarget), 100e18, data);
     }
-
-    // NOTE: Native token (address(0)) is now supported in the gateway setup
-    // This test would pass if we remove native support from the gateway
-    // Keeping it commented as it documents the expected behavior when native is unsupported
-    // function test_ExecuteUniversalTx_Native_UnsupportedTokenReverts() public {
-    //     // Remove native support first
-    //     address[] memory tokens = new address[](1);
-    //     tokens[0] = address(0);
-    //     uint256[] memory thresholds = new uint256[](1);
-    //     thresholds[0] = 0; // Set to 0 to remove support
-    //
-    //     vm.prank(admin);
-    //     gateway.setTokenLimitThresholds(tokens, thresholds);
-    //
-    //     vm.deal(tss, 1 ether);
-    //     bytes memory data = "";
-    //
-    //     vm.prank(tss);
-    //     vm.expectRevert(Errors.NotSupported.selector);
-    //     vault.executeUniversalTx{value: 1 ether}(_tx(317), bytes32(uint256(3317)), user1, address(0), address(mockTarget), 1 ether, data);
-    // }
-
+    
     function test_ExecuteUniversalTx_ERC20_InsufficientVaultBalanceReverts() public {
         uint256 vaultBalance = token.balanceOf(address(vault));
         bytes memory data = "";
@@ -1233,6 +1212,241 @@ contract VaultTest is Test {
             abi.encodeWithSelector(vault.executeUniversalTx.selector, txID, bytes32(uint256(3000 + uint256(txID))), user1, address(token), user1, 100e18, bytes(""))
         );
         assertFalse(success);
+    }
+
+    // ============================================================================
+    // WITHDRAW PATH: msg.value VALIDATION TESTS
+    // ============================================================================
+
+    function test_Withdraw_Native_MsgValueMismatch_TooLow() public {
+        vm.deal(tss, 2 ether);
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.executeUniversalTx{value: 0.5 ether}(_tx(500), bytes32(uint256(3500)), user1, address(0), user1, 1 ether, bytes(""));
+    }
+
+    function test_Withdraw_Native_MsgValueMismatch_TooHigh() public {
+        vm.deal(tss, 3 ether);
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.executeUniversalTx{value: 2 ether}(_tx(501), bytes32(uint256(3501)), user1, address(0), user1, 1 ether, bytes(""));
+    }
+
+    function test_Withdraw_ERC20_NonZeroMsgValueReverts() public {
+        vm.deal(tss, 1 ether);
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.executeUniversalTx{value: 1 ether}(_tx(502), bytes32(uint256(3502)), user1, address(token), user1, 100e18, bytes(""));
+    }
+
+    function test_Withdraw_NativeUnsupportedReverts() public {
+        // Remove native support from gateway
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0);
+        uint256[] memory thresholds = new uint256[](1);
+        thresholds[0] = 0;
+        vm.prank(admin);
+        gateway.setTokenLimitThresholds(tokens, thresholds);
+
+        vm.deal(tss, 1 ether);
+        vm.prank(tss);
+        vm.expectRevert(Errors.NotSupported.selector);
+        vault.executeUniversalTx{value: 1 ether}(_tx(503), bytes32(uint256(3503)), user1, address(0), user1, 1 ether, bytes(""));
+    }
+
+    // ============================================================================
+    // REVERT FLOW: ADDITIONAL TESTS
+    // ============================================================================
+
+    function test_RevertWithdraw_VariantToken_InsufficientBalance() public {
+        uint256 vaultBalance = variantToken.balanceOf(address(vault));
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.revertUniversalTxToken(_tx(504), bytes32(uint256(3504)), address(variantToken), vaultBalance + 1, RevertInstructions(user1, ""));
+    }
+
+    function test_RevertWithdraw_BalanceDeltaCheck() public {
+        uint256 amount = 1000e18;
+        uint256 vaultBalanceBefore = token.balanceOf(address(vault));
+
+        vm.prank(tss);
+        vault.revertUniversalTxToken(_tx(505), bytes32(uint256(3505)), address(token), amount, RevertInstructions(user1, ""));
+
+        // Vault sent tokens to gateway, gateway forwarded to recipient
+        assertEq(token.balanceOf(address(vault)), vaultBalanceBefore - amount);
+        assertEq(token.balanceOf(user1), amount);
+    }
+
+    // ============================================================================
+    // CEA LIFECYCLE: DEPLOYMENT FAILURE & REUSE
+    // ============================================================================
+
+    function test_CEADeploymentFailure_Propagates() public {
+        address uea = makeAddr("failDeployUea");
+
+        // Make CEAFactory deployCEA always revert
+        ceaFactory.setShouldFailDeploy(true);
+
+        vm.prank(tss);
+        vm.expectRevert();
+        vault.executeUniversalTx(_tx(506), bytes32(uint256(3506)), uea, address(token), user1, 100e18, bytes(""));
+    }
+
+    function test_CEA_WithdrawThenExecute_ReusesSameCEA() public {
+        address uea = makeAddr("withdrawThenExecUea");
+
+        // Step 1: Withdraw (empty data) — deploys CEA
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(507), bytes32(uint256(3507)), uea, address(token), user1, 100e18, bytes(""));
+        (address ceaAfterWithdraw,) = _getCEA(uea);
+
+        // Step 2: Execute (non-empty data) — must reuse same CEA
+        bytes memory data = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 50e18);
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(508), bytes32(uint256(3508)), uea, address(token), address(mockTarget), 50e18, data);
+        (address ceaAfterExecute,) = _getCEA(uea);
+
+        assertEq(ceaAfterWithdraw, ceaAfterExecute);
+    }
+
+    // ============================================================================
+    // WITHDRAW PATH: CEA FUNCTION ROUTING VERIFICATION
+    // ============================================================================
+
+    function test_Withdraw_CallsCEAWithdrawTo_NotExecute() public {
+        address uea = makeAddr("withdrawRoutingUea");
+
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(509), bytes32(uint256(3509)), uea, address(token), user1, 100e18, bytes(""));
+
+        (address cea,) = _getCEA(uea);
+        MockCEA mockCea = _getMockCEA(cea);
+
+        // withdrawTo should have been called once, executeUniversalTx zero times
+        assertEq(mockCea.withdrawToCallCount(), 1);
+        assertEq(mockCea.executeCallCount(), 0);
+    }
+
+    function test_Execute_CallsCEAExecute_NotWithdrawTo() public {
+        address uea = makeAddr("executeRoutingUea");
+        bytes memory data = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 100e18);
+
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(510), bytes32(uint256(3510)), uea, address(token), address(mockTarget), 100e18, data);
+
+        (address cea,) = _getCEA(uea);
+        MockCEA mockCea = _getMockCEA(cea);
+
+        // executeUniversalTx should have been called once, withdrawTo zero times
+        assertEq(mockCea.executeCallCount(), 1);
+        assertEq(mockCea.withdrawToCallCount(), 0);
+    }
+
+    function test_Withdraw_Native_ForwardsMsgValueToCEA() public {
+        address uea = makeAddr("nativeWithdrawFwdUea");
+        uint256 amount = 1 ether;
+
+        vm.deal(tss, amount);
+        uint256 userBalanceBefore = user1.balance;
+
+        vm.prank(tss);
+        vault.executeUniversalTx{value: amount}(_tx(511), bytes32(uint256(3511)), uea, address(0), user1, amount, bytes(""));
+
+        (address cea,) = _getCEA(uea);
+        MockCEA mockCea = _getMockCEA(cea);
+
+        // Confirm withdrawTo was called (not execute)
+        assertEq(mockCea.withdrawToCallCount(), 1);
+        assertEq(mockCea.executeCallCount(), 0);
+        // User received the native tokens via CEA.withdrawTo
+        assertEq(user1.balance, userBalanceBefore + amount);
+    }
+
+    // ============================================================================
+    // SPEC DOCUMENTATION: ZERO AMOUNT WITH DATA
+    // ============================================================================
+
+    function test_Execute_ZeroAmount_WithData_Succeeds() public {
+        // Documents current spec: amount=0 + non-empty data is allowed (payload-only execute)
+        address uea = makeAddr("zeroAmountWithDataUea");
+        bytes memory data = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 0);
+
+        vm.prank(tss);
+        // Should succeed — amount=0 with data is a valid execute path
+        vault.executeUniversalTx(_tx(512), bytes32(uint256(3512)), uea, address(token), address(mockTarget), 0, data);
+
+        (address cea,) = _getCEA(uea);
+        MockCEA mockCea = _getMockCEA(cea);
+        assertEq(mockCea.executeCallCount(), 1);
+    }
+
+    // ============================================================================
+    // REENTRANCY PROTECTION TESTS
+    // ============================================================================
+
+    function test_Reentrancy_WithdrawPath_Blocked() public {
+        address uea = makeAddr("reentrantWithdrawUea");
+
+        // Pre-deploy CEA via initial withdraw
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(513), bytes32(uint256(3513)), uea, address(token), user1, 100e18, bytes(""));
+
+        (address cea,) = _getCEA(uea);
+        MockCEA mockCea = _getMockCEA(cea);
+
+        // Configure CEA to attempt reentrancy during withdrawTo
+        bytes memory reentrantCall = abi.encodeWithSelector(
+            vault.executeUniversalTx.selector,
+            _tx(514), bytes32(uint256(3514)), uea, address(token), user1, 50e18, bytes("")
+        );
+        mockCea.setReentrant(address(vault), reentrantCall);
+
+        // Outer call: CEA will attempt to reenter vault during withdrawTo
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(515), bytes32(uint256(3515)), uea, address(token), user1, 50e18, bytes(""));
+
+        // Reentrancy was blocked by nonReentrant guard
+        assertFalse(mockCea.reentrantCallSucceeded());
+    }
+
+    function test_Reentrancy_ExecutePath_Blocked() public {
+        address uea = makeAddr("reentrantExecUea");
+
+        // Pre-deploy CEA via initial withdraw
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(516), bytes32(uint256(3516)), uea, address(token), user1, 100e18, bytes(""));
+
+        (address cea,) = _getCEA(uea);
+        MockCEA mockCea = _getMockCEA(cea);
+
+        // Configure CEA to attempt reentrancy during executeUniversalTx
+        bytes memory reentrantCall = abi.encodeWithSelector(
+            vault.executeUniversalTx.selector,
+            _tx(517), bytes32(uint256(3517)), uea, address(token), user1, 50e18, bytes("")
+        );
+        mockCea.setReentrant(address(vault), reentrantCall);
+
+        // Outer call (execute path): CEA will attempt to reenter vault
+        bytes memory data = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 50e18);
+        vm.prank(tss);
+        vault.executeUniversalTx(_tx(518), bytes32(uint256(3518)), uea, address(token), address(mockTarget), 50e18, data);
+
+        // Reentrancy was blocked by nonReentrant guard
+        assertFalse(mockCea.reentrantCallSucceeded());
+    }
+
+    // ============================================================================
+    // PAUSE GATING: SWEEP BEHAVIOR
+    // ============================================================================
+
+    function test_Sweep_AllowedWhenPaused() public {
+        vm.prank(pauser);
+        vault.pause();
+
+        // Sweep should still work when paused (admin emergency function)
+        vm.prank(admin);
+        vault.sweep(address(token), user1, 100e18);
+        assertEq(token.balanceOf(user1), 100e18);
     }
 
     // ============================================================================

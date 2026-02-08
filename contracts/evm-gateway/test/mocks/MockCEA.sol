@@ -22,6 +22,23 @@ contract MockCEA is ICEA {
     uint256 public lastAmount;
     bytes public lastPayload;
 
+    // Call path tracking
+    uint256 public withdrawToCallCount;
+    uint256 public executeCallCount;
+
+    // Reentrancy testing support
+    address public reentrantVault;
+    bytes public reentrantCalldata;
+    bool public shouldReenter;
+    bool public reentrantCallSucceeded;
+
+    function setReentrant(address _vault, bytes calldata _calldata) external {
+        reentrantVault = _vault;
+        reentrantCalldata = _calldata;
+        shouldReenter = true;
+        reentrantCallSucceeded = false;
+    }
+
     /**
      * @notice ERC20 overload: Executes a call against an external target using ERC20 tokens
      * @dev Transfers tokens to target and calls it with payload
@@ -35,6 +52,15 @@ contract MockCEA is ICEA {
         uint256 amount,
         bytes calldata payload
     ) external payable override {
+        executeCallCount++;
+
+        // Attempt reentrancy if configured (for reentrancy tests)
+        if (shouldReenter && reentrantVault != address(0)) {
+            shouldReenter = false;
+            (bool success,) = reentrantVault.call(reentrantCalldata);
+            reentrantCallSucceeded = success;
+        }
+
         // Store call parameters
         lastTxID = txID;
         lastUniversalTxID = universalTxID;
@@ -77,6 +103,15 @@ contract MockCEA is ICEA {
         address to,
         uint256 amount
     ) external payable override {
+        withdrawToCallCount++;
+
+        // Attempt reentrancy if configured (for reentrancy tests)
+        if (shouldReenter && reentrantVault != address(0)) {
+            shouldReenter = false;
+            (bool success,) = reentrantVault.call(reentrantCalldata);
+            reentrantCallSucceeded = success;
+        }
+
         // Store call parameters
         lastTxID = txID;
         lastUniversalTxID = universalTxID;
