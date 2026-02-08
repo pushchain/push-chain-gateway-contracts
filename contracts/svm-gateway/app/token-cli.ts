@@ -21,7 +21,6 @@ import { Command } from "commander";
 const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
-const WHITELIST_SEED = "whitelist";
 const RATE_LIMIT_SEED = "rate_limit";
 
 // Load keypairs
@@ -269,137 +268,6 @@ function loadSecretKey(tokenSymbol: string): Keypair {
     return Keypair.fromSecretKey(Uint8Array.from(secretInfo.mintSecretKey));
 }
 
-// Helper function to whitelist a token and create vault ATA
-async function whitelistToken(mintAddress: string): Promise<void> {
-    console.log(`🔒 Whitelisting token: ${mintAddress}...`);
-
-    // Derive PDAs
-    const [configPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(CONFIG_SEED)],
-        PROGRAM_ID
-    );
-    const [whitelistPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(WHITELIST_SEED)],
-        PROGRAM_ID
-    );
-    const [vaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(VAULT_SEED)],
-        PROGRAM_ID
-    );
-
-    const admin = adminKeypair.publicKey;
-    const mint = new PublicKey(mintAddress);
-
-    try {
-        const whitelistTx = await program.methods
-            .whitelistToken(mint)
-            .accounts({
-                config: configPda,
-                whitelist: whitelistPda,
-                admin: admin,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-        console.log(`✅ Token whitelisted successfully: ${whitelistTx}`);
-    } catch (error) {
-        if (error.message.includes("TokenAlreadyWhitelisted")) {
-            console.log(`✅ Token already whitelisted (skipping)`);
-        } else {
-            throw error;
-        }
-    }
-
-    // Set token rate limit with a very large threshold to enable token (bypass rate limiting)
-    // Since epoch_duration is 0, rate limiting is disabled, but threshold > 0 makes token valid
-    console.log(`⚙️  Setting token rate limit (large threshold to enable token)...`);
-    const [tokenRateLimitPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(RATE_LIMIT_SEED), mint.toBuffer()],
-        PROGRAM_ID
-    );
-
-    // Use a very large threshold (effectively unlimited) - u128 max is 2^128 - 1
-    // Using a large but reasonable number: 10^30 (1 followed by 30 zeros)
-    const largeThreshold = new anchor.BN("1000000000000000000000000000000"); // 10^30
-
-    try {
-        const rateLimitTx = await program.methods
-            .setTokenRateLimit(largeThreshold)
-            .accounts({
-                config: configPda,
-                tokenRateLimit: tokenRateLimitPda,
-                tokenMint: mint,
-                admin: admin,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-        console.log(`✅ Token rate limit set successfully: ${rateLimitTx}`);
-    } catch (error) {
-        // If it already exists, that's fine - it might have been set before
-        if (error.message.includes("already in use") || error.message.includes("already exists")) {
-            console.log(`✅ Token rate limit already set (skipping)`);
-        } else {
-            console.log(`⚠️  Warning: Could not set token rate limit: ${error.message}`);
-            // Don't throw - whitelisting might still work if rate limit was set manually
-        }
-    }
-
-    // Create vault ATA for the token
-    console.log(`🏦 Creating vault ATA for token...`);
-    try {
-        const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
-            adminProvider.connection as any,
-            adminKeypair,
-            mint,
-            vaultPda,
-            true
-        );
-        console.log(`✅ Vault ATA created: ${vaultAta.address.toString()}\n`);
-    } catch (error) {
-        if (error.message.includes("already exists")) {
-            console.log(`✅ Vault ATA already exists (skipping)\n`);
-        } else {
-            throw error;
-        }
-    }
-}
-
-// Helper function to remove a token from whitelist
-async function removeWhitelistToken(mintAddress: string): Promise<void> {
-    console.log(`🗑️ Removing token from whitelist: ${mintAddress}...`);
-
-    // Derive PDAs
-    const [configPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(CONFIG_SEED)],
-        PROGRAM_ID
-    );
-    const [whitelistPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(WHITELIST_SEED)],
-        PROGRAM_ID
-    );
-
-    const admin = adminKeypair.publicKey;
-    const mint = new PublicKey(mintAddress);
-
-    try {
-        const removeTx = await program.methods
-            .removeWhitelistToken(mint)
-            .accounts({
-                config: configPda,
-                whitelist: whitelistPda,
-                admin: admin,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-        console.log(`✅ Token removed from whitelist successfully: ${removeTx}\n`);
-    } catch (error) {
-        if (error.message.includes("TokenNotWhitelisted")) {
-            console.log(`✅ Token was not whitelisted (nothing to remove)\n`);
-        } else {
-            throw error;
-        }
-    }
-}
-
 // Initialize the CLI
 const program_cli = new Command();
 
@@ -497,70 +365,6 @@ program_cli
         }
     });
 
-// Whitelist token command
-program_cli
-    .command('whitelist')
-    .description('Whitelist a token in the gateway program')
-    .requiredOption('-m, --mint <mint>', 'Mint address or token symbol')
-    .action(async (options) => {
-        try {
-            console.log("=== WHITELISTING TOKEN ===\n");
-
-            let mintAddress: string;
-
-            // Check if it's a token symbol or mint address
-            if (options.mint.length === 44) {
-                // It's a mint address
-                mintAddress = options.mint;
-            } else {
-                // It's a token symbol, load from file
-                const tokenInfo = loadTokenInfo(options.mint);
-                mintAddress = tokenInfo.mint;
-                console.log(`Found token: ${tokenInfo.name} (${tokenInfo.symbol})`);
-            }
-
-            await whitelistToken(mintAddress);
-
-            console.log("🎉 Token whitelisting completed successfully!");
-
-        } catch (error) {
-            console.error("❌ Error whitelisting token:", error.message);
-            process.exit(1);
-        }
-    });
-
-// Remove whitelist token command
-program_cli
-    .command('remove-whitelist')
-    .description('Remove a token from the gateway program whitelist')
-    .requiredOption('-m, --mint <mint>', 'Mint address or token symbol')
-    .action(async (options) => {
-        try {
-            console.log("=== REMOVING TOKEN FROM WHITELIST ===\n");
-
-            let mintAddress: string;
-
-            // Check if it's a token symbol or mint address
-            if (options.mint.length === 44) {
-                // It's a mint address
-                mintAddress = options.mint;
-            } else {
-                // It's a token symbol, load from file
-                const tokenInfo = loadTokenInfo(options.mint);
-                mintAddress = tokenInfo.mint;
-                console.log(`Found token: ${tokenInfo.name} (${tokenInfo.symbol})`);
-            }
-
-            await removeWhitelistToken(mintAddress);
-
-            console.log("🎉 Token removal from whitelist completed successfully!");
-
-        } catch (error) {
-            console.error("❌ Error removing token from whitelist:", error.message);
-            process.exit(1);
-        }
-    });
-
 // List tokens command
 program_cli
     .command('list')
@@ -592,6 +396,167 @@ program_cli
 
         } catch (error) {
             console.error("❌ Error listing tokens:", error.message);
+            process.exit(1);
+        }
+    });
+
+// Whitelist token command (sets threshold to non-zero + creates vault ATA)
+program_cli
+    .command('whitelist')
+    .description('Whitelist a token by setting its rate limit threshold to non-zero and creating its vault ATA')
+    .requiredOption('-m, --mint <mint>', 'Mint address or token symbol')
+    .option('-t, --threshold <threshold>', 'Rate limit threshold in token natural units (default: max u64)', '18446744073709551615')
+    .action(async (options) => {
+        try {
+            console.log("=== WHITELISTING TOKEN ===\n");
+
+            let mintAddress: string;
+            if (options.mint.length >= 32 && options.mint.length <= 44) {
+                mintAddress = options.mint;
+            } else {
+                const tokenInfo = loadTokenInfo(options.mint);
+                mintAddress = tokenInfo.mint;
+                console.log(`Found token: ${tokenInfo.name} (${tokenInfo.symbol})`);
+            }
+
+            const mintPubkey = new PublicKey(mintAddress);
+            const admin = adminKeypair.publicKey;
+            const threshold = BigInt(options.threshold);
+
+            if (threshold === BigInt(0)) {
+                console.error("❌ Threshold must be non-zero to whitelist. Use 'unwhitelist' to set threshold to 0.");
+                process.exit(1);
+            }
+
+            const [configPda] = PublicKey.findProgramAddressSync([Buffer.from(CONFIG_SEED)], PROGRAM_ID);
+            const [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from(VAULT_SEED)], PROGRAM_ID);
+            const [tokenRateLimitPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from(RATE_LIMIT_SEED), mintPubkey.toBuffer()], PROGRAM_ID
+            );
+
+            // Step 1: Set token rate limit threshold
+            console.log(`Setting rate limit threshold to ${threshold.toString()}...`);
+            const veryLargeThreshold = new anchor.BN(threshold.toString());
+            await program.methods
+                .setTokenRateLimit(veryLargeThreshold)
+                .accounts({
+                    admin,
+                    config: configPda,
+                    tokenRateLimit: tokenRateLimitPda,
+                    tokenMint: mintPubkey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([adminKeypair])
+                .rpc();
+            console.log(`✅ Token rate limit set\n`);
+
+            // Step 2: Create vault ATA (so the vault can hold this token)
+            console.log("Creating vault ATA...");
+            const vaultAta = await spl.getOrCreateAssociatedTokenAccount(
+                adminProvider.connection as any,
+                adminKeypair,
+                mintPubkey,
+                vaultPda,
+                true // allowOwnerOffCurve (PDA)
+            );
+            console.log(`✅ Vault ATA: ${vaultAta.address.toString()}\n`);
+
+            console.log(`🎉 Token ${mintAddress} whitelisted successfully!`);
+
+        } catch (error) {
+            console.error("❌ Error whitelisting token:", error.message);
+            process.exit(1);
+        }
+    });
+
+// Unwhitelist token command (sets threshold to 0)
+program_cli
+    .command('unwhitelist')
+    .description('Unwhitelist a token by setting its rate limit threshold to 0')
+    .requiredOption('-m, --mint <mint>', 'Mint address or token symbol')
+    .action(async (options) => {
+        try {
+            console.log("=== UNWHITELISTING TOKEN ===\n");
+
+            let mintAddress: string;
+            if (options.mint.length >= 32 && options.mint.length <= 44) {
+                mintAddress = options.mint;
+            } else {
+                const tokenInfo = loadTokenInfo(options.mint);
+                mintAddress = tokenInfo.mint;
+                console.log(`Found token: ${tokenInfo.name} (${tokenInfo.symbol})`);
+            }
+
+            const mintPubkey = new PublicKey(mintAddress);
+            const admin = adminKeypair.publicKey;
+
+            const [configPda] = PublicKey.findProgramAddressSync([Buffer.from(CONFIG_SEED)], PROGRAM_ID);
+            const [tokenRateLimitPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from(RATE_LIMIT_SEED), mintPubkey.toBuffer()], PROGRAM_ID
+            );
+
+            console.log(`Setting rate limit threshold to 0...`);
+            await program.methods
+                .setTokenRateLimit(new anchor.BN(0))
+                .accounts({
+                    admin,
+                    config: configPda,
+                    tokenRateLimit: tokenRateLimitPda,
+                    tokenMint: mintPubkey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([adminKeypair])
+                .rpc();
+
+            console.log(`🎉 Token ${mintAddress} unwhitelisted (threshold set to 0)!`);
+
+        } catch (error) {
+            console.error("❌ Error unwhitelisting token:", error.message);
+            process.exit(1);
+        }
+    });
+
+// Check whitelist status command
+program_cli
+    .command('check-whitelist')
+    .description('Check if a token is whitelisted (has non-zero rate limit threshold)')
+    .requiredOption('-m, --mint <mint>', 'Mint address or token symbol')
+    .action(async (options) => {
+        try {
+            console.log("=== CHECK TOKEN WHITELIST STATUS ===\n");
+
+            let mintAddress: string;
+            let tokenSymbol: string | null = null;
+            if (options.mint.length >= 32 && options.mint.length <= 44) {
+                mintAddress = options.mint;
+            } else {
+                const tokenInfo = loadTokenInfo(options.mint);
+                mintAddress = tokenInfo.mint;
+                tokenSymbol = tokenInfo.symbol;
+            }
+
+            const mintPubkey = new PublicKey(mintAddress);
+            const [tokenRateLimitPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from(RATE_LIMIT_SEED), mintPubkey.toBuffer()], PROGRAM_ID
+            );
+
+            try {
+                const rateLimitAccount = await (program.account as any).tokenRateLimit.fetch(tokenRateLimitPda);
+                const threshold = BigInt(rateLimitAccount.limitThreshold.toString());
+                const isWhitelisted = threshold > BigInt(0);
+
+                const label = tokenSymbol ? `${tokenSymbol} (${mintAddress})` : mintAddress;
+                console.log(`Token: ${label}`);
+                console.log(`Rate Limit PDA: ${tokenRateLimitPda.toString()}`);
+                console.log(`Threshold: ${threshold.toString()}`);
+                console.log(`Status: ${isWhitelisted ? "✅ WHITELISTED" : "❌ NOT WHITELISTED (threshold is 0)"}`);
+            } catch {
+                console.log(`Token: ${mintAddress}`);
+                console.log(`Status: ❌ NOT WHITELISTED (no rate limit account found)`);
+            }
+
+        } catch (error) {
+            console.error("❌ Error checking whitelist status:", error.message);
             process.exit(1);
         }
     });

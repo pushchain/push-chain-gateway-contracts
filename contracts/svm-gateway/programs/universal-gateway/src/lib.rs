@@ -72,16 +72,6 @@ pub mod universal_gateway {
         instructions::admin::set_caps_usd(ctx, min_cap, max_cap)
     }
 
-    /// @notice Whitelist a token
-    pub fn whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-        instructions::admin::whitelist_token(ctx, token)
-    }
-
-    /// @notice Remove token from whitelist
-    pub fn remove_whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-        instructions::admin::remove_whitelist_token(ctx, token)
-    }
-
     /// @notice Set Pyth price feed
     pub fn set_pyth_price_feed(ctx: Context<AdminAction>, price_feed: Pubkey) -> Result<()> {
         instructions::admin::set_pyth_price_feed(ctx, price_feed)
@@ -374,7 +364,7 @@ pub struct GetSolPrice<'info> {
 
 // Re-export account structs and types
 pub use instructions::admin::{
-    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
+    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::{ExecuteUniversalTx, ExecuteUniversalTxToken};
@@ -393,17 +383,14 @@ pub use state::{
     GatewayAccountMeta,
     RevertInstructions,
     TSSAddressUpdated,
-    TokenWhitelist,
     TxType,
     UniversalPayload,
     UniversalTx,
     UniversalTxExecuted,
     UniversalTxRequest,
     VerificationType,
-    WithdrawToken,
     CONFIG_SEED,
     EXECUTED_TX_SEED,
     FEED_ID,
     VAULT_SEED,
-    WHITELIST_SEED,
 };

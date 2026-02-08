@@ -73,7 +73,6 @@ export async function ensureTestSetup(): Promise<void> {
         // Step 4: Derive program PDAs
         const [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         const [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
-        const [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
         const [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
         // Step 5: Setup mock Pyth price feed
@@ -118,32 +117,7 @@ export async function ensureTestSetup(): Promise<void> {
             sharedState.setMockPriceFeed(configAccount.pythPriceFeed);
         }
 
-        // Step 7: Whitelist tokens
-        const whitelistToken = async (mint: PublicKey) => {
-            try {
-                await program.methods
-                    .whitelistToken(mint)
-                    .accounts({
-                        admin: admin.publicKey,
-                        config: configPda,
-                        tokenWhitelist: whitelistPda,
-                        systemProgram: anchor.web3.SystemProgram.programId,
-                    })
-                    .signers([admin])
-                    .rpc();
-            } catch (err: any) {
-                if (!(`${err}`.includes("TokenAlreadyWhitelisted") || `${err}`.includes("6006"))) {
-                    throw err;
-                }
-            }
-        };
-
-        await Promise.all([
-            whitelistToken(mockUSDT.mint.publicKey),
-            whitelistToken(mockUSDC.mint.publicKey),
-        ]);
-
-        // Step 8: Initialize or update TSS
+        // Step 7: Initialize or update TSS
         const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], program.programId);
         const expectedTssEthAddress = getTssEthAddress();
         const expectedChainId = TSS_CHAIN_ID; // String: Solana cluster pubkey
@@ -172,7 +146,7 @@ export async function ensureTestSetup(): Promise<void> {
                 .rpc();
         }
 
-        // Step 9: Initialize rate_limit_config PDA (required for universal gateway)
+        // Step 8: Initialize rate_limit_config PDA (required for universal gateway)
         try {
             await program.account.rateLimitConfig.fetch(rateLimitConfigPda);
         } catch {

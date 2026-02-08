@@ -3,7 +3,6 @@ use anchor_lang::prelude::*;
 // PDA seeds
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const VAULT_SEED: &[u8] = b"vault";
-pub const WHITELIST_SEED: &[u8] = b"whitelist";
 pub const TSS_SEED: &[u8] = b"tsspda";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
@@ -95,18 +94,6 @@ impl Config {
     // discriminator + fields + padding
     // 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100
     pub const LEN: usize = 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100;
-}
-
-/// SPL token whitelist state.
-/// PDA: `[b"whitelist"]`. Simple list of supported SPL mints.
-#[account]
-pub struct TokenWhitelist {
-    pub tokens: Vec<Pubkey>,
-    pub bump: u8,
-}
-
-impl TokenWhitelist {
-    pub const LEN: usize = 8 + 4 + (32 * 50) + 1 + 100; // discriminator + vec length + 50 tokens max + bump + padding
 }
 
 /// Rate limiting configuration (separate account for backward compatibility)

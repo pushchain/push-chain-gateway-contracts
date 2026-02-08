@@ -44,7 +44,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
     let configPda: PublicKey;
     let vaultPda: PublicKey;
     let tssPda: PublicKey;
-    let whitelistPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
     let mockPriceFeed: PublicKey;
 
@@ -181,7 +180,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
         [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
         [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], program.programId);
-        [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
         mockPriceFeed = sharedState.getMockPriceFeed();
@@ -202,10 +200,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
         vaultUsdtAccount = await mockUSDT.createTokenAccount(vaultPda, true);
         recipientUsdtAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
-
-        const whitelist = await program.account.tokenWhitelist.fetch(whitelistPda);
-        const tokens = whitelist.tokens.map((token: PublicKey) => token.toString());
-        expect(tokens).to.include(mockUSDT.mint.publicKey.toString());
 
         // Seed vault with native SOL using sendUniversalTx (FUNDS route)
         const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
@@ -627,7 +621,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 )
                 .accounts({
                     config: configPda,
-                    whitelist: whitelistPda,
                     vault: vaultPda,
                     tokenVault: vaultUsdtAccount,
                     tssPda,
@@ -695,7 +688,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     )
                     .accounts({
                         config: configPda,
-                        whitelist: whitelistPda,
                         vault: vaultPda,
                         tokenVault: vaultUsdtAccount,
                         tssPda,
@@ -821,7 +813,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 )
                 .accounts({
                     config: configPda,
-                    whitelist: whitelistPda,
                     vault: vaultPda,
                     tokenVault: vaultUsdtAccount,
                     tssPda,
@@ -1564,7 +1555,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     )
                     .accounts({
                         config: configPda,
-                        whitelist: whitelistPda,
                         vault: vaultPda,
                         tokenVault: vaultUsdtAccount,
                         tssPda,
@@ -1623,7 +1613,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     )
                     .accounts({
                         config: configPda,
-                        whitelist: whitelistPda,
                         vault: vaultPda,
                         tokenVault: vaultUsdtAccount,
                         tssPda,
@@ -1682,7 +1671,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 )
                 .accounts({
                     config: configPda,
-                    whitelist: whitelistPda,
                     vault: vaultPda,
                     tokenVault: vaultUsdtAccount,
                     tssPda,
@@ -1730,7 +1718,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     )
                     .accounts({
                         config: configPda,
-                        whitelist: whitelistPda,
                         vault: vaultPda,
                         tokenVault: vaultUsdtAccount,
                         tssPda,

@@ -29,12 +29,6 @@ pub enum GatewayError {
     #[msg("Invalid price data")]
     InvalidPrice,
 
-    #[msg("Token already whitelisted")]
-    TokenAlreadyWhitelisted,
-
-    #[msg("Token not whitelisted")]
-    TokenNotWhitelisted,
-
     #[msg("Invalid owner")]
     InvalidOwner,
 

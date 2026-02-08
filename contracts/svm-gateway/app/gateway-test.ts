@@ -28,7 +28,6 @@ const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp")
 const TEST_COUNTER_PROGRAM_ID = new PublicKey("BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
-const WHITELIST_SEED = "whitelist";
 const EXECUTED_TX_SEED = "executed_tx";
 const PRICE_ACCOUNT = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"); // Pyth SOL/USD price feed
 const ALT_ADDRESS = new PublicKey("EWXJ1ERkMwizmSovjtQ2qBTDpm1vxrZZ4Y2RjEujbqBo"); // Universal Gateway ALT
@@ -238,10 +237,6 @@ async function run() {
     );
     const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("rate_limit_config")],
-        PROGRAM_ID
-    );
-    const [whitelistPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from(WHITELIST_SEED)],
         PROGRAM_ID
     );
 
@@ -496,28 +491,6 @@ async function run() {
 
     if (!tokenLoaded) {
         throw new Error("No valid tokens found in tokens folder. Please create tokens first using the token CLI.");
-    }
-
-    // Step 4: Whitelist SPL Token
-    console.log("4. Whitelisting SPL Token...");
-
-    try {
-        const whitelistTx = await program.methods
-            .whitelistToken(mint)
-            .accounts({
-                config: configPda,
-                whitelist: whitelistPda,
-                admin: admin,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-        console.log(`✅ Token whitelisted: ${whitelistTx}\n`);
-    } catch (error) {
-        if (error.message.includes("TokenAlreadyWhitelisted")) {
-            console.log(`✅ Token already whitelisted (skipping)\n`);
-        } else {
-            throw error;
-        }
     }
 
     // Create vault ATA early if token is loaded (used in multiple places)
@@ -2305,50 +2278,6 @@ async function run() {
 
     // 13.7 Transaction size limits analysis
     console.log("\n=== 13.7 Transaction Size Limits Analysis ===");
-
-    // 14. Remove token from whitelist (moved after all tests)
-    console.log("14. Testing remove whitelist...");
-    try {
-        const removeWhitelistTx = await program.methods
-            .removeWhitelistToken(mint)
-            .accounts({
-                config: configPda,
-                whitelist: whitelistPda,
-                admin: admin,
-                systemProgram: SystemProgram.programId,
-            })
-            .signers([adminKeypair])
-            .rpc();
-        console.log(`✅ Token removed from whitelist: ${removeWhitelistTx}\n`);
-    } catch (error) {
-        if (error.message.includes("TokenNotWhitelisted") || error.message.includes("not whitelisted")) {
-            console.log("✅ Token not in whitelist (skipping removal)\n");
-        } else {
-            throw error;
-        }
-    }
-
-    // Re-whitelist the token after removal test
-    console.log("14b. Re-whitelisting token after removal test...");
-    try {
-        const reWhitelistTx = await program.methods
-            .whitelistToken(mint)
-            .accounts({
-                config: configPda,
-                whitelist: whitelistPda,
-                admin: admin,
-                systemProgram: SystemProgram.programId,
-            })
-            .signers([adminKeypair])
-            .rpc();
-        console.log(`✅ Token re-whitelisted: ${reWhitelistTx}\n`);
-    } catch (error) {
-        if (error.message.includes("already whitelisted")) {
-            console.log("✅ Token already whitelisted (skipping)\n");
-        } else {
-            throw error;
-        }
-    }
 
     /**
      * Build and measure transaction size (pure function, no RPC send)

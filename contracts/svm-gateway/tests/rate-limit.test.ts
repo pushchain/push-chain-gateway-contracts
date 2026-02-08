@@ -21,7 +21,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
     let user1: Keypair;
     let configPda: PublicKey;
     let vaultPda: PublicKey;
-    let whitelistPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
     let mockPriceFeed: PublicKey;
     let solPrice: number;
@@ -52,7 +51,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
         [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
-        [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
         mockPriceFeed = sharedState.getMockPriceFeed();
@@ -121,7 +119,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -160,7 +157,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -273,7 +269,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -299,7 +294,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -372,7 +366,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -391,7 +384,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -453,7 +445,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -481,7 +472,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -511,7 +501,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -569,7 +558,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: userTokenAccount,
                     gatewayTokenAccount: gatewayTokenAccount,
                     user: user1.publicKey,
@@ -597,7 +585,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: userTokenAccount,
                     gatewayTokenAccount: gatewayTokenAccount,
                     user: user1.publicKey,
@@ -627,7 +614,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: userTokenAccount,
                         gatewayTokenAccount: gatewayTokenAccount,
                         user: user1.publicKey,
@@ -680,7 +666,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -748,7 +733,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -815,7 +799,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenWhitelist: whitelistPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -844,7 +827,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenWhitelist: whitelistPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
