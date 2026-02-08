@@ -160,8 +160,7 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 
 **Base fields** (always present, in this exact order):
 1. `instruction_id`: 1 byte (unsigned integer)
-   - `1` = Withdraw SOL
-   - `2` = Withdraw SPL
+   - `1` = Withdraw (SOL or SPL; unified)
    - `3` = Revert SOL
    - `4` = Revert SPL
    - `5` = Execute SOL
@@ -184,19 +183,14 @@ gas_fee (u64 BE)
 rent_fee (u64 BE)
 ```
 
-**For Withdraw SOL (1):**
+**For Withdraw (1) — SOL and SPL (unified):**
 - `signTssMessage()` already injects: `universal_tx_id`, `tx_id`, `origin_caller` (see `tests/helpers/tss.ts` lines 73-81)
 - `additional` array (passed to `signTssMessage`):
   ```
-  [recipient_pubkey (32 bytes), gas_fee_buf (8 bytes, u64 BE)]
+  [token (32 bytes), recipient (32 bytes), gas_fee_buf (8 bytes, u64 BE)]
   ```
-
-**For Withdraw SPL (2):**
-- `signTssMessage()` already injects: `universal_tx_id`, `tx_id`, `origin_caller` (see `tests/helpers/tss.ts` lines 73-81)
-- `additional` array (passed to `signTssMessage`):
-  ```
-  [mint_pubkey (32 bytes), recipient_token_account (32 bytes), gas_fee_buf (8 bytes, u64 BE)]
-  ```
+  - **SOL**: `token` = `Pubkey::default()` (32 zero bytes), `recipient` = SOL recipient pubkey
+  - **SPL**: `token` = mint pubkey, `recipient` = recipient token account (ATA) pubkey
 
 **For Revert SOL (3):**
 - `signTssMessage()` already injects: `universal_tx_id`, `tx_id` (see `tests/helpers/tss.ts` lines 73-78)
@@ -397,7 +391,7 @@ Final: [0xAC, 0x80] (2 bytes)
 - Use standard ATA derivation: `[authority (CEA), token_program_id, mint]`
 - Check if exists before transaction; if not, program will create it (relayer pays rent)
 
-### 4.3 Withdraw (SOL)
+### 4.3 Withdraw (SOL and SPL — unified)
 
 **Function**: `withdraw`
 
@@ -405,6 +399,7 @@ Final: [0xAC, 0x80] (2 bytes)
 - `tx_id`: [u8; 32]
 - `universal_tx_id`: [u8; 32]
 - `origin_caller`: [u8; 20] (EVM address from event.sender)
+- `token`: Pubkey — `Pubkey::default()` for native SOL, mint pubkey for SPL
 - `amount`: u64
 - `gas_fee`: u64
 - `signature`: [u8; 64]
@@ -412,32 +407,24 @@ Final: [0xAC, 0x80] (2 bytes)
 - `message_hash`: [u8; 32]
 - `nonce`: u64
 
-**Required Accounts**:
+**Required Accounts** (all cases):
 - `caller`: Relayer keypair (signer, payer)
 - `config`: PDA `["config"]`
 - `vault`: PDA `["vault"]`
 - `tss_pda`: PDA `["tsspda"]`
-- `recipient`: Recipient pubkey (from event or derived)
+- `recipient`: For SOL = recipient pubkey; for SPL = ignored (pass any; e.g. recipient token account)
 - `executed_tx`: PDA `["executed_tx", tx_id]` (will be created)
 - `system_program`: System program
 
-**Reference**: See `Withdraw` struct in `contracts/svm-gateway/programs/universal-gateway/src/instructions/withdraw.rs`
-
-### 4.4 Withdraw Tokens (SPL Token)
-
-**Function**: `withdraw_tokens` (renamed from `withdraw_funds` to match EVM naming)
-
-**Additional Required Accounts**:
-- `token_vault`: Vault ATA for the mint (validated manually at runtime: owner == vault, mint == token_mint)
+**Optional Accounts** (required when `token != Pubkey::default()` for SPL):
+- `token_vault`: Vault ATA for the mint (validated at runtime: owner == vault, mint == token_mint)
 - `recipient_token_account`: Recipient ATA (must exist)
-- `token_mint`: Token mint
-- `vault_sol`: PDA `["vault"]` (for gas_fee transfer)
+- `token_mint`: Token mint (must match `token` parameter)
 - `token_program`: SPL Token program
-- `system_program`: System program
 
-**Note**: Token support is determined by rate limit threshold > 0 (not whitelist). The `token_vault` is validated manually (matches deposit flow validation style) to ensure it's owned by the vault PDA and matches the token mint.
+**Note**: Token support is determined by rate limit threshold > 0. For SPL, `token_vault` is validated at runtime (owner == vault, mint == token_mint).
 
-**Reference**: See `WithdrawTokens` struct and `withdraw_tokens()` function in `contracts/svm-gateway/programs/universal-gateway/src/instructions/withdraw.rs`
+**Reference**: See `Withdraw` struct and `withdraw()` in `contracts/svm-gateway/programs/universal-gateway/src/instructions/withdraw.rs`
 
 ### 4.5 Revert Universal Transaction (SOL)
 
@@ -462,7 +449,7 @@ Final: [0xAC, 0x80] (2 bytes)
 
 **Function**: `revert_universal_tx_token`
 
-**Additional Required Accounts**: Same as `withdraw_tokens` (token_vault, recipient_token_account, token_mint, vault_sol, token_program, system_program)
+**Additional Required Accounts**: Same as SPL withdraw (token_vault, recipient_token_account, token_mint, token_program)
 
 ---
 
@@ -676,19 +663,19 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 2. **Derive PDAs**: Same as execute (see section 5)
 3. **Fetch TSS state**: Get chain_id and nonce (see section 3.6)
 4. **Build TSS message**:
-   - instruction_id = 1 (SOL) or 2 (SPL)
+   - instruction_id = 1 (unified for SOL and SPL)
    - Call `signTssMessage()` with:
      - `universalTxId`: 32 bytes (from source chain)
      - `txId`: 32 bytes (deterministic, stable across retries)
      - `originCaller`: 20 bytes (EVM address from event.sender)
-     - `additional`: 
-       - SOL: `[recipient_pubkey (32 bytes), gas_fee_buf (8 bytes, u64 BE)]`
-       - SPL: `[mint_pubkey (32 bytes), recipient_token_account (32 bytes), gas_fee_buf (8 bytes, u64 BE)]`
+     - `additional`: `[token (32 bytes), recipient (32 bytes), gas_fee_buf (8 bytes, u64 BE)]`
+       - SOL: token = `Pubkey::default()`, recipient = SOL recipient pubkey
+       - SPL: token = mint pubkey, recipient = recipient token account pubkey
    - **Note**: `signTssMessage()` automatically includes `universal_tx_id`, `tx_id`, and `origin_caller` in the message hash before `additional`
 5. **Sign**: `signTssMessage()` returns signature, recovery_id, message_hash, nonce
 6. **Build Solana transaction**: 
-   - Function: `withdraw` or `withdraw_tokens`
-   - See account structs: `Withdraw` or `WithdrawTokens` in `withdraw.rs`
+   - Function: `withdraw` (single function; pass `token` = default for SOL, mint for SPL; include optional SPL accounts when SPL)
+   - See account struct: `Withdraw` in `withdraw.rs`
 7. **Submit and verify**: Same as execute (see step 9-10 above)
 
 ### Revert Flow:
@@ -758,8 +745,7 @@ Before production:
 
 **Withdraw Functions**:
 - `contracts/svm-gateway/programs/universal-gateway/src/instructions/withdraw.rs`
-  - `withdraw()` - SOL withdrawal handler
-  - `withdraw_tokens()` - SPL token withdrawal handler
+  - `withdraw()` - Unified SOL/SPL withdrawal (token = default for SOL, mint for SPL; optional SPL accounts when SPL)
   - `revert_universal_tx()` - SOL revert handler
   - `revert_universal_tx_token()` - SPL token revert handler
 
@@ -802,8 +788,7 @@ Before production:
 - `ExecuteUniversalTxToken` - Required accounts for SPL execute
 
 **Withdraw Account Structs** (see `withdraw.rs`):
-- `Withdraw` - Required accounts for SOL withdraw
-- `WithdrawTokens` - Required accounts for SPL withdraw
+- `Withdraw` - Required + optional accounts for unified withdraw (SOL: omit optional SPL accounts; SPL: include token_vault, recipient_token_account, token_mint, token_program)
 - `RevertUniversalTx` - Required accounts for SOL revert
 - `RevertUniversalTxToken` - Required accounts for SPL revert
 

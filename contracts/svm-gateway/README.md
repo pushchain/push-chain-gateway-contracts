@@ -210,7 +210,7 @@ await program.methods
 // TSS Message Construction
 const messageData = Buffer.concat([
   Buffer.from("PUSH_CHAIN_SVM"),
-  Buffer.from([1]), // instruction_id (1=SOL, 2=SPL, 3=revert)
+  Buffer.from([1]), // instruction_id (1=Withdraw unified, 3=revert)
   Buffer.from(chainId.toArray("be", 8)),
   Buffer.from(nonce.toArray("be", 8)),
   Buffer.from(amount.toArray("be", 8)),

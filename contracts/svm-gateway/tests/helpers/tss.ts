@@ -5,8 +5,9 @@ const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
 
 export enum TssInstruction {
-    WithdrawSol = 1,
-    WithdrawSpl = 2,
+    Withdraw = 1,       // Unified withdraw (SOL + SPL)
+    WithdrawSol = 1,    // Alias for backwards compat in revert tests
+    WithdrawSpl = 1,    // Alias — now same instruction_id
     RevertWithdrawSol = 3,
     RevertWithdrawSpl = 4,
     ExecuteSol = 5,
@@ -76,7 +77,7 @@ export async function signTssMessage({ instruction, nonce, amount, additional, c
     if (txId) {
         segments.push(Buffer.from(txId));
     }
-    if (originCaller && (instruction === TssInstruction.WithdrawSol || instruction === TssInstruction.WithdrawSpl)) {
+    if (originCaller && (instruction === TssInstruction.Withdraw)) {
         segments.push(Buffer.from(originCaller));
     }
 

@@ -7,7 +7,7 @@ use anchor_spl::token::{self, spl_token, Mint, Token, TokenAccount, Transfer};
 use spl_token::state::Account as SplAccount;
 
 // =========================
-//        TSS WITHDRAW
+//    UNIFIED TSS WITHDRAW
 // =========================
 
 #[derive(Accounts)]
@@ -31,7 +31,7 @@ pub struct Withdraw<'info> {
     )]
     pub tss_pda: Account<'info, TssPda>,
 
-    /// CHECK: Recipient address
+    /// CHECK: Recipient address (SOL recipient for native, ignored for SPL)
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
 
@@ -52,6 +52,20 @@ pub struct Withdraw<'info> {
     pub caller: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+
+    // --- Optional SPL accounts (required when token != Pubkey::default()) ---
+
+    /// CHECK: Token vault ATA (required for SPL withdrawals)
+    #[account(mut)]
+    pub token_vault: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Recipient token account (required for SPL withdrawals)
+    #[account(mut)]
+    pub recipient_token_account: Option<UncheckedAccount<'info>>,
+
+    pub token_mint: Option<Account<'info, Mint>>,
+
+    pub token_program: Option<Program<'info, Token>>,
 }
 
 pub fn withdraw(
@@ -59,6 +73,7 @@ pub fn withdraw(
     tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     origin_caller: [u8; 20], // EVM address (20 bytes) from Push Chain
+    token: Pubkey,           // Pubkey::default() for native SOL, mint address for SPL
     amount: u64,
     gas_fee: u64,
     signature: [u8; 64],
@@ -73,21 +88,35 @@ pub fn withdraw(
 
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(origin_caller != [0u8; 20], GatewayError::InvalidInput);
-    require!(
-        ctx.accounts.recipient.key() != Pubkey::default(),
-        GatewayError::InvalidInput
-    );
 
-    // instruction_id = 1 for SOL withdraw
+    let is_native = token == Pubkey::default();
+
+    if is_native {
+        require!(
+            ctx.accounts.recipient.key() != Pubkey::default(),
+            GatewayError::InvalidInput
+        );
+    }
+
+    // Unified instruction_id = 1 for all withdrawals
     let instruction_id: u8 = 1;
-    let recipient_bytes = ctx.accounts.recipient.key().to_bytes();
+    let token_bytes = token.to_bytes();
+    // For native: recipient is the SOL address; for SPL: recipient is the token account
+    let recipient_bytes = if is_native {
+        ctx.accounts.recipient.key().to_bytes()
+    } else {
+        let recipient_token_account = ctx.accounts.recipient_token_account.as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+        recipient_token_account.key().to_bytes()
+    };
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    // Include universal_tx_id, txID, origin_caller (EVM address), recipient, and gas_fee in message hash
-    let additional: [&[u8]; 5] = [
+    // Unified message hash: [universal_tx_id, tx_id, origin_caller, token, recipient, gas_fee]
+    let additional: [&[u8]; 6] = [
         &universal_tx_id[..],
         &tx_id[..],
         &origin_caller[..],
+        &token_bytes[..],
         &recipient_bytes[..],
         &gas_fee_buf,
     ];
@@ -102,25 +131,79 @@ pub fn withdraw(
         recovery_id,
     )?;
 
-    // Transfer funds from vault to recipient
-    let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-    anchor_lang::solana_program::program::invoke_signed(
-        &system_instruction::transfer(ctx.accounts.vault.key, ctx.accounts.recipient.key, amount),
-        &[
-            ctx.accounts.vault.to_account_info(),
-            ctx.accounts.recipient.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        &[seeds],
-    )?;
+    if is_native {
+        // Transfer native SOL from vault to recipient
+        let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
+        anchor_lang::solana_program::program::invoke_signed(
+            &system_instruction::transfer(ctx.accounts.vault.key, ctx.accounts.recipient.key, amount),
+            &[
+                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.recipient.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+    } else {
+        // SPL token transfer: validate and unwrap optional accounts
+        let token_vault = ctx.accounts.token_vault.as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+        let recipient_token_account = ctx.accounts.recipient_token_account.as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+        let token_mint = ctx.accounts.token_mint.as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+        let token_program = ctx.accounts.token_program.as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+
+        require!(
+            token_program.key() == anchor_spl::token::ID,
+            GatewayError::InvalidAccount
+        );
+
+        // Validate token parameter matches the provided token_mint account
+        require!(
+            token == token_mint.key(),
+            GatewayError::InvalidMint
+        );
+
+        // SECURITY: Validate token_vault is owned by vault and matches token_mint
+        let data = token_vault.try_borrow_data()?.to_vec();
+        let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
+        require!(
+            parsed.owner == ctx.accounts.vault.key(),
+            GatewayError::InvalidOwner
+        );
+        require!(
+            parsed.mint == token_mint.key(),
+            GatewayError::InvalidMint
+        );
+
+        // Note: Recipient ATA must be created off-chain by the client
+        // This is standard practice in Solana programs
+
+        let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
+        let cpi_accounts = Transfer {
+            from: token_vault.to_account_info(),
+            to: recipient_token_account.to_account_info(),
+            authority: ctx.accounts.vault.to_account_info(),
+        };
+        let cpi_program = token_program.to_account_info();
+        let seeds_array = [seeds];
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, &seeds_array);
+        token::transfer(cpi_ctx, amount)?;
+    }
 
     // Emit unified event (EVM parity: UniversalTxExecuted for withdraw)
+    let event_target = if is_native {
+        ctx.accounts.recipient.key()
+    } else {
+        ctx.accounts.recipient_token_account.as_ref().unwrap().key()
+    };
     emit!(crate::state::UniversalTxExecuted {
         tx_id,
         universal_tx_id,
         sender: origin_caller,
-        target: ctx.accounts.recipient.key(),
-        token: Pubkey::default(),
+        target: event_target,
+        token,
         amount,
         payload: vec![],
     });
@@ -150,180 +233,6 @@ pub fn withdraw(
 
     Ok(())
 }
-
-#[derive(Accounts)]
-#[instruction(tx_id: [u8; 32])]
-pub struct WithdrawTokens<'info> {
-    #[account(
-        seeds = [CONFIG_SEED],
-        bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
-    )]
-    pub config: Account<'info, Config>,
-
-    /// CHECK: SOL-only PDA, no data
-    #[account(mut, seeds = [VAULT_SEED], bump = config.vault_bump)]
-    pub vault: UncheckedAccount<'info>,
-
-    /// CHECK: Vault token account - validated at runtime (owner == vault, mint == token_mint)
-    /// Matches deposit flow validation style for consistency
-    #[account(mut)]
-    pub token_vault: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [TSS_SEED],
-        bump = tss_pda.bump,
-    )]
-    pub tss_pda: Account<'info, TssPda>,
-
-    /// CHECK: Recipient token account
-    #[account(mut)]
-    pub recipient_token_account: UncheckedAccount<'info>,
-
-    pub token_mint: Account<'info, Mint>,
-
-    /// Executed transaction tracker (EVM parity: isExecuted[txID])
-    #[account(
-        init,
-        payer = caller,
-        space = ExecutedTx::LEN,
-        seeds = [EXECUTED_TX_SEED, &tx_id],
-        bump
-    )]
-    pub executed_tx: Account<'info, ExecutedTx>,
-
-    /// The caller/relayer who pays for the transaction (including executed_tx account creation)
-    #[account(mut)]
-    pub caller: Signer<'info>,
-
-    /// Vault SOL PDA (needed for gas_fee transfer to caller)
-    #[account(
-        mut,
-        seeds = [VAULT_SEED],
-        bump = config.vault_bump,
-    )]
-    pub vault_sol: SystemAccount<'info>,
-
-    pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
-}
-
-pub fn withdraw_tokens(
-    ctx: Context<WithdrawTokens>,
-    tx_id: [u8; 32],
-    universal_tx_id: [u8; 32],
-    origin_caller: [u8; 20], // EVM address (20 bytes) from Push Chain
-    amount: u64,
-    gas_fee: u64,
-    signature: [u8; 64],
-    recovery_id: u8,
-    message_hash: [u8; 32],
-    nonce: u64,
-) -> Result<()> {
-    // EVM parity: Replay protection via Anchor's init constraint
-    // If account already exists, init fails (transaction already executed)
-    // If account doesn't exist, init creates it (transaction succeeds)
-    // Account existence = transaction executed (atomic transaction ensures this)
-
-    require!(amount > 0, GatewayError::InvalidAmount);
-    require!(origin_caller != [0u8; 20], GatewayError::InvalidInput);
-
-    // instruction_id = 2 for SPL withdraw
-    let instruction_id: u8 = 2;
-    let mut mint_bytes = [0u8; 32];
-    mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
-    let recipient_bytes = ctx.accounts.recipient_token_account.key().to_bytes();
-    let mut gas_fee_buf = [0u8; 8];
-    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    // Include universal_tx_id, txID, origin_caller (EVM address), mint, recipient, and gas_fee in message hash
-    let additional: [&[u8]; 6] = [
-        &universal_tx_id[..],
-        &tx_id[..],
-        &origin_caller[..],
-        &mint_bytes[..],
-        &recipient_bytes[..],
-        &gas_fee_buf,
-    ];
-    validate_message(
-        &mut ctx.accounts.tss_pda,
-        instruction_id,
-        nonce,
-        Some(amount),
-        &additional,
-        &message_hash,
-        &signature,
-        recovery_id,
-    )?;
-
-    // SECURITY: Validate token_vault is owned by vault and matches token_mint
-    // Matches deposit flow validation style (lines 262-275 in deposit.rs)
-    let data = ctx.accounts.token_vault.try_borrow_data()?.to_vec();
-    let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
-    require!(
-        parsed.owner == ctx.accounts.vault.key(),
-        GatewayError::InvalidOwner
-    );
-    require!(
-        parsed.mint == ctx.accounts.token_mint.key(),
-        GatewayError::InvalidMint
-    );
-
-    // Note: Recipient ATA must be created off-chain by the client
-    // This is standard practice in Solana programs
-
-    let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-    let cpi_accounts = Transfer {
-        from: ctx.accounts.token_vault.to_account_info(),
-        to: ctx.accounts.recipient_token_account.to_account_info(),
-        authority: ctx.accounts.vault.to_account_info(),
-    };
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let seeds_array = [seeds];
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, &seeds_array);
-    token::transfer(cpi_ctx, amount)?;
-
-    // ATA creation is handled off-chain by the client (standard practice)
-
-    // Emit unified event (EVM parity: UniversalTxExecuted for withdraw)
-    emit!(crate::state::UniversalTxExecuted {
-        tx_id,
-        universal_tx_id,
-        sender: origin_caller,
-        target: ctx.accounts.recipient_token_account.key(),
-        token: ctx.accounts.token_mint.key(),
-        amount,
-        payload: vec![],
-    });
-
-    // Transfer gas_fee directly to caller
-    if gas_fee > 0 {
-        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-        let fee_transfer_ix = system_instruction::transfer(
-            &ctx.accounts.vault_sol.key(),
-            &ctx.accounts.caller.key(),
-            gas_fee,
-        );
-
-        anchor_lang::solana_program::program::invoke_signed(
-            &fee_transfer_ix,
-            &[
-                ctx.accounts.vault_sol.to_account_info(),
-                ctx.accounts.caller.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            &[vault_seeds],
-        )?;
-    }
-
-    // Account creation via `init` constraint marks txID as executed
-    // (atomic transaction ensures account only exists if execution succeeded)
-
-    Ok(())
-}
-
-// SPL Token withdraw instruction
-// Legacy signer-based SPL withdraw removed; use TSS-verified variants below
 
 // =========================
 //   TSS REVERT WITHDRAW FUNCTIONS - FIXED WITH REAL TSS

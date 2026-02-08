@@ -365,11 +365,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -383,6 +383,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     universalTxId,
                     originCaller,
+                    PublicKey.default,
                     new anchor.BN(withdrawLamports),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
@@ -398,6 +399,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     executedTx: executedTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: null,
+                    recipientTokenAccount: null,
+                    tokenMint: null,
+                    tokenProgram: null,
                 })
                 .signers([relayer])
                 .rpc();
@@ -427,11 +432,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const valid = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -445,6 +450,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         corrupted,
@@ -460,6 +466,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -485,11 +495,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -500,6 +510,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
@@ -515,6 +526,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -541,11 +556,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(excessive),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -556,6 +571,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(excessive),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
@@ -571,6 +587,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -581,7 +601,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         });
     });
 
-    describe("withdraw_tokens", () => {
+    describe("withdraw SPL tokens", () => {
         it("transfers SPL tokens with a valid signature", async () => {
             const withdrawTokens = 1_000;
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
@@ -592,9 +612,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
-            // Include tx_id, origin_caller, mint AND recipient in message hash
+            // Unified message hash: token (mint) + recipient_token_account + gas_fee
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSpl,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: withdrawRaw,
                 universalTxId: new Uint8Array(universalTxId),
@@ -608,10 +628,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
             await program.methods
-                .withdrawTokens(
+                .withdraw(
                     txId,
                     universalTxId,
                     originCaller,
+                    mockUSDT.mint.publicKey,
                     new anchor.BN(Number(withdrawRaw)),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
@@ -622,14 +643,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenVault: vaultUsdtAccount,
                     tssPda,
-                    recipientTokenAccount: recipientUsdtAccount,
-                    tokenMint: mockUSDT.mint.publicKey,
+                    recipient: recipient.publicKey,
                     executedTx: executedTxPda,
                     caller: relayer.publicKey,
-                    tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: vaultUsdtAccount,
+                    recipientTokenAccount: recipientUsdtAccount,
+                    tokenMint: mockUSDT.mint.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
                 })
                 .signers([relayer])
                 .rpc();
@@ -659,9 +681,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const originCaller = generateOriginCaller();
             const executedTxPda = getExecutedTxPda(txId);
 
-            // Include tx_id, origin_caller, mint AND recipient in message hash
+            // Unified message hash: token (mint) + recipient_token_account + gas_fee
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSpl,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: withdrawRaw,
                 universalTxId: new Uint8Array(universalTxId),
@@ -675,10 +697,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             await expectRejection(
                 program.methods
-                    .withdrawTokens(
+                    .withdraw(
                         txId,
                         universalTxId,
                         originCaller,
+                        mockUSDT.mint.publicKey,
                         new anchor.BN(Number(withdrawRaw)),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         corrupted,
@@ -689,14 +712,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenVault: vaultUsdtAccount,
                         tssPda,
-                        recipientTokenAccount: recipientUsdtAccount,
-                        tokenMint: mockUSDT.mint.publicKey,
+                        recipient: recipient.publicKey,
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
-                        tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: vaultUsdtAccount,
+                        recipientTokenAccount: recipientUsdtAccount,
+                        tokenMint: mockUSDT.mint.publicKey,
+                        tokenProgram: TOKEN_PROGRAM_ID,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -849,11 +873,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(0),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -864,6 +888,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(0),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
@@ -879,6 +904,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -897,11 +926,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -912,6 +941,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
@@ -927,6 +957,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -953,11 +987,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             }
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(zeroOriginCaller),
             });
@@ -968,6 +1002,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         zeroOriginCaller,
+                        PublicKey.default,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
@@ -983,6 +1018,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc();
@@ -1013,10 +1052,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const zeroRecipient = PublicKey.default;
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
-                additional: [toBytes(zeroRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                universalTxId: new Uint8Array(universalTxId),
+                additional: [toBytes(PublicKey.default), toBytes(zeroRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -1029,6 +1069,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature.signature,
@@ -1044,6 +1085,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc();
@@ -1071,11 +1116,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -1087,6 +1132,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     universalTxId,
                     originCaller,
+                    PublicKey.default,
                     new anchor.BN(withdrawLamports),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     signature.signature,
@@ -1102,6 +1148,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     executedTx: executedTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: null,
+                    recipientTokenAccount: null,
+                    tokenMint: null,
+                    tokenProgram: null,
                 })
                 .signers([relayer])
                 .rpc();
@@ -1125,11 +1175,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Second withdrawal with same txID should fail
             await setNonceOnChain(currentNonce);
             const signature2 = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -1140,6 +1190,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         signature2.signature,
@@ -1155,6 +1206,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc();
@@ -1189,11 +1244,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxPda = getExecutedTxPda(txId);
 
             const valid = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -1209,6 +1264,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         txId,
                         universalTxId,
                         originCaller,
+                        PublicKey.default,
                         new anchor.BN(withdrawLamports),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
                         corrupted,
@@ -1224,6 +1280,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc();
@@ -1243,11 +1303,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Now try with VALID signature - should succeed (proves tx_id wasn't bricked)
             await setNonceOnChain(currentNonce);
             const validSig = await signTssMessageWithChainId({
-                instruction: TssInstruction.WithdrawSol,
+                instruction: TssInstruction.Withdraw,
                 nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 universalTxId: new Uint8Array(universalTxId),
-                additional: [toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [toBytes(PublicKey.default), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
                 txId: new Uint8Array(txId),
                 originCaller: new Uint8Array(originCaller),
             });
@@ -1257,6 +1317,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     txId,
                     universalTxId,
                     originCaller,
+                    PublicKey.default,
                     new anchor.BN(withdrawLamports),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     validSig.signature,
@@ -1272,6 +1333,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     executedTx: executedTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: null,
+                    recipientTokenAccount: null,
+                    tokenMint: null,
+                    tokenProgram: null,
                 })
                 .signers([relayer])
                 .rpc();

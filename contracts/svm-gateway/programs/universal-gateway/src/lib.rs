@@ -138,15 +138,17 @@ pub mod universal_gateway {
     // =========================
     //        WITHDRAW
     // =========================
-    /// @notice TSS-verified withdraw of native SOL (EVM parity: `withdraw`)
+    /// @notice Unified TSS-verified withdraw for both native SOL and SPL tokens
     /// @param tx_id Transaction ID for tracking
     /// @param universal_tx_id Universal transaction ID from source chain
     /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
+    /// @param token Pubkey::default() for native SOL, mint address for SPL tokens
     pub fn withdraw(
         ctx: Context<Withdraw>,
         tx_id: [u8; 32],
         universal_tx_id: [u8; 32],
         origin_caller: [u8; 20],
+        token: Pubkey,
         amount: u64,
         gas_fee: u64,
         signature: [u8; 64],
@@ -159,36 +161,7 @@ pub mod universal_gateway {
             tx_id,
             universal_tx_id,
             origin_caller,
-            amount,
-            gas_fee,
-            signature,
-            recovery_id,
-            message_hash,
-            nonce,
-        )
-    }
-
-    /// @notice TSS-verified withdraw of SPL tokens (EVM parity: `withdrawTokens`)
-    /// @param tx_id Transaction ID for tracking
-    /// @param universal_tx_id Universal transaction ID from source chain
-    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
-    pub fn withdraw_tokens(
-        ctx: Context<WithdrawTokens>,
-        tx_id: [u8; 32],
-        universal_tx_id: [u8; 32],
-        origin_caller: [u8; 20],
-        amount: u64,
-        gas_fee: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-        nonce: u64,
-    ) -> Result<()> {
-        instructions::withdraw::withdraw_tokens(
-            ctx,
-            tx_id,
-            universal_tx_id,
-            origin_caller,
+            token,
             amount,
             gas_fee,
             signature,
@@ -370,7 +343,7 @@ pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::{ExecuteUniversalTx, ExecuteUniversalTxToken};
 pub use instructions::initialize::Initialize;
 pub use instructions::withdraw::{
-    RevertUniversalTx, RevertUniversalTxToken, Withdraw, WithdrawTokens,
+    RevertUniversalTx, RevertUniversalTxToken, Withdraw,
 };
 pub use utils::PriceData;
 

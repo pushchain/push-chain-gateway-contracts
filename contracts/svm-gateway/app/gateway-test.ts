@@ -1351,8 +1351,8 @@ async function run() {
     const gasFeeBE = Buffer.alloc(8);
     gasFeeBE.writeBigUInt64BE(BigInt(withdrawGasFee));
 
-    // Include universal_tx_id, tx_id, origin_caller, recipient, and gas_fee in message hash
-    // Order matches withdraw.rs line 85-91
+    // Unified message hash: include token (Pubkey::default for SOL), recipient, and gas_fee
+    const tokenBytes = PublicKey.default.toBuffer(); // Pubkey::default() for native SOL
     const concat = Buffer.concat([
         PREFIX,
         instructionId,
@@ -1362,6 +1362,7 @@ async function run() {
         Buffer.from(universalTxIdWithdraw), // universal_tx_id (32 bytes) - MUST be first in additional_data
         Buffer.from(txId),      // tx_id (32 bytes)
         Buffer.from(originCaller), // origin_caller (20 bytes)
+        tokenBytes,            // token (32 bytes) - Pubkey::default() for SOL
         recipientBytes,         // recipient (32 bytes)
         gasFeeBE,              // gas_fee (8 bytes, u64 BE)
     ]);
@@ -1386,6 +1387,7 @@ async function run() {
             txId,
             Array.from(universalTxIdWithdraw), // Use same universal_tx_id from message hash
             originCaller,
+            PublicKey.default, // token = Pubkey::default() for native SOL
             new anchor.BN(withdrawAmountTss),
             new anchor.BN(withdrawGasFee),
             Array.from(signature) as any,
@@ -1401,6 +1403,10 @@ async function run() {
             executedTx: executedTxPda,
             caller: admin, // The caller/relayer who pays for the transaction
             systemProgram: SystemProgram.programId,
+            tokenVault: null,
+            recipientTokenAccount: null,
+            tokenMint: null,
+            tokenProgram: null,
         })
         .signers([adminKeypair])
         .rpc();
@@ -1425,7 +1431,7 @@ async function run() {
     const executedTxExistsAfterWithdraw = (await connection.getAccountInfo(executedTxPda)) !== null;
     assert.isTrue(executedTxExistsAfterWithdraw && !executedTxExistsBeforeWithdraw, "ExecutedTx PDA should be created");
 
-    // 12.5 Test SPL token TSS withdrawal (instruction_id=2)
+    // 12.5 Test SPL token TSS withdrawal (unified instruction_id=1)
     console.log("\n=== Testing SPL Token TSS Withdrawal ===");
 
     // Check if we have SPL tokens in the vault to withdraw
@@ -1466,21 +1472,20 @@ async function run() {
             const originCallerSPL = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
             const universalTxIdSplWithdraw = generateUniversalTxId();
 
-            // Build message for SPL withdraw using instruction_id=2
+            // Build message for SPL withdraw using unified instruction_id=1
             const splWithdrawGasFee = new anchor.BN(0.001 * LAMPORTS_PER_SOL).toNumber(); // Gas fee for SPL withdraw
             const PREFIX_SPL = Buffer.from("PUSH_CHAIN_SVM");
-            const instructionIdSPL = Buffer.from([2]); // 2 = SPL withdraw
+            const instructionIdSPL = Buffer.from([1]); // 1 = unified withdraw
             const chainIdBytesSPL = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
             const nonceBE_SPL = Buffer.alloc(8);
             nonceBE_SPL.writeBigUInt64BE(BigInt(nonce + 1)); // Increment nonce for SPL withdraw
             const amountBE_SPL = Buffer.alloc(8);
             amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
-            const mintBytes = mint.toBuffer(); // 32 bytes for mint address
+            const mintBytes = mint.toBuffer(); // 32 bytes for mint address (= token)
             const gasFeeBE_SPL = Buffer.alloc(8);
             gasFeeBE_SPL.writeBigUInt64BE(BigInt(splWithdrawGasFee));
 
-            // Include universal_tx_id, tx_id, origin_caller, mint, recipient, and gas_fee in message hash
-            // Order matches withdraw.rs line 185-191
+            // Unified message hash: token (mint) + recipient_token_account + gas_fee
             const recipientBytesSPL = adminAta.address.toBuffer();
             const concatSPL = Buffer.concat([
                 PREFIX_SPL,
@@ -1491,8 +1496,8 @@ async function run() {
                 Buffer.from(universalTxIdSplWithdraw), // universal_tx_id (32 bytes) - MUST be first in additional_data
                 Buffer.from(txIdSPL),        // tx_id (32 bytes)
                 Buffer.from(originCallerSPL), // origin_caller (20 bytes)
-                mintBytes,                   // Token mint (32 bytes)
-                recipientBytesSPL,          // Recipient token account (32 bytes)
+                mintBytes,                   // token (32 bytes) - mint address for SPL
+                recipientBytesSPL,          // recipient (32 bytes) - token account for SPL
                 gasFeeBE_SPL,               // gas_fee (8 bytes, u64 BE)
             ]);
             const messageHashHexSPL = keccak_256(concatSPL);
@@ -1503,16 +1508,17 @@ async function run() {
             const signatureSPL: Uint8Array = sigSPL[0];
             let recoveryIdSPL: number = sigSPL[1];
 
-            // Call withdraw_tokens
+            // Call unified withdraw with SPL token
             const vaultTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
             const adminTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, adminAta.address)).amount;
             const executedTxExistsBeforeSplWithdraw = (await connection.getAccountInfo(executedTxPdaSPL)) !== null;
 
             const tssSplWithdrawTx = await program.methods
-                .withdrawTokens(
+                .withdraw(
                     txIdSPL,
                     Array.from(universalTxIdSplWithdraw), // Use same universal_tx_id from message hash
                     originCallerSPL,
+                    mint, // token = mint address for SPL
                     new anchor.BN(splWithdrawAmount),
                     new anchor.BN(splWithdrawGasFee),
                     Array.from(signatureSPL) as any,
@@ -1523,15 +1529,15 @@ async function run() {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenVault: vaultAta.address,
-                    tokenMint: mint,
                     tssPda: tssPda,
-                    recipientTokenAccount: adminAta.address,
+                    recipient: admin, // SOL recipient (ignored for SPL but required by struct)
                     executedTx: executedTxPdaSPL,
                     caller: admin, // The caller/relayer who pays for the transaction
-                    vaultSol: vaultPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: vaultAta.address,
+                    recipientTokenAccount: adminAta.address,
+                    tokenMint: mint,
+                    tokenProgram: spl.TOKEN_PROGRAM_ID,
                 })
                 .signers([adminKeypair])
                 .rpc();
