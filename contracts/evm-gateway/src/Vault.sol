@@ -289,7 +289,7 @@ contract Vault is
             ICEA(cea).executeUniversalTx(txID, universalTxID, originCaller, token, target, amount, data);
         } else {
             // Native execution
-            ICEA(cea).executeUniversalTx{value: amount}(txID, universalTxID, originCaller, target, amount, data);
+            ICEA(cea).executeUniversalTx{value: amount}(txID, universalTxID, originCaller, address(0), target, amount, data);
         }
     }
 }

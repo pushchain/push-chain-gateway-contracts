@@ -29,43 +29,8 @@ contract MockCEA is ICEA {
     function executeUniversalTx(
         bytes32 txID,
         bytes32 universalTxID,
-        address uea,
+        address originCaller,
         address token,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external override {
-        // Store call parameters
-        lastTxID = txID;
-        lastUniversalTxID = universalTxID;
-        lastUEA = uea;
-        lastToken = token;
-        lastTarget = target;
-        lastAmount = amount;
-        lastPayload = payload;
-
-        // Get token instance for SafeERC20
-        IERC20 tokenInstance = IERC20(token);
-        
-        // Approve target to spend tokens (using forceApprove for newer OpenZeppelin)
-        tokenInstance.forceApprove(target, amount);
-
-        // Call target with payload
-        (bool success, ) = target.call(payload);
-        require(success, "MockCEA: target call failed");
-
-        // Reset approval for safety (set to 0)
-        tokenInstance.forceApprove(target, 0);
-    }
-
-    /**
-     * @notice Native overload: Executes a call against an external target using native tokens
-     * @dev Forwards native value to target with payload
-     */
-    function executeUniversalTx(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address uea,
         address target,
         uint256 amount,
         bytes calldata payload
@@ -73,15 +38,31 @@ contract MockCEA is ICEA {
         // Store call parameters
         lastTxID = txID;
         lastUniversalTxID = universalTxID;
-        lastUEA = uea;
-        lastToken = address(0);
+        lastUEA = originCaller;  
+        lastToken = token;
         lastTarget = target;
         lastAmount = amount;
         lastPayload = payload;
 
-        // Forward native value to target with payload
-        (bool success, ) = target.call{value: amount}(payload);
-        require(success, "MockCEA: target call failed");
+
+        if (token == address(0)) {
+            // Native token execution
+            (bool success, ) = target.call{value: amount}(payload);
+            require(success, "MockCEA: target call failed");
+        } else {
+            // Get token instance for SafeERC20
+            IERC20 tokenInstance = IERC20(token);
+            
+            // Approve target to spend tokens (using forceApprove for newer OpenZeppelin)
+            tokenInstance.forceApprove(target, amount);
+
+            // Call target with payload
+            (bool success, ) = target.call(payload);
+            require(success, "MockCEA: target call failed");
+
+            // Reset approval for safety (set to 0)
+            tokenInstance.forceApprove(target, 0);
+        }
     }
 
     /**
