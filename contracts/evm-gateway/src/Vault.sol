@@ -183,7 +183,7 @@ contract Vault is
         if (!gateway.isSupportedToken(token)) revert Errors.NotSupported();
     }
 
-    function _validateExecutionParams(
+    function _validateParams(
         address originCaller,
         address token,
         address target,
@@ -191,6 +191,7 @@ contract Vault is
     ) internal view {
         if (originCaller == address(0)) revert Errors.ZeroAddress();
         if (target == address(0)) revert Errors.ZeroAddress();
+        _enforceSupported(token);
 
         // Invariant on (token, msg.value):
         // - Native flow: token == address(0) → msg.value MUST equal amount
@@ -222,8 +223,7 @@ contract Vault is
         address cea
     ) private {
         // Validations (reuses existing validation functions)
-        _validateExecutionParams(originCaller, token, to, amount);
-        _enforceSupported(token);
+        _validateParams(originCaller, token, to, amount);
 
         // Withdrawal-specific validation: amount must be non-zero
         if (amount == 0) revert Errors.InvalidAmount();
@@ -278,8 +278,7 @@ contract Vault is
         address cea
     ) private {
         // Validations (existing logic)
-        _validateExecutionParams(originCaller, token, target, amount);
-        _enforceSupported(token);
+        _validateParams(originCaller, token, target, amount);
 
         // Execute based on token type (existing logic)
         if (token != address(0)) {
