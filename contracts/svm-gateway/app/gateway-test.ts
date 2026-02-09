@@ -1711,7 +1711,6 @@ async function run() {
                 sig.recoveryId,
                 sig.messageHash,
                 sig.nonce,
-                PublicKey.default,
             )
             .accounts({
                 caller: relayer,  // Relayer is now both fee payer and caller
@@ -1726,6 +1725,7 @@ async function run() {
                 mint: null,
                 tokenProgram: null,
                 rent: null,
+                associatedTokenProgram: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(remainingAccounts)
@@ -1865,7 +1865,6 @@ async function run() {
                 sig.recoveryId,
                 sig.messageHash,
                 sig.nonce,
-                mint,
             )
             .accounts({
                 caller: relayer,  // Relayer is now both fee payer and caller
@@ -1881,6 +1880,7 @@ async function run() {
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .remainingAccounts(remainingAccounts)
             .rpc();
@@ -2019,7 +2019,6 @@ async function run() {
                     securitySig1.recoveryId,
                     securitySig1.messageHash,
                     securitySig1.nonce,
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2034,6 +2033,7 @@ async function run() {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(substitutedRemaining)
@@ -2106,7 +2106,6 @@ async function run() {
                     securitySig2.recoveryId,
                     securitySig2.messageHash,
                     securitySig2.nonce,
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2121,6 +2120,7 @@ async function run() {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts2.map((a) => ({
@@ -2194,7 +2194,6 @@ async function run() {
                     securitySig3.recoveryId,
                     securitySig3.messageHash,
                     new anchor.BN(wrongNonce), // Wrong nonce!
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2209,6 +2208,7 @@ async function run() {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts3.map((a) => ({
@@ -2288,7 +2288,6 @@ async function run() {
                     securitySig4.recoveryId,
                     securitySig4.messageHash,
                     securitySig4.nonce,
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: relayer,
@@ -2303,6 +2302,7 @@ async function run() {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(fewerRemaining)
@@ -2399,6 +2399,7 @@ async function run() {
             mint: null,
             tokenProgram: null,
             rent: null,
+            associatedTokenProgram: null,
             systemProgram: SystemProgram.programId,
         };
 
@@ -2426,7 +2427,6 @@ async function run() {
                     sig.recoveryId,
                     sig.messageHash,
                     sig.nonce,
-                    mint,
                 )
                 .accounts({
                     ...baseAccounts,
@@ -2435,6 +2435,7 @@ async function run() {
                     mint,
                     tokenProgram: spl.TOKEN_PROGRAM_ID,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(
                     accounts.map(a => ({
@@ -2460,7 +2461,6 @@ async function run() {
                     sig.recoveryId,
                     sig.messageHash,
                     sig.nonce,
-                    PublicKey.default,
                 )
                 .accounts(baseAccounts)
                 .remainingAccounts(
@@ -2689,7 +2689,6 @@ async function run() {
                 heavySig.recoveryId,
                 heavySig.messageHash,
                 heavySig.nonce,
-                PublicKey.default,
             )
             .accounts({
                 caller: relayer,
@@ -2704,6 +2703,7 @@ async function run() {
                 mint: null,
                 tokenProgram: null,
                 rent: null,
+                associatedTokenProgram: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(heavyAccounts.map(a => ({
@@ -2806,7 +2806,6 @@ async function run() {
                 heavySigSpl.recoveryId,
                 heavySigSpl.messageHash,
                 heavySigSpl.nonce,
-                mint,
             )
             .accounts({
                 caller: relayer,
@@ -2822,6 +2821,7 @@ async function run() {
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .remainingAccounts(heavyAccountsSpl.map(a => ({
                 pubkey: a.pubkey,

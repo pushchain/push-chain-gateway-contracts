@@ -23,7 +23,7 @@ use spl_token::state::Account as SplAccount;
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64, token: Pubkey)]
+#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64)]
 pub struct ExecuteUniversalTx<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -90,6 +90,9 @@ pub struct ExecuteUniversalTx<'info> {
 
     /// CHECK: Rent sysvar (validated at runtime)
     pub rent: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Associated token program (validated at runtime)
+    pub associated_token_program: Option<UncheckedAccount<'info>>,
 }
 
 pub fn execute_universal_tx(
@@ -107,12 +110,42 @@ pub fn execute_universal_tx(
     recovery_id: u8,
     message_hash: [u8; 32],
     nonce: u64,
-    token: Pubkey,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
 
-    let is_native = token == Pubkey::default();
+    // Derive token from mint account: if mint.is_some() → SPL, else → SOL
+    let is_native = ctx.accounts.mint.is_none();
+    let token = if is_native {
+        Pubkey::default()
+    } else {
+        ctx.accounts.mint.as_ref().unwrap().key()
+    };
+
+    // Enforce SPL/SOL account presence
+    if is_native {
+        // SOL: all SPL accounts must be None
+        require!(
+            ctx.accounts.vault_ata.is_none() &&
+            ctx.accounts.cea_ata.is_none() &&
+            ctx.accounts.mint.is_none() &&
+            ctx.accounts.token_program.is_none() &&
+            ctx.accounts.rent.is_none() &&
+            ctx.accounts.associated_token_program.is_none(),
+            GatewayError::InvalidAccount
+        );
+    } else {
+        // SPL: all SPL accounts must be Some
+        require!(
+            ctx.accounts.vault_ata.is_some() &&
+            ctx.accounts.cea_ata.is_some() &&
+            ctx.accounts.mint.is_some() &&
+            ctx.accounts.token_program.is_some() &&
+            ctx.accounts.rent.is_some() &&
+            ctx.accounts.associated_token_program.is_some(),
+            GatewayError::InvalidAccount
+        );
+    }
 
     // Validate account count and flags length match
     let accounts_count = ctx.remaining_accounts.len();
@@ -276,6 +309,11 @@ pub fn execute_universal_tx(
             .rent
             .as_ref()
             .ok_or(error!(GatewayError::InvalidAccount))?;
+        let ata_program = ctx
+            .accounts
+            .associated_token_program
+            .as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
 
         // Validate token parameter matches mint account
         require!(token == token_mint.key(), GatewayError::InvalidMint);
@@ -283,6 +321,10 @@ pub fn execute_universal_tx(
         // Validate program IDs
         require!(
             token_program.key() == spl_token::ID,
+            GatewayError::InvalidAccount
+        );
+        require!(
+            ata_program.key() == spl_associated_token_account::ID,
             GatewayError::InvalidAccount
         );
         require!(
@@ -334,6 +376,7 @@ pub fn execute_universal_tx(
                     token_mint.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                     token_program.to_account_info(),
+                    ata_program.to_account_info(),
                     rent_account.to_account_info(),
                 ],
                 &[],
@@ -430,7 +473,6 @@ pub fn execute_universal_tx(
             sender,
             &ix_data,
             cea_seeds,
-            token,
         );
     }
 
@@ -481,8 +523,14 @@ fn handle_cea_withdrawal(
     sender: [u8; 20],
     ix_data: &[u8],
     cea_seeds: &[&[u8]],
-    token: Pubkey,
 ) -> Result<()> {
+    // Derive token from mint account (must match parent function's derivation)
+    let token = if ctx.accounts.mint.is_none() {
+        Pubkey::default()
+    } else {
+        ctx.accounts.mint.as_ref().unwrap().key()
+    };
+
     // ix_data must be at least 8 bytes for the Anchor-style discriminator
     require!(ix_data.len() >= 8, GatewayError::InvalidInput);
 
@@ -494,6 +542,8 @@ fn handle_cea_withdrawal(
     // Remaining bytes are Borsh-encoded args
     let args = WithdrawFromCeaArgs::try_from_slice(&ix_data[8..])
         .map_err(|_| error!(GatewayError::InvalidInput))?;
+
+    // Validate args.token matches derived token
     require!(args.token == token, GatewayError::InvalidMint);
     if args.token == Pubkey::default() {
         // Handle SOL withdrawal

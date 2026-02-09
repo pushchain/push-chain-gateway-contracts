@@ -235,15 +235,17 @@ pub mod universal_gateway {
     // =========================
     //        EXECUTE
     // =========================
-    /// @notice TSS-verified execute arbitrary Solana instruction with SOL
+    /// @notice Unified TSS-verified execute for arbitrary Solana instructions (SOL + SPL)
+    /// @dev Token type is derived from mint account: mint.is_some() → SPL, else → SOL
     /// @param tx_id Transaction ID from Push chain event
     /// @param universal_tx_id Universal transaction ID from source chain
-    /// @param amount Amount of SOL to transfer to cea authority
+    /// @param amount Amount to transfer to CEA (SOL lamports or SPL token amount)
     /// @param target_program Target Solana program to invoke
     /// @param sender EVM sender address (same as origin_caller in EVM)
-    /// @param accounts Ordered list of accounts for target program
+    /// @param writable_flags Bitpacked writable flags for remaining_accounts
     /// @param ix_data Instruction data for target program
-    /// @param token Pubkey::default() for native SOL, mint address for SPL tokens
+    /// @param gas_fee Gas fee to reimburse relayer (in SOL lamports)
+    /// @param rent_fee Rent fee for target contract (in SOL lamports, subset of gas_fee)
     pub fn execute_universal_tx(
         ctx: Context<ExecuteUniversalTx>,
         tx_id: [u8; 32],
@@ -259,7 +261,6 @@ pub mod universal_gateway {
         recovery_id: u8,
         message_hash: [u8; 32],
         nonce: u64,
-        token: Pubkey,
     ) -> Result<()> {
         instructions::execute::execute_universal_tx(
             ctx,
@@ -276,7 +277,6 @@ pub mod universal_gateway {
             recovery_id,
             message_hash,
             nonce,
-            token,
         )
     }
 

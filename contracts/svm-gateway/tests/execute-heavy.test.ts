@@ -266,7 +266,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -281,6 +280,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -372,7 +372,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -387,6 +386,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -478,7 +478,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -493,6 +492,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -576,7 +576,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                         sig.recoveryId,
                         Array.from(sig.messageHash),
                         new anchor.BN(sig.nonce),
-                        PublicKey.default,
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -591,6 +590,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                         mint: null,
                         tokenProgram: null,
                         rent: null,
+                        associatedTokenProgram: null,
                         systemProgram: SystemProgram.programId,
                     })
                     .remainingAccounts(remaining)

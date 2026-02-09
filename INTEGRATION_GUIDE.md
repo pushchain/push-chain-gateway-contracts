@@ -163,15 +163,14 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
    - `1` = Withdraw (SOL or SPL; unified)
    - `3` = Revert SOL
    - `4` = Revert SPL
-   - `5` = Execute SOL
-   - `6` = Execute SPL
+   - `5` = Execute (SOL or SPL; unified)
 2. `chain_id`: UTF-8 bytes (see 3.1.2 above) - **NO length prefix**
 3. `nonce`: u64 BE (8 bytes) - current TSS nonce from on-chain TSS PDA
 4. `amount`: u64 BE (8 bytes) - present for all instructions
 
 **Additional fields** (order-critical, depends on instruction):
 
-**For Execute (5 or 6):**
+**For Execute (5 only, unified SOL+SPL):**
 ```
 universal_tx_id (32 bytes)
 tx_id (32 bytes)
@@ -181,6 +180,7 @@ accounts_buf (see 3.2)
 ix_data_buf (see 3.2)
 gas_fee (u64 BE)
 rent_fee (u64 BE)
+token (32 bytes)  // Pubkey::default() for SOL, mint for SPL
 ```
 
 **For Withdraw (1) — SOL and SPL (unified):**
@@ -334,7 +334,7 @@ Final: [0xAC, 0x80] (2 bytes)
 
 ## 4. Solana Program Functions
 
-### 4.1 Execute Universal Transaction (SOL)
+### 4.1 Execute Universal Transaction (Unified SOL/SPL)
 
 **Function**: `execute_universal_tx`
 
@@ -353,7 +353,7 @@ Final: [0xAC, 0x80] (2 bytes)
 - `message_hash`: [u8; 32]
 - `nonce`: u64
 
-**Required Accounts**:
+**Required Accounts** (all cases):
 - `caller`: Relayer keypair (signer, payer)
 - `config`: PDA `["config"]`
 - `vault_sol`: PDA `["vault"]` (uses config.vault_bump)
@@ -363,29 +363,23 @@ Final: [0xAC, 0x80] (2 bytes)
 - `destination_program`: Target program pubkey
 - `system_program`: System program
 
+**Optional Accounts** (required when SPL: `mint` is provided):
+- `vault_ata`: Vault ATA for the mint (validated at runtime: owner == vault_sol, mint == mint)
+- `cea_ata`: CEA ATA for the mint (created if missing; relayer pays rent)
+- `mint`: Token mint pubkey
+- `token_program`: SPL Token program
+- `rent`: Rent sysvar
+- `associated_token_program`: Associated Token program
+
 **Remaining Accounts**:
 - Pass decoded `accounts` from payload as `remaining_accounts`
 - Each account: `{ pubkey, isWritable, isSigner: false }`
 - Order must match the order in the decoded payload
 - `writable_flags` is bitpacked: bit i corresponds to `remaining_accounts[i]`
 
-### 4.2 Execute Universal Transaction (SPL Token)
-
-**Function**: `execute_universal_tx_token`
-
-**Additional Parameters**: Same as SOL execute
-
-**Additional Required Accounts**:
-- `vault_ata`: Associated token account (vault_sol PDA, mint) - owner validated at runtime (must match vault_sol PDA)
-- `cea_ata`: Associated token account (cea_authority, mint) - will be created if missing
-- `mint`: Token mint pubkey
-- `token_program`: SPL Token program
-- `associated_token_program`: Associated Token program
-- `rent`: Rent sysvar
-
 **Note**: `vault_authority` account was removed (optimization). The `vault_sol` PDA is used directly for both SOL operations and as the token authority for vault_ata.
 
-**Reference**: See `ExecuteUniversalTxToken` struct in `contracts/svm-gateway/programs/universal-gateway/src/instructions/execute.rs`
+**Reference**: See `ExecuteUniversalTx` struct in `contracts/svm-gateway/programs/universal-gateway/src/instructions/execute.rs`
 
 **CEA ATA Derivation**:
 - Use standard ATA derivation: `[authority (CEA), token_program_id, mint]`
@@ -543,7 +537,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 ### 7.3 TSS Message Construction
 
-1. Determine `instruction_id` (5 for SOL execute, 6 for SPL execute, etc.)
+1. Determine `instruction_id` (5 for execute, unified SOL/SPL)
 2. Fetch TSS PDA from Solana:
    - Derive TSS PDA: `["tsspda"]`
    - Read account: get `chain_id` (string) and `nonce` (u64)
@@ -563,7 +557,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 1. Derive all required PDAs (section 5)
 2. Build instruction using Anchor client or raw instruction:
-   - Function: `execute_universal_tx` or `execute_universal_tx_token`
+   - Function: `execute_universal_tx` (unified SOL/SPL)
    - Parameters: All from event + decoded payload + signature data
    - Accounts: Required accounts + remaining_accounts
 3. Add instruction to transaction
@@ -646,12 +640,12 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 4. **Fetch TSS state**: Get `chain_id` and `nonce` from TSS PDA
 5. **Build writable flags**: Convert `accounts[]` to bitpacked `writable_flags` (1 bit per account, MSB first)
 6. **Build TSS message**: 
-   - instruction_id = 5 (SOL) or 6 (SPL)
-   - additional = [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee]
+   - instruction_id = 5 (unified SOL/SPL)
+   - additional = [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee, token]
    - `accounts_buf` = serialized accounts (full format with pubkeys for TSS hash)
 7. **Sign**: Keccak-256 hash → secp256k1 sign → signature + recovery_id
 8. **Build Solana transaction**:
-   - Function: `execute_universal_tx` or `execute_universal_tx_token`
+   - Function: `execute_universal_tx` (unified SOL/SPL)
    - Parameters: tx_id, universal_tx_id, amount, target_program, sender, writable_flags, ix_data, gas_fee, rent_fee, signature, recovery_id, message_hash, nonce
    - Accounts: All required accounts + remaining_accounts (decoded accounts, same order as payload)
 9. **Submit**: Sign with relayer, send to Solana
@@ -738,10 +732,8 @@ Before production:
 
 **Execute Functions**:
 - `contracts/svm-gateway/programs/universal-gateway/src/instructions/execute.rs`
-  - `execute_universal_tx()` - SOL execution handler
-  - `execute_universal_tx_token()` - SPL token execution handler
-  - `ExecuteUniversalTx` struct - Account struct for SOL execute
-  - `ExecuteUniversalTxToken` struct - Account struct for SPL execute
+  - `execute_universal_tx()` - unified SOL/SPL execution handler
+  - `ExecuteUniversalTx` struct - unified account struct for SOL/SPL execute
 
 **Withdraw Functions**:
 - `contracts/svm-gateway/programs/universal-gateway/src/instructions/withdraw.rs`
@@ -784,8 +776,7 @@ Before production:
 ### 11.5 Account Structures (Rust)
 
 **Execute Account Structs** (see `execute.rs`):
-- `ExecuteUniversalTx` - Required accounts for SOL execute
-- `ExecuteUniversalTxToken` - Required accounts for SPL execute
+- `ExecuteUniversalTx` - Required + optional accounts for unified execute (SOL: omit optional SPL accounts; SPL: include vault_ata, cea_ata, mint, token_program, rent, associated_token_program)
 
 **Withdraw Account Structs** (see `withdraw.rs`):
 - `Withdraw` - Required + optional accounts for unified withdraw (SOL: omit optional SPL accounts; SPL: include token_vault, recipient_token_account, token_mint, token_program)

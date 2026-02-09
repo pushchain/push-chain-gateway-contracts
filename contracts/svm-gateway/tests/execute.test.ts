@@ -5,6 +5,7 @@ import { TestCounter } from "../target/types/test_counter";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import * as spl from "@solana/spl-token";
 import { encodeExecutePayload, decodeExecutePayload, instructionToPayloadFields, accountsToWritableFlags } from "../app/execute-payload";
 import * as sharedState from "./shared-state";
 import { signTssMessage, buildExecuteAdditionalData, TssInstruction, GatewayAccountMeta, generateUniversalTxId } from "./helpers/tss";
@@ -410,7 +411,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -425,6 +425,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remainingAccounts)
@@ -512,7 +513,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sigFund.recoveryId,
                     Array.from(sigFund.messageHash),
                     new anchor.BN(sigFund.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -527,6 +527,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remainingAccounts)
@@ -587,7 +588,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sigW.recoveryId,
                     Array.from(sigW.messageHash),
                     new anchor.BN(sigW.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -602,6 +602,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([admin])
@@ -682,7 +683,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
                     new anchor.BN(sig1.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -697,6 +697,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -737,7 +738,6 @@ describe("Universal Gateway - Execute Tests", () => {
                         sig2.recoveryId,
                         Array.from(sig2.messageHash),
                         new anchor.BN(sig2.nonce),
-                        PublicKey.default,
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -752,6 +752,7 @@ describe("Universal Gateway - Execute Tests", () => {
                         mint: null,
                         tokenProgram: null,
                         rent: null,
+                        associatedTokenProgram: null,
                         systemProgram: SystemProgram.programId,
                     })
                     .remainingAccounts(remaining)
@@ -832,7 +833,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -848,6 +848,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
@@ -967,7 +968,6 @@ describe("Universal Gateway - Execute Tests", () => {
                         sig.recoveryId,
                         Array.from(sig.messageHash),
                         new anchor.BN(sig.nonce),
-                        mockUSDT.mint.publicKey,
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -983,6 +983,7 @@ describe("Universal Gateway - Execute Tests", () => {
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
                         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                        associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                     })
                     .remainingAccounts(remainingAccounts)
                     .signers([admin])
@@ -1063,7 +1064,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1079,6 +1079,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
@@ -1182,7 +1183,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 sigFund.recoveryId,
                 Array.from(sigFund.messageHash),
                 new anchor.BN(sigFund.nonce),
-                mockUSDT.mint.publicKey,
             )
             .accounts({
                 caller: admin.publicKey,
@@ -1198,6 +1198,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 tokenProgram: TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .remainingAccounts(instructionAccountsToRemaining(counterIx))
             .signers([admin])
@@ -1274,7 +1275,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 sigW.recoveryId,
                 Array.from(sigW.messageHash),
                 new anchor.BN(sigW.nonce),
-                mockUSDT.mint.publicKey,
             )
             .accounts({
                 caller: admin.publicKey,
@@ -1290,6 +1290,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 tokenProgram: TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .signers([admin])
             .rpc();
@@ -1391,7 +1392,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1406,6 +1406,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(
@@ -1526,7 +1527,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1542,6 +1542,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(remainingAccounts) // Includes ceaAta (needed for CPI)
                 .signers([admin])
@@ -1662,7 +1663,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1677,6 +1677,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(substitutedRemaining) // Substituted accounts!
@@ -1748,7 +1749,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1763,6 +1763,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(fewerRemaining)
@@ -1832,7 +1833,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1847,6 +1847,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(wrongWritableRemaining)
@@ -1915,7 +1916,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1930,6 +1930,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(reorderedRemaining)
@@ -2006,7 +2007,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2021,6 +2021,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2090,7 +2091,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(wrongNonce), // Wrong nonce!
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2105,6 +2105,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2176,7 +2177,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 tamperedHash, // Tampered!
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2191,6 +2191,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2260,7 +2261,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2275,6 +2275,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2346,7 +2347,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2361,6 +2361,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(maliciousRemaining)
@@ -2435,7 +2436,6 @@ describe("Universal Gateway - Execute Tests", () => {
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
                                 new anchor.BN(sig.nonce),
-                                PublicKey.default,
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2450,6 +2450,7 @@ describe("Universal Gateway - Execute Tests", () => {
                                 mint: null,
                                 tokenProgram: null,
                                 rent: null,
+                                associatedTokenProgram: null,
                                 systemProgram: SystemProgram.programId,
                             })
                             .remainingAccounts(remainingAccounts)
@@ -2570,7 +2571,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
                     new anchor.BN(sig1.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2585,6 +2585,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
@@ -2663,7 +2664,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig2.recoveryId,
                     Array.from(sig2.messageHash),
                     new anchor.BN(sig2.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2678,6 +2678,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx2))
@@ -2754,7 +2755,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2769,6 +2769,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
@@ -2884,7 +2885,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2899,6 +2899,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
@@ -2972,7 +2973,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    PublicKey.default,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2987,6 +2987,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     mint: null,
                     tokenProgram: null,
                     rent: null,
+                    associatedTokenProgram: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
@@ -3090,7 +3091,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce),
-                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -3106,6 +3106,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
@@ -3189,7 +3190,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig.recoveryId,
                     Array.from(sig.messageHash),
                     new anchor.BN(sig.nonce), // Must match onChainNonce
-                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -3205,6 +3205,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
@@ -3358,7 +3359,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
                     new anchor.BN(sig1.nonce), // Must match onChainNonce
-                    mockUSDT.mint.publicKey,
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -3374,6 +3374,7 @@ describe("Universal Gateway - Execute Tests", () => {
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
@@ -3395,4 +3396,3 @@ describe("Universal Gateway - Execute Tests", () => {
     // Note: Fee claiming tests removed - fees are now transferred directly to caller in execute/withdraw functions
     // Balance checks are included in each test case to verify fee transfers
 });
-
