@@ -163,30 +163,9 @@ interface IUniversalGateway {
     /// @param revertCFG    revert settings
     function revertUniversalTx(bytes32 txID, bytes32 universalTxID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
 
-    
-    // =========================
-    //  UG_3: WITHDRAW AND PAYLOAD EXECUTION PATHS
-    // =========================
-
-    /// @notice             Withdraw native token from the gateway
-    /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param to           recipient address
-    /// @param amount       amount of native token to withdraw
-    function withdraw(bytes32 txID, bytes32 universalTxID, address originCaller, address to, uint256 amount) external payable;
-
-    /// @notice             Withdraw ERC20 token from the gateway
-    /// @param txID         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param token        token address (ERC20 token)
-    /// @param to           recipient address
-    /// @param amount       amount of token to withdraw
-    function withdrawTokens(bytes32 txID, bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
-
-
 
     // =========================
-    //  UG_4: PUBLIC HELPERS
+    //  UG_3: PUBLIC HELPERS
     // =========================
     
     ///@notice                     Checks if a token is supported by the gateway.

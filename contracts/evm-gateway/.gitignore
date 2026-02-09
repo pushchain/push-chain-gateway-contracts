@@ -3,6 +3,9 @@ cache/
 out/
 .claude
 
+# Docs Internal
+docs-internal/
+
 # Ignores development broadcast logs
 broadcast/
 
