@@ -150,7 +150,7 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::execute::withdraw_and_execute(
+        instructions::withdraw_execute::withdraw_and_execute(
             ctx,
             instruction_id,
             tx_id,
@@ -184,7 +184,7 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_universal_tx(
+        instructions::revert::revert_universal_tx(
             ctx,
             tx_id,
             universal_tx_id,
@@ -211,7 +211,7 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_universal_tx_token(
+        instructions::revert::revert_universal_tx_token(
             ctx,
             tx_id,
             universal_tx_id,
@@ -245,9 +245,9 @@ pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
-pub use instructions::execute::WithdrawAndExecute;
+pub use instructions::withdraw_execute::WithdrawAndExecute;
 pub use instructions::initialize::Initialize;
-pub use instructions::withdraw::{
+pub use instructions::revert::{
     RevertUniversalTx, RevertUniversalTxToken,
 };
 pub use utils::PriceData;
