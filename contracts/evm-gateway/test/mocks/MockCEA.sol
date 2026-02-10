@@ -29,11 +29,20 @@ contract MockCEA is ICEA {
     bool public shouldReenter;
     bool public reentrantCallSucceeded;
 
+    // Controllable revert for testing rollback scenarios
+    bool public shouldRevertOnExecute;
+    string public revertMessage;
+
     function setReentrant(address _vault, bytes calldata _calldata) external {
         reentrantVault = _vault;
         reentrantCalldata = _calldata;
         shouldReenter = true;
         reentrantCallSucceeded = false;
+    }
+
+    function setShouldRevert(bool _shouldRevert, string memory _message) external {
+        shouldRevertOnExecute = _shouldRevert;
+        revertMessage = _message;
     }
 
     /**
@@ -47,6 +56,11 @@ contract MockCEA is ICEA {
         bytes calldata payload
     ) external payable override {
         executeCallCount++;
+
+        // Revert if configured (for rollback testing)
+        if (shouldRevertOnExecute) {
+            revert(revertMessage);
+        }
 
         // Attempt reentrancy if configured (for reentrancy tests)
         if (shouldReenter && reentrantVault != address(0)) {

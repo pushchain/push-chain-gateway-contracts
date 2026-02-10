@@ -30,6 +30,9 @@ contract MockCEAFactory is ICEAFactory {
     /// @notice When true, deployCEA will revert (for failure propagation tests)
     bool public shouldFailDeploy;
 
+    /// @notice When true, deployCEA will return address(0) instead of reverting
+    bool public shouldReturnZeroAddress;
+
     /// @notice Tracks which CEAs have been deployed (have code)
     mapping(address => bool) private _deployed;
 
@@ -74,6 +77,11 @@ contract MockCEAFactory is ICEAFactory {
         shouldFailDeploy = _shouldFail;
     }
 
+    /// @notice Set whether deployCEA should return address(0) (for testing bad factory)
+    function setShouldReturnZeroAddress(bool _shouldReturnZero) external {
+        shouldReturnZeroAddress = _shouldReturnZero;
+    }
+
     // =========================
     //        View helpers
     // =========================
@@ -95,6 +103,7 @@ contract MockCEAFactory is ICEAFactory {
     function deployCEA(address ueaOnPush) external override onlyVault returns (address cea) {
         if (ueaOnPush == address(0)) revert ZeroAddress();
         if (shouldFailDeploy) revert DeployFailed();
+        if (shouldReturnZeroAddress) return address(0); // Return zero address for testing bad factory
 
         // If a mapping already exists and code is present, treat as already deployed
         address existing = UEA_to_CEA[ueaOnPush];
