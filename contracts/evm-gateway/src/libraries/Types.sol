@@ -24,6 +24,13 @@ struct RevertInstructions {
     bytes revertMsg;
 }
 
+/// @notice         Multicall structure for CEA execution
+struct Multicall {
+    address to;      // Target contract address
+    uint256 value;   // Native token amount to send with call
+    bytes data;      // Call data to execute
+}
+
 /// @notice         Packed per-token usage for the current epoch only (no on-chain history kept).
 struct EpochUsage {
     uint64 epoch;   // epoch index = block.timestamp / epochDurationSec

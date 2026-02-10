@@ -8,6 +8,7 @@ import { Errors } from "../../src/libraries/Errors.sol";
 import { IVault } from "../../src/interfaces/IVault.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ICEA } from "../../src/interfaces/ICEA.sol";
+import { Multicall } from "../../src/libraries/Types.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -42,6 +43,25 @@ contract VaultWithdrawalTest is Test {
     // =========================
     //      SETUP
     // =========================
+    
+    /// @notice Helper: encode withdrawal multicall (direct transfer)
+    function _withdrawalPayloadDirect(address token, address to, uint256 amount) internal pure returns (bytes memory) {
+        Multicall[] memory calls = new Multicall[](1);
+        if (token == address(0)) {
+            calls[0] = Multicall({to: to, value: amount, data: bytes("")});
+        } else {
+            calls[0] = Multicall({to: token, value: 0, data: abi.encodeWithSelector(IERC20.transfer.selector, to, amount)});
+        }
+        return abi.encode(calls);
+    }
+
+    /// @notice Helper: encode external call multicall (for execution)
+    function _externalCallPayload(address target, uint256 value, bytes memory data) internal pure returns (bytes memory) {
+        Multicall[] memory calls = new Multicall[](1);
+        calls[0] = Multicall({to: target, value: value, data: data});
+        return abi.encode(calls);
+    }
+
     function setUp() public {
         admin = makeAddr("admin");
         pauser = makeAddr("pauser");
@@ -132,10 +152,11 @@ contract VaultWithdrawalTest is Test {
         uint256 initialVaultBalance = usdc.balanceOf(address(vault));
 
         // Expect event emission
+        bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxExecuted(txID, universalTxID, originCaller, recipient, address(usdc), amount, bytes(""));
+        emit IVault.VaultUniversalTxExecuted(txID, universalTxID, originCaller, recipient, address(usdc), amount, expectedPayload);
 
-        // TSS calls vault.executeUniversalTx with EMPTY PAYLOAD
+        // TSS calls vault.executeUniversalTx with withdrawal payload
         vm.prank(tss);
         vault.executeUniversalTx(
             txID,
@@ -144,7 +165,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),    // token
             recipient,        // target (recipient)
             amount,
-            bytes("")         // EMPTY PAYLOAD = withdrawal signal
+            expectedPayload
         );
 
         // Verify balances
@@ -175,7 +196,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount,
-            bytes("") // Empty payload = withdrawal
+            _withdrawalPayloadDirect(address(usdc), recipient, amount) // Withdrawal multicall
         );
 
         // Verify CEA was deployed
@@ -203,7 +224,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             excessiveAmount,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, excessiveAmount)
         );
     }
 
@@ -224,18 +245,20 @@ contract VaultWithdrawalTest is Test {
             unsupportedToken,
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(unsupportedToken, recipient, amount)
         );
     }
 
-    /// @notice Test ERC20 withdrawal with zero amount - should revert
-    function testWithdraw_ERC20_AmountZero_Reverts() public {
+    /// @notice Test ERC20 withdrawal with zero amount - should succeed (harmless no-op)
+    function testWithdraw_ERC20_AmountZero_Allowed() public {
         bytes32 txID = keccak256("tx5");
         bytes32 universalTxID = keccak256("utx5");
         address originCaller = user1;
 
+        uint256 initialBalance = usdc.balanceOf(recipient);
+
+        // Amount=0 is allowed (no-op but valid for execution-only operations)
         vm.prank(tss);
-        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vault.executeUniversalTx(
             txID,
             universalTxID,
@@ -243,8 +266,11 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             0, // Zero amount
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, 0)
         );
+
+        // Verify no tokens moved (amount was 0)
+        assertEq(usdc.balanceOf(recipient), initialBalance, "Recipient balance unchanged");
     }
 
     /// @notice Test ERC20 withdrawal with zero target address - should revert
@@ -263,7 +289,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             address(0), // Zero recipient
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), address(0), amount)
         );
     }
 
@@ -284,7 +310,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
     }
 
@@ -307,8 +333,9 @@ contract VaultWithdrawalTest is Test {
         uint256 initialVaultBalance = address(vault).balance;
 
         // Expect event
+        bytes memory expectedPayload = _withdrawalPayloadDirect(address(0), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxExecuted(txID, universalTxID, originCaller, recipient, address(0), amount, bytes(""));
+        emit IVault.VaultUniversalTxExecuted(txID, universalTxID, originCaller, recipient, address(0), amount, expectedPayload);
 
         // Fund TSS with ETH to send
         vm.deal(tss, amount);
@@ -322,7 +349,7 @@ contract VaultWithdrawalTest is Test {
             address(0),      // token = address(0) for native
             recipient,
             amount,
-            bytes("")        // Empty payload = withdrawal
+            expectedPayload
         );
 
         // Verify balances
@@ -356,7 +383,7 @@ contract VaultWithdrawalTest is Test {
             address(0),
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(0), recipient, amount)
         );
 
         // Verify CEA deployed
@@ -387,18 +414,20 @@ contract VaultWithdrawalTest is Test {
             address(0),
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(0), recipient, amount)
         );
     }
 
-    /// @notice Test native withdrawal with zero amount - should revert
-    function testWithdraw_Native_AmountZero_Reverts() public {
+    /// @notice Test native withdrawal with zero amount - should succeed (harmless no-op)
+    function testWithdraw_Native_AmountZero_Allowed() public {
         bytes32 txID = keccak256("tx13");
         bytes32 universalTxID = keccak256("utx13");
         address originCaller = user1;
 
+        uint256 initialBalance = recipient.balance;
+
+        // Amount=0 is allowed (no-op but valid for execution-only operations)
         vm.prank(tss);
-        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
         vault.executeUniversalTx(
             txID,
             universalTxID,
@@ -406,8 +435,11 @@ contract VaultWithdrawalTest is Test {
             address(0),
             recipient,
             0, // Zero amount
-            bytes("")
+            _withdrawalPayloadDirect(address(0), recipient, 0)
         );
+
+        // Verify no ETH moved (amount was 0)
+        assertEq(recipient.balance, initialBalance, "Recipient balance unchanged");
     }
 
     /// @notice Test native withdrawal with zero target - should revert
@@ -429,7 +461,7 @@ contract VaultWithdrawalTest is Test {
             address(0),
             address(0), // Zero target
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(0), address(0), amount)
         );
     }
 
@@ -443,7 +475,7 @@ contract VaultWithdrawalTest is Test {
         bytes32 universalTxID = keccak256("utx20");
         address originCaller = user1;
         uint256 amount = 100e6;
-        bytes memory payload = abi.encodeWithSignature("someFunction()");
+        bytes memory rawCalldata = abi.encodeWithSignature("someFunction()");
 
         // Mock target that will be called
         address mockTarget = address(0x1234);
@@ -451,9 +483,12 @@ contract VaultWithdrawalTest is Test {
 
         vm.mockCall(
             mockTarget,
-            payload,
+            rawCalldata,
             abi.encode(true)
         );
+
+        // Wrap raw calldata in multicall format
+        bytes memory payload = _externalCallPayload(mockTarget, 0, rawCalldata);
 
         // Execute with non-empty payload - should route to execution path
         vm.prank(tss);
@@ -464,7 +499,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             mockTarget,     // target contract
             amount,
-            payload         // NON-EMPTY payload = execution
+            payload         // Multicall-wrapped payload
         );
 
         // Verify call was made (checked via mockCall)
@@ -477,15 +512,18 @@ contract VaultWithdrawalTest is Test {
         bytes32 universalTxID = keccak256("utx21");
         address originCaller = user1;
         uint256 amount = 1 ether;
-        bytes memory payload = abi.encodeWithSignature("deposit()");
+        bytes memory rawCalldata = abi.encodeWithSignature("deposit()");
 
         address mockTarget = address(0x5678);
         vm.etch(mockTarget, hex"00");
         vm.mockCall(
             mockTarget,
-            payload,
+            rawCalldata,
             abi.encode(true)
         );
+
+        // Wrap raw calldata in multicall format
+        bytes memory payload = _externalCallPayload(mockTarget, 0, rawCalldata);
 
         // Fund TSS with ETH to send
         vm.deal(tss, amount);
@@ -499,7 +537,7 @@ contract VaultWithdrawalTest is Test {
             address(0),    // native
             mockTarget,
             amount,
-            payload        // NON-EMPTY = execution
+            payload        // Multicall-wrapped payload
         );
 
         assertTrue(true, "Native execution should succeed");
@@ -535,7 +573,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             cea,           // target = CEA address (parking)
             amount,
-            bytes("")      // Empty payload = withdrawal (but to CEA)
+            _withdrawalPayloadDirect(address(usdc), cea, amount)
         );
 
         // Verify tokens are "parked" in CEA
@@ -571,7 +609,7 @@ contract VaultWithdrawalTest is Test {
             address(0),
             cea,           // Parking in CEA
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(0), cea, amount)
         );
 
         // Verify parking
@@ -589,7 +627,8 @@ contract VaultWithdrawalTest is Test {
         address originCaller = user1;
         uint256 amount = 100e6;
 
-        // Expect exact event with empty payload
+        // Expect exact event with withdrawal payload
+        bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxExecuted(
             txID,
@@ -598,7 +637,7 @@ contract VaultWithdrawalTest is Test {
             recipient,
             address(usdc),
             amount,
-            bytes("") // Empty payload for withdrawal
+            expectedPayload
         );
 
         vm.prank(tss);
@@ -609,7 +648,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount,
-            bytes("")
+            expectedPayload
         );
     }
 
@@ -619,13 +658,16 @@ contract VaultWithdrawalTest is Test {
         bytes32 universalTxID = keccak256("utx41");
         address originCaller = user1;
         uint256 amount = 100e6;
-        bytes memory payload = abi.encodeWithSignature("test()");
+        bytes memory rawCalldata = abi.encodeWithSignature("test()");
 
         address mockTarget = address(0x9999);
         vm.etch(mockTarget, hex"00");
-        vm.mockCall(mockTarget, payload, abi.encode(true));
+        vm.mockCall(mockTarget, rawCalldata, abi.encode(true));
 
-        // Expect event with non-empty payload
+        // Wrap raw calldata in multicall format
+        bytes memory payload = _externalCallPayload(mockTarget, 0, rawCalldata);
+
+        // Expect event with multicall-wrapped payload
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxExecuted(
             txID,
@@ -634,7 +676,7 @@ contract VaultWithdrawalTest is Test {
             mockTarget,
             address(usdc),
             amount,
-            payload // Non-empty for execution
+            payload // Multicall-wrapped payload
         );
 
         vm.prank(tss);
@@ -672,7 +714,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
 
         // Verify end-to-end flow
@@ -707,7 +749,7 @@ contract VaultWithdrawalTest is Test {
             address(0),
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(0), recipient, amount)
         );
 
         // Verify flow
@@ -734,7 +776,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount1,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, amount1)
         );
 
         // Second withdrawal
@@ -746,7 +788,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount2,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, amount2)
         );
 
         // Verify cumulative changes
@@ -779,7 +821,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
     }
 
@@ -800,7 +842,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             recipient,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
     }
 
@@ -826,7 +868,7 @@ contract VaultWithdrawalTest is Test {
             address(usdc),
             smartWallet,
             amount,
-            bytes("")
+            _withdrawalPayloadDirect(address(usdc), smartWallet, amount)
         );
 
         // Verify smart wallet received tokens
