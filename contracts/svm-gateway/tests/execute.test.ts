@@ -1361,6 +1361,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const payloadFields = instructionToPayloadFields({
                 instruction: counterIx,
                 rentFee, // Include rentFee in payload
+                instructionId:2
+
             });
 
             const encoded = encodeExecutePayload(payloadFields);
@@ -1370,6 +1372,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             expect(Buffer.from(decoded.ixData)).to.deep.equal(Buffer.from(counterIx.data));
             expect(decoded.rentFee).to.equal(rentFee); // Verify rentFee is decoded correctly
             expect(decoded.accounts.length).to.equal(accounts.length);
+            expect(decoded.instructionId).to.equal(2);
 
             // Get other fields from their proper sources (not from payload)
             const targetProgram = counterProgram.programId;
@@ -1400,7 +1403,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const decodedWritableFlags = accountsToWritableFlagsOnly(decoded.accounts);
             await gatewayProgram.methods
                 .withdrawAndExecute(
-                    2,
+                    decoded.instructionId,
                     Array.from(txId),
                     Array.from(universalTxId),
                     new anchor.BN(Number(amount)),
@@ -1490,6 +1493,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const payloadFields = instructionToPayloadFields({
                 instruction: counterIx,
                 rentFee, // Include rentFee in payload
+                instructionId:2
             });
 
             const encoded = encodeExecutePayload(payloadFields);
@@ -1506,6 +1510,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             // Verify payload decoding
             expect(decoded.rentFee).to.equal(rentFee);
             expect(decoded.accounts.length).to.equal(counterIx.keys.length);
+            expect(decoded.instructionId).to.equal(2);
 
             // Get other fields from their proper sources (not from decoded payload)
             const targetProgram = counterProgram.programId;
@@ -1537,7 +1542,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const accountsForSigningWritableFlags = accountsToWritableFlagsOnly(accountsForSigning);
             await gatewayProgram.methods
                 .withdrawAndExecute(
-                    2,
+                    decoded.instructionId,
                     Array.from(txId),
                     Array.from(universalTxId),
                     new anchor.BN(amount.toString()),
