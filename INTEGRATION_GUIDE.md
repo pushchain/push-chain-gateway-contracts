@@ -947,49 +947,74 @@ Before production:
 
 ---
 
-## 12. Known Limitations
+## 12. Address Lookup Tables (ALTs) for Transaction Size Optimization
 
-- **Single signer**: Only CEA can sign (affects <5% of programs)
-- **Single instruction**: One instruction per execute (no transaction composition)
-- **Transaction size**: 1232 bytes limit (usually fine, but large payloads may fail)
+**Building Versioned Transactions:**
 
----
+**For SOL transaction:**
+```typescript
+const instruction = await program.methods
+  .withdrawAndExecute(/* ... params ... */)
+  .accounts(/* ... */)
+  .instruction();
 
-## 13. Migration from Old Implementation
+// Build versioned tx with Protocol ALT (92 bytes saved)
+const tx = await altHelper.buildVersionedTransaction(
+  [instruction],
+  relayerPublicKey,
+  null // mint = null for SOL
+);
 
-If you're migrating from a previous implementation with separate `withdraw` and `executeUniversalTx` functions:
+// Sign and send
+tx.sign([relayerKeypair]);
+const signature = await connection.sendTransaction(tx);
+```
 
-### Key Changes
+**For SPL transaction:**
+```typescript
+const usdcMint = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 
-1. **Unified function**: Both operations now use `withdraw_and_execute` with `instruction_id` parameter
-   - Old: `executeUniversalTx()` and `withdraw()` as separate functions
-   - New: `withdraw_and_execute(instruction_id, ...)`
+const instruction = await program.methods
+  .withdrawAndExecute(/* ... params ... */)
+  .accounts({
+    /* ... */
+    mint: usdcMint,
+    vaultAta: /* ... */,
+    ceaAta: /* ... */,
+    /* ... */
+  })
+  .instruction();
 
-2. **No target parameter**: Target is now derived from optional accounts
-   - Old: `target: Pubkey` parameter
-   - New: `destination_program` (execute) or `recipient` (withdraw) optional accounts
+// Build versioned tx with Protocol ALT + Token ALT (215 bytes saved)
+const tx = await altHelper.buildVersionedTransaction(
+  [instruction],
+  relayerPublicKey,
+  usdcMint // Pass token mint
+);
 
-3. **instruction_id values changed**:
-   - Old: Execute=5, Withdraw=1
-   - New: Execute=2, Withdraw=1
+// Sign and send
+tx.sign([relayerKeypair]);
+const signature = await connection.sendTransaction(tx);
+```
 
-4. **TSS message format changed**:
-   - Withdraw (1): Now includes sender field
-   - Execute (2): New instruction_id value (was 5, now 2)
+**Manual ALT Management (if not using AltHelper):**
+```typescript
+import { TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 
-5. **Payload includes instruction_id**: New 1-byte field at end of payload
-   - Must be decoded and validated against operation mode
+// Fetch ALT accounts
+const protocolAlt = await connection.getAddressLookupTable(protocolAltAddress);
+const tokenAlt = await connection.getAddressLookupTable(tokenAltAddress);
 
-6. **Account struct uses Option<>**: Mode-specific accounts are now optional with enforcement
-   - Must pass exactly one: `recipient` XOR `destination_program`
+// Build v0 message with ALTs
+const { blockhash } = await connection.getLatestBlockhash();
+const messageV0 = new TransactionMessage({
+  payerKey: relayerPublicKey,
+  recentBlockhash: blockhash,
+  instructions: [instruction],
+}).compileToV0Message([
+  protocolAlt.value,  // Always include Protocol ALT
+  tokenAlt.value,     // Include Token ALT for SPL transactions
+]);
 
-### Migration Checklist
-
-- [ ] Update function calls to use `withdraw_and_execute` instead of separate functions
-- [ ] Remove `target` parameter, use mode-specific optional accounts instead
-- [ ] Update instruction_id values (Execute: 5→2)
-- [ ] Update TSS message construction (new formats for both modes)
-- [ ] Update payload encoding/decoding to include instruction_id field
-- [ ] Update account passing logic to use optional accounts
-- [ ] Test both withdraw and execute flows with new unified entrypoint
-- [ ] Verify TSS signature validation with new message formats
+const tx = new VersionedTransaction(messageV0);
+```
