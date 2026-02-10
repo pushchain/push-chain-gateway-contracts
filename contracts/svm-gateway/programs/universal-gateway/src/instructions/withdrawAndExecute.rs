@@ -19,12 +19,12 @@ use anchor_spl::token::{spl_token, Mint, Token};
 use spl_token::state::Account as SplAccount;
 
 // =========================
-//  UNIFIED EXECUTE_UNIVERSAL_TX
+//  UNIFIED WITHDRAW_AND_EXECUTE
 // =========================
 
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, target_program: Pubkey, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64)]
-pub struct ExecuteUniversalTx<'info> {
+#[instruction(instruction_id: u8, tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64)]
+pub struct WithdrawAndExecute<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
@@ -70,12 +70,17 @@ pub struct ExecuteUniversalTx<'info> {
     )]
     pub executed_tx: Account<'info, ExecutedTx>,
 
-    /// CHECK: Target program (validated against signed message)
+    pub system_program: Program<'info, System>,
+    /// CHECK: Target program for execute mode
+    /// Pass system program id for withdraw, it's ignored
     pub destination_program: UncheckedAccount<'info>,
 
-    pub system_program: Program<'info, System>,
+    // --- Optional SPL accounts
 
-    // --- Optional SPL accounts (required when token != Pubkey::default()) ---
+    /// CHECK: Recipient wallet for withdraw mode
+    #[account(mut)]
+    pub recipient: Option<UncheckedAccount<'info>>,
+
     /// CHECK: Vault ATA for this mint
     #[account(mut)]
     pub vault_ata: Option<UncheckedAccount<'info>>,
@@ -93,16 +98,21 @@ pub struct ExecuteUniversalTx<'info> {
 
     /// CHECK: Associated token program (validated at runtime)
     pub associated_token_program: Option<UncheckedAccount<'info>>,
+
+    // --- Optional recipient ATA (required for SPL withdraw mode) ---
+    /// CHECK: Recipient ATA for SPL withdraw (CEA ATA → recipient ATA)
+    #[account(mut)]
+    pub recipient_ata: Option<UncheckedAccount<'info>>,
 }
 
-pub fn execute_universal_tx(
-    ctx: Context<ExecuteUniversalTx>,
+pub fn withdraw_and_execute(
+    ctx: Context<WithdrawAndExecute>,
+    instruction_id: u8,
     tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     amount: u64,
-    target_program: Pubkey,
     sender: [u8; 20],
-    writable_flags: Vec<u8>, // Bitpacked writable flags (1 bit per account, MSB first)
+    writable_flags: Vec<u8>,
     ix_data: Vec<u8>,
     gas_fee: u64,
     rent_fee: u64,
@@ -114,6 +124,13 @@ pub fn execute_universal_tx(
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
 
+    // Validate instruction_id: 1=withdraw, 2=execute
+    require!(
+        instruction_id == 1 || instruction_id == 2,
+        GatewayError::InvalidInstruction
+    );
+    let is_withdraw = instruction_id == 1;
+
     // Derive token from mint account: if mint.is_some() → SPL, else → SOL
     let is_native = ctx.accounts.mint.is_none();
     let token = if is_native {
@@ -124,7 +141,6 @@ pub fn execute_universal_tx(
 
     // Enforce SPL/SOL account presence
     if is_native {
-        // SOL: all SPL accounts must be None
         require!(
             ctx.accounts.vault_ata.is_none() &&
             ctx.accounts.cea_ata.is_none() &&
@@ -135,7 +151,6 @@ pub fn execute_universal_tx(
             GatewayError::InvalidAccount
         );
     } else {
-        // SPL: all SPL accounts must be Some
         require!(
             ctx.accounts.vault_ata.is_some() &&
             ctx.accounts.cea_ata.is_some() &&
@@ -147,103 +162,155 @@ pub fn execute_universal_tx(
         );
     }
 
-    // Validate account count and flags length match
-    let accounts_count = ctx.remaining_accounts.len();
-    let expected_writable_flags_len = (accounts_count + 7) / 8; // Ceiling division
-    require!(
-        writable_flags.len() == expected_writable_flags_len,
-        GatewayError::InvalidAccount
-    );
+    // Enforce mode-specific accounts: exactly one of destination_program or recipient
+    if is_withdraw {
+        require!(ctx.accounts.recipient.is_some(), GatewayError::InvalidAccount);
+    } else {
+        require!(ctx.accounts.recipient.is_none(), GatewayError::InvalidAccount);
+    }
+    
+    // Derive target from the mode-specific account
+    let target = if is_withdraw {
+        ctx.accounts.recipient.as_ref().unwrap().key()
+    } else {
+        ctx.accounts.destination_program.key()
+    };
 
-    // 1. Reconstruct accounts from remaining_accounts by position
-    // Position i in remaining_accounts maps to bit i in writable_flags
-    let mut accounts = Vec::new();
-    for (i, acc_info) in ctx.remaining_accounts.iter().enumerate() {
-        // Decode writable flag from bitpacked flags
-        let byte_idx = i / 8;
-        let bit_idx = 7 - (i % 8); // MSB first
-        let is_writable = (writable_flags[byte_idx] >> bit_idx) & 1 == 1;
+    // Mode-specific validation
+    if is_withdraw {
+        // Withdraw mode validations
+        require!(amount > 0, GatewayError::InvalidAmount);
+        require!(sender != [0u8; 20], GatewayError::InvalidInput);
+        require!(writable_flags.is_empty(), GatewayError::InvalidInput);
+        require!(ix_data.is_empty(), GatewayError::InvalidInput);
+        require!(rent_fee == 0, GatewayError::InvalidInput);
+        // SPL withdraw requires recipient_ata
+        if !is_native {
+            require!(
+                ctx.accounts.recipient_ata.is_some(),
+                GatewayError::InvalidAccount
+            );
+        }
+        // Execute mode fields on remaining_accounts must be empty
+        require!(
+            ctx.remaining_accounts.is_empty(),
+            GatewayError::InvalidInput
+        );
+    } else {
+        // Execute mode validations
+        require!(
+            ctx.accounts.recipient_ata.is_none(),
+            GatewayError::InvalidInput
+        );
 
-        accounts.push(GatewayAccountMeta {
-            pubkey: *acc_info.key,
-            is_writable,
-        });
+        // Validate account count and flags length match
+        let accounts_count = ctx.remaining_accounts.len();
+        let expected_writable_flags_len = (accounts_count + 7) / 8;
+        require!(
+            writable_flags.len() == expected_writable_flags_len,
+            GatewayError::InvalidAccount
+        );
+
+        // Validate rent_fee <= gas_fee
+        require!(rent_fee <= gas_fee, GatewayError::InvalidAmount);
     }
 
-    // 2. Validate remaining_accounts (pubkeys, writable flags, and NO outer signers)
-    validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
-
-    let cea_key = ctx.accounts.cea_authority.key();
-
-    // 3. Build serialized accounts buffer (with length prefix) for TSS validation
-    // Format: [u32 BE: count] + [32 bytes: pubkey, 1 byte: is_writable] * count
-    // This MUST match the format used in buildExecuteAdditionalData (off-chain)
-    let mut accounts_buf = Vec::new();
-    let accounts_count = accounts_count as u32;
-    accounts_buf.extend_from_slice(&accounts_count.to_be_bytes()); // u32 BE length prefix
-    for account in &accounts {
-        accounts_buf.extend_from_slice(&account.pubkey.to_bytes()); // Pubkey (32 bytes)
-        accounts_buf.push(if account.is_writable { 1 } else { 0 }); // is_writable (1 byte)
-    }
-
-    // 3. Build serialized ix_data buffer (with length prefix)
-    let mut ix_data_buf = Vec::new();
-    let ix_data_length = ix_data.len() as u32;
-    ix_data_buf.extend_from_slice(&ix_data_length.to_be_bytes()); // u32 BE length prefix
-    ix_data_buf.extend_from_slice(&ix_data); // Raw bytes
-
-    // 4. Validate TSS signature and message hash using unified validate_message
-    // Format: PREFIX + instruction_id + chain_id + nonce + amount + [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee, token]
+    // Build mode-specific TSS hash and validate
+    let token_bytes = token.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    let mut rent_fee_buf = [0u8; 8];
-    rent_fee_buf.copy_from_slice(&rent_fee.to_be_bytes());
-    let token_bytes = token.to_bytes();
 
-    let additional: [&[u8]; 9] = [
-        &universal_tx_id[..],
-        &tx_id[..],
-        &target_program.to_bytes(),
-        &sender[..],
-        &accounts_buf,
-        &ix_data_buf,
-        &gas_fee_buf,
-        &rent_fee_buf,
-        &token_bytes,
-    ];
-    validate_message(
-        &mut ctx.accounts.tss_pda,
-        5, // unified instruction_id for execute
-        nonce,
-        Some(amount),
-        &additional,
-        &message_hash,
-        &signature,
-        recovery_id,
-    )?;
+    if is_withdraw {
+        // Withdraw TSS hash: [universal_tx_id, tx_id, sender, token, target, gas_fee]
+        let target_bytes = target.to_bytes();
+        let additional: [&[u8]; 6] = [
+            &universal_tx_id[..],
+            &tx_id[..],
+            &sender[..],
+            &token_bytes[..],
+            &target_bytes[..],
+            &gas_fee_buf,
+        ];
+        validate_message(
+            &mut ctx.accounts.tss_pda,
+            1, // instruction_id for withdraw
+            nonce,
+            Some(amount),
+            &additional,
+            &message_hash,
+            &signature,
+            recovery_id,
+        )?;
+    } else {
+        // Execute TSS hash: [universal_tx_id, tx_id, target, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee, token]
 
-    // 5. Verify target program matches and is executable
-    require!(
-        ctx.accounts.destination_program.key() == target_program,
-        GatewayError::TargetProgramMismatch
-    );
-    require!(
-        ctx.accounts.destination_program.executable,
-        GatewayError::InvalidProgram
-    );
+        // 1. Reconstruct accounts from remaining_accounts
+        let mut accounts = Vec::new();
+        for (i, acc_info) in ctx.remaining_accounts.iter().enumerate() {
+            let byte_idx = i / 8;
+            let bit_idx = 7 - (i % 8);
+            let is_writable = (writable_flags[byte_idx] >> bit_idx) & 1 == 1;
+            accounts.push(GatewayAccountMeta {
+                pubkey: *acc_info.key,
+                is_writable,
+            });
+        }
 
-    // Note: Account validation is done in step 2 (validate_remaining_accounts)
-    // TSS signature enforces: account count, pubkeys, and is_writable flags
-    // Outer signer check is done in validate_remaining_accounts (rejects any is_signer == true)
+        // 2. Validate remaining_accounts
+        validate_remaining_accounts(&accounts, ctx.remaining_accounts)?;
 
-    // 6. Validate rent_fee <= gas_fee (rent_fee is a subset of gas_fee)
-    require!(rent_fee <= gas_fee, GatewayError::InvalidAmount);
+        // 3. Build serialized accounts buffer
+        let mut accounts_buf = Vec::new();
+        let accounts_count = ctx.remaining_accounts.len() as u32;
+        accounts_buf.extend_from_slice(&accounts_count.to_be_bytes());
+        for account in &accounts {
+            accounts_buf.extend_from_slice(&account.pubkey.to_bytes());
+            accounts_buf.push(if account.is_writable { 1 } else { 0 });
+        }
 
-    // 7. Calculate vault seeds once (used for all vault transfers)
+        // 4. Build serialized ix_data buffer
+        let mut ix_data_buf = Vec::new();
+        let ix_data_length = ix_data.len() as u32;
+        ix_data_buf.extend_from_slice(&ix_data_length.to_be_bytes());
+        ix_data_buf.extend_from_slice(&ix_data);
+
+        let mut rent_fee_buf = [0u8; 8];
+        rent_fee_buf.copy_from_slice(&rent_fee.to_be_bytes());
+
+        let additional: [&[u8]; 9] = [
+            &universal_tx_id[..],
+            &tx_id[..],
+            &target.to_bytes(),
+            &sender[..],
+            &accounts_buf,
+            &ix_data_buf,
+            &gas_fee_buf,
+            &rent_fee_buf,
+            &token_bytes,
+        ];
+        validate_message(
+            &mut ctx.accounts.tss_pda,
+            2, // instruction_id for execute
+            nonce,
+            Some(amount),
+            &additional,
+            &message_hash,
+            &signature,
+            recovery_id,
+        )?;
+
+        // Verify target program is executable (execute mode only)
+        require!(
+            ctx.accounts.destination_program.executable,
+            GatewayError::InvalidProgram
+        );
+    }
+
+    // Calculate vault seeds once (used for all vault transfers)
     let vault_bump = config.vault_bump;
     let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
 
-    // 8. Transfer rent_fee to CEA (for target contract rent)
+    // Transfer rent_fee to CEA (no-op for withdraw since rent_fee=0)
     if rent_fee > 0 {
         let rent_transfer_ix = system_instruction::transfer(
             &ctx.accounts.vault_sol.key(),
@@ -262,7 +329,7 @@ pub fn execute_universal_tx(
         )?;
     }
 
-    // 9. Transfer amount to CEA
+    // Transfer amount vault → CEA (SOL or SPL)
     if is_native {
         // SOL transfer
         if amount > 0 {
@@ -358,8 +425,6 @@ pub fn execute_universal_tx(
         // Create CEA ATA if it doesn't exist
         let cea_ata_info = cea_ata.to_account_info();
         if cea_ata_info.data_is_empty() {
-            // CPI create_associated_token_account (caller pays)
-            // Account order: payer, associated_token_account, owner, mint, system_program, token_program, rent
             let create_ata_ix =
                 spl_associated_token_account::instruction::create_associated_token_account(
                     &ctx.accounts.caller.key(),
@@ -418,11 +483,7 @@ pub fn execute_universal_tx(
         }
     }
 
-    // 10. Transfer relayer_fee (gas_fee - rent_fee) to caller BEFORE self-call check
-    // This ensures the caller gets paid even for self-withdraw operations.
-    // Relayer pays: executed_tx rent (~890k) + compute fees
-    // Relayer receives: relayer_fee = gas_fee - rent_fee (reimbursement for gateway costs)
-    // Vault total payout: rent_fee (to CEA) + relayer_fee (to caller) = gas_fee (matches user burn)
+    // Transfer relayer_fee (gas_fee - rent_fee) to caller
     let relayer_fee = gas_fee
         .checked_sub(rent_fee)
         .ok_or(GatewayError::InvalidAmount)?;
@@ -445,60 +506,177 @@ pub fn execute_universal_tx(
         )?;
     }
 
-    // 11. Build CPI instruction for target program
-    // cea_authority must appear as signer inside CPI
-    let cpi_metas: Vec<SolanaAccountMeta> = accounts
-        .iter()
-        .map(|a| {
-            let is_signer = a.pubkey == cea_key;
-            if a.is_writable {
-                SolanaAccountMeta::new(a.pubkey, is_signer)
-            } else {
-                SolanaAccountMeta::new_readonly(a.pubkey, is_signer)
-            }
-        })
-        .collect();
-
-    // 12. Check if target is gateway itself (for CEA withdrawals)
+    // Branch: withdraw vs execute
     let cea_bump = ctx.bumps.cea_authority;
     let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
 
-    if target_program == *ctx.program_id {
-        // Gateway self-call: interpret ix_data as a normal gateway instruction
-        // and handle CEA withdrawal in-place (no CPI).
-        return handle_cea_withdrawal(
-            &ctx,
-            tx_id,
-            universal_tx_id,
-            sender,
-            &ix_data,
-            cea_seeds,
-        );
+    if is_withdraw {
+        // Withdraw: CEA → target (SOL) or CEA ATA → recipient ATA (SPL)
+        internal_withdraw(&ctx, amount, token, cea_seeds)?;
+    } else {
+        // Execute: reconstruct accounts and CPI
+        let cea_key = ctx.accounts.cea_authority.key();
+
+        // Reconstruct accounts (same as in TSS validation above)
+        let mut accounts = Vec::new();
+        for (i, acc_info) in ctx.remaining_accounts.iter().enumerate() {
+            let byte_idx = i / 8;
+            let bit_idx = 7 - (i % 8);
+            let is_writable = (writable_flags[byte_idx] >> bit_idx) & 1 == 1;
+            accounts.push(GatewayAccountMeta {
+                pubkey: *acc_info.key,
+                is_writable,
+            });
+        }
+
+        // Check if target is gateway itself (for CEA withdrawals)
+        if target == *ctx.program_id {
+            return handle_cea_withdrawal(
+                &ctx,
+                tx_id,
+                universal_tx_id,
+                sender,
+                &ix_data,
+                cea_seeds,
+            );
+        }
+
+        // Build CPI instruction for target program
+        let cpi_metas: Vec<SolanaAccountMeta> = accounts
+            .iter()
+            .map(|a| {
+                let is_signer = a.pubkey == cea_key;
+                if a.is_writable {
+                    SolanaAccountMeta::new(a.pubkey, is_signer)
+                } else {
+                    SolanaAccountMeta::new_readonly(a.pubkey, is_signer)
+                }
+            })
+            .collect();
+
+        let cpi_ix = Instruction {
+            program_id: target,
+            accounts: cpi_metas,
+            data: ix_data.clone(),
+        };
+
+        invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
     }
 
-    let cpi_ix = Instruction {
-        program_id: target_program,
-        accounts: cpi_metas,
-        data: ix_data.clone(),
-    };
-
-    // 13. Invoke target program with cea_authority as signer
-    // Note: Solana runtime automatically includes the program account (from cpi_ix.program_id) in the transaction
-    invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
-
-    // Note: CEA balances persist (no auto-drain) - matches EVM CEA behavior
-    // Users can withdraw via withdrawFundsFromCea() when needed
-
-    // 14. Emit execution event
+    // Emit execution event
     emit!(UniversalTxExecuted {
         tx_id,
         universal_tx_id,
         sender,
-        target: target_program,
+        target,
         token,
         amount,
         payload: ix_data,
     });
+
+    Ok(())
+}
+
+// ============================================
+//    INTERNAL WITHDRAW HELPER
+// ============================================
+
+/// Transfer funds from CEA to recipient (withdraw mode)
+/// SOL: system_instruction::transfer CEA → target
+/// SPL: spl_token::transfer CEA ATA → recipient ATA
+fn internal_withdraw(
+    ctx: &Context<WithdrawAndExecute>,
+    amount: u64,
+    token: Pubkey,
+    cea_seeds: &[&[u8]],
+) -> Result<()> {
+    let recipient = ctx.accounts.recipient.as_ref()
+        .ok_or(error!(GatewayError::InvalidAccount))?;
+    let target = recipient.key();
+    let is_native = token == Pubkey::default();
+
+    if is_native {
+        // SOL: CEA → target
+        if amount > 0 {
+            let transfer_ix = system_instruction::transfer(
+                &ctx.accounts.cea_authority.key(),
+                &target,
+                amount,
+            );
+
+            invoke_signed(
+                &transfer_ix,
+                &[
+                    ctx.accounts.cea_authority.to_account_info(),
+                    recipient.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+                &[cea_seeds],
+            )?;
+        }
+    } else {
+        // SPL: CEA ATA → recipient ATA
+        let cea_ata = ctx
+            .accounts
+            .cea_ata
+            .as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+        let recipient_ata = ctx
+            .accounts
+            .recipient_ata
+            .as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+        let token_mint = ctx
+            .accounts
+            .mint
+            .as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+
+        // Validate recipient_ata: derivation matches (target, mint), owner, mint
+        let expected_recipient_ata = spl_associated_token_account::get_associated_token_address(
+            &target,
+            &token_mint.key(),
+        );
+        require!(
+            recipient_ata.key() == expected_recipient_ata,
+            GatewayError::InvalidAccount
+        );
+
+        // Validate recipient_ata data: owner + mint
+        let recipient_ata_data = recipient_ata.try_borrow_data()?.to_vec();
+        let parsed_recipient_ata = SplAccount::unpack(&recipient_ata_data)
+            .map_err(|_| error!(GatewayError::InvalidAccount))?;
+        require!(
+            parsed_recipient_ata.owner == target,
+            GatewayError::InvalidOwner
+        );
+        require!(
+            parsed_recipient_ata.mint == token_mint.key(),
+            GatewayError::InvalidMint
+        );
+
+        // Transfer from CEA ATA → recipient ATA
+        if amount > 0 {
+            let transfer_ix = spl_token::instruction::transfer(
+                &spl_token::ID,
+                &cea_ata.key(),
+                &recipient_ata.key(),
+                &ctx.accounts.cea_authority.key(),
+                &[],
+                amount,
+            )?;
+
+            invoke_signed(
+                &transfer_ix,
+                &[
+                    cea_ata.to_account_info(),
+                    recipient_ata.to_account_info(),
+                    ctx.accounts.cea_authority.to_account_info(),
+                ],
+                &[cea_seeds],
+            )?;
+        }
+    }
 
     Ok(())
 }
@@ -517,7 +695,7 @@ pub struct WithdrawFromCeaArgs {
 
 /// Handle withdrawal from CEA when target_program == gateway itself
 fn handle_cea_withdrawal(
-    ctx: &Context<ExecuteUniversalTx>,
+    ctx: &Context<WithdrawAndExecute>,
     tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     sender: [u8; 20],
