@@ -165,21 +165,6 @@ pub struct GatewayAccountMeta {
     pub is_writable: bool,
 }
 
-/// Execute message structure for TSS signing.
-/// Deterministically serialized with Borsh for message hash construction.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct ExecuteMessage {
-    pub instruction_id: u8, // 5 = SOL execute, 6 = SPL execute
-    pub chain_id: String,   // e.g., "PUSH"
-    pub nonce: u64,
-    pub amount: u64,
-    pub tx_id: [u8; 32],
-    pub target_program: Pubkey,
-    pub sender: [u8; 20], // EVM address
-    pub accounts: Vec<GatewayAccountMeta>,
-    pub ix_data: Vec<u8>,
-}
-
 /// Execute event (parity with EVM `UniversalTxExecuted`).
 #[event]
 pub struct UniversalTxExecuted {

@@ -14,18 +14,15 @@ import {
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
-import type { UniversalGateway } from "../target/types/universal_gateway";
-import type { TestCounter } from "../target/types/test_counter";
 import * as spl from "@solana/spl-token";
 import pkg from 'js-sha3';
 const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
 import { assert } from "chai";
 import { instructionToPayloadFields, encodeExecutePayload, decodeExecutePayload, accountsToWritableFlags } from "./execute-payload";
-import { signTssMessage, buildExecuteAdditionalData, TssInstruction, generateUniversalTxId } from "../tests/helpers/tss";
+import { signTssMessage, buildExecuteAdditionalData, buildWithdrawAdditionalData, TssInstruction, generateUniversalTxId } from "../tests/helpers/tss";
 
 const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
-const TEST_COUNTER_PROGRAM_ID = new PublicKey("BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const EXECUTED_TX_SEED = "executed_tx";
@@ -1198,7 +1195,7 @@ async function run() {
             .rpc();
         console.log(`✅ Gateway paused: ${pauseTx}`);
     } catch (error) {
-        if (error.message.includes("PausedError") || error.message.includes("already paused")) {
+        if (error.message.includes("Paused") || error.message.includes("already paused")) {
             console.log("✅ Gateway already paused (skipping)");
         } else {
             throw error;
@@ -1340,40 +1337,21 @@ async function run() {
     const originCaller = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
     const universalTxIdWithdraw = generateUniversalTxId();
 
-    const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
-    const instructionId = Buffer.from([1]); // 1 = SOL withdraw
-    const chainIdBytes = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
-    const nonceBE = Buffer.alloc(8);
-    nonceBE.writeBigUInt64BE(BigInt(nonce));
-    const amountBE = Buffer.alloc(8);
-    amountBE.writeBigUInt64BE(BigInt(withdrawAmountTss));
-    const recipientBytes = admin.toBuffer();
-    const gasFeeBE = Buffer.alloc(8);
-    gasFeeBE.writeBigUInt64BE(BigInt(withdrawGasFee));
-
-    // Include universal_tx_id, tx_id, origin_caller, recipient, and gas_fee in message hash
-    // Order matches withdraw.rs line 85-91
-    const concat = Buffer.concat([
-        PREFIX,
-        instructionId,
-        chainIdBytes,          // UTF-8 bytes of chain_id string
-        nonceBE,
-        amountBE,
-        Buffer.from(universalTxIdWithdraw), // universal_tx_id (32 bytes) - MUST be first in additional_data
-        Buffer.from(txId),      // tx_id (32 bytes)
-        Buffer.from(originCaller), // origin_caller (20 bytes)
-        recipientBytes,         // recipient (32 bytes)
-        gasFeeBE,              // gas_fee (8 bytes, u64 BE)
-    ]);
-    const messageHashHex = keccak_256(concat);
-    const messageHash = Buffer.from(messageHashHex, "hex");
-
-    // 12.3 Sign with ETH private key from .env
-    const priv = (process.env.TSS_PRIVKEY || process.env.ETH_PRIVATE_KEY || process.env.PRIVATE_KEY || "").replace(/^0x/, "");
-    if (!priv) throw new Error("Missing TSS_PRIVKEY/PRIVATE_KEY in .env");
-    const sig = await secp.sign(messageHash, priv, { recovered: true, der: false });
-    const signature: Uint8Array = sig[0];
-    let recoveryId: number = sig[1]; // 0 or 1
+    const withdrawAdditional = buildWithdrawAdditionalData(
+        Buffer.from(universalTxIdWithdraw),
+        Buffer.from(txId),
+        Buffer.from(originCaller),
+        PublicKey.default, // SOL
+        admin,
+        BigInt(withdrawGasFee)
+    );
+    const { signature, recoveryId, messageHash } = await signTssMessage({
+        instruction: TssInstruction.Withdraw,
+        nonce,
+        amount: BigInt(withdrawAmountTss),
+        additional: withdrawAdditional,
+        chainId,
+    });
 
     // 12.4 Call withdraw
     const adminBalanceBefore = await connection.getBalance(admin);
@@ -1382,30 +1360,43 @@ async function run() {
     const executedTxRent = await getExecutedTxRent(connection);
 
     const tssWithdrawTx = await program.methods
-        .withdraw(
+        .withdrawAndExecute(
+            1,                                           // instruction_id = withdraw
             txId,
             Array.from(universalTxIdWithdraw), // Use same universal_tx_id from message hash
-            originCaller,
-            new anchor.BN(withdrawAmountTss),
-            new anchor.BN(withdrawGasFee),
+            new anchor.BN(withdrawAmountTss),            // amount
+            originCaller,                                // sender [u8; 20]
+            Buffer.alloc(0),                             // writable_flags (empty for withdraw)
+            Buffer.from([]),                             // ix_data (empty for withdraw)
+            new anchor.BN(withdrawGasFee),               // gas_fee
+            new anchor.BN(0),                            // rent_fee (0 for withdraw)
             Array.from(signature) as any,
             recoveryId,
             Array.from(messageHash) as any,
             new anchor.BN(nonce),
         )
         .accounts({
-            config: configPda,
-            vault: vaultPda,
-            tssPda: tssPda,
-            recipient: admin,
-            executedTx: executedTxPda,
             caller: admin, // The caller/relayer who pays for the transaction
+            config: configPda,
+            vaultSol: vaultPda,
+            ceaAuthority: getCeaAuthorityPda(originCaller),
+            tssPda: tssPda,
+            executedTx: executedTxPda,
+            destinationProgram: SystemProgram.programId,
+            recipient: admin,                            // THE ACTUAL RECIPIENT
+            vaultAta: null,
+            ceaAta: null,
+            mint: null,
+            tokenProgram: null,
+            rent: null,
+            associatedTokenProgram: null,
+            recipientAta: null,
             systemProgram: SystemProgram.programId,
         })
         .signers([adminKeypair])
         .rpc();
-    console.log(`✅ TSS withdraw SOL completed: ${tssWithdrawTx}`);
-    await parseAndPrintEvents(tssWithdrawTx, "withdraw_tss events");
+    console.log(`✅ TSS withdrawAndExecute (withdraw SOL) completed: ${tssWithdrawTx}`);
+    await parseAndPrintEvents(tssWithdrawTx, "withdrawAndExecute withdraw events");
 
     // Verify withdraw results
     // Admin receives withdrawAmount + gas_fee (as caller/relayer reimbursement) but pays executedTx rent
@@ -1425,7 +1416,7 @@ async function run() {
     const executedTxExistsAfterWithdraw = (await connection.getAccountInfo(executedTxPda)) !== null;
     assert.isTrue(executedTxExistsAfterWithdraw && !executedTxExistsBeforeWithdraw, "ExecutedTx PDA should be created");
 
-    // 12.5 Test SPL token TSS withdrawal (instruction_id=2)
+    // 12.5 Test SPL token TSS withdrawal (unified instruction_id=1)
     console.log("\n=== Testing SPL Token TSS Withdrawal ===");
 
     // Check if we have SPL tokens in the vault to withdraw
@@ -1466,77 +1457,70 @@ async function run() {
             const originCallerSPL = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
             const universalTxIdSplWithdraw = generateUniversalTxId();
 
-            // Build message for SPL withdraw using instruction_id=2
+            // Build message for SPL withdraw using unified instruction_id=1
             const splWithdrawGasFee = new anchor.BN(0.001 * LAMPORTS_PER_SOL).toNumber(); // Gas fee for SPL withdraw
-            const PREFIX_SPL = Buffer.from("PUSH_CHAIN_SVM");
-            const instructionIdSPL = Buffer.from([2]); // 2 = SPL withdraw
-            const chainIdBytesSPL = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
-            const nonceBE_SPL = Buffer.alloc(8);
-            nonceBE_SPL.writeBigUInt64BE(BigInt(nonce + 1)); // Increment nonce for SPL withdraw
-            const amountBE_SPL = Buffer.alloc(8);
-            amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
-            const mintBytes = mint.toBuffer(); // 32 bytes for mint address
-            const gasFeeBE_SPL = Buffer.alloc(8);
-            gasFeeBE_SPL.writeBigUInt64BE(BigInt(splWithdrawGasFee));
+            const splWithdrawAdditional = buildWithdrawAdditionalData(
+                Buffer.from(universalTxIdSplWithdraw),
+                Buffer.from(txIdSPL),
+                Buffer.from(originCallerSPL),
+                mint,
+                adminKeypair.publicKey,
+                BigInt(splWithdrawGasFee)
+            );
+            const { signature: signatureSPL, recoveryId: recoveryIdSPL, messageHash: messageHashSPL } = await signTssMessage({
+                instruction: TssInstruction.Withdraw,
+                nonce: nonce + 1,
+                amount: BigInt(splWithdrawAmount),
+                additional: splWithdrawAdditional,
+                chainId,
+            });
 
-            // Include universal_tx_id, tx_id, origin_caller, mint, recipient, and gas_fee in message hash
-            // Order matches withdraw.rs line 185-191
-            const recipientBytesSPL = adminAta.address.toBuffer();
-            const concatSPL = Buffer.concat([
-                PREFIX_SPL,
-                instructionIdSPL,
-                chainIdBytesSPL,            // UTF-8 bytes of chain_id string
-                nonceBE_SPL,
-                amountBE_SPL,
-                Buffer.from(universalTxIdSplWithdraw), // universal_tx_id (32 bytes) - MUST be first in additional_data
-                Buffer.from(txIdSPL),        // tx_id (32 bytes)
-                Buffer.from(originCallerSPL), // origin_caller (20 bytes)
-                mintBytes,                   // Token mint (32 bytes)
-                recipientBytesSPL,          // Recipient token account (32 bytes)
-                gasFeeBE_SPL,               // gas_fee (8 bytes, u64 BE)
-            ]);
-            const messageHashHexSPL = keccak_256(concatSPL);
-            const messageHashSPL = Buffer.from(messageHashHexSPL, "hex");
-
-            // Sign with ETH private key
-            const sigSPL = await secp.sign(messageHashSPL, priv, { recovered: true, der: false });
-            const signatureSPL: Uint8Array = sigSPL[0];
-            let recoveryIdSPL: number = sigSPL[1];
-
-            // Call withdraw_tokens
+            // Call unified withdraw with SPL token
             const vaultTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
             const adminTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, adminAta.address)).amount;
             const executedTxExistsBeforeSplWithdraw = (await connection.getAccountInfo(executedTxPdaSPL)) !== null;
 
+            const ceaAuthoritySPL = getCeaAuthorityPda(originCallerSPL);
+            const ceaAtaSPL = await getCeaAta(originCallerSPL, mint);
+
             const tssSplWithdrawTx = await program.methods
-                .withdrawTokens(
+                .withdrawAndExecute(
+                    1,                                           // instruction_id = withdraw
                     txIdSPL,
                     Array.from(universalTxIdSplWithdraw), // Use same universal_tx_id from message hash
-                    originCallerSPL,
-                    new anchor.BN(splWithdrawAmount),
-                    new anchor.BN(splWithdrawGasFee),
+                    new anchor.BN(splWithdrawAmount),            // amount
+                    originCallerSPL,                             // sender [u8; 20]
+                    Buffer.alloc(0),                             // writable_flags (empty for withdraw)
+                    Buffer.from([]),                             // ix_data (empty for withdraw)
+                    new anchor.BN(splWithdrawGasFee),            // gas_fee
+                    new anchor.BN(0),                            // rent_fee (0 for withdraw)
                     Array.from(signatureSPL) as any,
                     recoveryIdSPL,
                     Array.from(messageHashSPL) as any,
                     new anchor.BN(nonce + 1),
                 )
                 .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    tokenVault: vaultAta.address,
-                    tokenMint: mint,
-                    tssPda: tssPda,
-                    recipientTokenAccount: adminAta.address,
-                    executedTx: executedTxPdaSPL,
                     caller: admin, // The caller/relayer who pays for the transaction
+                    config: configPda,
                     vaultSol: vaultPda,
+                    ceaAuthority: ceaAuthoritySPL,
+                    tssPda: tssPda,
+                    executedTx: executedTxPdaSPL,
+                    destinationProgram: SystemProgram.programId,
+                    recipient: adminKeypair.publicKey,                 // SPL recipient (token account)
+                    vaultAta: vaultAta.address,
+                    ceaAta: ceaAtaSPL,
+                    mint: mint,
                     tokenProgram: spl.TOKEN_PROGRAM_ID,
+                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                    recipientAta: adminAta.address,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([adminKeypair])
                 .rpc();
-            console.log(`✅ TSS withdraw SPL completed: ${tssSplWithdrawTx}`);
-            await parseAndPrintEvents(tssSplWithdrawTx, "withdraw_spl_token_tss events");
+            console.log(`✅ TSS withdrawAndExecute (withdraw SPL) completed: ${tssSplWithdrawTx}`);
+            await parseAndPrintEvents(tssSplWithdrawTx, "withdrawAndExecute withdraw SPL events");
 
             // Verify withdraw results
             const vaultTokenBalanceAfter = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
@@ -1563,7 +1547,7 @@ async function run() {
     console.log("✅ This avoids complex reimbursement logic and follows industry standards");
 
     // 13.5 Execute tests via payload encode/decode pipeline
-    console.log("\n=== 13.5 Testing execute_universal_tx via payload encode/decode pipeline ===");
+    console.log("\n=== 13.5 Testing withdrawAndExecute (execute mode) via payload encode/decode pipeline ===");
     // Derive counter PDA
     const [counterPda, counterBump] = PublicKey.findProgramAddressSync(
         [Buffer.from("counter")],
@@ -1608,7 +1592,7 @@ async function run() {
     };
 
     async function runExecuteSolTest() {
-        console.log("👉 execute_universal_tx (SOL) via encoded payload");
+        console.log("👉 withdrawAndExecute (execute SOL) via encoded payload");
 
         const solTxIdBytes = anchor.web3.Keypair.generate().publicKey.toBytes();
 
@@ -1654,7 +1638,7 @@ async function run() {
 
         // Sign using the proven TSS helpers
         const sig = await signTssMessage({
-            instruction: TssInstruction.ExecuteSol,
+            instruction: TssInstruction.Execute,
             nonce: nonce,
             amount: amount,
             chainId: chainId,
@@ -1691,11 +1675,11 @@ async function run() {
         const executedTxRent = await getExecutedTxRent(connection);
 
         const execTx = await relayerProgram.methods
-            .executeUniversalTx(
+            .withdrawAndExecute(
+                2,                                    // instruction_id = execute
                 Array.from(solTxIdBytes),
                 Array.from(universalTxIdForSigning),
                 new anchor.BN(amount.toString()),
-                targetProgram,
                 Array.from(senderBytes),
                 writableFlags,
                 Buffer.from(decoded.ixData),
@@ -1714,12 +1698,20 @@ async function run() {
                 tssPda,
                 executedTx,
                 destinationProgram: targetProgram,
+                recipient: null,                      // null for execute mode
+                vaultAta: null,
+                ceaAta: null,
+                mint: null,
+                tokenProgram: null,
+                rent: null,
+                associatedTokenProgram: null,
+                recipientAta: null,                   // null for execute mode
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(remainingAccounts)
             .rpc();
 
-        console.log(`✅ executeUniversalTx (SOL) succeeded: ${execTx}`);
+        console.log(`✅ withdrawAndExecute (execute SOL) succeeded: ${execTx}`);
 
         // Verify execution results
         const counterAfter = await counterProgram.account.counter.fetch(counterPda);
@@ -1748,7 +1740,7 @@ async function run() {
     }
 
     async function runExecuteSplTest() {
-        console.log("👉 execute_universal_tx_token (SPL) via encoded payload");
+        console.log("👉 withdrawAndExecute (execute SPL) via encoded payload");
         const tssAfterSol: any = await (program.account as any).tssPda.fetch(tssPda);
         const splTxIdBytes = anchor.web3.Keypair.generate().publicKey.toBytes();
         const senderBytes = Buffer.alloc(20, 0x22);
@@ -1803,7 +1795,7 @@ async function run() {
 
         // Sign using the proven TSS helpers
         const sig = await signTssMessage({
-            instruction: TssInstruction.ExecuteSpl,
+            instruction: TssInstruction.Execute,
             nonce: nonce,
             amount: amount,
             chainId: chainId,
@@ -1815,7 +1807,8 @@ async function run() {
                 decoded.accounts,
                 decoded.ixData,
                 gasFee,  // From fee calculation
-                rentFee  // From payload
+                rentFee,  // From payload
+                mint
             ),
         });
 
@@ -1838,11 +1831,11 @@ async function run() {
         const executedTxRentSpl = await getExecutedTxRent(connection);
 
         const execSplTx = await relayerProgram.methods
-            .executeUniversalTxToken(
+            .withdrawAndExecute(
+                2,                                    // instruction_id = execute
                 Array.from(splTxIdBytes),
                 Array.from(universalTxIdSplForSigning),
                 new anchor.BN(amount.toString()),
-                targetProgram,
                 Array.from(senderBytes),
                 writableFlagsSpl,
                 Buffer.from(decoded.ixData),
@@ -1856,23 +1849,25 @@ async function run() {
             .accounts({
                 caller: relayer,  // Relayer is now both fee payer and caller
                 config: configPda,
-                vaultAta: vaultAta.address,
                 vaultSol: vaultPda,  // Vault SOL PDA for fee transfers
                 ceaAuthority: ceaAuthority,  // CEA authority PDA
-                ceaAta: ceaAtaForSpl,  // CEA ATA
-                mint,
                 tssPda,
                 executedTx,
                 destinationProgram: targetProgram,
+                recipient: null,                      // null for execute mode
+                vaultAta: vaultAta.address,
+                ceaAta: ceaAtaForSpl,  // CEA ATA
+                mint,
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                recipientAta: null,                   // null for execute mode
+                systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(remainingAccounts)
             .rpc();
 
-        console.log(`✅ executeUniversalTxToken (SPL) succeeded: ${execSplTx}`);
+        console.log(`✅ withdrawAndExecute (execute SPL) succeeded: ${execSplTx}`);
 
         // Verify execution results
         const recipientTokenAfter = (await spl.getAccount(userProvider.connection as any, executeRecipientAta.address)).amount;
@@ -1964,7 +1959,7 @@ async function run() {
     const universalTxId1 = generateUniversalTxId();
 
     const securitySig1 = await signTssMessage({
-        instruction: TssInstruction.ExecuteSol,
+        instruction: TssInstruction.Execute,
         nonce: currentNonce1,
         amount: BigInt(0),
         chainId: tssAccount1.chainId,
@@ -1992,11 +1987,11 @@ async function run() {
         "Account substitution",
         async () => {
             return await relayerProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,                                    // instruction_id = execute
                     Array.from(securityTxId1),
                     Array.from(universalTxId1),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(securitySender1),
                     writableFlags1,
                     Buffer.from(securityCounterIx.data),
@@ -2015,6 +2010,14 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId1),
                     destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(substitutedRemaining)
@@ -2048,7 +2051,7 @@ async function run() {
     const universalTxId2 = generateUniversalTxId();
 
     const securitySig2 = await signTssMessage({
-        instruction: TssInstruction.ExecuteSol,
+        instruction: TssInstruction.Execute,
         nonce: currentNonce2,
         amount: BigInt(0),
         chainId: tssAccount2.chainId,
@@ -2073,11 +2076,11 @@ async function run() {
         "Invalid signature",
         async () => {
             return await relayerProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,                                    // instruction_id = execute
                     Array.from(securityTxId2),
                     Array.from(universalTxId2),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(securitySender2),
                     writableFlags2,
                     Buffer.from(securityCounterIx2.data),
@@ -2096,6 +2099,14 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId2),
                     destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts2.map((a) => ({
@@ -2134,7 +2145,7 @@ async function run() {
     const universalTxId3 = generateUniversalTxId();
 
     const securitySig3 = await signTssMessage({
-        instruction: TssInstruction.ExecuteSol,
+        instruction: TssInstruction.Execute,
         nonce: wrongNonce, // Sign with wrong nonce
         amount: BigInt(0),
         chainId: tssAccount3.chainId,
@@ -2155,11 +2166,11 @@ async function run() {
         "Wrong nonce",
         async () => {
             return await relayerProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,                                    // instruction_id = execute
                     Array.from(securityTxId3),
                     Array.from(universalTxId3),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(securitySender3),
                     writableFlags3,
                     Buffer.from(securityCounterIx3.data),
@@ -2178,6 +2189,14 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId3),
                     destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts3.map((a) => ({
@@ -2215,7 +2234,7 @@ async function run() {
     const universalTxId4 = generateUniversalTxId();
 
     const securitySig4 = await signTssMessage({
-        instruction: TssInstruction.ExecuteSol,
+        instruction: TssInstruction.Execute,
         nonce: currentNonce4,
         amount: BigInt(0),
         chainId: tssAccount4.chainId,
@@ -2243,11 +2262,11 @@ async function run() {
         "Account count mismatch",
         async () => {
             return await relayerProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,                                    // instruction_id = execute
                     Array.from(securityTxId4),
                     Array.from(universalTxId4),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(securitySender4),
                     fewerWritableFlags, // Use flags for fewer accounts
                     Buffer.from(securityCounterIx4.data),
@@ -2266,6 +2285,14 @@ async function run() {
                     tssPda,
                     executedTx: getExecutedTxPda(securityTxId4),
                     destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(fewerRemaining)
@@ -2331,7 +2358,7 @@ async function run() {
         const universalTxId = generateUniversalTxId();
 
         const sig = await signTssMessage({
-            instruction: isSpl ? TssInstruction.ExecuteSpl : TssInstruction.ExecuteSol,
+            instruction: TssInstruction.Execute,
             nonce: await syncNonceFromChain(),
             amount: BigInt(0),
             chainId: (await (program.account as any).tssPda.fetch(tssPda)).chainId,
@@ -2343,7 +2370,8 @@ async function run() {
                 accounts,
                 batchIx.data,
                 gasFee,
-                rentFee
+                rentFee,
+                isSpl ? mint : PublicKey.default
             ),
         });
 
@@ -2356,6 +2384,14 @@ async function run() {
             tssPda,
             executedTx: getExecutedTxPda(testTxId),
             destinationProgram: counterProgram.programId,
+            recipient: null,
+            vaultAta: null,
+            ceaAta: null,
+            mint: null,
+            tokenProgram: null,
+            rent: null,
+            associatedTokenProgram: null,
+            recipientAta: null,
             systemProgram: SystemProgram.programId,
         };
 
@@ -2369,11 +2405,11 @@ async function run() {
                 spl.ASSOCIATED_TOKEN_PROGRAM_ID,
             );
             gatewayIx = await relayerProgram.methods
-                .executeUniversalTxToken(
+                .withdrawAndExecute(
+                    2,                                    // instruction_id = execute
                     Array.from(testTxId),
                     Array.from(universalTxId),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(testSender),
                     writableFlags,
                     Buffer.from(batchIx.data),
@@ -2390,8 +2426,8 @@ async function run() {
                     ceaAta: ceaAta,
                     mint,
                     tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 })
                 .remainingAccounts(
                     accounts.map(a => ({
@@ -2403,11 +2439,11 @@ async function run() {
                 .instruction();
         } else {
             gatewayIx = await relayerProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,                                    // instruction_id = execute
                     Array.from(testTxId),
                     Array.from(universalTxId),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(testSender),
                     writableFlags,
                     Buffer.from(batchIx.data),
@@ -2542,7 +2578,7 @@ async function run() {
     };
 
     // Test SOL execute limits (using serialize().length as authoritative oracle)
-    console.log(`\n📊 SOL Execute (execute_universal_tx) - Finding maximum capacity...`);
+    console.log(`\n📊 SOL Execute (withdrawAndExecute) - Finding maximum capacity...`);
 
     // First find max accounts with a reasonable ix_data size (70 bytes = 50 raw + 20 overhead)
     const maxSolByAccounts = await findMaxTargetAccounts(70, false);
@@ -2555,7 +2591,7 @@ async function run() {
     console.log(`   ✅ SOL MAX: dummy=${maxSolResult.dummyAccounts} targetN=${maxSolResult.actualTargetAccounts} raw=${maxSolResult.rawDataSize} full=${maxSolResult.fullIxDataSize} txSize=${maxSolResult.txSize}`);
 
     // Test SPL execute limits (using serialize().length as authoritative oracle)
-    console.log(`\n📊 SPL Execute (execute_universal_tx_token) - Finding maximum capacity...`);
+    console.log(`\n📊 SPL Execute (withdrawAndExecute) - Finding maximum capacity...`);
 
     // First find max accounts with a reasonable ix_data size (70 bytes = 50 raw + 20 overhead)
     const maxSplByAccounts = await findMaxTargetAccounts(70, true);
@@ -2610,7 +2646,7 @@ async function run() {
     const universalTxIdHeavy = generateUniversalTxId();
 
     const heavySig = await signTssMessage({
-        instruction: TssInstruction.ExecuteSol,
+        instruction: TssInstruction.Execute,
         nonce: currentNonceHeavy,
         amount: BigInt(0),
         chainId: tssAccountHeavy.chainId,
@@ -2631,11 +2667,11 @@ async function run() {
 
     try {
         const heavyExecTx = await relayerProgram.methods
-            .executeUniversalTx(
+            .withdrawAndExecute(
+                2,                                    // instruction_id = execute
                 Array.from(heavyTxId),
                 Array.from(universalTxIdHeavy),
                 new anchor.BN(0),
-                counterProgram.programId,
                 Array.from(heavySender),
                 heavyWritableFlags,
                 Buffer.from(batchIx.data),
@@ -2654,6 +2690,14 @@ async function run() {
                 tssPda,
                 executedTx: getExecutedTxPda(heavyTxId),
                 destinationProgram: counterProgram.programId,
+                recipient: null,
+                vaultAta: null,
+                ceaAta: null,
+                mint: null,
+                tokenProgram: null,
+                rent: null,
+                associatedTokenProgram: null,
+                recipientAta: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(heavyAccounts.map(a => ({
@@ -2720,7 +2764,7 @@ async function run() {
     const universalTxIdHeavySpl = generateUniversalTxId();
 
     const heavySigSpl = await signTssMessage({
-        instruction: TssInstruction.ExecuteSpl,
+        instruction: TssInstruction.Execute,
         nonce: currentNonceHeavySpl,
         amount: BigInt(0),
         chainId: (await (program.account as any).tssPda.fetch(tssPda)).chainId,
@@ -2732,7 +2776,8 @@ async function run() {
             heavyAccountsSpl,
             batchIxSpl.data,
             gasFeeHeavySpl,
-            rentFeeHeavySpl
+            rentFeeHeavySpl,
+            mint
         ),
     });
 
@@ -2741,11 +2786,11 @@ async function run() {
 
     try {
         await relayerProgram.methods
-            .executeUniversalTxToken(
+            .withdrawAndExecute(
+                2,                                    // instruction_id = execute
                 Array.from(heavyTxIdSpl),
                 Array.from(universalTxIdHeavySpl),
                 new anchor.BN(0),
-                counterProgram.programId,
                 Array.from(heavySenderSpl),
                 heavyWritableFlagsSpl,
                 Buffer.from(batchIxSpl.data),
@@ -2759,18 +2804,20 @@ async function run() {
             .accounts({
                 caller: relayer,
                 config: configPda,
-                vaultAta: vaultAta.address,
                 vaultSol: vaultPda,
                 ceaAuthority: heavyCeaSpl,
-                ceaAta: heavyCeaAtaSpl,
-                mint,
                 tssPda,
                 executedTx: getExecutedTxPda(heavyTxIdSpl),
                 destinationProgram: counterProgram.programId,
+                recipient: null,
+                vaultAta: vaultAta.address,
+                ceaAta: heavyCeaAtaSpl,
+                mint,
                 tokenProgram: spl.TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                recipientAta: null,
+                systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(heavyAccountsSpl.map(a => ({
                 pubkey: a.pubkey,

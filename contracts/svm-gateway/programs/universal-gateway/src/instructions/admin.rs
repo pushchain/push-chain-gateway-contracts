@@ -7,7 +7,7 @@ pub struct AdminAction<'info> {
         mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = !config.paused @ GatewayError::Paused,
         constraint = config.admin == admin.key() @ GatewayError::Unauthorized
     )]
     pub config: Account<'info, Config>,
@@ -77,7 +77,7 @@ pub struct RateLimitConfigAction<'info> {
         mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = !config.paused @ GatewayError::Paused,
         constraint = config.admin == admin.key() @ GatewayError::Unauthorized
     )]
     pub config: Account<'info, Config>,
@@ -131,7 +131,7 @@ pub struct TokenRateLimitAction<'info> {
         mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = !config.paused @ GatewayError::Paused,
         constraint = config.admin == admin.key() @ GatewayError::Unauthorized
     )]
     pub config: Account<'info, Config>,

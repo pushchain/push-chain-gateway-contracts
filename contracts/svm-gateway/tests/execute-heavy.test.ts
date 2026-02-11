@@ -229,7 +229,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
 
             const sig = await signTssMessage({
-                instruction: TssInstruction.ExecuteSol,
+                instruction: TssInstruction.Execute,
                 nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
@@ -252,11 +252,11 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
             await gatewayProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,
                     Array.from(txId),
                     Array.from(universalTxId),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(sender),
                     writableFlags,
                     ixData,
@@ -265,7 +265,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce)
+                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -275,6 +275,14 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -322,7 +330,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
 
             const sig = await signTssMessage({
-                instruction: TssInstruction.ExecuteSol,
+                instruction: TssInstruction.Execute,
                 nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
@@ -352,11 +360,11 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
             await gatewayProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,
                     Array.from(txId),
                     Array.from(universalTxId),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(sender),
                     writableFlags,
                     ixData,
@@ -365,7 +373,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce)
+                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -375,6 +383,14 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -422,7 +438,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
 
             const sig = await signTssMessage({
-                instruction: TssInstruction.ExecuteSol,
+                instruction: TssInstruction.Execute,
                 nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
@@ -452,11 +468,11 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
             await gatewayProgram.methods
-                .executeUniversalTx(
+                .withdrawAndExecute(
+                    2,
                     Array.from(txId),
                     Array.from(universalTxId),
                     new anchor.BN(0),
-                    counterProgram.programId,
                     Array.from(sender),
                     writableFlags,
                     ixData,
@@ -465,7 +481,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce)
+                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -475,6 +491,14 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                     tssPda,
                     executedTx: getExecutedTxPda(txId),
                     destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(remaining)
@@ -523,7 +547,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
 
             const sig = await signTssMessage({
-                instruction: TssInstruction.ExecuteSol,
+                instruction: TssInstruction.Execute,
                 nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
@@ -544,11 +568,11 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             // This should fail with transaction size error
             try {
                 await gatewayProgram.methods
-                    .executeUniversalTx(
+                    .withdrawAndExecute(
+                    2,
                         Array.from(txId),
                         Array.from(universalTxId),
                         new anchor.BN(0),
-                        counterProgram.programId,
                         Array.from(sender),
                         writableFlags,
                         ixData,
@@ -557,7 +581,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                         Array.from(sig.signature),
                         sig.recoveryId,
                         Array.from(sig.messageHash),
-                        new anchor.BN(sig.nonce)
+                        new anchor.BN(sig.nonce),
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -567,6 +591,14 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                         tssPda,
                         executedTx: getExecutedTxPda(txId),
                         destinationProgram: counterProgram.programId,
+                        recipient: null,
+                        vaultAta: null,
+                        ceaAta: null,
+                        mint: null,
+                        tokenProgram: null,
+                        rent: null,
+                        associatedTokenProgram: null,
+                        recipientAta: null,
                         systemProgram: SystemProgram.programId,
                     })
                     .remainingAccounts(remaining)

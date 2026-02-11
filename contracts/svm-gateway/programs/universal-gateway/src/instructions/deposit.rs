@@ -27,7 +27,7 @@ pub fn send_universal_tx(
         GatewayError::InsufficientBalance
     );
 
-    let tx_type = fetchTxType(&req, native_amount)?;
+    let tx_type = fetch_tx_type(&req, native_amount)?;
     route_universal_tx(&mut ctx, req, native_amount, tx_type)
 }
 
@@ -58,8 +58,7 @@ fn route_universal_tx(
     }
 }
 
-#[allow(non_snake_case)]
-fn fetchTxType(req: &UniversalTxRequest, native_amount: u64) -> Result<TxType> {
+fn fetch_tx_type(req: &UniversalTxRequest, native_amount: u64) -> Result<TxType> {
     let has_payload = !req.payload.is_empty();
     let has_funds = req.amount > 0;
     let funds_is_native = req.token == Pubkey::default();
@@ -432,11 +431,13 @@ pub struct SendUniversalTx<'info> {
 
     /// CHECK: Only required for SPL token routes; validated at runtime.
     /// For native SOL routes, pass vault account as dummy (not used).
+    /// TODO use Optional Account instead 
     #[account(mut)]
     pub user_token_account: UncheckedAccount<'info>,
 
     /// CHECK: Only required for SPL token routes; validated at runtime.
     /// For native SOL routes, pass vault account as dummy (not used).
+    /// TODO use Optional Account instead 
     #[account(mut)]
     pub gateway_token_account: UncheckedAccount<'info>,
 

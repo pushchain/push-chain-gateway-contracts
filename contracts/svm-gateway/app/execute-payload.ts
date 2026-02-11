@@ -14,10 +14,11 @@ export interface GatewayAccountMeta {
 export interface ExecutePayloadFields {
     accounts: GatewayAccountMeta[];
     ixData: Uint8Array;
-    rentFee: bigint; // Rent fee (u64, 8 bytes) - Solana-specific, not in Push Chain event
-}
+    rentFee: bigint;
+    instructionId: number; // NEW (u8)
+  }
+  
 
-const TX_ID_LEN = 32;
 const SENDER_LEN = 20;
 
 /**
@@ -52,6 +53,7 @@ export function encodeExecutePayload(payload: ExecutePayloadFields): Buffer {
     // Encode rentFee (u64 BE, 8 bytes)
     const rentFeeBuf = Buffer.alloc(8);
     rentFeeBuf.writeBigUInt64BE(payload.rentFee ?? BigInt(0), 0);
+    const instructionIdBuf = Buffer.from([payload.instructionId ?? 2]);
 
     return Buffer.concat([
         accountsLen,              // accounts_count (4 bytes)
@@ -59,6 +61,7 @@ export function encodeExecutePayload(payload: ExecutePayloadFields): Buffer {
         ixLen,                    // ix_data_length (4 bytes)
         Buffer.from(payload.ixData), // ix_data (variable)
         rentFeeBuf,               // rent_fee (8 bytes)
+        instructionIdBuf
     ]);
 }
 
@@ -100,6 +103,9 @@ export function decodeExecutePayload(buf: Buffer): ExecutePayloadFields {
     const rentFee = buf.readBigUInt64BE(offset);
     offset += 8;
 
+    const instructionId = buf.readUInt8(offset);
+    offset += 1;
+
     // Validate we consumed all bytes
     if (offset !== buf.length) {
         throw new Error(`Payload decode error: consumed ${offset} bytes but buffer has ${buf.length} bytes`);
@@ -109,6 +115,7 @@ export function decodeExecutePayload(buf: Buffer): ExecutePayloadFields {
         accounts,
         ixData: new Uint8Array(ixData),
         rentFee,
+        instructionId
     };
 }
 
@@ -138,6 +145,7 @@ export function accountsToWritableFlags(accounts: GatewayAccountMeta[]): Buffer 
 export interface InstructionBuildParams {
     instruction: TransactionInstruction;
     rentFee?: bigint; // Optional: rentFee to include in payload (Solana-specific)
+    instructionId?: number;
 }
 
 export function instructionToPayloadFields(params: InstructionBuildParams): ExecutePayloadFields {
@@ -150,6 +158,7 @@ export function instructionToPayloadFields(params: InstructionBuildParams): Exec
         accounts,
         ixData: params.instruction.data,
         rentFee: params.rentFee ?? BigInt(0), // Default to 0 if not provided
+        instructionId: params.instructionId ?? 2,
     };
 }
 
