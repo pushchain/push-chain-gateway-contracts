@@ -14,8 +14,6 @@ import {
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
-import type { UniversalGateway } from "../target/types/universal_gateway";
-import type { TestCounter } from "../target/types/test_counter";
 import * as spl from "@solana/spl-token";
 import pkg from 'js-sha3';
 const { keccak_256 } = pkg;
@@ -25,7 +23,6 @@ import { instructionToPayloadFields, encodeExecutePayload, decodeExecutePayload,
 import { signTssMessage, buildExecuteAdditionalData, buildWithdrawAdditionalData, TssInstruction, generateUniversalTxId } from "../tests/helpers/tss";
 
 const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
-const TEST_COUNTER_PROGRAM_ID = new PublicKey("BkpW1WBEsUw1q3NGewePPVTWvc1AS6GLukgpfSQivd5L");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const EXECUTED_TX_SEED = "executed_tx";
