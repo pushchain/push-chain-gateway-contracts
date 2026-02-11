@@ -432,11 +432,13 @@ pub struct SendUniversalTx<'info> {
 
     /// CHECK: Only required for SPL token routes; validated at runtime.
     /// For native SOL routes, pass vault account as dummy (not used).
+    /// TODO use Optional Account instead 
     #[account(mut)]
     pub user_token_account: UncheckedAccount<'info>,
 
     /// CHECK: Only required for SPL token routes; validated at runtime.
     /// For native SOL routes, pass vault account as dummy (not used).
+    /// TODO use Optional Account instead 
     #[account(mut)]
     pub gateway_token_account: UncheckedAccount<'info>,
 

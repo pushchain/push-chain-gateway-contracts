@@ -953,7 +953,7 @@ const instruction = await program.methods
   .accounts(/* ... */)
   .instruction();
 
-// Build versioned tx with Protocol ALT (92 bytes saved)
+// Build versioned tx with Protocol ALT (estimated ~92 bytes saved; actual depends on instruction size)
 const tx = await altHelper.buildVersionedTransaction(
   [instruction],
   relayerPublicKey,
@@ -980,7 +980,7 @@ const instruction = await program.methods
   })
   .instruction();
 
-// Build versioned tx with Protocol ALT + Token ALT (215 bytes saved)
+// Build versioned tx with Protocol ALT + Token ALT (estimated ~215 bytes saved; actual depends on instruction size)
 const tx = await altHelper.buildVersionedTransaction(
   [instruction],
   relayerPublicKey,
@@ -999,6 +999,9 @@ import { TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 // Fetch ALT accounts
 const protocolAlt = await connection.getAddressLookupTable(protocolAltAddress);
 const tokenAlt = await connection.getAddressLookupTable(tokenAltAddress);
+if (!protocolAlt.value) throw new Error("Protocol ALT not found");
+// Only required for SPL:
+if (tokenAltAddress && !tokenAlt.value) throw new Error("Token ALT not found");
 
 // Build v0 message with ALTs
 const { blockhash } = await connection.getLatestBlockhash();
