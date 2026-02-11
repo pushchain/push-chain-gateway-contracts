@@ -120,24 +120,14 @@ pub fn revert_universal_tx(
         revert_instruction: revert_instruction.clone(),
     });
 
-    if gas_fee > 0 {
-        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-        let fee_transfer_ix = system_instruction::transfer(
-            &ctx.accounts.vault.key(),
-            &ctx.accounts.caller.key(),
-            gas_fee,
-        );
-
-        anchor_lang::solana_program::program::invoke_signed(
-            &fee_transfer_ix,
-            &[
-                ctx.accounts.vault.to_account_info(),
-                ctx.accounts.caller.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            &[vault_seeds],
-        )?;
-    }
+    // Transfer gas fee to caller (relayer reimbursement)
+    crate::utils::transfer_gas_fee_to_caller(
+        &ctx.accounts.vault.to_account_info(),
+        &ctx.accounts.caller.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        gas_fee,
+        ctx.accounts.config.vault_bump,
+    )?;
 
     Ok(())
 }
@@ -285,24 +275,14 @@ pub fn revert_universal_tx_token(
         revert_instruction: revert_instruction.clone(),
     });
 
-    if gas_fee > 0 {
-        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-        let fee_transfer_ix = system_instruction::transfer(
-            &ctx.accounts.vault_sol.key(),
-            &ctx.accounts.caller.key(),
-            gas_fee,
-        );
-
-        anchor_lang::solana_program::program::invoke_signed(
-            &fee_transfer_ix,
-            &[
-                ctx.accounts.vault_sol.to_account_info(),
-                ctx.accounts.caller.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            &[vault_seeds],
-        )?;
-    }
+    // Transfer gas fee to caller (relayer reimbursement)
+    crate::utils::transfer_gas_fee_to_caller(
+        &ctx.accounts.vault_sol.to_account_info(),
+        &ctx.accounts.caller.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        gas_fee,
+        ctx.accounts.config.vault_bump,
+    )?;
 
     Ok(())
 }

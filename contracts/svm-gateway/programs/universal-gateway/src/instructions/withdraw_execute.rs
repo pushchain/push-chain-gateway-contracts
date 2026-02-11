@@ -241,23 +241,13 @@ pub fn withdraw_and_execute(
         .checked_sub(rent_fee)
         .ok_or(GatewayError::InvalidAmount)?;
 
-    if relayer_fee > 0 {
-        let fee_transfer_ix = system_instruction::transfer(
-            &ctx.accounts.vault_sol.key(),
-            &ctx.accounts.caller.key(),
-            relayer_fee,
-        );
-
-        invoke_signed(
-            &fee_transfer_ix,
-            &[
-                ctx.accounts.vault_sol.to_account_info(),
-                ctx.accounts.caller.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            &[vault_seeds],
-        )?;
-    }
+    crate::utils::transfer_gas_fee_to_caller(
+        &ctx.accounts.vault_sol.to_account_info(),
+        &ctx.accounts.caller.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        relayer_fee,
+        config.vault_bump,
+    )?;
 
     // Branch: withdraw vs execute
     let cea_bump = ctx.bumps.cea_authority;
