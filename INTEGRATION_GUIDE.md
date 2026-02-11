@@ -2,25 +2,6 @@
 
 Technical guide for backend teams to implement the relayer service that processes Push Chain events and executes transactions on Solana.
 
----
-
-## Quick Reference - Unified Entrypoint
-
-**⚠️ IMPORTANT CHANGES**: The gateway now uses a **unified entrypoint** for both withdraw and execute operations.
-
-| Aspect | Old Implementation | New Implementation |
-|--------|-------------------|-------------------|
-| **Functions** | Separate `withdraw()` and `executeUniversalTx()` | Single `withdraw_and_execute(instruction_id, ...)` |
-| **Target param** | `target: Pubkey` parameter | Derived from optional accounts (`recipient` or `destination_program`) |
-| **Instruction IDs** | Execute=5, Withdraw=1 | Execute=2, Withdraw=1 |
-| **Account struct** | Fixed accounts | Optional accounts with enforcement (recipient XOR destination_program) |
-| **Payload** | No instruction_id field | Includes 1-byte `instruction_id` at end |
-| **TSS message** | Separate formats | Mode-specific formats (see section 3.2) |
-
-**Key takeaway**: Call the same function (`withdraw_and_execute`) for both operations, pass `instruction_id` to select mode, and provide the correct mode-specific optional account.
-
----
-
 ## 1. Execution Flow
 
 ### 1.1 High-Level Flow
