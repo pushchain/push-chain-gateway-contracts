@@ -746,6 +746,14 @@ fn reconstruct_accounts_from_flags<'info>(
 }
 
 /// Build and validate TSS signature for withdraw mode (instruction_id=1)
+///
+/// TSS Message Format (common fields first):
+/// 1. tx_id (32 bytes)
+/// 2. universal_tx_id (32 bytes)
+/// 3. sender (20 bytes)
+/// 4. token (32 bytes)
+/// 5. gas_fee (u64 BE)
+/// 6. target (32 bytes) - withdraw specific
 fn build_and_validate_tss_withdraw(
     tss_pda: &mut Account<TssPda>,
     universal_tx_id: [u8; 32],
@@ -765,13 +773,14 @@ fn build_and_validate_tss_withdraw(
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
 
+    // New ordering: common fields first, then mode-specific
     let additional: [&[u8]; 6] = [
-        &universal_tx_id[..],
-        &tx_id[..],
-        &sender[..],
-        &token_bytes[..],
-        &target_bytes[..],
-        &gas_fee_buf,
+        &tx_id[..],            // 0 - common (matches function param order)
+        &universal_tx_id[..],  // 1 - common
+        &sender[..],           // 2 - common
+        &token_bytes[..],      // 3 - common
+        &gas_fee_buf,          // 4 - common
+        &target_bytes[..],     // 5 - withdraw specific (recipient)
     ];
 
     validate_message(
@@ -787,6 +796,17 @@ fn build_and_validate_tss_withdraw(
 }
 
 /// Build and validate TSS signature for execute mode (instruction_id=2)
+///
+/// TSS Message Format (common fields first):
+/// 1. tx_id (32 bytes)
+/// 2. universal_tx_id (32 bytes)
+/// 3. sender (20 bytes)
+/// 4. token (32 bytes)
+/// 5. gas_fee (u64 BE)
+/// 6. target_program (32 bytes) - execute specific
+/// 7. accounts_buf (variable) - execute specific
+/// 8. ix_data_buf (variable) - execute specific
+/// 9. rent_fee (u64 BE) - execute specific
 fn build_and_validate_tss_execute<'info>(
     tss_pda: &mut Account<TssPda>,
     remaining_accounts: &[AccountInfo<'info>],
@@ -832,16 +852,18 @@ fn build_and_validate_tss_execute<'info>(
     let mut rent_fee_buf = [0u8; 8];
     rent_fee_buf.copy_from_slice(&rent_fee.to_be_bytes());
 
+    // New ordering: common fields first, then mode-specific
+    // This matches withdraw format for common fields
     let additional: [&[u8]; 9] = [
-        &universal_tx_id[..],
-        &tx_id[..],
-        &target.to_bytes(),
-        &sender[..],
-        &accounts_buf,
-        &ix_data_buf,
-        &gas_fee_buf,
-        &rent_fee_buf,
-        &token_bytes,
+        &tx_id[..],            // 0 - common (matches function param order)
+        &universal_tx_id[..],  // 1 - common
+        &sender[..],           // 2 - common
+        &token_bytes,          // 3 - common
+        &gas_fee_buf,          // 4 - common
+        &target.to_bytes(),    // 5 - execute specific (target program)
+        &accounts_buf,         // 6 - execute specific
+        &ix_data_buf,          // 7 - execute specific
+        &rent_fee_buf,         // 8 - execute specific
     ];
 
     validate_message(

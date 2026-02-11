@@ -102,7 +102,14 @@ export function generateUniversalTxId(): Uint8Array {
 
 /**
  * Build withdraw message additional_data
- * Matches Rust: [universal_tx_id, tx_id, sender, token, target, gas_fee]
+ *
+ * New format (common fields first):
+ * 1. tx_id (32 bytes) - common
+ * 2. universal_tx_id (32 bytes) - common
+ * 3. sender (20 bytes) - common
+ * 4. token (32 bytes) - common
+ * 5. gas_fee (u64 BE) - common
+ * 6. target (32 bytes) - withdraw specific
  */
 export function buildWithdrawAdditionalData(
     universalTxId: Uint8Array,
@@ -116,12 +123,12 @@ export function buildWithdrawAdditionalData(
     gasFeeBuf.writeBigUInt64BE(gasFee, 0);
 
     return [
-        universalTxId,           // universal_tx_id (32 bytes)
-        txId,                    // tx_id (32 bytes)
-        sender,                  // sender/origin_caller (20 bytes)
-        token.toBuffer(),        // token (32 bytes)
-        target.toBuffer(),       // target/recipient (32 bytes)
-        gasFeeBuf,               // gas_fee (8 bytes, u64 BE)
+        txId,                    // tx_id (32 bytes) - common
+        universalTxId,           // universal_tx_id (32 bytes) - common
+        sender,                  // sender/origin_caller (20 bytes) - common
+        token.toBuffer(),        // token (32 bytes) - common
+        gasFeeBuf,               // gas_fee (8 bytes, u64 BE) - common
+        target.toBuffer(),       // target/recipient (32 bytes) - withdraw specific
     ];
 }
 
@@ -136,7 +143,17 @@ export interface GatewayAccountMeta {
 
 /**
  * Build execute message additional_data buffers (accounts and ix_data with length prefixes)
- * Matches Rust: [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee, token]
+ *
+ * New format (common fields first):
+ * 1. tx_id (32 bytes) - common
+ * 2. universal_tx_id (32 bytes) - common
+ * 3. sender (20 bytes) - common
+ * 4. token (32 bytes) - common
+ * 5. gas_fee (u64 BE) - common
+ * 6. target_program (32 bytes) - execute specific
+ * 7. accounts_buf (variable) - execute specific
+ * 8. ix_data_buf (variable) - execute specific
+ * 9. rent_fee (u64 BE) - execute specific
  */
 export function buildExecuteAdditionalData(
     universalTxId: Uint8Array,
@@ -177,14 +194,14 @@ export function buildExecuteAdditionalData(
     rentFeeBuf.writeBigUInt64BE(rentFeeBigInt, 0);
 
     return [
-        universalTxId,           // universal_tx_id (32 bytes)
-        txId,                    // tx_id (32 bytes)
-        targetProgram.toBuffer(), // target_program (32 bytes)
-        sender,                  // sender (20 bytes)
-        accountsBuf,              // accounts with length prefix
-        ixDataBuf,               // ix_data with length prefix
-        gasFeeBuf,               // gas_fee (8 bytes, u64 BE)
-        rentFeeBuf,              // rent_fee (8 bytes, u64 BE)
-        token.toBuffer(),        // token (32 bytes)
+        txId,                    // tx_id (32 bytes) - common
+        universalTxId,           // universal_tx_id (32 bytes) - common
+        sender,                  // sender (20 bytes) - common
+        token.toBuffer(),        // token (32 bytes) - common
+        gasFeeBuf,               // gas_fee (8 bytes, u64 BE) - common
+        targetProgram.toBuffer(), // target_program (32 bytes) - execute specific
+        accountsBuf,              // accounts with length prefix - execute specific
+        ixDataBuf,               // ix_data with length prefix - execute specific
+        rentFeeBuf,              // rent_fee (8 bytes, u64 BE) - execute specific
     ];
 }

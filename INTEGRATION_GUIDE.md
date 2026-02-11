@@ -209,37 +209,43 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 
 **Additional fields** (order-critical, depends on instruction):
 
+**IMPORTANT**: Common fields come first in the same order for both modes, followed by mode-specific fields.
+
+**Common Fields (same for Execute and Withdraw):**
+```
+tx_id (32 bytes)           // First parameter in function signature
+universal_tx_id (32 bytes) // Second parameter in function signature
+sender (20 bytes, EVM address)
+token (32 bytes)           // Pubkey::default() for SOL, mint pubkey for SPL
+gas_fee (u64 BE)
+```
+
 **For Execute (2, unified SOL+SPL):**
 ```
-universal_tx_id (32 bytes)
-tx_id (32 bytes)
-target_program (32 bytes, pubkey)
-sender (20 bytes, EVM address)
-accounts_buf (see 3.3)
-ix_data_buf (see 3.3)
-gas_fee (u64 BE)
-rent_fee (u64 BE)
-token (32 bytes)  // Pubkey::default() for SOL, mint pubkey for SPL
+[common fields above]
+target_program (32 bytes, pubkey)  // Execute-specific: target program for CPI
+accounts_buf (see 3.3)             // Execute-specific: accounts for CPI
+ix_data_buf (see 3.3)              // Execute-specific: instruction data
+rent_fee (u64 BE)                  // Execute-specific: rent for target accounts
 ```
 
 **For Withdraw (1, unified SOL+SPL):**
 ```
-universal_tx_id (32 bytes)
-tx_id (32 bytes)
-sender (20 bytes, EVM address)
-token (32 bytes)  // Pubkey::default() for SOL, mint pubkey for SPL
-target (32 bytes, recipient pubkey)
-gas_fee (u64 BE)
+[common fields above]
+target (32 bytes, recipient pubkey) // Withdraw-specific: recipient address
 ```
 - **SOL**: `token` = `Pubkey::default()` (32 zero bytes), `target` = SOL recipient pubkey
 - **SPL**: `token` = mint pubkey, `target` = recipient owner pubkey (recipient ATA derived on-chain)
 
+**Rationale**: This ordering ensures consistency across modes and matches the function parameter order, making it easier to maintain and less error-prone.
+
 **For Revert SOL (3):**
-- `signTssMessage()` already injects: `universal_tx_id`, `tx_id` (see `tests/helpers/tss.ts` lines 73-78)
-- `additional` array (passed to `signTssMessage`):
-  ```
-  [recipient_pubkey (32 bytes), gas_fee_buf (8 bytes, u64 BE)]
-  ```
+```
+universal_tx_id (32 bytes)
+tx_id (32 bytes)
+recipient_pubkey (32 bytes)
+gas_fee (u64 BE)
+```
 
 **For Revert SPL (4):**
 ```
@@ -357,9 +363,9 @@ Final: [0xAC, 0x80] (2 bytes)
 
 **Reference Implementation**:
 - File: `contracts/svm-gateway/tests/helpers/tss.ts`
-- Functions: `signTssMessage()`, `buildExecuteAdditionalData()`
-- Test usage: `contracts/svm-gateway/tests/execute.test.ts` (search for `signTssMessage`)
-- **Note**: `signTssMessage()` automatically injects `universal_tx_id`, `tx_id`, and `origin_caller` (for withdraw) before the `additional` array (see `tss.ts` lines 73-81)
+- Functions: `signTssMessage()`, `buildExecuteAdditionalData()`, `buildWithdrawAdditionalData()`
+- Test usage: `contracts/svm-gateway/tests/execute.test.ts` and `tests/withdraw.test.ts` (search for `signTssMessage`)
+- **Note**: Use the `buildWithdrawAdditionalData()` or `buildExecuteAdditionalData()` helpers to construct the `additional` array with correct ordering (common fields first)
 
 ### 3.6 Getting TSS Nonce and Chain ID
 
@@ -618,9 +624,11 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 2. Fetch TSS PDA from Solana:
    - Derive TSS PDA: `["tsspda"]`
    - Read account: get `chain_id` (string) and `nonce` (u64)
-3. Build message hash based on instruction_id:
-   - **Withdraw (1)**: `PREFIX | 0x01 | chain_id | nonce | amount | universal_tx_id | tx_id | sender | token | target | gas_fee`
-   - **Execute (2)**: `PREFIX | 0x02 | chain_id | nonce | amount | universal_tx_id | tx_id | target | sender | accounts_buf | ix_data_buf | gas_fee | rent_fee | token`
+3. Build message hash based on instruction_id (common fields first):
+   - **Withdraw (1)**:
+     `PREFIX | 0x01 | chain_id | nonce | amount | tx_id | universal_tx_id | sender | token | gas_fee | target`
+   - **Execute (2)**:
+     `PREFIX | 0x02 | chain_id | nonce | amount | tx_id | universal_tx_id | sender | token | gas_fee | target_program | accounts_buf | ix_data_buf | rent_fee`
 4. For execute: build `accounts_buf` and `ix_data_buf` with length prefixes (section 3.3)
 
 ### 7.4 TSS Signing
@@ -750,7 +758,9 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 6. **Build TSS message**:
    - Use `buildExecuteAdditionalData()` helper (see `tests/helpers/tss.ts`)
    - instruction_id = 2
-   - additional_data = [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee, token]
+   - additional_data = [tx_id, universal_tx_id, sender, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
+   - **Common fields first**: tx_id, universal_tx_id, sender, token, gas_fee
+   - **Execute-specific**: target_program, accounts_buf, ix_data_buf, rent_fee
    - `accounts_buf` = length-prefixed serialized accounts (u32 BE count + accounts with pubkeys + isWritable)
    - `ix_data_buf` = length-prefixed instruction data (u32 BE length + data)
    - `token` = `Pubkey::default()` for SOL, mint pubkey for SPL
@@ -778,7 +788,9 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 5. **Build TSS message**:
    - Use `buildWithdrawAdditionalData()` helper (see `tests/helpers/tss.ts`)
    - instruction_id = 1
-   - additional_data = [universal_tx_id, tx_id, sender, token, target, gas_fee]
+   - additional_data = [tx_id, universal_tx_id, sender, token, gas_fee, target]
+   - **Common fields first**: tx_id, universal_tx_id, sender, token, gas_fee
+   - **Withdraw-specific**: target (recipient)
      - **SOL**: `token` = `Pubkey::default()`, `target` = SOL recipient pubkey
      - **SPL**: `token` = mint pubkey, `target` = recipient owner pubkey (recipient ATA derived on-chain)
 6. **Sign**: Call `signTssMessage()` → Keccak-256 hash → secp256k1 sign → signature + recovery_id
@@ -845,9 +857,11 @@ Before production:
   - Takes: `{ instruction, nonce, amount, additional, chainId }`
   - Returns: `{ signature, recoveryId, messageHash, nonce }`
 - `buildExecuteAdditionalData()` - Constructs additional fields for execute (instruction_id=2)
-  - Format: [universal_tx_id, tx_id, target_program, sender, accounts_buf, ix_data_buf, gas_fee, rent_fee, token]
+  - Format: [tx_id, universal_tx_id, sender, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
+  - **Common fields first**, then execute-specific
 - `buildWithdrawAdditionalData()` - Constructs additional fields for withdraw (instruction_id=1)
-  - Format: [universal_tx_id, tx_id, sender, token, target, gas_fee]
+  - Format: [tx_id, universal_tx_id, sender, token, gas_fee, target]
+  - **Common fields first**, then withdraw-specific (target)
 
 **Instruction IDs** (TssInstruction enum):
 - `TssInstruction.Withdraw = 1` - Unified withdraw (SOL/SPL)

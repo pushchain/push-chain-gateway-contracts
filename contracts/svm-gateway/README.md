@@ -56,7 +56,15 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 ### TSS Signature Verification
 - TSS signs message hash with ECDSA secp256k1
 - Nonce-based replay protection
-- Message format: `PREFIX | instruction_id | chain_id | nonce | amount | ...`
+- Message format: `PREFIX | instruction_id | chain_id | nonce | amount | tx_id | universal_tx_id | sender | token | gas_fee | [mode-specific]`
+- **Common fields** (same order for both withdraw and execute):
+  1. `tx_id` (32 bytes) - matches function parameter order
+  2. `universal_tx_id` (32 bytes)
+  3. `sender` (20 bytes, EVM address)
+  4. `token` (32 bytes, Pubkey)
+  5. `gas_fee` (u64 BE)
+- **Withdraw-specific**: `recipient` (32 bytes)
+- **Execute-specific**: `target_program` (32 bytes), `accounts_buf` (variable), `ix_data_buf` (variable), `rent_fee` (u64 BE)
 - Public key recovered from signature, validated against TSS ETH address
 
 ## Account Structure (PDAs)
@@ -283,7 +291,7 @@ await program.methods
 
 ### TSS Helper Functions
 
-The `tests/helpers/tss.ts` file provides utilities for building and signing TSS messages:
+The `tests/helpers/tss.ts` file provides utilities for building and signing TSS messages. Both helpers use **consistent ordering** with common fields first:
 
 ```typescript
 import {
@@ -294,6 +302,7 @@ import {
 } from "./tests/helpers/tss";
 
 // For withdraw (instruction_id = 1)
+// Returns: [tx_id, universal_tx_id, sender, token, gas_fee, recipient]
 const withdrawAdditional = buildWithdrawAdditionalData(
   universalTxId,  // 32 bytes
   txId,           // 32 bytes
@@ -304,6 +313,7 @@ const withdrawAdditional = buildWithdrawAdditionalData(
 );
 
 // For execute (instruction_id = 2)
+// Returns: [tx_id, universal_tx_id, sender, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
 const executeAdditional = buildExecuteAdditionalData(
   universalTxId,
   txId,
@@ -325,6 +335,8 @@ const { signature, recoveryId, messageHash, nonce } = await signTssMessage({
   chainId,
 });
 ```
+
+**Note**: Common fields (tx_id, universal_tx_id, sender, token, gas_fee) are in the same order for both modes, making the system easier to maintain and understand.
 
 ### Deposit (Solana → Push Chain)
 
