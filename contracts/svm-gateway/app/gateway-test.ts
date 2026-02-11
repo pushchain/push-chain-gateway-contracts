@@ -1340,41 +1340,21 @@ async function run() {
     const originCaller = Array.from(anchor.web3.Keypair.generate().publicKey.toBuffer().slice(0, 20));
     const universalTxIdWithdraw = generateUniversalTxId();
 
-    const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
-    const instructionId = Buffer.from([1]); // 1 = SOL withdraw
-    const chainIdBytes = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
-    const nonceBE = Buffer.alloc(8);
-    nonceBE.writeBigUInt64BE(BigInt(nonce));
-    const amountBE = Buffer.alloc(8);
-    amountBE.writeBigUInt64BE(BigInt(withdrawAmountTss));
-    const recipientBytes = admin.toBuffer();
-    const gasFeeBE = Buffer.alloc(8);
-    gasFeeBE.writeBigUInt64BE(BigInt(withdrawGasFee));
-
-    // Unified message hash: include token (Pubkey::default for SOL), recipient, and gas_fee
-    const tokenBytes = PublicKey.default.toBuffer(); // Pubkey::default() for native SOL
-    const concat = Buffer.concat([
-        PREFIX,
-        instructionId,
-        chainIdBytes,          // UTF-8 bytes of chain_id string
-        nonceBE,
-        amountBE,
-        Buffer.from(universalTxIdWithdraw), // universal_tx_id (32 bytes) - MUST be first in additional_data
-        Buffer.from(txId),      // tx_id (32 bytes)
-        Buffer.from(originCaller), // origin_caller (20 bytes)
-        tokenBytes,            // token (32 bytes) - Pubkey::default() for SOL
-        recipientBytes,         // recipient (32 bytes)
-        gasFeeBE,              // gas_fee (8 bytes, u64 BE)
-    ]);
-    const messageHashHex = keccak_256(concat);
-    const messageHash = Buffer.from(messageHashHex, "hex");
-
-    // 12.3 Sign with ETH private key from .env
-    const priv = (process.env.TSS_PRIVKEY || process.env.ETH_PRIVATE_KEY || process.env.PRIVATE_KEY || "").replace(/^0x/, "");
-    if (!priv) throw new Error("Missing TSS_PRIVKEY/PRIVATE_KEY in .env");
-    const sig = await secp.sign(messageHash, priv, { recovered: true, der: false });
-    const signature: Uint8Array = sig[0];
-    let recoveryId: number = sig[1]; // 0 or 1
+    const withdrawAdditional = buildWithdrawAdditionalData(
+        Buffer.from(universalTxIdWithdraw),
+        Buffer.from(txId),
+        Buffer.from(originCaller),
+        PublicKey.default, // SOL
+        admin,
+        BigInt(withdrawGasFee)
+    );
+    const { signature, recoveryId, messageHash } = await signTssMessage({
+        instruction: TssInstruction.Withdraw,
+        nonce,
+        amount: BigInt(withdrawAmountTss),
+        additional: withdrawAdditional,
+        chainId,
+    });
 
     // 12.4 Call withdraw
     const adminBalanceBefore = await connection.getBalance(admin);
@@ -1482,39 +1462,21 @@ async function run() {
 
             // Build message for SPL withdraw using unified instruction_id=1
             const splWithdrawGasFee = new anchor.BN(0.001 * LAMPORTS_PER_SOL).toNumber(); // Gas fee for SPL withdraw
-            const PREFIX_SPL = Buffer.from("PUSH_CHAIN_SVM");
-            const instructionIdSPL = Buffer.from([1]); // 1 = unified withdraw
-            const chainIdBytesSPL = Buffer.from(chainId, 'utf8'); // UTF-8 bytes of cluster pubkey string
-            const nonceBE_SPL = Buffer.alloc(8);
-            nonceBE_SPL.writeBigUInt64BE(BigInt(nonce + 1)); // Increment nonce for SPL withdraw
-            const amountBE_SPL = Buffer.alloc(8);
-            amountBE_SPL.writeBigUInt64BE(BigInt(splWithdrawAmount));
-            const mintBytes = mint.toBuffer(); // 32 bytes for mint address (= token)
-            const gasFeeBE_SPL = Buffer.alloc(8);
-            gasFeeBE_SPL.writeBigUInt64BE(BigInt(splWithdrawGasFee));
-
-            // Unified message hash: token (mint) + recipient_token_account + gas_fee
-            const recipientBytesSPL = adminKeypair.publicKey.toBuffer();
-            const concatSPL = Buffer.concat([
-                PREFIX_SPL,
-                instructionIdSPL,
-                chainIdBytesSPL,            // UTF-8 bytes of chain_id string
-                nonceBE_SPL,
-                amountBE_SPL,
-                Buffer.from(universalTxIdSplWithdraw), // universal_tx_id (32 bytes) - MUST be first in additional_data
-                Buffer.from(txIdSPL),        // tx_id (32 bytes)
-                Buffer.from(originCallerSPL), // origin_caller (20 bytes)
-                mintBytes,                   // token (32 bytes) - mint address for SPL
-                recipientBytesSPL,          // recipient (32 bytes) - token account for SPL
-                gasFeeBE_SPL,               // gas_fee (8 bytes, u64 BE)
-            ]);
-            const messageHashHexSPL = keccak_256(concatSPL);
-            const messageHashSPL = Buffer.from(messageHashHexSPL, "hex");
-
-            // Sign with ETH private key
-            const sigSPL = await secp.sign(messageHashSPL, priv, { recovered: true, der: false });
-            const signatureSPL: Uint8Array = sigSPL[0];
-            let recoveryIdSPL: number = sigSPL[1];
+            const splWithdrawAdditional = buildWithdrawAdditionalData(
+                Buffer.from(universalTxIdSplWithdraw),
+                Buffer.from(txIdSPL),
+                Buffer.from(originCallerSPL),
+                mint,
+                adminKeypair.publicKey,
+                BigInt(splWithdrawGasFee)
+            );
+            const { signature: signatureSPL, recoveryId: recoveryIdSPL, messageHash: messageHashSPL } = await signTssMessage({
+                instruction: TssInstruction.Withdraw,
+                nonce: nonce + 1,
+                amount: BigInt(splWithdrawAmount),
+                additional: splWithdrawAdditional,
+                chainId,
+            });
 
             // Call unified withdraw with SPL token
             const vaultTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
