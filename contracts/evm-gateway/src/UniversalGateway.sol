@@ -510,9 +510,6 @@ contract UniversalGateway is
     {
         if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
-        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
-        if (amount == 0) revert Errors.InvalidAmount();
-        
         isExecuted[txID] = true;
         IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
         
