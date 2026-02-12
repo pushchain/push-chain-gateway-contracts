@@ -17,7 +17,7 @@ cluster = "https://api.devnet.solana.com"
 wallet = "./upgrade-keypair.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/*.test.ts"
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 ${TEST_FILE:-tests/*.test.ts}"
 
 [test]
 startup_wait = 10000

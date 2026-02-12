@@ -2,9 +2,6 @@ use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum GatewayError {
-    #[msg("Contract is paused")]
-    PausedError,
-
     #[msg("Unauthorized access")]
     Unauthorized,
 
@@ -28,12 +25,6 @@ pub enum GatewayError {
 
     #[msg("Invalid price data")]
     InvalidPrice,
-
-    #[msg("Token already whitelisted")]
-    TokenAlreadyWhitelisted,
-
-    #[msg("Token not whitelisted")]
-    TokenNotWhitelisted,
 
     #[msg("Invalid owner")]
     InvalidOwner,

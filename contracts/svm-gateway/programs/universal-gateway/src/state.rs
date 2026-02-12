@@ -3,7 +3,6 @@ use anchor_lang::prelude::*;
 // PDA seeds
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const VAULT_SEED: &[u8] = b"vault";
-pub const WHITELIST_SEED: &[u8] = b"whitelist";
 pub const TSS_SEED: &[u8] = b"tsspda";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
@@ -97,18 +96,6 @@ impl Config {
     pub const LEN: usize = 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100;
 }
 
-/// SPL token whitelist state.
-/// PDA: `[b"whitelist"]`. Simple list of supported SPL mints.
-#[account]
-pub struct TokenWhitelist {
-    pub tokens: Vec<Pubkey>,
-    pub bump: u8,
-}
-
-impl TokenWhitelist {
-    pub const LEN: usize = 8 + 4 + (32 * 50) + 1 + 100; // discriminator + vec length + 50 tokens max + bump + padding
-}
-
 /// Rate limiting configuration (separate account for backward compatibility)
 /// PDA: `[b"rate_limit_config"]`. Stores global rate limiting settings.
 #[account]
@@ -178,28 +165,14 @@ pub struct GatewayAccountMeta {
     pub is_writable: bool,
 }
 
-/// Execute message structure for TSS signing.
-/// Deterministically serialized with Borsh for message hash construction.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct ExecuteMessage {
-    pub instruction_id: u8, // 5 = SOL execute, 6 = SPL execute
-    pub chain_id: String,   // e.g., "PUSH"
-    pub nonce: u64,
-    pub amount: u64,
-    pub tx_id: [u8; 32],
-    pub target_program: Pubkey,
-    pub sender: [u8; 20], // EVM address
-    pub accounts: Vec<GatewayAccountMeta>,
-    pub ix_data: Vec<u8>,
-}
-
 /// Execute event (parity with EVM `UniversalTxExecuted`).
 #[event]
 pub struct UniversalTxExecuted {
     pub tx_id: [u8; 32],
-    pub sender: [u8; 20], // EVM address (same as origin_caller in EVM)
-    pub target: Pubkey,   // Target program
-    pub token: Pubkey,    // Token (Pubkey::default() for SOL)
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub sender: [u8; 20],          // EVM address (same as origin_caller in EVM)
+    pub target: Pubkey,            // Target program
+    pub token: Pubkey,             // Token (Pubkey::default() for SOL)
     pub amount: u64,
     pub payload: Vec<u8>, // ix_data
 }
@@ -218,23 +191,14 @@ pub struct UniversalTx {
     pub signature_data: Vec<u8>,
 }
 
-/// Withdraw event (parity with EVM `WithdrawToken`).
-#[event]
-pub struct WithdrawToken {
-    pub tx_id: [u8; 32],         // Transaction ID
-    pub origin_caller: [u8; 20], // Original caller on source chain (EVM address)
-    pub token: Pubkey,           // Token address (Pubkey::default() for native SOL)
-    pub to: Pubkey,              // Recipient address
-    pub amount: u64,             // Amount
-}
-
 /// Revert withdraw event (parity with EVM `RevertUniversalTx`).
 #[event]
 pub struct RevertUniversalTx {
-    pub tx_id: [u8; 32],        // Transaction ID
-    pub fund_recipient: Pubkey, // Recipient of reverted funds
-    pub token: Pubkey,          // Token address (Pubkey::default() for native SOL)
-    pub amount: u64,            // Amount
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub tx_id: [u8; 32],           // Transaction ID
+    pub fund_recipient: Pubkey,    // Recipient of reverted funds
+    pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
+    pub amount: u64,               // Amount
     pub revert_instruction: RevertInstructions,
 }
 

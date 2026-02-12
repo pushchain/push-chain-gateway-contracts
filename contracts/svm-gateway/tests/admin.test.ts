@@ -4,14 +4,18 @@ import { UniversalGateway } from "../target/types/universal_gateway";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import * as sharedState from "./shared-state";
-import { createMockUSDT } from "./helpers/mockSpl";
 import { getTssEthAddress, TSS_CHAIN_ID } from "./helpers/tss";
+import { ensureTestSetup } from "./helpers/test-setup";
 
 
 describe("Universal Gateway - Admin Functions Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
     const provider = anchor.getProvider() as anchor.AnchorProvider;
     const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+
+    before(async () => {
+        await ensureTestSetup();
+    });
 
     // Test accounts
     let admin: Keypair;
@@ -24,15 +28,12 @@ describe("Universal Gateway - Admin Functions Tests", () => {
     // Program PDAs
     let configPda: PublicKey;
     let vaultPda: PublicKey;
-    let whitelistPda: PublicKey;
     let tssPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
 
     // Mock assets
     let mockPriceFeed: PublicKey;
     let mockUSDT: any;
-    let tempWhitelistToken: any;
-
     before(async () => {
         admin = sharedState.getAdmin();
         tssAddress = sharedState.getTssAddress();
@@ -67,11 +68,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             program.programId
         );
 
-        [whitelistPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("whitelist")],
-            program.programId
-        );
-
         [tssPda] = PublicKey.findProgramAddressSync(
             [Buffer.from("tsspda")],
             program.programId
@@ -86,9 +82,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         expect(config.admin.toString()).to.equal(admin.publicKey.toString());
         expect(config.pauser.toString()).to.equal(pauser.publicKey.toString());
         expect(config.tssAddress.toString()).to.equal(tssAddress.publicKey.toString());
-
-        tempWhitelistToken = await createMockUSDT(provider.connection, admin);
-        await tempWhitelistToken.createMint();
 
     });
 
@@ -308,77 +301,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             expect(rateLimitConfig.blockUsdCap.toString()).to.equal(newBlockCap.toString());
             expect(rateLimitConfig.epochDurationSec.toString()).to.equal(newEpochDuration.toString());
 
-        });
-    });
-
-    describe("Token Whitelist Management", () => {
-        it("Adds token to whitelist", async () => {
-
-            const whitelistBefore = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const beforeTokens = whitelistBefore.tokens.map((t: PublicKey) => t.toString());
-
-            await program.methods
-                .whitelistToken(tempWhitelistToken.mint.publicKey)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    whitelist: whitelistPda,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-
-            const whitelistAfter = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const afterTokens = whitelistAfter.tokens.map((t: PublicKey) => t.toString());
-
-            expect(afterTokens.length).to.equal(beforeTokens.length + 1);
-            expect(afterTokens).to.include(tempWhitelistToken.mint.publicKey.toString());
-
-        });
-
-        it("Removes token from whitelist", async () => {
-
-            const whitelistBefore = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const beforeTokens = whitelistBefore.tokens.map((t: PublicKey) => t.toString());
-            expect(beforeTokens).to.include(tempWhitelistToken.mint.publicKey.toString());
-
-            await program.methods
-                .removeWhitelistToken(tempWhitelistToken.mint.publicKey)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    whitelist: whitelistPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            const whitelistAfter = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const afterTokens = whitelistAfter.tokens.map((t: PublicKey) => t.toString());
-
-            expect(afterTokens.length).to.equal(beforeTokens.length - 1);
-            expect(afterTokens).to.not.include(tempWhitelistToken.mint.publicKey.toString());
-
-        });
-
-        it("Rejects unauthorized whitelist operations", async () => {
-            try {
-                await program.methods
-                    .whitelistToken(tempWhitelistToken.mint.publicKey)
-                    .accounts({
-                        admin: unauthorizedUser.publicKey,
-                        config: configPda,
-                        whitelist: whitelistPda,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([unauthorizedUser])
-                    .rpc();
-
-                expect.fail("Unauthorized whitelist addition should have failed");
-            } catch (error: any) {
-                expect(error).to.exist;
-                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
-                expect(errorCode).to.equal("Unauthorized");
-            }
         });
     });
 

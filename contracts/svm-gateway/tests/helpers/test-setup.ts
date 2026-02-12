@@ -1,48 +1,47 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { UniversalGateway } from "../target/types/universal_gateway";
+import { UniversalGateway } from "../../target/types/universal_gateway";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
-import { expect } from "chai";
-import { createMockUSDT, createMockUSDC } from "./helpers/mockSpl";
-import * as sharedState from "./shared-state";
-import { getTssEthAddress, TSS_CHAIN_ID } from "./helpers/tss";
-import { setupPriceFeed } from "./setup-pricefeed";
+import { createMockUSDT, createMockUSDC } from "./mockSpl";
+import * as sharedState from "../shared-state";
+import { getTssEthAddress, TSS_CHAIN_ID } from "./tss";
+import { setupPriceFeed } from "../setup-pricefeed";
 
-describe("Universal Gateway - Setup Tests", () => {
-    anchor.setProvider(anchor.AnchorProvider.env());
-    const provider = anchor.getProvider() as anchor.AnchorProvider;
-    const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+// Module-level promise to ensure setup runs only once per process
+let setupPromise: Promise<void> | null = null;
 
-    // Test accounts
-    let admin: Keypair;
-    let tssAddress: Keypair;
-    let pauser: Keypair;
-    let user1: Keypair;
-    let user2: Keypair;
+/**
+ * Ensures test setup is complete. Idempotent - runs exactly once per process.
+ * Can be called from any test file's before() hook.
+ */
+export async function ensureTestSetup(): Promise<void> {
+    if (setupPromise) {
+        return setupPromise;
+    }
 
-    // Program PDAs
-    let configPda: PublicKey;
-    let vaultPda: PublicKey;
-    let whitelistPda: PublicKey;
-    let rateLimitConfigPda: PublicKey;
+    setupPromise = (async () => {
+        // Initialize Anchor provider if not already set
+        if (!anchor.getProvider()) {
+            anchor.setProvider(anchor.AnchorProvider.env());
+        }
+        const provider = anchor.getProvider() as anchor.AnchorProvider;
+        const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
 
-    // Mock tokens
-    let mockPriceFeed: PublicKey;
-    let mockUSDT: any;
-    let mockUSDC: any;
-
-    before(async () => {
+        // Step 1: Create keypairs and set shared state
         const adminWallet = provider.wallet as anchor.Wallet;
-        admin = adminWallet.payer as Keypair;
-        tssAddress = Keypair.generate();
-        pauser = Keypair.generate();
-        user1 = Keypair.generate();
-        user2 = Keypair.generate();
+        const admin = adminWallet.payer as Keypair;
+        const tssAddress = Keypair.generate();
+        const pauser = Keypair.generate();
+        const user1 = Keypair.generate();
+        const user2 = Keypair.generate();
 
         sharedState.setAdmin(admin);
         sharedState.setTssAddress(tssAddress);
         sharedState.setPauser(pauser);
+        sharedState.setUser1(user1);
+        sharedState.setUser2(user2);
 
+        // Step 2: Airdrop SOL to all accounts
         const airdropAmount = 10 * anchor.web3.LAMPORTS_PER_SOL;
         await Promise.all([
             provider.connection.requestAirdrop(admin.publicKey, airdropAmount),
@@ -53,15 +52,13 @@ describe("Universal Gateway - Setup Tests", () => {
         ]);
 
         await new Promise(resolve => setTimeout(resolve, 2000));
-    });
 
-    it("Initializes mock SPL tokens", async () => {
-        // Create mock USDT
-        mockUSDT = await createMockUSDT(provider.connection, admin);
+        // Step 3: Initialize mock SPL tokens
+        const mockUSDT = await createMockUSDT(provider.connection, admin);
         await mockUSDT.createMint();
         sharedState.setMockUSDT(mockUSDT);
 
-        mockUSDC = await createMockUSDC(provider.connection, admin);
+        const mockUSDC = await createMockUSDC(provider.connection, admin);
         await mockUSDC.createMint();
         sharedState.setMockUSDC(mockUSDC);
 
@@ -73,29 +70,25 @@ describe("Universal Gateway - Setup Tests", () => {
         const user2UsdtAccount = await mockUSDT.createTokenAccount(user2.publicKey);
         await mockUSDT.mintTo(user2UsdtAccount, 7500);
 
-        // Verify tokens were created and minted correctly
-        const user1UsdtBalance = await mockUSDT.getBalance(user1UsdtAccount);
-        const user1UsdcBalance = await mockUSDC.getBalance(user1UsdcAccount);
-        const user2UsdtBalance = await mockUSDT.getBalance(user2UsdtAccount);
+        // Step 4: Derive program PDAs
+        const [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
+        const [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
+        const [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
-        expect(user1UsdtBalance).to.equal(10000);
-        expect(user1UsdcBalance).to.equal(5000);
-        expect(user2UsdtBalance).to.equal(7500);
-    });
+        // Step 5: Setup mock Pyth price feed
+        let mockPriceFeed: PublicKey;
+        try {
+            // Try to use existing price feed from config if it exists
+            const configAccount = await program.account.config.fetch(configPda);
+            mockPriceFeed = configAccount.pythPriceFeed;
+            sharedState.setMockPriceFeed(mockPriceFeed);
+        } catch {
+            // Config doesn't exist yet, create new price feed
+            mockPriceFeed = await setupPriceFeed();
+            sharedState.setMockPriceFeed(mockPriceFeed);
+        }
 
-    it("Derives program PDAs", async () => {
-        [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
-        [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
-        [whitelistPda] = PublicKey.findProgramAddressSync([Buffer.from("whitelist")], program.programId);
-        [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
-    });
-
-    it("Sets up mock Pyth price feed", async () => {
-        mockPriceFeed = await setupPriceFeed();
-        sharedState.setMockPriceFeed(mockPriceFeed);
-    });
-
-    it("Initializes the Universal Gateway program and whitelists tokens", async () => {
+        // Step 6: Initialize or fetch config
         let configAccount: any;
         try {
             configAccount = await program.account.config.fetch(configPda);
@@ -124,39 +117,7 @@ describe("Universal Gateway - Setup Tests", () => {
             sharedState.setMockPriceFeed(configAccount.pythPriceFeed);
         }
 
-        const whitelistToken = async (mint: PublicKey) => {
-            try {
-                await program.methods
-                    .whitelistToken(mint)
-                    .accounts({
-                        admin: admin.publicKey,
-                        config: configPda,
-                        tokenWhitelist: whitelistPda,
-                        systemProgram: anchor.web3.SystemProgram.programId,
-                    })
-                    .signers([admin])
-                    .rpc();
-            } catch (err: any) {
-                if (!(`${err}`.includes("TokenAlreadyWhitelisted") || `${err}`.includes("6006"))) {
-                    throw err;
-                }
-            }
-        };
-
-        await Promise.all([
-            whitelistToken(mockUSDT.mint.publicKey),
-            whitelistToken(mockUSDC.mint.publicKey),
-        ]);
-
-        const config = await program.account.config.fetch(configPda);
-        expect(config.admin.toString()).to.equal(admin.publicKey.toString());
-        expect(config.paused).to.be.false;
-
-        const whitelist = await program.account.tokenWhitelist.fetch(whitelistPda);
-        const tokenAddresses = whitelist.tokens.map((t: PublicKey) => t.toString());
-        expect(tokenAddresses).to.include(mockUSDT.mint.publicKey.toString());
-        expect(tokenAddresses).to.include(mockUSDC.mint.publicKey.toString());
-
+        // Step 7: Initialize or update TSS
         const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], program.programId);
         const expectedTssEthAddress = getTssEthAddress();
         const expectedChainId = TSS_CHAIN_ID; // String: Solana cluster pubkey
@@ -184,5 +145,25 @@ describe("Universal Gateway - Setup Tests", () => {
                 .signers([admin])
                 .rpc();
         }
-    });
-});
+
+        // Step 8: Initialize rate_limit_config PDA (required for universal gateway)
+        try {
+            await program.account.rateLimitConfig.fetch(rateLimitConfigPda);
+        } catch {
+            // Not initialized, create it by calling set_block_usd_cap (which uses init_if_needed)
+            await program.methods
+                .setBlockUsdCap(new anchor.BN(1_000_000_000)) // 1 billion USD cap
+                .accounts({
+                    admin: admin.publicKey,
+                    config: configPda,
+                    rateLimitConfig: rateLimitConfigPda,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        }
+    })();
+
+    return setupPromise;
+}
+

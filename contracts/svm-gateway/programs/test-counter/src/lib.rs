@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Token, TokenAccount};
 
-declare_id!("9LfpvcY2CYcNWEc2ip2ZwwKivEALbF3knwimXrbLubT2");
+declare_id!("4mpHkerNsaJPp35fyT5bkoXxuEBczGq6HUKTtrzFcptx");
 
 #[program]
 pub mod test_counter {
@@ -62,13 +63,28 @@ pub mod test_counter {
         Ok(())
     }
 
-    /// Stake SOL - tracks staked amount in Stake PDA (CEA holds actual SOL)
+    /// Stake SOL - transfers SOL from authority (CEA) to stake_vault PDA
     /// This tests CEA identity preservation (same authority = same stake PDA)
+    /// CEA is signed by gateway via invoke_signed with cea_seeds
     pub fn stake_sol(ctx: Context<StakeSol>, amount: u64) -> Result<()> {
+        // Transfer SOL from authority (CEA) to stake_vault PDA
+        // CEA is a signer (signed by gateway via cea_seeds in invoke_signed)
+        anchor_lang::solana_program::program::invoke(
+            &anchor_lang::solana_program::system_instruction::transfer(
+                ctx.accounts.authority.key,
+                ctx.accounts.stake_vault.key,
+                amount,
+            ),
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.stake_vault.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+
+        // Now update stake account (after transfer completes)
         let counter = &mut ctx.accounts.counter;
         let stake = &mut ctx.accounts.stake;
-
-        // Initialize or update stake account (just tracking, CEA holds the SOL)
         stake.authority = ctx.accounts.authority.key();
         stake.amount = stake
             .amount
@@ -81,23 +97,41 @@ pub mod test_counter {
             .checked_add(amount)
             .ok_or(CounterError::Overflow)?;
 
-        msg!(
-            "Staked {} SOL (tracked), total stake: {}",
-            amount,
-            stake.amount
-        );
+        msg!("Staked {} SOL, total stake: {}", amount, stake.amount);
         Ok(())
     }
 
-    /// Unstake SOL - returns tracked SOL back to authority (no-op since CEA already holds it)
-    /// In real scenario, this would verify and transfer, but for testing we just track
+    /// Unstake SOL - transfers SOL from stake_vault PDA back to authority (CEA)
     pub fn unstake_sol(ctx: Context<UnstakeSol>, amount: u64) -> Result<()> {
+        // Check stake amount first (before any borrows)
+        require!(
+            ctx.accounts.stake.amount >= amount,
+            CounterError::InsufficientStake
+        );
+
+        // Transfer SOL from stake_vault PDA back to authority (CEA)
+        let stake_vault_bump = ctx.bumps.stake_vault;
+        let authority_key = ctx.accounts.authority.key();
+        let stake_vault_seeds: &[&[u8]] =
+            &[b"stake_vault", authority_key.as_ref(), &[stake_vault_bump]];
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &anchor_lang::solana_program::system_instruction::transfer(
+                ctx.accounts.stake_vault.key,
+                ctx.accounts.authority.key,
+                amount,
+            ),
+            &[
+                ctx.accounts.stake_vault.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[stake_vault_seeds],
+        )?;
+
+        // Decrement stake tracking (after transfer completes)
         let counter = &mut ctx.accounts.counter;
         let stake = &mut ctx.accounts.stake;
-
-        require!(stake.amount >= amount, CounterError::InsufficientStake);
-
-        // Decrement stake tracking
         stake.amount = stake
             .amount
             .checked_sub(amount)
@@ -109,11 +143,7 @@ pub mod test_counter {
             .checked_add(amount)
             .ok_or(CounterError::Overflow)?;
 
-        msg!(
-            "Unstaked {} SOL (tracked), remaining stake: {}",
-            amount,
-            stake.amount
-        );
+        msg!("Unstaked {} SOL, remaining stake: {}", amount, stake.amount);
         Ok(())
     }
 
@@ -149,12 +179,27 @@ pub mod test_counter {
         Ok(())
     }
 
-    /// Stake SPL tokens - tracks staked amount (tokens stay in CEA ATA)
+    /// Stake SPL tokens - transfers tokens from authority ATA to stake ATA
+    /// CEA is signed by gateway via invoke_signed with cea_seeds
     pub fn stake_spl(ctx: Context<StakeSpl>, amount: u64) -> Result<()> {
         let counter = &mut ctx.accounts.counter;
         let stake = &mut ctx.accounts.stake;
 
-        // Initialize or update stake account (just tracking, CEA ATA holds tokens)
+        // Transfer tokens from authority_ata to stake_ata
+        // CEA (authority) is a signer (signed by gateway via cea_seeds in invoke_signed)
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.authority_ata.to_account_info(),
+                    to: ctx.accounts.stake_ata.to_account_info(),
+                    authority: ctx.accounts.authority.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
+        // Initialize or update stake account
         stake.authority = ctx.accounts.authority.key();
         stake.amount = stake
             .amount
@@ -168,21 +213,43 @@ pub mod test_counter {
             .ok_or(CounterError::Overflow)?;
 
         msg!(
-            "Staked {} SPL tokens (tracked), total stake: {}",
+            "Staked {} SPL tokens, total stake: {}",
             amount,
             stake.amount
         );
         Ok(())
     }
 
-    /// Unstake SPL tokens - returns tracked tokens back to authority
+    /// Unstake SPL tokens - transfers tokens from stake ATA back to authority ATA
     pub fn unstake_spl(ctx: Context<UnstakeSpl>, amount: u64) -> Result<()> {
         let counter = &mut ctx.accounts.counter;
+
+        // Check stake amount first (before any borrows)
+        require!(
+            ctx.accounts.stake.amount >= amount,
+            CounterError::InsufficientStake
+        );
+
+        // Transfer tokens from stake_ata back to authority_ata
+        let stake_bump = ctx.bumps.stake;
+        let authority_key = ctx.accounts.authority.key();
+        let stake_seeds: &[&[u8]] = &[b"stake", authority_key.as_ref(), &[stake_bump]];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.stake_ata.to_account_info(),
+                    to: ctx.accounts.authority_ata.to_account_info(),
+                    authority: ctx.accounts.stake.to_account_info(),
+                },
+                &[stake_seeds],
+            ),
+            amount,
+        )?;
+
+        // Decrement stake tracking (after transfer completes)
         let stake = &mut ctx.accounts.stake;
-
-        require!(stake.amount >= amount, CounterError::InsufficientStake);
-
-        // Decrement stake tracking
         stake.amount = stake
             .amount
             .checked_sub(amount)
@@ -195,7 +262,7 @@ pub mod test_counter {
             .ok_or(CounterError::Overflow)?;
 
         msg!(
-            "Unstaked {} SPL tokens (tracked), remaining stake: {}",
+            "Unstaked {} SPL tokens, remaining stake: {}",
             amount,
             stake.amount
         );
@@ -230,6 +297,47 @@ pub mod test_counter {
             amount,
             counter.value
         );
+        Ok(())
+    }
+
+    /// Heavy batch operation - simulates complex DeFi operation with many accounts and large data
+    /// This function is designed to test transaction size limits
+    /// Takes many accounts (10-15) and large instruction data (200-400 bytes)
+    /// Does minimal computation (just increments counter) to focus on size testing
+    pub fn batch_operation(
+        ctx: Context<BatchOperation>,
+        operation_id: u64,
+        data: Vec<u8>,
+    ) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+
+        // Validate data size (should be large for testing)
+        require!(data.len() >= 50, CounterError::InvalidDataSize);
+
+        // Process remaining accounts (simulate checking/validating many accounts)
+        // In real DeFi, this would validate token accounts, PDAs, etc.
+        let account_count = ctx.remaining_accounts.len();
+        msg!(
+            "Batch operation {} with {} accounts and {} bytes of data",
+            operation_id,
+            account_count,
+            data.len()
+        );
+
+        // Minimal computation - just increment counter by operation_id
+        // This keeps compute units low while testing transaction size
+        counter.value = counter
+            .value
+            .checked_add(operation_id)
+            .ok_or(CounterError::Overflow)?;
+
+        emit!(CounterUpdated {
+            counter: counter.key(),
+            old_value: counter.value.saturating_sub(operation_id),
+            new_value: counter.value,
+            operation: format!("batch_operation_{}", operation_id),
+        });
+
         Ok(())
     }
 }
@@ -274,9 +382,9 @@ pub struct StakeSol<'info> {
     )]
     pub counter: Account<'info, Counter>,
 
-    /// CHECK: Authority (CEA from gateway)
+    /// CHECK: Authority (CEA from gateway) - signed by gateway via cea_seeds
     #[account(mut)]
-    pub authority: UncheckedAccount<'info>,
+    pub authority: Signer<'info>,
 
     #[account(
         init_if_needed,
@@ -286,6 +394,15 @@ pub struct StakeSol<'info> {
         bump
     )]
     pub stake: Account<'info, Stake>,
+
+    /// Stake vault PDA - holds staked SOL (SystemAccount, no data)
+    /// Initialized manually if needed (SystemAccount with space=0 can't use init_if_needed)
+    #[account(
+        mut,
+        seeds = [b"stake_vault", authority.key().as_ref()],
+        bump
+    )]
+    pub stake_vault: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -299,9 +416,9 @@ pub struct UnstakeSol<'info> {
     )]
     pub counter: Account<'info, Counter>,
 
-    /// CHECK: Authority (CEA from gateway)
+    /// CHECK: Authority (CEA from gateway) - signed by gateway via cea_seeds
     #[account(mut)]
-    pub authority: UncheckedAccount<'info>,
+    pub authority: Signer<'info>,
 
     #[account(
         mut,
@@ -310,6 +427,15 @@ pub struct UnstakeSol<'info> {
         has_one = authority @ CounterError::Unauthorized
     )]
     pub stake: Account<'info, Stake>,
+
+    /// Stake vault PDA - holds staked SOL (SystemAccount, no data)
+    /// Initialized manually if needed (SystemAccount with space=0 can't use init_if_needed)
+    #[account(
+        mut,
+        seeds = [b"stake_vault", authority.key().as_ref()],
+        bump
+    )]
+    pub stake_vault: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -323,9 +449,9 @@ pub struct StakeSpl<'info> {
     )]
     pub counter: Account<'info, Counter>,
 
-    /// CHECK: Authority (CEA from gateway)
+    /// CHECK: Authority (CEA from gateway) - signed by gateway via cea_seeds
     #[account(mut)]
-    pub authority: UncheckedAccount<'info>,
+    pub authority: Signer<'info>,
 
     #[account(
         init_if_needed,
@@ -341,8 +467,17 @@ pub struct StakeSpl<'info> {
     #[account(mut)]
     pub authority_ata: Account<'info, TokenAccount>,
 
+    #[account(
+        init_if_needed,
+        payer = authority,
+        associated_token::mint = mint,
+        associated_token::authority = stake
+    )]
+    pub stake_ata: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 #[derive(Accounts)]
@@ -369,6 +504,9 @@ pub struct UnstakeSpl<'info> {
 
     #[account(mut)]
     pub authority_ata: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub stake_ata: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -417,6 +555,19 @@ pub struct ReceiveSpl<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct BatchOperation<'info> {
+    #[account(
+        mut,
+        seeds = [b"counter"],
+        bump
+    )]
+    pub counter: Account<'info, Counter>,
+
+    /// CHECK: Authority (CEA from gateway)
+    pub authority: UncheckedAccount<'info>,
+}
+
 #[account]
 pub struct Counter {
     pub value: u64,
@@ -455,4 +606,6 @@ pub enum CounterError {
     Unauthorized,
     #[msg("Insufficient stake")]
     InsufficientStake,
+    #[msg("Invalid data size")]
+    InvalidDataSize,
 }

@@ -7,7 +7,7 @@ pub struct AdminAction<'info> {
         mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = !config.paused @ GatewayError::Paused,
         constraint = config.admin == admin.key() @ GatewayError::Unauthorized
     )]
     pub config: Account<'info, Config>,
@@ -53,62 +53,6 @@ pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap_usd: u128, max_cap_usd: u
     Ok(())
 }
 
-#[derive(Accounts)]
-pub struct WhitelistAction<'info> {
-    #[account(
-        mut,
-        seeds = [CONFIG_SEED],
-        bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
-        constraint = config.admin == admin.key() @ GatewayError::Unauthorized
-    )]
-    pub config: Account<'info, Config>,
-
-    #[account(
-        init_if_needed,
-        payer = admin,
-        space = TokenWhitelist::LEN,
-        seeds = [WHITELIST_SEED],
-        bump
-    )]
-    pub whitelist: Account<'info, TokenWhitelist>,
-
-    #[account(mut)]
-    pub admin: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-pub fn whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-    require!(token != Pubkey::default(), GatewayError::ZeroAddress);
-
-    let whitelist = &mut ctx.accounts.whitelist;
-
-    // Check if token is already whitelisted
-    if whitelist.tokens.contains(&token) {
-        return Err(GatewayError::TokenAlreadyWhitelisted.into());
-    }
-
-    // Add token to whitelist
-    whitelist.tokens.push(token);
-
-    Ok(())
-}
-
-pub fn remove_whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-    require!(token != Pubkey::default(), GatewayError::ZeroAddress);
-
-    let whitelist = &mut ctx.accounts.whitelist;
-
-    // Find and remove token from whitelist
-    if let Some(pos) = whitelist.tokens.iter().position(|&x| x == token) {
-        whitelist.tokens.remove(pos);
-    } else {
-        return Err(GatewayError::TokenNotWhitelisted.into());
-    }
-
-    Ok(())
-}
-
 // Pyth oracle configuration functions
 pub fn set_pyth_price_feed(ctx: Context<AdminAction>, price_feed: Pubkey) -> Result<()> {
     require!(price_feed != Pubkey::default(), GatewayError::ZeroAddress);
@@ -133,7 +77,7 @@ pub struct RateLimitConfigAction<'info> {
         mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = !config.paused @ GatewayError::Paused,
         constraint = config.admin == admin.key() @ GatewayError::Unauthorized
     )]
     pub config: Account<'info, Config>,
@@ -187,7 +131,7 @@ pub struct TokenRateLimitAction<'info> {
         mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        constraint = !config.paused @ GatewayError::PausedError,
+        constraint = !config.paused @ GatewayError::Paused,
         constraint = config.admin == admin.key() @ GatewayError::Unauthorized
     )]
     pub config: Account<'info, Config>,
