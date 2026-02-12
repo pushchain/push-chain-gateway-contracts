@@ -336,7 +336,7 @@ contract UniversalGateway is
     /// @param _caller              Caller address
     /// @param _gasAmount           Gas amount
     /// @param _payload             Payload
-    /// @param _revertRecipient     Revert recipient
+    /// @param _revertRecipient       Fund recipient
     /// @param _signatureData       Signature data
     function _sendTxWithGas(
         TX_TYPE _txType,
@@ -465,7 +465,7 @@ contract UniversalGateway is
     /// @param token               Token address
     /// @param amount              Amount
     /// @param payload             Payload
-    /// @param revertRecipient     Revert recipient
+    /// @param revertRecipient       Fund recipient
     /// @param txType              TX_TYPE
     /// @param signatureData       Signature data
     function _emitUniversalTx(
@@ -497,7 +497,8 @@ contract UniversalGateway is
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTxToken(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
@@ -513,15 +514,16 @@ contract UniversalGateway is
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
         
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
         
-        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, token, amount, revertInstruction);
+        emit RevertUniversalTx(txID, universalTxID, revertInstruction.revertRecipient, token, amount, revertInstruction);
     }
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTx(
-        bytes calldata txID,
+        bytes32 txID,
+        bytes32 universalTxID,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     )
@@ -537,63 +539,15 @@ contract UniversalGateway is
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
-        emit RevertUniversalTx(txID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
+        emit RevertUniversalTx(txID, universalTxID, revertInstruction.revertRecipient, address(0), amount, revertInstruction);
     }
 
     // =========================
-    //  UG_4: WITHDRAW AND PAYLOAD EXECUTION PATHS
-    // =========================
-
-    /// @inheritdoc IUniversalGateway
-    function withdraw(
-        bytes calldata txID,
-        address ueaAddress,
-        address to,
-        uint256 amount
-    ) external payable nonReentrant whenNotPaused onlyTSS {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
-        
-        if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (msg.value != amount) revert Errors.InvalidAmount();
-        
-        isExecuted[txIDHash] = true;
-        (bool ok,) = payable(to).call{ value: amount }("");
-        if (!ok) revert Errors.WithdrawFailed();
-        
-        emit WithdrawToken(txID, ueaAddress, address(0), to, amount);
-    }
-
-    /// @inheritdoc IUniversalGateway
-    function withdrawTokens(
-        bytes calldata txID,
-        address ueaAddress,
-        address token,
-        address to,
-        uint256 amount
-    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
-        
-        if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (token == address(0)) revert Errors.InvalidInput();
-        
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-
-        isExecuted[txIDHash] = true;
-        IERC20(token).safeTransfer(to, amount);
-        emit WithdrawToken(txID, ueaAddress, token, to, amount);
-    }
-
-
-    // =========================
-    //  UG_5: PUBLIC HELPERS
+    //  UG_4: PUBLIC HELPERS
     // =========================
 
     /// @inheritdoc IUniversalGateway

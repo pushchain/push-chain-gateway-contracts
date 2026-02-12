@@ -16,7 +16,7 @@ contract MockPRC20 is IPRC20 {
 
     // ========= State =========
     /// @notice Source chain this PRC20 mirrors (used for oracle lookups)
-    string public SOURCE_CHAIN_ID;
+    string public SOURCE_CHAIN_NAMESPACE;
     /// @notice Source Chain ERC20 address of the PRC20
     string public SOURCE_TOKEN_ADDRESS;
 
@@ -78,7 +78,7 @@ contract MockPRC20 is IPRC20 {
         _symbol = symbol_;
         _decimals = decimals_;
 
-        SOURCE_CHAIN_ID = sourceChainId_;
+        SOURCE_CHAIN_NAMESPACE = sourceChainId_;
         TOKEN_TYPE = tokenType_;
         PC_PROTOCOL_FEE = protocolFlatFee_;
         UNIVERSAL_CORE = universalCore_;

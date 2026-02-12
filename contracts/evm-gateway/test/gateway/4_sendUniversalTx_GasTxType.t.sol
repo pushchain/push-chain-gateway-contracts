@@ -249,7 +249,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         assertEq(tss.balance, tssBalanceBefore, "TSS balance should remain unchanged when gasAmount is zero");
     }
 
-    /// @notice Test revertRecipient must be non-zero for GAS
+    /// @notice Test revertInstruction.revertRecipient must be non-zero for GAS
     /// @dev Zero revertRecipient should revert with InvalidRecipient
     function test_SendTxWithGas_GAS_RevertOn_ZerorevertRecipient() public {
         // Arrange
@@ -269,7 +269,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         gatewayTemp.sendUniversalTx{ value: gasAmount }(req);
     }
 
-    /// @notice Test revertRecipient must be non-zero for GAS_AND_PAYLOAD
+    /// @notice Test revertInstruction.revertRecipient must be non-zero for GAS_AND_PAYLOAD
     /// @dev Zero revertRecipient should revert with InvalidRecipient
     function test_SendTxWithGas_GAS_AND_PAYLOAD_RevertOn_ZerorevertRecipient() public {
         uint256 gasAmount = 0.002 ether;
@@ -512,7 +512,8 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
     function test_SendTxWithGas_GAS_EmitsCorrect_UniversalTxEvent() public {
         // Arrange
         uint256 gasAmount = 0.002 ether;
-        address revertInst = address(0x789);
+        RevertInstructions memory revertInst =
+            RevertInstructions({ revertRecipient: address(0x789), revertMsg: bytes("test context") });
         bytes memory sigData = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)));
 
         UniversalTxRequest memory req = UniversalTxRequest({
@@ -520,7 +521,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0),
             amount: 0, // amount must be 0 for GAS route (matrix requires !hasFunds)
             payload: bytes(""),
-            revertRecipient: revertInst,
+            revertRecipient: revertInst.revertRecipient,
             signatureData: sigData
         });
 
@@ -533,7 +534,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0), // Native token
             amount: gasAmount,
             payload: bytes(""), // Empty for GAS
-            revertRecipient: revertInst,
+            revertRecipient: revertInst.revertRecipient,
             signatureData: sigData
         });
 
@@ -548,7 +549,8 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
 
-        address revertInst = address(0xABC);
+        RevertInstructions memory revertInst =
+            RevertInstructions({ revertRecipient: address(0xABC), revertMsg: bytes("payload context") });
         bytes memory sigData = abi.encodePacked(bytes32(uint256(3)), bytes32(uint256(4)));
 
         UniversalTxRequest memory req = UniversalTxRequest({
@@ -556,7 +558,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0),
             amount: 0, // amount must be 0 for GAS_AND_PAYLOAD route (matrix requires !hasFunds)
             payload: encodedPayload,
-            revertRecipient: revertInst,
+            revertRecipient: revertInst.revertRecipient,
             signatureData: sigData
         });
 
@@ -568,7 +570,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             token: address(0), // Native token
             amount: gasAmount,
             payload: encodedPayload, // Non-empty for GAS_AND_PAYLOAD
-            revertRecipient: revertInst,
+            revertRecipient: revertInst.revertRecipient,
             signatureData: sigData
         });
 

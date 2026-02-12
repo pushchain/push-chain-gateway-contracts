@@ -388,14 +388,14 @@ abstract contract BaseTest is Test {
     /// @return UniversalTxRequest struct configured for FUNDS route
     function _buildFundsTxRequest(address token, uint256 amount)
         internal
-        view
+        pure
         virtual
         returns (UniversalTxRequest memory)
     {
         return _buildFundsTxRequest(token, amount, address(0x456));
     }
 
-    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom revert recipient
+    /// @notice Build a UniversalTxRequest for FUNDS transactions with custom fund recipient
     /// @param token Token address (address(0) for native, or ERC20 token address)
     /// @param amount Amount of tokens to send
     /// @param revertRecipient Address to receive funds in case of revert
@@ -425,7 +425,7 @@ abstract contract BaseTest is Test {
     /// @return UniversalTxRequest struct configured for FUNDS_AND_PAYLOAD route
     function _buildFundsAndPayloadTxRequest(address token, uint256 amount, UniversalPayload memory payload)
         internal
-        view
+        pure
         virtual
         returns (UniversalTxRequest memory)
     {
@@ -553,7 +553,9 @@ abstract contract BaseTest is Test {
             vType: VerificationType(0)
         });
 
-        return (payload, to);
+        RevertInstructions memory revertCfg_ = RevertInstructions({ revertRecipient: to, revertMsg: bytes("") });
+
+        return (payload, revertCfg_);
     }
 
     /// @notice Fund user with mainnet tokens by impersonating whales

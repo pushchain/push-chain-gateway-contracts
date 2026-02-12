@@ -460,7 +460,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
     }
 
     /// @notice Test Case 2.2 - Zero revertRecipient reverts
-    /// @dev revertRecipient must be non-zero
+    /// @dev revertInstruction.revertRecipient must be non-zero
     function test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_ZerorevertRecipient() public {
         uint256 msgValue = 1.002 ether;
         uint256 fundsAmount = 1 ether;
@@ -473,7 +473,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertRecipient: address(0),
+            revertRecipient: address(0), // Zero address
             signatureData: bytes("")
         });
 
@@ -914,14 +914,15 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
 
-        address revertInst = address(0x456);
+        RevertInstructions memory revertInst =
+            RevertInstructions({ revertRecipient: address(0x456), revertMsg: revertMsg });
 
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
             token: address(0),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertRecipient: revertInst,
+            revertRecipient: revertInst.revertRecipient,
             signatureData: bytes("")
         });
 

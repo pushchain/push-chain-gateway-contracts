@@ -723,8 +723,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
     //      EDGE CASE TESTS
     // =========================
 
-    /// @notice Test that revertRecipient validation is preserved
-    /// @dev The UniversalTxRequest built from UniversalTokenTxRequest should preserve revertRecipient
+    /// @notice Test that revertInstruction validation is preserved
+    /// @dev The UniversalTxRequest built from UniversalTokenTxRequest should preserve revertInstruction
     ///      and _routeUniversalTx should validate it (e.g., revertRecipient != address(0) for GAS routes)
     function test_TokenGas_PreservesRevertInstruction() public {
         // Arrange: Zero revertRecipient should revert for GAS route

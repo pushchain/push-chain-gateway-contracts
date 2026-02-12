@@ -475,7 +475,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
     }
 
     /// @notice Test Case 2.1 - Zero revertRecipient reverts
-    /// @dev revertRecipient must be non-zero
+    /// @dev revertInstruction.revertRecipient must be non-zero
     function test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_ZerorevertRecipient() public {
         uint256 fundsAmount = 500 ether;
         UniversalPayload memory payload = buildDefaultPayload();
@@ -486,7 +486,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertRecipient: address(0),
+            revertRecipient: address(0), // Zero address not allowed
             signatureData: bytes("")
         });
 
@@ -583,14 +583,15 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         bytes memory encodedPayload = abi.encode(payload);
         bytes memory revertMsg = abi.encodePacked("custom revert data", uint256(12345));
 
-        address revertInst = address(0x999);
+        RevertInstructions memory revertInst =
+            RevertInstructions({ revertRecipient: address(0x999), revertMsg: revertMsg });
 
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0), // FUNDS_AND_PAYLOAD always has recipient == address(0)
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertRecipient: revertInst,
+            revertRecipient: revertInst.revertRecipient,
             signatureData: bytes("")
         });
 
@@ -602,7 +603,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
             token: address(tokenA),
             amount: fundsAmount,
             payload: encodedPayload,
-            revertRecipient: revertInst, // Full struct with revertMsg
+            revertRecipient: revertInst.revertRecipient, // Full struct with revertMsg
             signatureData: bytes("")
         });
 
@@ -671,7 +672,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         uint256 fundsAmount = 500 ether;
         UniversalPayload memory payload = buildDefaultPayload();
         bytes memory encodedPayload = abi.encode(payload);
-        
+
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx({
             txType: TX_TYPE.FUNDS_AND_PAYLOAD,
@@ -685,12 +686,14 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test is BaseTest {
         });
 
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 0 }(buildUniversalTxRequest(
-            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
-            address(tokenA),
-            fundsAmount,
-            encodedPayload
-        ));
+        gatewayTemp.sendUniversalTx{ value: 0 }(
+            buildUniversalTxRequest(
+                address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
+                address(tokenA),
+                fundsAmount,
+                encodedPayload
+            )
+        );
     }
 
     /// @notice Test Case 2.1 - Gateway does not accumulate ETH

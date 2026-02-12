@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {TX_TYPE} from "../libraries/Types.sol";
+import {RevertInstructions, TX_TYPE, UniversalOutboundTxRequest} from "../libraries/Types.sol";
 
 /**
  * @title   IUniversalGatewayPC
@@ -13,7 +13,7 @@ interface IUniversalGatewayPC {
 
     /// @notice                 Single event covering both flows (funds-only and funds+payload).
     /// @param sender           EVM sender on Push Chain (burn initiator) on Push Chain
-    /// @param chainId          Origin chain id string, fetched from PRC20 on external chain
+    /// @param chainNamespace   Origin chain namespace string, fetched from PRC20 on external chain
     /// @param token            PRC20 token address being withdrawn (represents origin ERC20/native) on external chain
     /// @param target           Raw destination address on origin chain (bytes) on external chain
     /// @param amount           Amount burned on Push Chain
@@ -22,9 +22,10 @@ interface IUniversalGatewayPC {
     /// @param gasLimit         Gas limit used for fee quote on external chain
     /// @param payload          Optional payload for arbitrary call on origin chain (empty for funds-only) on external chain
     /// @param protocolFee      Flat protocol fee portion (as defined by PRC20), included inside gasFee on external chain
-    event UniversalTxWithdraw(
+    event UniversalTxOutbound(
+        bytes32 indexed txID,
         address indexed sender,
-        string chainId,
+        string chainNamespace,
         address indexed token,
         bytes target,
         uint256 amount,
@@ -41,42 +42,13 @@ interface IUniversalGatewayPC {
     /// @param oldVaultPC       Previous VaultPC address
     /// @param newVaultPC       New VaultPC address
     event VaultPCUpdated(address indexed oldVaultPC, address indexed newVaultPC);
-
     /**
-     * @notice                   Withdraw PRC20 back to origin chain (funds only).
-     * @dev                      Uses UniversalCore to fetch gasToken, gasFee and protocolFee.
-     * @param to                 raw destination address on origin chain.
-     * @param token              PRC20 token address on Push Chain.
-     * @param amount             amount to withdraw (burn on Push, unlock at origin).
-     * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
-     * @param revertRecipient      address to receive funds in case of revert.
+     * @notice                   Send a universal outbound transaction from Push Chain to origin chain.
+     * @dev                      Unified function for all outbound transaction types (FUNDS, FUNDS_AND_PAYLOAD, GAS_AND_PAYLOAD).
+     *                           TX_TYPE is automatically inferred based on the presence of payload and amount.
+     * @param req                UniversalOutboundTxRequest struct containing all transaction parameters.
      */
-    function withdraw(
-        bytes calldata to,
-        address token,
-        uint256 amount,
-        uint256 gasLimit,
-        address revertRecipient
-    ) external;
-
-    /**
-     * @notice                   Withdraw PRC20 and attach an arbitrary payload to be executed on the origin chain.
-     * @dev                      Uses UniversalCore to fetch gasToken, gasFee and protocolFee.
-     * @param target             raw destination (contract) address on origin chain.
-     * @param token              PRC20 token address on Push Chain.
-     * @param amount             amount to withdraw (burn on Push, unlock at origin).
-     * @param payload            ABI-encoded calldata to execute on the origin chain.   
-     * @param gasLimit           gas limit to use for fee quote; if 0, uses token's default GAS_LIMIT().
-     * @param revertRecipient      address to receive funds in case of revert.
-     */
-    function withdrawAndExecute(
-        bytes calldata target,
-        address token,
-        uint256 amount,
-        bytes calldata payload,
-        uint256 gasLimit,
-        address revertRecipient
-    ) external;
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external;
 
     // ========= View Functions =========
     function UNIVERSAL_CORE() external view returns (address);

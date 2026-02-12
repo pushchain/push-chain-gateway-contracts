@@ -19,7 +19,7 @@ enum TX_TYPE {
 
 struct RevertInstructions {
     ///             where funds go in revert / refund cases
-    address revertRecipient;
+    address fundRecipient;
     ///             arbitrary message for relayers/UEA
     bytes revertMsg;
 }
@@ -55,7 +55,7 @@ struct UniversalTxRequest {
     address token;                          // address(0) => native path (gas-only)
     uint256 amount;                         // native amount or ERC20 amount
     bytes   payload;                        // call data / memo = UNIVERSAL PAYLOAD
-    address revertRecipient;                  // address to receive funds in case of revert
+    RevertInstructions revertInstruction;   // revert instructions
     bytes   signatureData;                  // signature data for further verification
 }
 
@@ -67,18 +67,8 @@ struct UniversalTokenTxRequest {
     address gasToken;                       // token used for paying GAS
     uint256 gasAmount;                      // amount of the token to be used as GAS.
     bytes   payload;                        // call data / memo = UNIVERSAL PAYLOAD
-    address revertRecipient;                  // address to receive funds in case of revert
+    RevertInstructions revertInstruction;   // revert instructions
     bytes   signatureData;                  // signature data for further verification
 	uint256 amountOutMinETH;                // minimum amount of ETH to receive
     uint256 deadline;                       // timestamp after which this request is invalid
-}
-
-/// @notice         Universal outbound transaction request for Push Chain
-struct UniversalOutboundTxRequest {
-    bytes   target;                         // raw destination address on origin chain
-    address token;                          // PRC20 token address on Push Chain
-    uint256 amount;                         // amount to withdraw (burn on Push, unlock at origin)
-    uint256 gasLimit;                       // gas limit to use for fee quote; if 0, uses default BASE_GAS_LIMIT
-    bytes   payload;                        // ABI-encoded calldata to execute on the origin chain (empty for funds-only)
-    address revertRecipient;                // address to receive funds in case of revert
 }

@@ -150,7 +150,7 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw_execute::withdraw_and_execute(
+        instructions::execute::withdraw_and_execute(
             ctx,
             instruction_id,
             tx_id,
@@ -245,7 +245,7 @@ pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
-pub use instructions::withdraw_execute::WithdrawAndExecute;
+pub use instructions::execute::WithdrawAndExecute;
 pub use instructions::initialize::Initialize;
 pub use instructions::revert::{
     RevertUniversalTx, RevertUniversalTxToken,

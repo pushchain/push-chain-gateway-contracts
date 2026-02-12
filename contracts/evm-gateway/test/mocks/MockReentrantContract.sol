@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.sol";
-import { RevertInstructions } from "../../src/libraries/Types.sol";
+import { UniversalOutboundTxRequest } from "../../src/libraries/Types.sol";
 
 /**
  * @title MockReentrantContract
@@ -32,13 +32,16 @@ contract MockReentrantContract {
     // UniversalGatewayPC Reentrancy Functions
     // ============================================================================
 
-    function attemptReentrancy(
-        bytes calldata to,
-        uint256 amount,
-        uint256 gasLimit,
-        address revertRecipient
-    ) external {
-        IUniversalGatewayPC(gateway).withdraw(to, prc20Token, amount, gasLimit, revertRecipient);
+    function attemptReentrancy(bytes calldata to, uint256 amount, uint256 gasLimit, address revertRecipient) external {
+        UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
+            target: to,
+            token: prc20Token,
+            amount: amount,
+            gasLimit: gasLimit,
+            payload: bytes(""), // empty payload for FUNDS type
+            revertRecipient: revertRecipient
+        });
+        IUniversalGatewayPC(gateway).sendUniversalTxOutbound(req);
     }
 
     function attemptReentrancyWithExecute(
@@ -48,7 +51,15 @@ contract MockReentrantContract {
         uint256 gasLimit,
         address revertRecipient
     ) external {
-        IUniversalGatewayPC(gateway).withdrawAndExecute(target, prc20Token, amount, payload, gasLimit, revertRecipient);
+        UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
+            target: target,
+            token: prc20Token,
+            amount: amount,
+            gasLimit: gasLimit,
+            payload: payload, // non-empty payload for FUNDS_AND_PAYLOAD type
+            revertRecipient: revertRecipient
+        });
+        IUniversalGatewayPC(gateway).sendUniversalTxOutbound(req);
     }
 
     // ============================================================================

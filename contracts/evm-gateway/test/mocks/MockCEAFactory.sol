@@ -27,6 +27,9 @@ contract MockCEAFactory is ICEAFactory {
     /// @notice Mapping from CEA on this chain -> UEA on Push Chain
     mapping(address => address) public CEA_to_UEA;
 
+    /// @notice When true, deployCEA will revert (for failure propagation tests)
+    bool public shouldFailDeploy;
+
     /// @notice Tracks which CEAs have been deployed (have code)
     mapping(address => bool) private _deployed;
 
@@ -39,6 +42,7 @@ contract MockCEAFactory is ICEAFactory {
     error ZeroAddress();
     error NotVault();
     error CEAAlreadyDeployed();
+    error DeployFailed();
 
     // =========================
     //        Modifiers
@@ -65,6 +69,11 @@ contract MockCEAFactory is ICEAFactory {
         VAULT = vault;
     }
 
+    /// @notice Set whether deployCEA should fail (for failure propagation tests)
+    function setShouldFailDeploy(bool _shouldFail) external {
+        shouldFailDeploy = _shouldFail;
+    }
+
     // =========================
     //        View helpers
     // =========================
@@ -85,6 +94,7 @@ contract MockCEAFactory is ICEAFactory {
     /// @inheritdoc ICEAFactory
     function deployCEA(address ueaOnPush) external override onlyVault returns (address cea) {
         if (ueaOnPush == address(0)) revert ZeroAddress();
+        if (shouldFailDeploy) revert DeployFailed();
 
         // If a mapping already exists and code is present, treat as already deployed
         address existing = UEA_to_CEA[ueaOnPush];
@@ -153,4 +163,3 @@ contract MockCEAFactory is ICEAFactory {
         return _deployed[addr] && address(_deployedCEAs[addr]) != address(0);
     }
 }
-
