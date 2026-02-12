@@ -162,9 +162,11 @@ contract Vault is
     {
         if (token == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
+        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         _enforceSupported(token);
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
+        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+        
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(txID, universalTxID, token, amount, revertInstruction);
 
