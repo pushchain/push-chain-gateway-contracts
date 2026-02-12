@@ -508,8 +508,7 @@ contract UniversalGateway is
         whenNotPaused
         onlyRole(VAULT_ROLE)
     {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
@@ -533,8 +532,7 @@ contract UniversalGateway is
         whenNotPaused
         onlyTSS
     {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();

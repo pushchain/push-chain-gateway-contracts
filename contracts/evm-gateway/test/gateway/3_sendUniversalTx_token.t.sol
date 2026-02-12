@@ -614,7 +614,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
     // =========================
 
     /// @notice Test that UniversalTxRequest is correctly built from UniversalTokenTxRequest
-    /// @dev Verify that recipient, token, amount, payload, revertRecipient, signatureData are preserved
+    /// @dev Verify that recipient, token, amount, payload, revertInstruction, signatureData are preserved
     function test_TokenGas_BuildsCorrectUniversalTxRequest() public {
         // This test verifies the conversion from UniversalTokenTxRequest to UniversalTxRequest
         // The conversion happens at lines 317-324 in UniversalGateway.sol
@@ -737,7 +737,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         );
         req.revertRecipient = address(0); // Invalid
 
-        // Act & Assert: Should revert on invalid revertRecipient
+        // Act & Assert: Should revert on invalid revertInstruction
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx(req);

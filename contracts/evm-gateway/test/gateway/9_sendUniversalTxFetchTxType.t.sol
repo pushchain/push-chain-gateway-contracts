@@ -564,8 +564,8 @@ contract GatewayFetchTxTypeTest is BaseTest {
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req2);
     }
 
-    /// @notice Test 9.3: RevertRecipient context does not affect txType
-    function test_Invariance_revertRecipient_onlyRecipientMatters() public {
+    /// @notice Test 9.3: RevertInstruction context does not affect txType
+    function test_Invariance_revertInstruction_onlyRecipientMatters() public {
         uint256 amount = 500 ether;
         uint256 nativeValue = 0.003 ether; // $6 gas within $1-$10 cap
 

@@ -7,8 +7,6 @@ import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { RevertInstructions } from "../../src/libraries/Types.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
-import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
-import { MockCEA } from "../mocks/MockCEA.sol";
 import { MockTokenApprovalVariants } from "../mocks/MockTokenApprovalVariants.sol";
 import { MockTarget } from "../mocks/MockTarget.sol";
 import { MockRevertingTarget } from "../mocks/MockRevertingTarget.sol";
@@ -678,8 +676,6 @@ contract VaultTest is Test {
     function test_ExecuteUniversalTx_ZeroOriginCallerReverts() public {
         bytes memory data = "";
 
-        // In new implementation, address(0) is valid for native flows but requires msg.value == amount
-        // Since msg.value is 0 and amount is 100e18, it will revert with InvalidAmount
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
         vault.executeUniversalTx(_tx(303), bytes32(uint256(3303)), address(0), address(token), address(mockTarget), 100e18, data);
@@ -697,8 +693,6 @@ contract VaultTest is Test {
         bytes memory data = "";
         vm.deal(tss, 1 ether);
 
-        // Zero amount is now allowed in validation (amount check is commented out)
-        // The call should succeed with CEA deployment
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
         vault.executeUniversalTx{value: 0.5 ether}(_tx(305), bytes32(uint256(3305)), user1, address(0), address(mockTarget), 1 ether, data);

@@ -750,7 +750,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
     //      EDGE CASE TESTS
     // =========================
 
-    /// @notice Test that revertRecipient validation is preserved
+    /// @notice Test that revertInstruction validation is preserved
     function test_TokenGas_PreservesRevertInstruction() public {
         // Arrange: Zero revertRecipient should revert for GAS route
         uint256 gasAmount = 100e6; // Use larger amount to meet USD caps
@@ -765,7 +765,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         );
         req.revertRecipient = address(0); // Invalid
 
-        // Act & Assert: Should revert on invalid revertRecipient
+        // Act & Assert: Should revert on invalid revertInstruction
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(user1);
         gatewayFork.sendUniversalTx(req);

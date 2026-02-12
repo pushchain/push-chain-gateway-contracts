@@ -41,7 +41,7 @@ interface IUniversalGatewayV0 {
         address token,
         uint256 amount,
         bytes payload,
-        address revertRecipient,
+        RevertInstructions revertInstruction,
         TX_TYPE txType,
         bytes signatureData
     );

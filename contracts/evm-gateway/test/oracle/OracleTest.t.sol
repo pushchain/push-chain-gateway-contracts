@@ -473,7 +473,7 @@ contract OracleTest is BaseTest {
         uint256 testAmount = minEth + 1000; // Add 1000 wei buffer
         vm.deal(user1, testAmount);
 
-        (UniversalPayload memory payload, address revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Should not revert
@@ -488,7 +488,7 @@ contract OracleTest is BaseTest {
         // Use exact maximum amount
         vm.deal(user1, maxEth);
 
-        (UniversalPayload memory payload, address revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         // Should not revert
@@ -503,7 +503,7 @@ contract OracleTest is BaseTest {
 
         vm.deal(user1, belowMin);
 
-        (UniversalPayload memory payload, address revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
@@ -518,7 +518,7 @@ contract OracleTest is BaseTest {
 
         vm.deal(user1, aboveMax);
 
-        (UniversalPayload memory payload, address revertCfg) =
+        (UniversalPayload memory payload, RevertInstructions memory revertCfg) =
             buildERC20Payload(user1, abi.encodeWithSignature("receive()"), 0);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));

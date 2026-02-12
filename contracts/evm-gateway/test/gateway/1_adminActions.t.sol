@@ -18,11 +18,6 @@ import { MockSequencerUptimeFeed } from "../mocks/MockSequencerUptimeFeed.sol";
  */
 
 contract GatewayAdminSettersTest is BaseTest {
-    // Helper function to convert uint256 to bytes txID
-    function _tx(uint256 id) internal pure returns (bytes memory) {
-        return abi.encodePacked(bytes32(uint256(id)));
-    }
-
     // =========================
     //      SETUP
     // =========================

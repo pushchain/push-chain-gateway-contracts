@@ -337,7 +337,7 @@ contract UniversalGatewayV0 is
             token: reqToken.token,
             amount: reqToken.amount,
             payload: reqToken.payload,
-            revertRecipient: reqToken.revertRecipient,
+            revertInstruction: reqToken.revertInstruction,
             signatureData: reqToken.signatureData
         });
 
@@ -356,7 +356,7 @@ contract UniversalGatewayV0 is
         address _caller,
         uint256 _gasAmount,
         bytes memory _payload,
-        address _revertRecipient,
+        RevertInstructions memory _revertInstruction,
         bytes memory _signatureData
     ) private {
         if (_gasAmount > 0) {
@@ -367,7 +367,7 @@ contract UniversalGatewayV0 is
         }
 
         _emitUniversalTx( // recipient as address(0) -> UEA.
-        _caller, address(0), address(0), _gasAmount, _payload, _revertRecipient, _txType, _signatureData);
+        _caller, address(0), address(0), _gasAmount, _payload, _revertInstruction, _txType, _signatureData);
     }
 
     /// @notice                     Internal helper function to deposit for TX_TYPE.FUNDS or TX_TYPE.FUNDS_AND_PAYLOAD
@@ -401,7 +401,7 @@ contract UniversalGatewayV0 is
                 tokenForFunds,
                 _req.amount,
                 _req.payload,
-                _req.revertRecipient,
+                _req.revertInstruction,
                 txType,
                 _req.signatureData
             );
@@ -438,7 +438,7 @@ contract UniversalGatewayV0 is
 
                 if (gasAmount > 0) {
                     _sendTxWithGas(
-                        TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertRecipient, _req.signatureData
+                        TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertInstruction, _req.signatureData
                     );
                 }
                 tokenForFundsAndPayload = address(0);
@@ -448,7 +448,7 @@ contract UniversalGatewayV0 is
                 uint256 gasAmount = nativeValue;
                 // Send Gas to caller's UEA via instant route
                 _sendTxWithGas(
-                    TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertRecipient, _req.signatureData
+                    TX_TYPE.GAS, _msgSender(), gasAmount, bytes(""), _req.revertInstruction, _req.signatureData
                 );
 
                 tokenForFundsAndPayload = _req.token;
@@ -462,7 +462,7 @@ contract UniversalGatewayV0 is
                 tokenForFundsAndPayload,
                 _req.amount,
                 _req.payload,
-                _req.revertRecipient,
+                _req.revertInstruction,
                 txType,
                 _req.signatureData
             );
@@ -517,8 +517,7 @@ contract UniversalGatewayV0 is
         whenNotPaused
         onlyTSS
     {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
@@ -542,8 +541,7 @@ contract UniversalGatewayV0 is
         whenNotPaused
         onlyTSS
     {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted();
+        if (isExecuted[txID]) revert Errors.PayloadExecuted();
         
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
@@ -568,14 +566,13 @@ contract UniversalGatewayV0 is
         address to,
         uint256 amount
     ) external payable nonReentrant whenNotPaused onlyTSS {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
-        if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
         
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         (bool ok,) = payable(to).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
         
@@ -590,16 +587,15 @@ contract UniversalGatewayV0 is
         address to,
         uint256 amount
     ) external nonReentrant whenNotPaused onlyTSS {
-        bytes32 txIDHash = keccak256(txID);
-        if (isExecuted[txIDHash]) revert Errors.PayloadExecuted(); 
+        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
         
-        if (to == address(0) || ueaAddress == address(0)) revert Errors.InvalidInput();
+        if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (token == address(0)) revert Errors.InvalidInput();
         
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        isExecuted[txIDHash] = true;
+        isExecuted[txID] = true;
         IERC20(token).safeTransfer(to, amount);
         emit UniversalTxExecuted(txID, universalTxID, originCaller, to, token, amount, bytes(""));
     }

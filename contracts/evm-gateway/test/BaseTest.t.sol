@@ -539,7 +539,7 @@ abstract contract BaseTest is Test {
         internal
         pure
         virtual
-        returns (UniversalPayload memory, address)
+        returns (UniversalPayload memory, RevertInstructions memory)
     {
         UniversalPayload memory payload = UniversalPayload({
             to: to,

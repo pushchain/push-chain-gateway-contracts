@@ -103,13 +103,7 @@ contract MockReentrantContract {
             } else if (reenterType == 2) {
                 // Attempt to reenter revertWithdraw
                 (bool success,) = vault.call(
-                    abi.encodeWithSignature(
-                        "revertWithdraw(bytes,address,uint256,(address,bytes))",
-                        abi.encodePacked(bytes32(uint256(1))),
-                        _token,
-                        1,
-                        RevertInstructions(address(this), bytes(""))
-                    )
+                    abi.encodeWithSignature("revertWithdraw(address,address,uint256)", _token, address(this), 1)
                 );
                 require(success, "Reentry failed");
             }
