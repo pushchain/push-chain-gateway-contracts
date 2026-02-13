@@ -76,7 +76,232 @@ forge verify-contract --chain sepolia \
 - **`UniversalGateway.sol`**: Main gateway contract (latest version) - handles transaction routing, rate limiting, oracle integration, and Uniswap v3 swaps
 - **`UniversalGatewayV0.sol`**: Legacy gateway version
 - **`UniversalGatewayPC.sol`**: Push Chain-side gateway for outbound transactions
-- **`Vault.sol` / `VaultPC.sol`**: Fund management contracts
+- **`Vault.sol`**: Outbound token custody contract on external EVM chains - manages TSS-controlled withdrawals and executions via CEA contracts
+- **`VaultPC.sol`**: Push Chain-side vault contract
+
+## Vault Architecture - CEA Execution Model
+
+**Vault.sol** is deployed on external EVM chains (Ethereum, Base, Arbitrum, etc.) and serves as the token custody contract for outbound flows from Push Chain. It is exclusively controlled by the Push Chain TSS (Threshold Signature Scheme) authority.
+
+### Core Design Principles
+
+1. **CEA-Based Execution**: All operations route through deterministic Chain Execution Account (CEA) contracts
+2. **TSS Authority**: Only TSS_ROLE can trigger withdrawals and executions
+3. **Unified Execution Path**: Single `executeUniversalTx` function handles both withdrawals (empty payload) and executions (multicall payload)
+4. **Token Gating**: Token support is validated via `UniversalGateway.isSupportedToken()` as a single source of truth
+5. **Deterministic CEA Deployment**: CEAFactory uses CREATE2 for predictable CEA addresses per UEA (Universal Execution Account)
+
+### CEA (Chain Execution Account) Model
+
+**What is a CEA?**
+- A CEA is a smart contract wallet deployed deterministically for each UEA (user's account on Push Chain)
+- Acts as the execution context for all user operations on the external chain
+- One-to-one mapping: `UEA (Push Chain) ↔ CEA (External Chain)`
+- Deployed via CREATE2 using `CEAFactory.deployCEA(originCaller)`
+
+**CEA Execution Flow**:
+
+```
+User UEA on Push Chain → TSS signs → Vault.executeUniversalTx() → CEA.executeUniversalTx() → Multicall execution
+```
+
+**Key Functions**:
+- `getCEAForUEA(uea)`: Returns (ceaAddress, isDeployed) - predictable even before deployment
+- `deployCEA(uea)`: Deploys CEA if not already deployed (idempotent, reverts if already exists)
+
+### Multicall Payload Structure
+
+All operations use a **multicall payload** (`abi.encode(Multicall[])`):
+
+```solidity
+struct Multicall {
+    address to;      // Target contract address
+    uint256 value;   // Native token amount to send with call
+    bytes data;      // Call data to execute
+}
+```
+
+**Examples**:
+- **Withdrawal (empty payload)**: `bytes("")` → CEA receives funds, no execution
+- **Single call**: `abi.encode([Multicall(target, value, data)])`
+- **Multi-step execution**: `abi.encode([call1, call2, call3])`
+
+### Vault Operations
+
+#### 1. executeUniversalTx (Main Entry Point)
+
+**Signature**:
+```solidity
+function executeUniversalTx(
+    bytes32 txID,
+    bytes32 universalTxID,
+    address originCaller,      // UEA on Push Chain
+    address token,             // address(0) for native
+    address target,            // kept for backward compatibility (not used for routing)
+    uint256 amount,            // amount to fund CEA with
+    bytes calldata data        // multicall payload: abi.encode(Multicall[])
+) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE)
+```
+
+**Flow** (`Vault.sol:136-154`):
+1. Get or deploy CEA for the `originCaller` (UEA)
+2. Fund CEA with tokens/native
+3. Call `CEA.executeUniversalTx(txID, universalTxID, originCaller, data)`
+4. Emit `VaultUniversalTxExecuted` event
+
+**Funding Logic**:
+- **ERC20**: Transfer tokens to CEA first, then call `CEA.executeUniversalTx()`
+- **Native**: Forward value during `CEA.executeUniversalTx{value: amount}()` call
+
+#### 2. revertUniversalTxToken (Revert/Refund)
+
+**Signature**:
+```solidity
+function revertUniversalTxToken(
+    bytes32 txID,
+    bytes32 universalTxID,
+    address token,
+    uint256 amount,
+    RevertInstructions calldata revertInstruction
+) external nonReentrant whenNotPaused onlyRole(TSS_ROLE)
+```
+
+**Flow** (`Vault.sol:157-174`):
+1. Validate token support and amount
+2. Transfer tokens from Vault to UniversalGateway
+3. Call `gateway.revertUniversalTxToken()` to handle refund logic
+4. Emit `VaultUniversalTxReverted` event
+
+**Use Case**: Return funds to users when execution fails or is rejected on Push Chain
+
+### Validation & Safety
+
+**Parameter Validation** (`_validateParams`):
+- `originCaller != address(0)`: Valid UEA address
+- `target != address(0)`: Valid target (even if not used for routing)
+- Token support check via `gateway.isSupportedToken(token)`
+- **Token/Value Invariants**:
+  - Native flow: `token == address(0)` → `msg.value == amount`
+  - ERC20 flow: `token != address(0)` → `msg.value == 0`
+
+**Token Support Enforcement** (`_enforceSupported`):
+- All token operations validated against `UniversalGateway.isSupportedToken(token)`
+- Single source of truth for supported tokens across Vault and Gateway
+
+**Balance Checks**:
+- ERC20 operations verify `IERC20(token).balanceOf(address(this)) >= amount`
+- Prevents overdraft or insufficient balance reverts
+
+### Access Control & Roles
+
+**Vault.sol Role System**:
+
+| Role | Permissions | Critical Actions |
+|------|-------------|------------------|
+| `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`, `sweep()` |
+| `TSS_ROLE` | Execute operations | `executeUniversalTx()`, `revertUniversalTxToken()` |
+| `PAUSER_ROLE` | Emergency pause | `pause()`, `unpause()` |
+
+**Security Properties**:
+- ✅ Only TSS can execute withdrawals and executions
+- ✅ Only TSS can trigger reverts
+- ✅ Admin can update TSS address (transfers role atomically)
+- ✅ Admin can sweep stuck tokens (emergency recovery)
+- ✅ Pausable for emergency situations
+- ✅ ReentrancyGuard on all external entry points
+
+### Admin Operations
+
+**Update Gateway** (`setGateway`):
+- Updates `IUniversalGateway` reference
+- Only `DEFAULT_ADMIN_ROLE`
+- Emits `GatewayUpdated(old, new)`
+
+**Update TSS** (`setTSS`):
+- Revokes `TSS_ROLE` from old TSS
+- Grants `TSS_ROLE` to new TSS
+- Updates `TSS_ADDRESS` state variable
+- Only `DEFAULT_ADMIN_ROLE`
+- Emits `TSSUpdated(old, new)`
+
+**Sweep Tokens** (`sweep`):
+- Emergency recovery of stuck ERC20 tokens
+- Only `DEFAULT_ADMIN_ROLE`
+- Does not support native token sweep (use withdrawal operations)
+
+**Pause/Unpause**:
+- `pause()`: Halts all operations (only `PAUSER_ROLE`)
+- `unpause()`: Resumes operations (only `PAUSER_ROLE`)
+
+### Events
+
+```solidity
+event VaultUniversalTxExecuted(
+    bytes32 indexed txID,
+    bytes32 indexed universalTxID,
+    address indexed originCaller,
+    address target,
+    address token,
+    uint256 amount,
+    bytes data
+);
+
+event VaultUniversalTxReverted(
+    bytes32 indexed txID,
+    bytes32 indexed universalTxID,
+    address indexed token,
+    uint256 amount,
+    RevertInstructions revertInstruction
+);
+
+event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
+event TSSUpdated(address indexed oldTSS, address indexed newTSS);
+```
+
+### Integration Points
+
+**Vault Dependencies**:
+- `IUniversalGateway`: Token support validation and revert handling
+- `ICEAFactory`: CEA deployment and address prediction
+- `ICEA`: Multicall execution interface
+
+**Related Files**:
+- `src/Vault.sol`: Main Vault implementation (241 lines)
+- `src/interfaces/IVault.sol`: Vault interface
+- `src/interfaces/ICEA.sol`: CEA execution interface
+- `src/interfaces/ICEAFactory.sol`: CEA factory interface
+- `src/libraries/Types.sol`: Multicall and RevertInstructions structs
+
+### Testing Guidelines
+
+When testing Vault operations:
+
+**CEA Deployment Tests**:
+- Verify deterministic CEA addresses via `getCEAForUEA()`
+- Test first-time deployment vs. existing CEA
+- Ensure idempotency (no double-deployment)
+
+**Execution Tests**:
+- Empty payload → funds transfer only (withdrawal)
+- Single Multicall → single contract call
+- Multiple Multicalls → batched execution
+- Native vs. ERC20 funding paths
+
+**Revert Tests**:
+- Token revert flow via `revertUniversalTxToken()`
+- Gateway integration for refund processing
+- Balance validation before transfer
+
+**Access Control Tests**:
+- TSS_ROLE exclusivity for executions
+- Admin operations (setGateway, setTSS, sweep)
+- Pause/unpause functionality
+
+**Security Tests**:
+- Reentrancy protection
+- Token/value invariant enforcement
+- Balance sufficiency checks
+- Zero address validations
 
 ### Key Components
 
