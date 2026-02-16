@@ -55,7 +55,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         bytes payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData
+        bytes signatureData,
+        bool viaCEA
     );
 
     // =========================
@@ -335,7 +336,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             bytes(""),
             req.revertRecipient,
             TX_TYPE.GAS,
-            bytes("")
+            bytes(""),
+            false
         );
 
         vm.prank(user1);
@@ -413,7 +415,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             bytes(""),
             req.revertRecipient,
             TX_TYPE.GAS,
-            bytes("")
+            bytes(""),
+            false
         );
 
         vm.prank(user1);
@@ -455,7 +458,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             payloadBytes,
             req.revertRecipient,
             TX_TYPE.GAS_AND_PAYLOAD,
-            bytes("")
+            bytes(""),
+            false
         );
 
         vm.prank(user1);
@@ -492,7 +496,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             bytes(""),
             req.revertRecipient,
             TX_TYPE.FUNDS,
-            bytes("")
+            bytes(""),
+            false
         );
 
         vm.prank(user1);
@@ -532,7 +537,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             payloadBytes,
             req.revertRecipient,
             TX_TYPE.FUNDS_AND_PAYLOAD,
-            bytes("")
+            bytes(""),
+            false
         );
 
         vm.prank(user1);
@@ -565,7 +571,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             bytes(""),
             req.revertRecipient,
             TX_TYPE.GAS,
-            bytes("")
+            bytes(""),
+            false
         );
 
         vm.prank(user1);
@@ -696,7 +703,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         // Act: Should succeed with default deadline
         vm.expectEmit(true, true, false, true, address(gatewayTemp));
         emit UniversalTx(
-            user1, address(0), address(0), expectedETH, bytes(""), req.revertRecipient, TX_TYPE.GAS, bytes("")
+            user1, address(0), address(0), expectedETH, bytes(""), req.revertRecipient, TX_TYPE.GAS, bytes(""), false
         );
 
         vm.prank(user1);
@@ -766,7 +773,8 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
             bytes(""),
             req.revertRecipient,
             TX_TYPE.GAS,
-            customSignature // Preserved
+            customSignature, // Preserved
+            false
         );
 
         vm.prank(user1);

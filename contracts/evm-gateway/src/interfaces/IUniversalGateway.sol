@@ -43,7 +43,8 @@ interface IUniversalGateway {
         bytes payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData
+        bytes signatureData,
+        bool viaCEA
     );
 
     /// @notice                     Universal tx execution event that is executed on External Chains.
@@ -145,6 +146,30 @@ interface IUniversalGateway {
      * @param reqToken        UniversalTokenTxRequest struct
      */
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable;
+
+    /**
+     * @notice                 Initiate a FUNDS_AND_PAYLOAD transaction via a CEA (Chain Execution Account).
+     *
+     * @dev                    Called by a CEA to bridge funds back to its linked UEA on Push Chain
+     *                         with an execution payload. The gateway validates CEA identity via CEAFactory,
+     *                         resolves the mapped UEA, and emits the event with viaCEA = true so that
+     *                         Push Chain can skip UEA deployment for the CEA sender.
+     *
+     *                         Gas-batching (Case 2.2 native batching / Case 2.3 ERC-20 + native gas)
+     *                         is NOT supported on this route. The linked UEA on Push Chain is assumed
+     *                         to already hold sufficient gas for execution.
+     *                           - Native funds path:  msg.value MUST equal req.amount (no extra gas).
+     *                           - ERC-20 funds path:  msg.value MUST be 0 (no native gas piggybacking).
+     *
+     *                         Strict validations:
+     *                         - msg.sender must be a valid CEA per CEAFactory.isCEA()
+     *                         - req.recipient must match the mapped UEA from CEAFactory.getUEAForCEA()
+     *                         - req.amount > 0 and req.payload.length > 0 (FUNDS_AND_PAYLOAD only)
+     *                         - Inferred TX_TYPE must be FUNDS_AND_PAYLOAD
+     *
+     * @param req              UniversalTxRequest struct
+     */
+    function sendUniversalTxViaCEA(UniversalTxRequest calldata req) external payable;
 
     // =========================
     //  UG_2: REVERT HANDLING PATHS

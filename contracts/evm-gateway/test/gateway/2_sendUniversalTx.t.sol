@@ -29,7 +29,8 @@ contract GatewaySendUniversalTxTest is BaseTest {
         bytes payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData
+        bytes signatureData,
+        bool viaCEA
     );
 
     // =========================
@@ -155,7 +156,8 @@ contract GatewaySendUniversalTxTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             txType: TX_TYPE.GAS,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -196,7 +198,8 @@ contract GatewaySendUniversalTxTest is BaseTest {
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
             txType: TX_TYPE.GAS_AND_PAYLOAD,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -238,7 +241,8 @@ contract GatewaySendUniversalTxTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             txType: TX_TYPE.FUNDS,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);

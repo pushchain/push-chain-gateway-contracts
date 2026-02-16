@@ -36,6 +36,7 @@ pragma solidity 0.8.26;
 
 import { IWETH } from "./interfaces/IWETH.sol";
 import { Errors } from "./libraries/Errors.sol";
+import { ICEAFactory } from "./interfaces/ICEAFactory.sol";
 import { IUniversalGateway } from "./interfaces/IUniversalGateway.sol";
 import { RevertInstructions, 
                 TX_TYPE, 
@@ -101,6 +102,9 @@ contract UniversalGateway is
     
     /// @notice Map to track if a payload has been executed
     mapping(bytes32 => bool) public isExecuted;
+
+    /// @notice CEAFactory address for validating CEA identity in viaCEA paths
+    address public CEA_FACTORY;
 
     /**
      * @notice                  Initialize the UniversalGateway contract
@@ -288,6 +292,13 @@ contract UniversalGateway is
         l2SequencerGracePeriodSec = gracePeriodSec;
     }
 
+    /// @notice             Set the CEAFactory address for CEA identity validation
+    /// @param newFactory   new CEAFactory address
+    function setCEAFactory(address newFactory) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newFactory == address(0)) revert Errors.ZeroAddress();
+        CEA_FACTORY = newFactory;
+    }
+
     // =========================
     //  UG_2: UNIVERSAL TRANSACTION
     // =========================
@@ -296,7 +307,7 @@ contract UniversalGateway is
     function sendUniversalTx(UniversalTxRequest calldata req) external payable nonReentrant whenNotPaused {
         uint256 nativeValue = msg.value;
         TX_TYPE txType = _fetchTxType(req, nativeValue);
-        _routeUniversalTx(req, _msgSender(), nativeValue, txType);
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType, false);
     }
 
     /// @inheritdoc IUniversalGateway
@@ -321,9 +332,43 @@ contract UniversalGateway is
         });
 
         TX_TYPE txType = _fetchTxType(req, nativeValue);
-        _routeUniversalTx(req, _msgSender(), nativeValue, txType);
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType, false);
     }
 
+    /// @inheritdoc IUniversalGateway
+    /// @dev   Gas-batching (Case 2.2 / 2.3) is intentionally disallowed on this route.
+    ///        The linked UEA on Push Chain is assumed to already hold sufficient gas.
+    ///        Native path:  msg.value must equal req.amount exactly (no extra gas top-up).
+    ///        ERC-20 path:  msg.value must be 0 (no native gas piggybacking).
+    function sendUniversalTxViaCEA(UniversalTxRequest calldata req) external payable nonReentrant whenNotPaused {
+        // B2.2: Strict CEA identity validation
+        if (CEA_FACTORY == address(0)) revert Errors.InvalidInput();
+        if (!ICEAFactory(CEA_FACTORY).isCEA(_msgSender())) revert Errors.InvalidInput();
+
+        address mappedUEA = ICEAFactory(CEA_FACTORY).getUEAForCEA(_msgSender());
+        if (mappedUEA == address(0)) revert Errors.InvalidInput();
+
+        // B2.2.4: req.recipient must match mapped UEA — blocks spoofing
+        if (req.recipient != mappedUEA) revert Errors.InvalidRecipient();
+
+        // B2.2.5: This path is strictly for FUNDS_AND_PAYLOAD
+        if (req.amount == 0) revert Errors.InvalidAmount();
+        if (req.payload.length == 0) revert Errors.InvalidInput();
+
+        // No gas batching: native path requires exact amount, ERC-20 path forbids native value.
+        if (req.token == address(0)) {
+            if (msg.value != req.amount) revert Errors.InvalidAmount();
+        } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+        }
+
+        // B2.3: Infer TX_TYPE and enforce FUNDS_AND_PAYLOAD
+        uint256 nativeValue = msg.value;
+        TX_TYPE txType = _fetchTxType(req, nativeValue);
+        if (txType != TX_TYPE.FUNDS_AND_PAYLOAD) revert Errors.InvalidTxType();
+
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType, true);
+    }
 
     // =========================
     //  UG_2.1: UNIVERSAL TRANSACTION Internal Helpers
@@ -356,7 +401,7 @@ contract UniversalGateway is
         }
 
         _emitUniversalTx(
-        _caller, address(0), address(0), _gasAmount, _payload, _revertRecipient, _txType, _signatureData);
+        _caller, address(0), address(0), _gasAmount, _payload, _revertRecipient, _txType, _signatureData, false);
     }
 
     /// @notice                     Internal helper function to deposit for TX_TYPE.FUNDS or TX_TYPE.FUNDS_AND_PAYLOAD
@@ -365,7 +410,8 @@ contract UniversalGateway is
     /// @param _req                 UniversalTxRequest struct
     /// @param nativeValue          Native value ( msg.value )
     /// @param txType               TX_TYPE.FUNDS or TX_TYPE.FUNDS_AND_PAYLOAD
-    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue, TX_TYPE txType) private {
+    /// @param viaCEA               True if called via sendUniversalTxViaCEA (preserves req.recipient)
+    function _sendTxWithFunds(UniversalTxRequest memory _req, uint256 nativeValue, TX_TYPE txType, bool viaCEA) private {
         // Case 1: For TX_TYPE = FUNDS
 
         if (txType == TX_TYPE.FUNDS) {
@@ -392,7 +438,8 @@ contract UniversalGateway is
                 _req.payload,
                 _req.revertRecipient,
                 txType,
-                _req.signatureData
+                _req.signatureData,
+                false
             );
         }
 
@@ -445,16 +492,19 @@ contract UniversalGateway is
 
             _consumeRateLimit(tokenForFundsAndPayload, _req.amount);
             _handleDeposits(tokenForFundsAndPayload, _req.amount);
-            // Recipient for FUNDS_AND_PAYLOAD is address(0) -> UEA.
+
+            // viaCEA: emit req.recipient (mapped UEA); normal: address(0) → UEA
+            address fundsAndPayloadRecipient = viaCEA ? _req.recipient : address(0);
             _emitUniversalTx(
                 _msgSender(),
-                address(0),
+                fundsAndPayloadRecipient,
                 tokenForFundsAndPayload,
                 _req.amount,
                 _req.payload,
                 _req.revertRecipient,
                 txType,
-                _req.signatureData
+                _req.signatureData,
+                viaCEA
             );
         }
     }
@@ -465,9 +515,10 @@ contract UniversalGateway is
     /// @param token               Token address
     /// @param amount              Amount
     /// @param payload             Payload
-    /// @param revertRecipient       Fund recipient
+    /// @param revertRecipient     Fund recipient
     /// @param txType              TX_TYPE
     /// @param signatureData       Signature data
+    /// @param viaCEA              True if originated from a CEA via sendUniversalTxViaCEA
     function _emitUniversalTx(
         address sender,
         address recipient,
@@ -476,7 +527,8 @@ contract UniversalGateway is
         bytes memory payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes memory signatureData
+        bytes memory signatureData,
+        bool viaCEA
     ) private {
         emit UniversalTx({
             sender: sender,
@@ -486,7 +538,8 @@ contract UniversalGateway is
             payload: payload,
             revertRecipient: revertRecipient,
             txType: txType,
-            signatureData: signatureData
+            signatureData: signatureData,
+            viaCEA: viaCEA
         });
     }
 
@@ -880,12 +933,14 @@ contract UniversalGateway is
     /// @param req         UniversalTxRequest struct
     /// @param caller      Caller address
     /// @param nativeValue Native value ( msg.value )
-    /// @param _TX_TYPE     TX_TYPE
+    /// @param _TX_TYPE    TX_TYPE
+    /// @param viaCEA      True if called via sendUniversalTxViaCEA
     function _routeUniversalTx(
         UniversalTxRequest memory req,
         address caller,
         uint256 nativeValue,
-        TX_TYPE _TX_TYPE
+        TX_TYPE _TX_TYPE,
+        bool viaCEA
     ) internal {
         TX_TYPE txType = _TX_TYPE;
 
@@ -900,7 +955,7 @@ contract UniversalGateway is
         }
         // Route 2: FUNDS or FUNDS_AND_PAYLOAD → Standard route
         else if (txType == TX_TYPE.FUNDS || txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
-            _sendTxWithFunds(req, nativeValue, txType);
+            _sendTxWithFunds(req, nativeValue, txType, viaCEA);
         }
         // Route 3: Invalid
         else {
