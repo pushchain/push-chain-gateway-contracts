@@ -12,7 +12,7 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
 
 **Step-by-step:**
 1. User calls `UniversalGatewayPC.withdrawAndExecute()` on Push Chain
-2. Push Chain burns tokens, emits `UniversalTxWithdraw` event
+2. Push Chain burns tokens, emits `UniversalTxOutbound` event
 3. Backend service watches events, extracts event data
 4. Backend decodes payload to get `instructionId` (1=withdraw, 2=execute) + accounts + ixData + rentFee
 5. Backend builds mode-specific TSS message hash (format varies by instructionId), signs with ECDSA secp256k1
@@ -26,9 +26,9 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
 
 ### 1.2 Event Structure (Push Chain)
 
-**Event**: `UniversalTxWithdraw`
+**Event**: `UniversalTxOutbound`
 ```solidity
-event UniversalTxWithdraw(
+event UniversalTxOutbound(
     address indexed sender,        // EVM address (20 bytes)
     string chainId,                // Source chain ID
     address token,                 // PRC20 token address
@@ -67,13 +67,17 @@ event UniversalTxWithdraw(
    - `1` = Withdraw mode (vault→CEA→recipient, direct transfer)
    - `2` = Execute mode (vault→CEA→CPI to target program)
 
-2. **No target parameter**: The target is derived from mode-specific optional accounts:
+2. **No target parameter**: The target is derived from mode-specific accounts:
    - Withdraw (1): Target derived from `recipient` account key
    - Execute (2): Target derived from `destination_program` account key
 
-3. **Optional account enforcement**: Exactly one mode-specific account must be provided:
-   - Withdraw: `recipient` required, `destination_program` must be None
-   - Execute: `destination_program` required, `recipient` must be None
+3. **Mode-specific account enforcement**:
+   - `destination_program` is ALWAYS required (non-optional account)
+     - Withdraw mode: Pass `SystemProgram.programId` (used as sentinel, target comes from recipient)
+     - Execute mode: Pass target program pubkey (must be executable)
+   - `recipient` is optional:
+     - Withdraw mode: Must be provided (contains recipient pubkey)
+     - Execute mode: Must be None/null
 
 4. **Mode-specific validation**:
    - Withdraw: `rent_fee` must be 0, `writable_flags` empty, `ix_data` empty, `amount` > 0
@@ -418,9 +422,13 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `executed_tx`: PDA `["executed_tx", tx_id]` (will be created)
 - `system_program`: System program
 
-**Mode-Specific Optional Accounts** (exactly one must be provided):
-- `destination_program`: Option<UncheckedAccount> - **Execute only** (must be executable)
-- `recipient`: Option<UncheckedAccount> - **Withdraw only** (mut)
+**Mode-Specific Accounts**:
+- `destination_program`: UncheckedAccount (ALWAYS REQUIRED, non-optional)
+  - **Withdraw mode**: Pass `SystemProgram.programId` (sentinel value, actual target from recipient)
+  - **Execute mode**: Pass target program pubkey (must be executable)
+- `recipient`: Option<UncheckedAccount> - Mode-dependent (optional account)
+  - **Withdraw mode**: Must be provided (mut)
+  - **Execute mode**: Must be None
 
 **SPL Optional Accounts** (all-or-none based on `mint` presence):
 - `vault_ata`: Vault ATA for the mint (validated: owner == vault_sol, mint == mint)
@@ -432,9 +440,9 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `recipient_ata`: **Withdraw only** - Recipient ATA (must exist; derived from recipient + mint)
 
 **Anchor client note**:
-- For optional accounts you want to omit, pass `null` or the program ID as sentinel
 - For execute mode: pass `recipient: null`, `destinationProgram: targetProgramPubkey`
-- For withdraw mode: pass `recipient: recipientPubkey`, `destinationProgram: null`
+- For withdraw mode: pass `recipient: recipientPubkey`, `destinationProgram: SystemProgram.programId`
+- `destination_program` is NEVER null/omitted (always required, use SystemProgram as sentinel for withdraw)
 
 **Remaining Accounts** (execute only):
 - Pass decoded `accounts` from payload as `remaining_accounts`
@@ -448,7 +456,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 | Rule | Withdraw (1) | Execute (2) |
 |------|-------------|-------------|
 | `recipient` | required | must be None |
-| `destination_program` | must be None | required + executable |
+| `destination_program` | SystemProgram.programId | required + executable |
 | `remaining_accounts` | must be empty | required for CPI |
 | `writable_flags` | must be empty | length = ceil(accounts/8) |
 | `ix_data` | must be empty | CPI data |
@@ -468,7 +476,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 
 **Key requirements**:
 - `instruction_id = 2`
-- `destination_program`: Must be provided (target program pubkey)
+- `destination_program`: Target program pubkey (must be executable)
 - `recipient`: Must be None
 - `remaining_accounts`: Decoded accounts from payload
 - `writable_flags`: Bitpacked flags matching accounts
@@ -485,7 +493,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 **Key requirements**:
 - `instruction_id = 1`
 - `recipient`: Must be provided (recipient pubkey)
-- `destination_program`: Must be None
+- `destination_program`: SystemProgram.programId (sentinel value)
 - `remaining_accounts`: Must be empty
 - `writable_flags`: Must be empty
 - `ix_data`: Must be empty
@@ -596,7 +604,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 ### 7.1 Event Listener
 
 1. Connect to Push Chain RPC
-2. Listen for `UniversalTxWithdraw` events
+2. Listen for `UniversalTxOutbound` events
 3. Filter by `chainId` = Solana cluster identifier
 4. Extract all event fields
 
@@ -642,8 +650,8 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 1. Derive all required PDAs (section 5)
 2. Determine mode-specific accounts based on instruction_id:
-   - **Withdraw (1)**: Set `recipient` account, `destination_program` = None, `remaining_accounts` = []
-   - **Execute (2)**: Set `destination_program` account, `recipient` = None, `remaining_accounts` = decoded accounts
+   - **Withdraw (1)**: Set `recipient` account, `destination_program` = SystemProgram.programId, `remaining_accounts` = []
+   - **Execute (2)**: Set `destination_program` account (target program), `recipient` = None, `remaining_accounts` = decoded accounts
 3. Build instruction using Anchor client or raw instruction:
    - Function: `withdraw_and_execute`
    - Parameters: `instruction_id`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`, `nonce`
@@ -686,15 +694,18 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 **CRITICAL - No target parameter**:
 - The `withdraw_and_execute` function does **NOT** take a `target` parameter
-- Target is derived from mode-specific optional accounts:
+- Target is derived from mode-specific accounts:
   - Withdraw (1): From `recipient` account key
   - Execute (2): From `destination_program` account key
-- **Backend must pass correct account**: Passing wrong mode-specific account will cause validation failure
+- **Backend must pass correct accounts**: Passing wrong accounts will cause validation failure
 
 **Mode-specific account enforcement**:
-- Exactly one mode-specific optional account must be provided (recipient XOR destination_program)
-- Withdraw: `recipient` required, `destination_program` must be None
-- Execute: `destination_program` required, `recipient` must be None
+- `destination_program` is ALWAYS required (non-optional):
+  - Withdraw mode: Pass `SystemProgram.programId` (sentinel, actual target from recipient)
+  - Execute mode: Pass target program pubkey (must be executable)
+- `recipient` is optional (mode-dependent):
+  - Withdraw mode: Must be provided (contains recipient pubkey)
+  - Execute mode: Must be None
 - Violating this will cause on-chain constraint error
 
 **instruction_id matching**:
@@ -703,18 +714,23 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 ### 8.1 Account Consistency (Execute Mode Only)
 
-**MUST match exactly** (for execute mode, instruction_id=2):
-- Accounts in TSS message hash (`accounts_buf` - reconstructed from `remaining_accounts` + `writable_flags`)
-- Accounts in `remaining_accounts` (passed to transaction)
-- Writable flags in `writable_flags` (bitpacked, bit i = `remaining_accounts[i].isWritable`)
-- Same order, same pubkeys, writable flags match bit positions
+**Requirements** (for execute mode, instruction_id=2):
+
+**Pubkeys and Order:**
+- MUST match exactly: Same pubkeys in same order between TSS message hash and `remaining_accounts`
+
+**Writable Flags - One-Way Rule** (utils.rs:247):
+- If signed metadata (in `accounts_buf`) marks account as writable → actual account MUST be writable
+- If signed metadata marks account as read-only → actual account CAN be writable OR read-only
+- **NOT allowed:** Signed metadata says writable, but actual account is read-only
+- **Allowed:** Actual account is writable, but signed metadata says read-only (CPI won't gain extra write privileges)
 
 **For withdraw mode** (instruction_id=1):
 - `remaining_accounts` must be empty
 - `writable_flags` must be empty
 - No account consistency check needed (no CPI)
 
-**Why**: On-chain validates TSS signature against reconstructed message hash. If accounts differ, hash mismatch → rejection.
+**Why**: On-chain validates TSS signature against reconstructed message hash. Pubkey mismatch → hash mismatch → rejection. Writable validation ensures CPI safety.
 
 ### 8.2 Universal Transaction ID
 
@@ -748,7 +764,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 ### Execute Flow (instruction_id=2):
 
-1. **Event received**: `UniversalTxWithdraw` with `target`, `amount`, `payload`, `gasFee`, `sender`
+1. **Event received**: `UniversalTxOutbound` with `target`, `amount`, `payload`, `gasFee`, `sender`
 2. **Decode payload**: Extract `accounts[]`, `ixData`, `rentFee`, `instructionId`
    - Verify `instructionId == 2` (execute mode)
    - Validate: `rentFee <= gasFee`, accounts and ixData present
@@ -779,7 +795,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 ### Withdraw Flow (instruction_id=1):
 
-1. **Event received**: `UniversalTxWithdraw` with `payload` (or no payload for simple withdraw)
+1. **Event received**: `UniversalTxOutbound` with `payload` (or no payload for simple withdraw)
 2. **Decode payload** (if present): Extract `instructionId`
    - Verify `instructionId == 1` (withdraw mode)
    - Validate: `accounts` empty, `ixData` empty, `rentFee == 0`
@@ -800,7 +816,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - **IMPORTANT - No target parameter**: Target derived from `recipient` account
    - Accounts:
      - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`
-     - Mode-specific: `recipient` (recipient pubkey), `destination_program` = None
+     - Mode-specific: `recipient` (recipient pubkey), `destination_program` = SystemProgram.programId
      - SPL (if token): `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`, `recipient_ata`
      - Remaining: must be empty
 8. **Submit and verify**: Sign with relayer, send to Solana, wait for `UniversalTxExecuted` event
@@ -817,7 +833,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - **Note**: `signTssMessage()` does **not** auto-include `universal_tx_id` / `tx_id`. Include them in `additional` as specified.
 3. **Sign and submit**: 
    - `signTssMessage()` returns signature, recovery_id, message_hash, nonce
-   - See account structs: `RevertUniversalTx` or `RevertUniversalTxToken` in `withdraw.rs`
+   - See account structs: `RevertUniversalTx` or `RevertUniversalTxToken` in `revert.rs`
 
 ---
 
@@ -879,7 +895,7 @@ Before production:
   - `WithdrawAndExecute` struct - unified account struct for SOL/SPL execute + withdraw
 
 **Withdraw / Revert Functions**:
-- `contracts/svm-gateway/programs/universal-gateway/src/instructions/withdraw.rs`
+- `contracts/svm-gateway/programs/universal-gateway/src/instructions/revert.rs`
   - `revert_universal_tx()` - SOL revert handler
   - `revert_universal_tx_token()` - SPL token revert handler
 
@@ -919,18 +935,22 @@ Before production:
 
 **Unified Execute/Withdraw Struct** (see `execute.rs`):
 - `WithdrawAndExecute` - Required + optional accounts for unified execute + withdraw operations
-  - **Required accounts** (all modes): `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`
-  - **Mode-specific optional accounts** (exactly one must be provided):
-    - `destination_program: Option<UncheckedAccount>` - Execute only (must be executable program)
-    - `recipient: Option<UncheckedAccount>` - Withdraw only (recipient address, mut)
+  - **Required accounts** (all modes): `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`, `destination_program`
+  - **Mode-specific accounts**:
+    - `destination_program: UncheckedAccount` - ALWAYS required (non-optional)
+      - Withdraw mode: SystemProgram.programId (sentinel)
+      - Execute mode: Target program pubkey (must be executable)
+    - `recipient: Option<UncheckedAccount>` - Mode-dependent optional account
+      - Withdraw mode: Required (recipient address, mut)
+      - Execute mode: Must be None
   - **SPL optional accounts** (all-or-none based on mint presence):
     - `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`
     - `recipient_ata` - Withdraw only (recipient's token account)
-  - **Anchor client note**: Pass `null` or `program.programId` as sentinel for unused optional accounts
-  - **Execute mode**: `destination_program` set, `recipient` = None, remaining_accounts with CPI accounts
-  - **Withdraw mode**: `recipient` set, `destination_program` = None, remaining_accounts empty
+  - **Anchor client note**: For `recipient`, pass `null` for execute mode or recipient pubkey for withdraw mode
+  - **Execute mode**: `destination_program` = target program, `recipient` = None, remaining_accounts with CPI accounts
+  - **Withdraw mode**: `destination_program` = SystemProgram.programId, `recipient` set, remaining_accounts empty
 
-**Revert Structs** (see `withdraw.rs`):
+**Revert Structs** (see `revert.rs`):
 - `RevertUniversalTx` - Required accounts for SOL revert (instruction_id=3)
 - `RevertUniversalTxToken` - Required accounts for SPL revert (instruction_id=4)
 

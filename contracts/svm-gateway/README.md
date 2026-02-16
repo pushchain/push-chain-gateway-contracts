@@ -27,7 +27,8 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
   - **instruction_id = 2:** Execute (CPI to target program with CEA as signer)
   - TSS signature verification (ECDSA secp256k1)
   - CEA (Cross-chain Execution Account) architecture for persistent user identity
-  - Optional accounts enforcement (recipient XOR destination_program)
+  - Mode enforcement: recipient required for withdraw, must be None for execute
+  - destination_program always required (SystemProgram for withdraw, target program for execute)
 
 ### Revert Functions
 - **`revert_universal_tx`** - Revert failed transactions (SOL)
@@ -36,8 +37,15 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 ### Admin Functions
 - **`initialize`** - Deploy gateway with admin/pauser authorities
 - **`pause` / `unpause`** - Emergency stop controls
-- **`set_rate_limit`** - Configure per-token rate limits (replaces whitelist)
-- **`init_tss`** - Initialize TSS with ETH address, chain ID, nonce
+- **`set_caps_usd`** - Configure min/max USD caps (configurable, not fixed)
+- **`set_block_usd_cap`** - Configure block-based USD cap for rate limiting
+- **`update_epoch_duration`** - Configure epoch duration for rate limiting
+- **`set_token_rate_limit`** - Configure per-token rate limit threshold
+- **`set_pyth_price_feed`** - Update Pyth price feed address
+- **`set_pyth_confidence_threshold`** - Update Pyth confidence threshold
+- **`init_tss`** - Initialize TSS with ETH address and chain ID (no nonce param)
+- **`update_tss`** - Update TSS address and chain ID
+- **`reset_nonce`** - Reset TSS nonce (authority only)
 
 ## Key Concepts
 
@@ -48,10 +56,10 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 - CEA signs CPIs in execute mode (cross-chain program interactions)
 
 ### Rate Limiting (Not Whitelist)
-- Dynamic threshold per token (configurable via `set_rate_limit`)
+- Dynamic threshold per token (configurable via `set_token_rate_limit`)
 - Token supported if `rate_limit_threshold > 0`
 - No fixed whitelist - flexible token management
-- Separate rate limits for inbound/outbound per token
+- Rate limiting applies to inbound deposits only (outbound has no rate limiting)
 
 ### TSS Signature Verification
 - TSS signs message hash with ECDSA secp256k1
@@ -112,7 +120,7 @@ npx ts-node app/gateway-test.ts
 
 ### ALT Management
 ```bash
-# Create Protocol ALT (7 accounts for SPL, 4 for SOL)
+# Create Protocol ALT (7 accounts total; SOL uses 4, SPL uses all 7)
 npx ts-node scripts/create-protocol-alt.ts
 
 # Create Token-Specific ALTs (2 accounts per token)
@@ -196,8 +204,8 @@ await program.methods
     tssPda,
     executedTx,
     systemProgram: SystemProgram.programId,
-    destinationProgram: SystemProgram.programId, // Sentinel (not used)
-    recipient: recipientPubkey,                  // Target recipient
+    destinationProgram: SystemProgram.programId, // Required: SystemProgram for withdraw mode
+    recipient: recipientPubkey,                  // Required for withdraw mode
     // SPL accounts (null for SOL):
     vaultAta: null,
     ceaAta: null,
@@ -223,7 +231,7 @@ import {
 // Similar to withdraw, but:
 // - instruction_id = 2
 // - destination_program = target program pubkey (must be executable)
-// - recipient = SystemProgram.programId (sentinel, not used)
+// - recipient = null (must be None for execute mode)
 // - writable_flags = bitpacked flags for remaining_accounts
 // - ix_data = instruction data for target program
 // - rent_fee = rent for target program accounts (can be > 0)
@@ -274,8 +282,8 @@ await program.methods
     tssPda,
     executedTx,
     systemProgram: SystemProgram.programId,
-    destinationProgram: targetProgramId,  // Target for CPI
-    recipient: SystemProgram.programId,   // Sentinel (not used)
+    destinationProgram: targetProgramId,  // Required: target program for execute mode
+    recipient: null,                      // Must be null for execute mode
     // SPL accounts (null for SOL, required for SPL):
     vaultAta: null,           // or vaultAtaAddress for SPL
     ceaAta: null,             // or ceaAtaAddress for SPL
@@ -359,21 +367,25 @@ await program.methods
     config: configPda,
     vault: vaultSol,
     user: userKeypair.publicKey,
-    userTokenAccount: userAta,      // For SPL only
-    gatewayTokenAccount: vaultAta,  // For SPL only
+    // REQUIRED ALWAYS (deposit.rs:435, 442) - even for SOL-only deposits
+    userTokenAccount: isSolOnly ? vaultSol : userAta,      // SOL: pass dummy account (e.g., vault)
+    gatewayTokenAccount: isSolOnly ? vaultSol : vaultAta,  // SOL: pass dummy account (e.g., vault)
     priceUpdate: pythFeedAddress,   // For USD cap validation
     rateLimitConfig,
     tokenRateLimit,
-    tokenProgram: TOKEN_PROGRAM_ID,
+    tokenProgram: TOKEN_PROGRAM_ID, // Always required
     systemProgram: SystemProgram.programId,
   })
   .rpc();
+
+// CRITICAL: userTokenAccount + gatewayTokenAccount are ALWAYS REQUIRED by Anchor account struct
+// For SOL deposits: Pass any valid existing account (e.g., vault) as dummy to satisfy requirements
 ```
 
 ## Transaction Size Optimization (ALTs)
 
 ### Savings
-- **SOL transactions:** 92 bytes (Protocol ALT with 4 accounts)
+- **SOL transactions:** 92 bytes (Protocol ALT with 7 accounts; SOL transactions use 4 of them)
 - **SPL transactions:** 215 bytes (Protocol ALT: 185 bytes + Token ALT: 30 bytes)
 
 ### Setup
@@ -401,9 +413,9 @@ See [ALT Integration Guide](../../INTEGRATION_GUIDE.md#12-address-lookup-tables-
 - **TSS Signature Verification** - ECDSA secp256k1 with ETH address recovery
 - **Nonce-Based Replay Protection** - executed_tx PDA prevents double-execution
 - **Pause Functionality** - Emergency stop for all user operations
-- **Rate Limiting** - Dynamic thresholds per token, configurable by admin
-- **USD Caps** - Pyth oracle price validation (min/max caps)
-- **Mode Enforcement** - Withdraw/execute modes validated (recipient XOR destination_program)
+- **Rate Limiting** - Dynamic thresholds per token (inbound only), configurable by admin
+- **USD Caps** - Pyth oracle price validation (configurable min/max caps via set_caps_usd)
+- **Mode Enforcement** - Withdraw/execute modes validated (recipient presence enforced per mode)
 - **Account Validation** - Ownership, mint, ATA derivation checks
 - **CEA Architecture** - Isolated execution context per user
 
@@ -453,7 +465,7 @@ contracts/svm-gateway/
 │           ├── lib.rs                    # Program entrypoint
 │           ├── instructions/
 │           │   ├── deposit.rs            # send_universal_tx (inbound)
-│           │   ├── withdraw_execute.rs   # withdraw_and_execute (outbound)
+│           │   ├── execute.rs            # withdraw_and_execute (outbound)
 │           │   ├── revert.rs             # revert functions
 │           │   ├── tss.rs                # TSS signature validation
 │           │   ├── admin.rs              # Admin functions
