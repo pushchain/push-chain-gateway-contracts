@@ -47,9 +47,6 @@ remappings = [
     "@chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/",
 ]
 
-# etherscan configuration
-[etherscan]
-sepolia = { key = "${process.env.ETHERSCAN_API_KEY}" }
 # FUZZ TESTING CONFIGURATION     fuzz testing configuration
 
 [fuzz]
