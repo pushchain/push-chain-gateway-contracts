@@ -148,24 +148,41 @@ interface IUniversalGateway {
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable;
 
     /**
-     * @notice                 Initiate a FUNDS_AND_PAYLOAD transaction via a CEA (Chain Execution Account).
+     * @notice                 Initiate a Universal Transaction via a CEA (Chain Execution Account).
      *
-     * @dev                    Called by a CEA to bridge funds back to its linked UEA on Push Chain
-     *                         with an execution payload. The gateway validates CEA identity via CEAFactory,
-     *                         resolves the mapped UEA, and emits the event with viaCEA = true so that
-     *                         Push Chain can skip UEA deployment for the CEA sender.
+     * @dev                    Called by a CEA to send transactions to its linked UEA on Push Chain.
+     *                         Validates CEA identity via CEAFactory, resolves the mapped UEA, and
+     *                         routes directly to _routeUniversalTx with viaCEA=true so Push Chain
+     *                         can route to the correct UEA instead of deploying one for the CEA.
      *
-     *                         Gas-batching (Case 2.2 native batching / Case 2.3 ERC-20 + native gas)
-     *                         is NOT supported on this route. The linked UEA on Push Chain is assumed
-     *                         to already hold sufficient gas for execution.
-     *                           - Native funds path:  msg.value MUST equal req.amount (no extra gas).
-     *                           - ERC-20 funds path:  msg.value MUST be 0 (no native gas piggybacking).
+     *                         All TX_TYPEs are supported (inferred automatically from req structure):
+     *
+     *                             1. TX_TYPE.GAS
+     *                                - req.amount == 0, req.payload empty, msg.value > 0
+     *                                - Instant route; USD caps apply.
+     *                                - Event emits recipient=mappedUEA, viaCEA=true.
+     *
+     *                             2. TX_TYPE.GAS_AND_PAYLOAD
+     *                                - req.payload non-empty, req.amount == 0
+     *                                - msg.value may be 0 (payload-only) or > 0 (payload + gas top-up).
+     *                                - Instant route; USD caps apply when msg.value > 0.
+     *
+     *                             3. TX_TYPE.FUNDS
+     *                                - req.amount > 0, req.payload empty
+     *                                - Standard route; epoch rate-limits apply.
+     *
+     *                             4. TX_TYPE.FUNDS_AND_PAYLOAD
+     *                                - req.amount > 0, req.payload non-empty
+     *                                - Standard route; epoch rate-limits apply.
+     *                                - Gas batching (Cases 2.2 / 2.3) is allowed:
+     *                                    - Native funds: msg.value > req.amount → gas leg emits
+     *                                      recipient=mappedUEA and viaCEA=true.
+     *                                    - ERC-20 funds + native gas: both legs emit correctly.
      *
      *                         Strict validations:
      *                         - msg.sender must be a valid CEA per CEAFactory.isCEA()
-     *                         - req.recipient must match the mapped UEA from CEAFactory.getUEAForCEA()
-     *                         - req.amount > 0 and req.payload.length > 0 (FUNDS_AND_PAYLOAD only)
-     *                         - Inferred TX_TYPE must be FUNDS_AND_PAYLOAD
+     *                         - req.recipient must exactly match the mapped UEA from
+     *                           CEAFactory.getUEAForCEA() (anti-spoof).
      *
      * @param req              UniversalTxRequest struct
      */

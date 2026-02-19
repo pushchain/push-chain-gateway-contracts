@@ -429,6 +429,49 @@ When upgrading the gateway:
 4. **Deterministic Routing**: Transaction routing is algorithmic and predictable based on fixed rules
 5. **Defense in Depth**: Multiple layers of protection (pausability, reentrancy guards, rate limits, oracle checks, role-based access control)
 
+## sendUniversalTxViaCEA — CEA Inbound Route
+
+`sendUniversalTxViaCEA` is the dedicated entry point for CEA contracts calling back into the gateway to send transactions to their linked UEA on Push Chain.
+
+### Design (post-simplification)
+
+The function does exactly three things before delegating:
+1. Validates the caller is a registered CEA via `CEAFactory.isCEA()`
+2. Resolves the caller's mapped UEA via `CEAFactory.getUEAForCEA()` and asserts `req.recipient == mappedUEA` (anti-spoof)
+3. Infers TX_TYPE via `_fetchTxType` and calls `_routeUniversalTx(..., viaCEA=true)`
+
+All type-specific validation (amount checks, rate-limits, batching rules) is handled by the existing routing internals — no per-type branches in `sendUniversalTxViaCEA` itself.
+
+### Supported TX_TYPEs via CEA
+
+All four TX_TYPEs are allowed (none are rejected):
+
+| TX_TYPE | Condition | Route | Notes |
+|---------|-----------|-------|-------|
+| `GAS` | `amount=0, payload empty, msg.value>0` | Instant | USD caps apply |
+| `GAS_AND_PAYLOAD` | `payload non-empty, amount=0` | Instant | USD caps apply when `msg.value>0`; skipped when `msg.value=0` |
+| `FUNDS` | `amount>0, payload empty` | Standard | Epoch rate-limits apply |
+| `FUNDS_AND_PAYLOAD` | `amount>0, payload non-empty` | Standard | Gas batching allowed (Cases 2.2 / 2.3) |
+
+### Gas Batching via CEA (Cases 2.2 and 2.3)
+
+When a CEA sends `FUNDS_AND_PAYLOAD` with `msg.value > req.amount` (native batching) or `token != address(0)` and `msg.value > 0` (ERC-20 + native gas), the gas leg is now emitted with `recipient=mappedUEA` and `viaCEA=true`.
+
+**Why this matters**: If the gas leg emitted `recipient=address(0)`, Push Chain would interpret it as "caller's UEA" — which for a CEA caller would deploy a new UEA for the CEA address rather than routing to the actual user's UEA. The fix ensures `gasLegRecipient = viaCEA ? req.recipient : address(0)` in `_sendTxWithFunds` Cases 2.2 and 2.3.
+
+### Invariants
+
+- `req.recipient` must always equal the CEA's mapped UEA — never `address(0)`, never an arbitrary address
+- All events emitted via CEA path have `viaCEA=true` and `recipient=mappedUEA`
+- Normal `sendUniversalTx` path is unchanged: still emits `viaCEA=false` and `recipient=address(0)`
+- CEAs are blocked from calling `sendUniversalTx` directly (reverts `InvalidInput`)
+
+### Related Files
+
+- `src/UniversalGateway.sol` — `sendUniversalTxViaCEA` (lines ~350-370), `_sendTxWithFunds` Cases 2.2/2.3
+- `src/interfaces/IUniversalGateway.sol` — NatSpec for `sendUniversalTxViaCEA`
+- `test/gateway/15_sendUniversalTxViaCEA.t.sol` — 58 tests covering all TX_TYPEs, batching, anti-spoof, event semantics
+
 ## UniversalGatewayPC - Outbound Transaction Handling
 
 **UniversalGatewayPC** is deployed on Push Chain and handles outbound transactions from Push Chain to external chains. It supports three TX_TYPE values (GAS is not supported on outbound).
