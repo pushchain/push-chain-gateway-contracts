@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertInstructions, 
-            TX_TYPE, 
-                UniversalTxRequest, 
-                    UniversalTokenTxRequest } from "../libraries/TypesV0.sol";
+import { RevertInstructions, TX_TYPE, UniversalTxRequest, UniversalTokenTxRequest } from "../libraries/TypesV0.sol";
 
 interface IUniversalGatewayV0 {
     // =========================
@@ -20,7 +17,7 @@ interface IUniversalGatewayV0 {
     /// @param oldDuration           Previous epoch duration: Duration of the epoch before the update.
     /// @param newDuration           New epoch duration: Duration of the epoch after the update.
     event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
-    
+
     /// @notice                     Token limit threshold updated event
     /// @param token                Token address
     /// @param newThreshold         New threshold
@@ -33,7 +30,7 @@ interface IUniversalGatewayV0 {
     /// @param amount               Amount of token being sent
     /// @param payload              Payload for arbitrary call on Push Chain: for funds-only tx, payload is empty.
     /// @param revertInstruction    Revert settings configuration
-    /// @param txType               Transaction type: TX_TYPE enum 
+    /// @param txType               Transaction type: TX_TYPE enum
     /// @param signatureData        Signature data: for signedVerification, signatureData is the signature of the sender.
     event UniversalTx(
         address indexed sender,
@@ -63,9 +60,15 @@ interface IUniversalGatewayV0 {
     /// @param token                Token address being reverted
     /// @param amount               Amount of token being reverted
     /// @param revertInstruction    Revert settings configuration
-    event RevertUniversalTx(bytes32 txID, bytes32 indexed universalTxID, address indexed to, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+    event RevertUniversalTx(
+        bytes32 indexed txID,
+        bytes32 indexed universalTxID,
+        address indexed to,
+        address indexed token,
+        uint256 amount,
+        RevertInstructions revertInstruction
+    );
 
-    
     // =========================
     //  UG_1: UNIVERSAL TRANSACTION
     // =========================
@@ -127,7 +130,7 @@ interface IUniversalGatewayV0 {
      *
      * @dev                    This overload extends `sendUniversalTx(UniversalTxRequest)` by allowing the
      *                         caller to pay "gas" in any supported ERC20 (`gasToken`) instead of native ETH.
-     * 
+     *
      * @dev                    Note that the fundamental flow remains exactly same as sendUniversalTx(UniversalTxRequest)
      *
      * @param reqToken        UniversalTokenTxRequest struct
@@ -143,15 +146,25 @@ interface IUniversalGatewayV0 {
     /// @param token        token address to revert
     /// @param amount       amount of token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTxToken(bytes32 txID, bytes32 universalTxID, address token, uint256 amount, RevertInstructions calldata revertCFG) external;
-    
+    function revertUniversalTxToken(
+        bytes32 txID,
+        bytes32 universalTxID,
+        address token,
+        uint256 amount,
+        RevertInstructions calldata revertCFG
+    ) external;
+
     /// @notice             Revert native tokens to the recipient specified in revertInstruction
     /// @param txID         unique transaction identifier (for replay protection)
     /// @param amount       amount of native token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTx(bytes32 txID, bytes32 universalTxID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
+    function revertUniversalTx(
+        bytes32 txID,
+        bytes32 universalTxID,
+        uint256 amount,
+        RevertInstructions calldata revertCFG
+    ) external payable;
 
-    
     // =========================
     //  UG_3: WITHDRAW AND PAYLOAD EXECUTION PATHS
     // =========================
@@ -161,7 +174,9 @@ interface IUniversalGatewayV0 {
     /// @param originCaller original caller/user on source chain
     /// @param to           recipient address
     /// @param amount       amount of native token to withdraw
-    function withdraw(bytes32 txID, bytes32 universalTxID, address originCaller, address to, uint256 amount) external payable;
+    function withdraw(bytes32 txID, bytes32 universalTxID, address originCaller, address to, uint256 amount)
+        external
+        payable;
 
     /// @notice             Withdraw ERC20 token from the gateway
     /// @param txID         unique transaction identifier
@@ -169,7 +184,14 @@ interface IUniversalGatewayV0 {
     /// @param token        token address (ERC20 token)
     /// @param to           recipient address
     /// @param amount       amount of token to withdraw
-    function withdrawTokens(bytes32 txID,bytes32 universalTxID, address originCaller, address token, address to, uint256 amount) external;
+    function withdrawTokens(
+        bytes32 txID,
+        bytes32 universalTxID,
+        address originCaller,
+        address token,
+        address to,
+        uint256 amount
+    ) external;
 
     /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
     /// @param txID         unique transaction identifier
@@ -187,7 +209,7 @@ interface IUniversalGatewayV0 {
         uint256 amount,
         bytes calldata payload
     ) external;
-    
+
     /// @notice             Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
     /// @param txID         unique transaction identifier
     /// @param originCaller original caller/user on source chain
@@ -203,14 +225,12 @@ interface IUniversalGatewayV0 {
         bytes calldata payload
     ) external payable;
 
-
     // =========================
     //  UG_4: PUBLIC HELPERS
     // =========================
-    
+
     ///@notice                     Checks if a token is supported by the gateway.
     ///@param token                Token address to check
     ///@return                     True if the token is supported, false otherwise
     function isSupportedToken(address token) external view returns (bool);
-
 }
