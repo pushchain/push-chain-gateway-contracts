@@ -64,7 +64,7 @@ interface IUniversalGatewayV0 {
         bytes32 indexed txID,
         bytes32 indexed universalTxID,
         address indexed to,
-        address indexed token,
+        address token,
         uint256 amount,
         RevertInstructions revertInstruction
     );
