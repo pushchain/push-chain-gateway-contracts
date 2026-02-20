@@ -516,7 +516,7 @@ contract GatewayAdminSettersTest is BaseTest {
         emit IUniversalGateway.VaultUpdated(oldVault, newVault);
 
         vm.prank(admin);
-        gateway.updateVault(newVault);
+        gateway.setVault(newVault);
 
         assertEq(gateway.VAULT(), newVault);
         assertTrue(gateway.hasRole(gateway.VAULT_ROLE(), newVault));
@@ -533,11 +533,11 @@ contract GatewayAdminSettersTest is BaseTest {
         // Non-admin should not be able to update vault
         vm.prank(user1);
         vm.expectRevert();
-        gateway.updateVault(newVault);
+        gateway.setVault(newVault);
 
         // Admin should be able to update vault
         vm.prank(admin);
-        gateway.updateVault(newVault);
+        gateway.setVault(newVault);
         assertEq(gateway.VAULT(), newVault);
     }
 
@@ -547,14 +547,14 @@ contract GatewayAdminSettersTest is BaseTest {
         // Should revert when not paused (whenPaused modifier checks for paused state)
         vm.prank(admin);
         vm.expectRevert("ExpectedPause()");
-        gateway.updateVault(newVault);
+        gateway.setVault(newVault);
 
         // Should work when paused
         vm.prank(admin);
         gateway.pause();
 
         vm.prank(admin);
-        gateway.updateVault(newVault);
+        gateway.setVault(newVault);
         assertEq(gateway.VAULT(), newVault);
     }
 
@@ -565,7 +565,7 @@ contract GatewayAdminSettersTest is BaseTest {
 
         vm.prank(admin);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        gateway.updateVault(address(0));
+        gateway.setVault(address(0));
     }
 
     function testUpdateVaultRoleTransfer() public {
@@ -579,13 +579,13 @@ contract GatewayAdminSettersTest is BaseTest {
 
         // First update
         vm.prank(admin);
-        gateway.updateVault(newVault1);
+        gateway.setVault(newVault1);
         assertTrue(gateway.hasRole(gateway.VAULT_ROLE(), newVault1));
         assertFalse(gateway.hasRole(gateway.VAULT_ROLE(), oldVault));
 
         // Second update - should transfer role from newVault1 to newVault2
         vm.prank(admin);
-        gateway.updateVault(newVault2);
+        gateway.setVault(newVault2);
         assertTrue(gateway.hasRole(gateway.VAULT_ROLE(), newVault2));
         assertFalse(gateway.hasRole(gateway.VAULT_ROLE(), newVault1));
         assertFalse(gateway.hasRole(gateway.VAULT_ROLE(), oldVault));

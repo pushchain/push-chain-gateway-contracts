@@ -243,7 +243,7 @@ contract VaultPCTest is Test {
         uint256 vaultBalance = prc20Token.balanceOf(address(vault));
 
         vm.prank(fundManager);
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InsufficientBalance.selector);
         vault.withdrawToken(address(prc20Token), user1, vaultBalance + 1);
     }
 
@@ -327,7 +327,7 @@ contract VaultPCTest is Test {
         vm.deal(address(vault), 5 ether);
 
         vm.prank(fundManager);
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InsufficientBalance.selector);
         vault.withdraw(user1, 10 ether);
     }
 

@@ -34,7 +34,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
         address revertRecipient,
         TX_TYPE txType,
         bytes signatureData,
-        bool viaCEA
+        bool fromCEA
     );
 
     // =========================
@@ -139,7 +139,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -161,7 +161,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -183,7 +183,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -205,7 +205,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -240,7 +240,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -262,7 +262,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -284,7 +284,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -307,7 +307,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -335,7 +335,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -370,7 +370,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -414,7 +414,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -471,7 +471,7 @@ contract GatewayFetchTxTypeTest is BaseTest {
             payload: nonEmptyPayload(),
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);

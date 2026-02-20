@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertInstructions, 
-            TX_TYPE, 
-                UniversalTxRequest, 
-                    UniversalTokenTxRequest } from "../libraries/Types.sol";
+import { RevertInstructions, TX_TYPE, UniversalTxRequest, UniversalTokenTxRequest } from "../libraries/Types.sol";
 
 interface IUniversalGateway {
     // =========================
@@ -20,7 +17,7 @@ interface IUniversalGateway {
     /// @param oldDuration           Previous epoch duration: Duration of the epoch before the update.
     /// @param newDuration           New epoch duration: Duration of the epoch after the update.
     event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
-    
+
     /// @notice                     Token limit threshold updated event
     /// @param token                Token address
     /// @param newThreshold         New threshold
@@ -32,9 +29,10 @@ interface IUniversalGateway {
     /// @param token                Token address being sent
     /// @param amount               Amount of token being sent
     /// @param payload              Payload for arbitrary call on Push Chain: for funds-only tx, payload is empty.
-    /// @param revertRecipient        Fund recipient
-    /// @param txType               Transaction type: TX_TYPE enum 
+    /// @param revertRecipient      Fund recipient
+    /// @param txType               Transaction type: TX_TYPE enum
     /// @param signatureData        Signature data: for signedVerification, signatureData is the signature of the sender.
+    /// @param fromCEA              True if the tx originated from a CEA via sendUniversalTxFromCEA
     event UniversalTx(
         address indexed sender,
         address indexed recipient,
@@ -44,20 +42,21 @@ interface IUniversalGateway {
         address revertRecipient,
         TX_TYPE txType,
         bytes signatureData,
-        bool viaCEA
+        bool fromCEA
     );
 
     /// @notice                     Universal tx execution event that is executed on External Chains.
-    /// @param txID                 Unique transaction identifier
-    /// @param originCaller         Original caller/user on source chain ( Push Chain)
+    /// @param txId          Gateway transaction identifier
+    /// @param universalTxId        Universal transaction identifier
+    /// @param pushAccount          Push Chain account (UEA) this transaction is attributed to
     /// @param target               Target contract address to execute call
     /// @param token                Token address being sent
     /// @param amount               Amount of token being sent
     /// @param data                 Calldata to be executed on target contract on external chain
     event UniversalTxExecuted(
-        bytes32 indexed txID,
-        bytes32 indexed universalTxID,
-        address indexed originCaller,
+        bytes32 indexed txId,
+        bytes32 indexed universalTxId,
+        address indexed pushAccount,
         address target,
         address token,
         uint256 amount,
@@ -69,16 +68,22 @@ interface IUniversalGateway {
     /// @param newVault              New Vault address
     event VaultUpdated(address indexed oldVault, address indexed newVault);
 
-
-    /// @notice                     Revert withdraw event: For withdrwals/actions during a revert
-    /// @param txID                 Unique transaction identifier
+    /// @notice                     Revert withdraw event: For withdrawals/actions during a revert
+    /// @param txId                 Gateway transaction identifier
+    /// @param universalTxId        Universal transaction identifier
     /// @param to                   Recipient address on external chain
     /// @param token                Token address being reverted
     /// @param amount               Amount of token being reverted
     /// @param revertInstruction    Revert settings configuration
-    event RevertUniversalTx(bytes32 indexed txID, bytes32 indexed universalTxID, address indexed to, address token, uint256 amount, RevertInstructions revertInstruction);
+    event RevertUniversalTx(
+        bytes32 indexed txId,
+        bytes32 indexed universalTxId,
+        address indexed to,
+        address token,
+        uint256 amount,
+        RevertInstructions revertInstruction
+    );
 
-    
     // =========================
     //  UG_1: UNIVERSAL TRANSACTION
     // =========================
@@ -140,7 +145,7 @@ interface IUniversalGateway {
      *
      * @dev                    This overload extends `sendUniversalTx(UniversalTxRequest)` by allowing the
      *                         caller to pay "gas" in any supported ERC20 (`gasToken`) instead of native ETH.
-     * 
+     *
      * @dev                    Note that the fundamental flow remains exactly same as sendUniversalTx(UniversalTxRequest)
      *
      * @param reqToken        UniversalTokenTxRequest struct
@@ -148,11 +153,11 @@ interface IUniversalGateway {
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable;
 
     /**
-     * @notice                 Initiate a Universal Transaction via a CEA (Chain Execution Account).
+     * @notice                 Initiate a Universal Transaction from a CEA (Chain Execution Account).
      *
      * @dev                    Called by a CEA to send transactions to its linked UEA on Push Chain.
      *                         Validates CEA identity via CEAFactory, resolves the mapped UEA, and
-     *                         routes directly to _routeUniversalTx with viaCEA=true so Push Chain
+     *                         routes directly to _routeUniversalTx with fromCEA=true so Push Chain
      *                         can route to the correct UEA instead of deploying one for the CEA.
      *
      *                         All TX_TYPEs are supported (inferred automatically from req structure):
@@ -160,7 +165,7 @@ interface IUniversalGateway {
      *                             1. TX_TYPE.GAS
      *                                - req.amount == 0, req.payload empty, msg.value > 0
      *                                - Instant route; USD caps apply.
-     *                                - Event emits recipient=mappedUEA, viaCEA=true.
+     *                                - Event emits recipient=mappedUEA, fromCEA=true.
      *
      *                             2. TX_TYPE.GAS_AND_PAYLOAD
      *                                - req.payload non-empty, req.amount == 0
@@ -176,7 +181,7 @@ interface IUniversalGateway {
      *                                - Standard route; epoch rate-limits apply.
      *                                - Gas batching (Cases 2.2 / 2.3) is allowed:
      *                                    - Native funds: msg.value > req.amount → gas leg emits
-     *                                      recipient=mappedUEA and viaCEA=true.
+     *                                      recipient=mappedUEA and fromCEA=true.
      *                                    - ERC-20 funds + native gas: both legs emit correctly.
      *
      *                         Strict validations:
@@ -186,30 +191,42 @@ interface IUniversalGateway {
      *
      * @param req              UniversalTxRequest struct
      */
-    function sendUniversalTxViaCEA(UniversalTxRequest calldata req) external payable;
+    function sendUniversalTxFromCEA(UniversalTxRequest calldata req) external payable;
 
     // =========================
     //  UG_2: REVERT HANDLING PATHS
     // =========================
 
     /// @notice             Revert universal transaction with tokens to the recipient specified in revertInstruction
-    /// @param txID         unique transaction identifier (for replay protection)
+    /// @param txId         gateway transaction identifier (for replay protection)
+    /// @param universalTxId universal transaction identifier
     /// @param token        token address to revert
     /// @param amount       amount of token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTxToken(bytes32 txID, bytes32 universalTxID,address token, uint256 amount, RevertInstructions calldata revertCFG) external;
-    
+    function revertUniversalTxToken(
+        bytes32 txId,
+        bytes32 universalTxId,
+        address token,
+        uint256 amount,
+        RevertInstructions calldata revertCFG
+    ) external;
+
     /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param txID         unique transaction identifier (for replay protection)
+    /// @param txId         gateway transaction identifier (for replay protection)
+    /// @param universalTxId universal transaction identifier
     /// @param amount       amount of native token to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTx(bytes32 txID, bytes32 universalTxID, uint256 amount, RevertInstructions calldata revertCFG) external payable;
-
+    function revertUniversalTx(
+        bytes32 txId,
+        bytes32 universalTxId,
+        uint256 amount,
+        RevertInstructions calldata revertCFG
+    ) external payable;
 
     // =========================
     //  UG_3: PUBLIC HELPERS
     // =========================
-    
+
     ///@notice                     Checks if a token is supported by the gateway.
     ///@param token                Token address to check
     ///@return                     True if the token is supported, false otherwise

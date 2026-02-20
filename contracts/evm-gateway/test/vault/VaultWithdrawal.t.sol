@@ -13,7 +13,7 @@ import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-/// @notice Comprehensive test suite for Vault withdrawal functionality via executeUniversalTx with empty payload
+/// @notice Comprehensive test suite for Vault withdrawal functionality via finalizeUniversalTx with empty payload
 /// @dev Tests cover ERC20/native withdrawals, CEA deployment, token parking, edge cases, and integration flows
 contract VaultWithdrawalTest is Test {
     // =========================
@@ -105,7 +105,7 @@ contract VaultWithdrawalTest is Test {
         // Update gateway's VAULT_ROLE
         vm.startPrank(admin);
         gateway.pause();
-        gateway.updateVault(address(vault));
+        gateway.setVault(address(vault));
         gateway.unpause();
         vm.stopPrank();
 
@@ -139,8 +139,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 withdrawal when CEA already exists
     function testWithdraw_ERC20_CEAExists_Success() public {
-        bytes32 txID = keccak256("tx1");
-        bytes32 universalTxID = keccak256("utx1");
+        bytes32 txId = keccak256("tx1");
+        bytes32 universalTxId = keccak256("utx1");
         address originCaller = user1; // UEA on Push Chain
         uint256 amount = 100e6; // 100 USDC
 
@@ -154,13 +154,13 @@ contract VaultWithdrawalTest is Test {
         // Expect event emission
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxExecuted(txID, universalTxID, originCaller, recipient, address(usdc), amount, expectedPayload);
+        emit IVault.VaultUniversalTxFinalized(txId, universalTxId, originCaller, recipient, address(usdc), amount, expectedPayload);
 
-        // TSS calls vault.executeUniversalTx with withdrawal payload
+        // TSS calls vault.finalizeUniversalTx with withdrawal payload
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),    // token
             recipient,        // target (recipient)
@@ -176,22 +176,22 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 withdrawal when CEA doesn't exist - should deploy CEA first
     function testWithdraw_ERC20_CEANotExists_DeploysAndSucceeds() public {
-        bytes32 txID = keccak256("tx2");
-        bytes32 universalTxID = keccak256("utx2");
+        bytes32 txId = keccak256("tx2");
+        bytes32 universalTxId = keccak256("utx2");
         address originCaller = user2; // Fresh UEA (no CEA yet)
         uint256 amount = 200e6;
 
         // Verify CEA doesn't exist
-        (address ceaBefore, bool isDeployedBefore) = ceaFactory.getCEAForUEA(originCaller);
+        (address ceaBefore, bool isDeployedBefore) = ceaFactory.getCEAForPushAccount(originCaller);
         assertFalse(isDeployedBefore, "CEA should not exist before withdrawal");
 
         uint256 initialUserBalance = usdc.balanceOf(recipient);
 
-        // TSS calls vault.executeUniversalTx - should deploy CEA on-demand
+        // TSS calls vault.finalizeUniversalTx - should deploy CEA on-demand
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -200,7 +200,7 @@ contract VaultWithdrawalTest is Test {
         );
 
         // Verify CEA was deployed
-        (address ceaAfter, bool isDeployedAfter) = ceaFactory.getCEAForUEA(originCaller);
+        (address ceaAfter, bool isDeployedAfter) = ceaFactory.getCEAForPushAccount(originCaller);
         assertTrue(isDeployedAfter, "CEA should be deployed");
         assertTrue(ceaAfter != address(0), "CEA address should be valid");
 
@@ -210,16 +210,16 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 withdrawal with insufficient Vault balance - should revert
     function testWithdraw_ERC20_InsufficientBalance_Reverts() public {
-        bytes32 txID = keccak256("tx3");
-        bytes32 universalTxID = keccak256("utx3");
+        bytes32 txId = keccak256("tx3");
+        bytes32 universalTxId = keccak256("utx3");
         address originCaller = user1;
         uint256 excessiveAmount = usdc.balanceOf(address(vault)) + 1; // More than Vault has
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -230,17 +230,17 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 withdrawal with unsupported token - should revert
     function testWithdraw_ERC20_TokenNotSupported_Reverts() public {
-        bytes32 txID = keccak256("tx4");
-        bytes32 universalTxID = keccak256("utx4");
+        bytes32 txId = keccak256("tx4");
+        bytes32 universalTxId = keccak256("utx4");
         address originCaller = user1;
         address unsupportedToken = address(0xDEAD);
         uint256 amount = 100e18;
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.NotSupported.selector));
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             unsupportedToken,
             recipient,
@@ -251,17 +251,17 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 withdrawal with zero amount - should succeed (harmless no-op)
     function testWithdraw_ERC20_AmountZero_Allowed() public {
-        bytes32 txID = keccak256("tx5");
-        bytes32 universalTxID = keccak256("utx5");
+        bytes32 txId = keccak256("tx5");
+        bytes32 universalTxId = keccak256("utx5");
         address originCaller = user1;
 
         uint256 initialBalance = usdc.balanceOf(recipient);
 
         // Amount=0 is allowed (no-op but valid for execution-only operations)
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -275,16 +275,16 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 withdrawal with zero target address - should revert
     function testWithdraw_ERC20_TargetZero_Reverts() public {
-        bytes32 txID = keccak256("tx6");
-        bytes32 universalTxID = keccak256("utx6");
+        bytes32 txId = keccak256("tx6");
+        bytes32 universalTxId = keccak256("utx6");
         address originCaller = user1;
         uint256 amount = 100e6;
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             address(0), // Zero recipient
@@ -295,17 +295,17 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 withdrawal with non-zero msg.value - should revert
     function testWithdraw_ERC20_MsgValueNonZero_Reverts() public {
-        bytes32 txID = keccak256("tx7");
-        bytes32 universalTxID = keccak256("utx7");
+        bytes32 txId = keccak256("tx7");
+        bytes32 universalTxId = keccak256("utx7");
         address originCaller = user1;
         uint256 amount = 100e6;
 
         vm.deal(tss, 1 ether);
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        vault.executeUniversalTx{value: 1 ether}( // Should not send ETH for ERC20 withdrawal
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: 1 ether}( // Should not send ETH for ERC20 withdrawal
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -320,8 +320,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test native (ETH) withdrawal when CEA already exists
     function testWithdraw_Native_CEAExists_Success() public {
-        bytes32 txID = keccak256("tx10");
-        bytes32 universalTxID = keccak256("utx10");
+        bytes32 txId = keccak256("tx10");
+        bytes32 universalTxId = keccak256("utx10");
         address originCaller = user1;
         uint256 amount = 5 ether;
 
@@ -335,16 +335,16 @@ contract VaultWithdrawalTest is Test {
         // Expect event
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(0), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxExecuted(txID, universalTxID, originCaller, recipient, address(0), amount, expectedPayload);
+        emit IVault.VaultUniversalTxFinalized(txId, universalTxId, originCaller, recipient, address(0), amount, expectedPayload);
 
         // Fund TSS with ETH to send
         vm.deal(tss, amount);
 
-        // TSS calls vault.executeUniversalTx with native tokens (address(0))
+        // TSS calls vault.finalizeUniversalTx with native tokens (address(0))
         vm.prank(tss);
-        vault.executeUniversalTx{value: amount}(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: amount}(
+            txId,
+            universalTxId,
             originCaller,
             address(0),      // token = address(0) for native
             recipient,
@@ -360,13 +360,13 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test native withdrawal when CEA doesn't exist - should deploy and succeed
     function testWithdraw_Native_CEANotExists_DeploysAndSucceeds() public {
-        bytes32 txID = keccak256("tx11");
-        bytes32 universalTxID = keccak256("utx11");
+        bytes32 txId = keccak256("tx11");
+        bytes32 universalTxId = keccak256("utx11");
         address originCaller = user3; // Fresh UEA
         uint256 amount = 10 ether;
 
         // Verify no CEA exists
-        (, bool isDeployedBefore) = ceaFactory.getCEAForUEA(originCaller);
+        (, bool isDeployedBefore) = ceaFactory.getCEAForPushAccount(originCaller);
         assertFalse(isDeployedBefore, "CEA should not exist");
 
         uint256 initialUserBalance = recipient.balance;
@@ -376,9 +376,9 @@ contract VaultWithdrawalTest is Test {
 
         // Withdraw - should deploy CEA
         vm.prank(tss);
-        vault.executeUniversalTx{value: amount}(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: amount}(
+            txId,
+            universalTxId,
             originCaller,
             address(0),
             recipient,
@@ -387,7 +387,7 @@ contract VaultWithdrawalTest is Test {
         );
 
         // Verify CEA deployed
-        (, bool isDeployedAfter) = ceaFactory.getCEAForUEA(originCaller);
+        (, bool isDeployedAfter) = ceaFactory.getCEAForPushAccount(originCaller);
         assertTrue(isDeployedAfter, "CEA should be deployed");
 
         // Verify withdrawal
@@ -396,8 +396,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test native withdrawal with msg.value mismatch - should revert
     function testWithdraw_Native_MsgValueMismatch_Reverts() public {
-        bytes32 txID = keccak256("tx12");
-        bytes32 universalTxID = keccak256("utx12");
+        bytes32 txId = keccak256("tx12");
+        bytes32 universalTxId = keccak256("utx12");
         address originCaller = user1;
         uint256 amount = 5 ether;
         uint256 wrongValue = 3 ether;
@@ -407,9 +407,9 @@ contract VaultWithdrawalTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        vault.executeUniversalTx{value: wrongValue}( // msg.value != amount
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: wrongValue}( // msg.value != amount
+            txId,
+            universalTxId,
             originCaller,
             address(0),
             recipient,
@@ -420,17 +420,17 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test native withdrawal with zero amount - should succeed (harmless no-op)
     function testWithdraw_Native_AmountZero_Allowed() public {
-        bytes32 txID = keccak256("tx13");
-        bytes32 universalTxID = keccak256("utx13");
+        bytes32 txId = keccak256("tx13");
+        bytes32 universalTxId = keccak256("utx13");
         address originCaller = user1;
 
         uint256 initialBalance = recipient.balance;
 
         // Amount=0 is allowed (no-op but valid for execution-only operations)
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(0),
             recipient,
@@ -444,8 +444,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test native withdrawal with zero target - should revert
     function testWithdraw_Native_TargetZero_Reverts() public {
-        bytes32 txID = keccak256("tx14");
-        bytes32 universalTxID = keccak256("utx14");
+        bytes32 txId = keccak256("tx14");
+        bytes32 universalTxId = keccak256("utx14");
         address originCaller = user1;
         uint256 amount = 1 ether;
 
@@ -454,9 +454,9 @@ contract VaultWithdrawalTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
-        vault.executeUniversalTx{value: amount}(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: amount}(
+            txId,
+            universalTxId,
             originCaller,
             address(0),
             address(0), // Zero target
@@ -471,8 +471,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 execution with non-empty payload - existing functionality
     function testExecute_ERC20_WithPayload_Success() public {
-        bytes32 txID = keccak256("tx20");
-        bytes32 universalTxID = keccak256("utx20");
+        bytes32 txId = keccak256("tx20");
+        bytes32 universalTxId = keccak256("utx20");
         address originCaller = user1;
         uint256 amount = 100e6;
         bytes memory rawCalldata = abi.encodeWithSignature("someFunction()");
@@ -492,9 +492,9 @@ contract VaultWithdrawalTest is Test {
 
         // Execute with non-empty payload - should route to execution path
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             mockTarget,     // target contract
@@ -508,8 +508,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test native execution with non-empty payload - existing functionality
     function testExecute_Native_WithPayload_Success() public {
-        bytes32 txID = keccak256("tx21");
-        bytes32 universalTxID = keccak256("utx21");
+        bytes32 txId = keccak256("tx21");
+        bytes32 universalTxId = keccak256("utx21");
         address originCaller = user1;
         uint256 amount = 1 ether;
         bytes memory rawCalldata = abi.encodeWithSignature("deposit()");
@@ -530,9 +530,9 @@ contract VaultWithdrawalTest is Test {
 
         // Execute with non-empty payload
         vm.prank(tss);
-        vault.executeUniversalTx{value: amount}(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: amount}(
+            txId,
+            universalTxId,
             originCaller,
             address(0),    // native
             mockTarget,
@@ -549,13 +549,13 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test ERC20 token parking - tokens sent to CEA itself
     function testWithdraw_ERC20_Parking_CEAAsTarget() public {
-        bytes32 txID = keccak256("tx30");
-        bytes32 universalTxID = keccak256("utx30");
+        bytes32 txId = keccak256("tx30");
+        bytes32 universalTxId = keccak256("utx30");
         address originCaller = user1;
         uint256 amount = 500e6;
 
         // Get CEA address (will be deployed if not exists)
-        (address cea, bool isDeployed) = ceaFactory.getCEAForUEA(originCaller);
+        (address cea, bool isDeployed) = ceaFactory.getCEAForPushAccount(originCaller);
         if (!isDeployed) {
             vm.prank(address(vault));
             cea = ceaFactory.deployCEA(originCaller);
@@ -566,9 +566,9 @@ contract VaultWithdrawalTest is Test {
 
         // Withdraw with target = CEA address (parking)
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             cea,           // target = CEA address (parking)
@@ -583,13 +583,13 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test native token parking
     function testWithdraw_Native_Parking_CEAAsTarget() public {
-        bytes32 txID = keccak256("tx31");
-        bytes32 universalTxID = keccak256("utx31");
+        bytes32 txId = keccak256("tx31");
+        bytes32 universalTxId = keccak256("utx31");
         address originCaller = user1;
         uint256 amount = 10 ether;
 
         // Get/deploy CEA
-        (address cea, bool isDeployed) = ceaFactory.getCEAForUEA(originCaller);
+        (address cea, bool isDeployed) = ceaFactory.getCEAForPushAccount(originCaller);
         if (!isDeployed) {
             vm.prank(address(vault));
             cea = ceaFactory.deployCEA(originCaller);
@@ -602,9 +602,9 @@ contract VaultWithdrawalTest is Test {
 
         // Park native tokens in CEA
         vm.prank(tss);
-        vault.executeUniversalTx{value: amount}(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: amount}(
+            txId,
+            universalTxId,
             originCaller,
             address(0),
             cea,           // Parking in CEA
@@ -620,19 +620,19 @@ contract VaultWithdrawalTest is Test {
     //  5. EVENT EMISSION TESTS
     // =========================
 
-    /// @notice Test that withdrawal emits correct VaultUniversalTxExecuted event
-    function testWithdraw_EmitsVaultUniversalTxExecuted() public {
-        bytes32 txID = keccak256("tx40");
-        bytes32 universalTxID = keccak256("utx40");
+    /// @notice Test that withdrawal emits correct VaultUniversalTxFinalized event
+    function testWithdraw_EmitsVaultUniversalTxFinalized() public {
+        bytes32 txId = keccak256("tx40");
+        bytes32 universalTxId = keccak256("utx40");
         address originCaller = user1;
         uint256 amount = 100e6;
 
         // Expect exact event with withdrawal payload
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxExecuted(
-            txID,
-            universalTxID,
+        emit IVault.VaultUniversalTxFinalized(
+            txId,
+            universalTxId,
             originCaller,
             recipient,
             address(usdc),
@@ -641,9 +641,9 @@ contract VaultWithdrawalTest is Test {
         );
 
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -653,9 +653,9 @@ contract VaultWithdrawalTest is Test {
     }
 
     /// @notice Test that execution emits correct event with non-empty payload
-    function testExecute_EmitsVaultUniversalTxExecuted() public {
-        bytes32 txID = keccak256("tx41");
-        bytes32 universalTxID = keccak256("utx41");
+    function testExecute_EmitsVaultUniversalTxFinalized() public {
+        bytes32 txId = keccak256("tx41");
+        bytes32 universalTxId = keccak256("utx41");
         address originCaller = user1;
         uint256 amount = 100e6;
         bytes memory rawCalldata = abi.encodeWithSignature("test()");
@@ -669,9 +669,9 @@ contract VaultWithdrawalTest is Test {
 
         // Expect event with multicall-wrapped payload
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxExecuted(
-            txID,
-            universalTxID,
+        emit IVault.VaultUniversalTxFinalized(
+            txId,
+            universalTxId,
             originCaller,
             mockTarget,
             address(usdc),
@@ -680,9 +680,9 @@ contract VaultWithdrawalTest is Test {
         );
 
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             mockTarget,
@@ -697,8 +697,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice End-to-end test: Vault → CEA → User (ERC20)
     function testE2E_Withdrawal_ERC20_VaultToCEAToUser() public {
-        bytes32 txID = keccak256("tx50");
-        bytes32 universalTxID = keccak256("utx50");
+        bytes32 txId = keccak256("tx50");
+        bytes32 universalTxId = keccak256("utx50");
         address originCaller = user1;
         uint256 amount = 1000e6;
 
@@ -707,9 +707,9 @@ contract VaultWithdrawalTest is Test {
 
         // Execute withdrawal
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -722,15 +722,15 @@ contract VaultWithdrawalTest is Test {
         assertEq(usdc.balanceOf(recipient), userBefore + amount, "User increased");
 
         // Verify CEA exists but doesn't hold tokens
-        (address cea, bool deployed) = ceaFactory.getCEAForUEA(originCaller);
+        (address cea, bool deployed) = ceaFactory.getCEAForPushAccount(originCaller);
         assertTrue(deployed, "CEA should be deployed");
         assertEq(usdc.balanceOf(cea), 0, "CEA should not hold tokens after withdrawal");
     }
 
     /// @notice End-to-end test: Vault → CEA → User (Native)
     function testE2E_Withdrawal_Native_VaultToCEAToUser() public {
-        bytes32 txID = keccak256("tx51");
-        bytes32 universalTxID = keccak256("utx51");
+        bytes32 txId = keccak256("tx51");
+        bytes32 universalTxId = keccak256("utx51");
         address originCaller = user1;
         uint256 amount = 20 ether;
 
@@ -742,9 +742,9 @@ contract VaultWithdrawalTest is Test {
 
         // Execute withdrawal
         vm.prank(tss);
-        vault.executeUniversalTx{value: amount}(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx{value: amount}(
+            txId,
+            universalTxId,
             originCaller,
             address(0),
             recipient,
@@ -769,7 +769,7 @@ contract VaultWithdrawalTest is Test {
 
         // First withdrawal
         vm.prank(tss);
-        vault.executeUniversalTx(
+        vault.finalizeUniversalTx(
             keccak256("tx60"),
             keccak256("utx60"),
             originCaller,
@@ -781,7 +781,7 @@ contract VaultWithdrawalTest is Test {
 
         // Second withdrawal
         vm.prank(tss);
-        vault.executeUniversalTx(
+        vault.finalizeUniversalTx(
             keccak256("tx61"),
             keccak256("utx61"),
             originCaller,
@@ -802,8 +802,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test withdrawal when Vault is paused - should revert
     function testWithdraw_WhenPaused_Reverts() public {
-        bytes32 txID = keccak256("tx70");
-        bytes32 universalTxID = keccak256("utx70");
+        bytes32 txId = keccak256("tx70");
+        bytes32 universalTxId = keccak256("utx70");
         address originCaller = user1;
         uint256 amount = 100e6;
 
@@ -814,9 +814,9 @@ contract VaultWithdrawalTest is Test {
         // Attempt withdrawal
         vm.prank(tss);
         vm.expectRevert();
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -827,17 +827,17 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test non-TSS caller - should revert with access control error
     function testWithdraw_NonTSS_Reverts() public {
-        bytes32 txID = keccak256("tx71");
-        bytes32 universalTxID = keccak256("utx71");
+        bytes32 txId = keccak256("tx71");
+        bytes32 universalTxId = keccak256("utx71");
         address originCaller = user1;
         uint256 amount = 100e6;
 
         // Attacker tries to call
         vm.prank(attacker);
         vm.expectRevert(); // Should revert with role error
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             recipient,
@@ -848,8 +848,8 @@ contract VaultWithdrawalTest is Test {
 
     /// @notice Test contract recipient (smart wallet) - should work
     function testWithdraw_SmartWalletRecipient_Success() public {
-        bytes32 txID = keccak256("tx72");
-        bytes32 universalTxID = keccak256("utx72");
+        bytes32 txId = keccak256("tx72");
+        bytes32 universalTxId = keccak256("utx72");
         address originCaller = user1;
         uint256 amount = 100e6;
 
@@ -861,9 +861,9 @@ contract VaultWithdrawalTest is Test {
 
         // Withdraw to smart wallet
         vm.prank(tss);
-        vault.executeUniversalTx(
-            txID,
-            universalTxID,
+        vault.finalizeUniversalTx(
+            txId,
+            universalTxId,
             originCaller,
             address(usdc),
             smartWallet,

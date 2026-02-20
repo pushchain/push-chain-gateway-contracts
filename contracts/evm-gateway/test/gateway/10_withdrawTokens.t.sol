@@ -47,7 +47,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         bytes32 txID = bytes32(uint256(1));
         bytes32 universalTxID = bytes32(uint256(1001));
         vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(Errors.WithdrawFailed.selector));
+        vm.expectRevert(abi.encodeWithSelector(Errors.Unauthorized.selector));
         gateway.revertUniversalTx(txID, universalTxID, 1 ether, RevertInstructions(user1, ""));
     }
 

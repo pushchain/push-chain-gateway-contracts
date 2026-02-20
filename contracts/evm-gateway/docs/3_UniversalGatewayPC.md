@@ -35,7 +35,7 @@ At a high level, the function performs the following actions:
    - Burns the PRC20 amount from the gateway’s balance.
 
 6. **Create a canonical outbound transaction ID**
-   - Uses an incrementing `nonce` and hashes the request fields to form `txID`.
+   - Uses an incrementing `nonce` and hashes the request fields to form `txId`.
 
 7. **Emit the outbound event**
    - Emits `UniversalTxOutbound(...)` containing all essential data for relayers/executors.

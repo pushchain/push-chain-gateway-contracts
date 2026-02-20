@@ -86,12 +86,12 @@ contract MockCEAFactory is ICEAFactory {
     //        View helpers
     // =========================
     /// @inheritdoc ICEAFactory
-    function getCEAForUEA(address ueaOnPush) external view override returns (address cea, bool isDeployed) {
-        address mapped = UEA_to_CEA[ueaOnPush];
+    function getCEAForPushAccount(address _pushAccount) external view override returns (address cea, bool isDeployed) {
+        address mapped = UEA_to_CEA[_pushAccount];
         if (mapped != address(0)) {
             cea = mapped;
         } else {
-            cea = _computeCEAInternal(ueaOnPush);
+            cea = _computeCEAInternal(_pushAccount);
         }
         isDeployed = _hasCode(cea);
     }

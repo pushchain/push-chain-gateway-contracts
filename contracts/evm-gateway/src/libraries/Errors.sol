@@ -26,4 +26,6 @@ library Errors {
     error SlippageExceededOrExpired();
     error TokenBurnFailed(address token, uint256 amount);
     error GasFeeTransferFailed(address token, address from, uint256 amount);
+    error InsufficientBalance();
+    error Unauthorized();
 }

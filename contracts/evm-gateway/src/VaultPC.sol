@@ -77,7 +77,7 @@ contract VaultPC is
     {
         if (to == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
-        if (address(this).balance < amount) revert Errors.InvalidAmount();
+        if (address(this).balance < amount) revert Errors.InsufficientBalance();
 
         (bool success, ) = payable(to).call{value: amount}("");
         if (!success) revert Errors.DepositFailed();
@@ -94,7 +94,7 @@ contract VaultPC is
     {
         if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
         if (amount == 0) revert Errors.InvalidAmount();
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InsufficientBalance();
 
         IERC20(token).safeTransfer(to, amount);
         emit FeesWithdrawn(msg.sender, token, amount);

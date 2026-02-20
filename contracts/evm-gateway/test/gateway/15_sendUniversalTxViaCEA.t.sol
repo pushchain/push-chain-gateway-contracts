@@ -17,7 +17,7 @@ import { MockCEA } from "../mocks/MockCEA.sol";
 
 /**
  * @title SendUniversalTxViaCEA Test Suite
- * @notice Tests for sendUniversalTxViaCEA() on UniversalGateway
+ * @notice Tests for sendUniversalTxFromCEA() on UniversalGateway
  * @dev Covers: access control, CEA identity validation, recipient correctness,
  *      TX_TYPE routing, deposit mechanics, caps enforcement, event semantics,
  *      spoof resistance, and E2E scenarios.
@@ -35,7 +35,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         address revertRecipient,
         TX_TYPE txType,
         bytes signatureData,
-        bool viaCEA
+        bool fromCEA
     );
 
     // =========================
@@ -119,7 +119,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_RevertWhen_CallerIsNotACEA() public {
@@ -129,7 +129,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(attacker);
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_RevertWhen_CallerIsEOA() public {
@@ -139,7 +139,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -163,7 +163,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // fakeCEA is not in the factory mapping → isCEA returns false
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(fakeCEA);
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -182,7 +182,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_RevertWhen_RecipientIsZero() public {
@@ -197,7 +197,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_RecipientSpoofAttempt_EmitsMappedUEA() public {
@@ -214,7 +214,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // Reverts because attacker != mappedUEA
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -243,7 +243,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_FUNDS_ViaCEA_ERC20_HappyPath() public {
@@ -269,7 +269,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         assertEq(tokenA.balanceOf(address(this)), vaultBefore + amount, "Vault should receive ERC20");
     }
@@ -297,7 +297,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: amount }(req);
+        gateway.sendUniversalTxFromCEA{ value: amount }(req);
 
         assertEq(tss.balance, tssBefore + amount, "TSS should receive native");
     }
@@ -330,7 +330,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         // Vault received tokens
         assertEq(
@@ -356,7 +356,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.NotSupported.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_ERC20_RevertWhen_InsufficientAllowance() public {
@@ -370,7 +370,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert();
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -401,14 +401,14 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: amount }(req);
+        gateway.sendUniversalTxFromCEA{ value: amount }(req);
 
         assertEq(tss.balance, tssBefore + amount, "TSS should receive native");
     }
 
     function test_FundsAndPayload_ViaCEA_Batching_NativeFunds() public {
         // Case 2.2 via CEA: msg.value > req.amount → gas leg + FUNDS_AND_PAYLOAD
-        // gas leg must emit recipient=mappedUEA, viaCEA=true (not address(0), viaCEA=false)
+        // gas leg must emit recipient=mappedUEA, fromCEA=true (not address(0), fromCEA=false)
         uint256 fundsAmount = 1 ether;
         uint256 gasTopUp = 0.002 ether;
         uint256 totalValue = fundsAmount + gasTopUp;
@@ -448,7 +448,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: totalValue }(req);
+        gateway.sendUniversalTxFromCEA{ value: totalValue }(req);
 
         assertEq(tss.balance, tssBefore + totalValue, "TSS should receive full value");
     }
@@ -463,7 +463,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: 1 ether }(req);
+        gateway.sendUniversalTxFromCEA{ value: 1 ether }(req);
     }
 
     // =====================================================
@@ -472,7 +472,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
     function test_FundsAndPayload_ViaCEA_Batching_ERC20Funds() public {
         // Case 2.3 via CEA: ERC-20 funds + native gas leg
-        // gas leg must emit recipient=mappedUEA, viaCEA=true
+        // gas leg must emit recipient=mappedUEA, fromCEA=true
         uint256 amount = 100 ether;
         uint256 gasAmount = 0.002 ether;
         bytes memory payload = _defaultPayload();
@@ -512,7 +512,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: gasAmount }(req);
+        gateway.sendUniversalTxFromCEA{ value: gasAmount }(req);
 
         assertEq(tokenA.balanceOf(address(this)), vaultBefore + amount, "Vault should receive ERC20");
         assertEq(tss.balance, tssBefore + gasAmount, "TSS should receive gas");
@@ -530,7 +530,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 tssBefore = tss.balance;
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: amount }(req);
+        gateway.sendUniversalTxFromCEA{ value: amount }(req);
 
         assertEq(tss.balance, tssBefore + amount, "TSS receives exact amount");
     }
@@ -555,7 +555,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -574,14 +574,14 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
     //  10. EVENT SEMANTICS
     // =====================================================
 
-    function test_EventEmits_viaCEA_True() public {
+    function test_EventEmits_fromCEA_True() public {
         uint256 amount = 100 ether;
         bytes memory payload = _defaultPayload();
         bytes memory sigData = abi.encodePacked(bytes32(uint256(42)));
@@ -605,15 +605,15 @@ contract SendUniversalTxViaCEATest is BaseTest {
             address(0x456),
             TX_TYPE.FUNDS_AND_PAYLOAD,
             sigData,
-            true                // viaCEA = true
+            true                // fromCEA = true
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
-    function test_NormalSendUniversalTx_StillEmits_viaCEA_False() public {
-        // Regression: normal path still emits viaCEA = false
+    function test_NormalSendUniversalTx_StillEmits_fromCEA_False() public {
+        // Regression: normal path still emits fromCEA = false
         uint256 gasAmount = 0.001 ether;
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0),
@@ -634,7 +634,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
             address(0x456),
             TX_TYPE.GAS,
             bytes(""),
-            false               // viaCEA = false
+            false               // fromCEA = false
         );
 
         vm.prank(user1);
@@ -651,7 +651,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.recordLogs();
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         // Find the UniversalTx event and verify recipient != address(0)
         bytes32 eventSig = keccak256(
@@ -689,7 +689,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_SpoofRecipient_SomeContract_Reverts() public {
@@ -704,7 +704,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -735,7 +735,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         assertEq(
             tokenA.balanceOf(address(this)),
@@ -756,7 +756,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 tssBefore = tss.balance;
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: fundsAmount }(req);
+        gateway.sendUniversalTxFromCEA{ value: fundsAmount }(req);
 
         assertEq(tss.balance, tssBefore + fundsAmount, "TSS received exact amount");
     }
@@ -769,7 +769,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // Attacker is not a CEA
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(attacker);
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -786,7 +786,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.recordLogs();
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         bytes32 eventSig = keccak256(
             "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
@@ -798,7 +798,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
                 address emittedRecipient = address(uint160(uint256(logs[i].topics[2])));
                 assertTrue(
                     emittedRecipient != address(0),
-                    "REGRESSION: viaCEA must never emit recipient=address(0)"
+                    "REGRESSION: fromCEA must never emit recipient=address(0)"
                 );
                 assertEq(
                     emittedRecipient,
@@ -812,7 +812,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     }
 
     function test_Regression_NormalFundsAndPayload_RecipientStillZero() public {
-        // Non-viaCEA path preserves address(0) recipient for FUNDS_AND_PAYLOAD
+        // Non-fromCEA path preserves address(0) recipient for FUNDS_AND_PAYLOAD
         uint256 amount = 100 ether;
         UniversalPayload memory payload = buildDefaultPayload();
 
@@ -840,7 +840,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
                 assertEq(
                     emittedRecipient,
                     address(0),
-                    "Non-viaCEA FUNDS_AND_PAYLOAD must keep recipient=address(0)"
+                    "Non-fromCEA FUNDS_AND_PAYLOAD must keep recipient=address(0)"
                 );
                 return;
             }
@@ -862,7 +862,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert();
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -893,7 +893,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: gasAmount }(req);
+        gateway.sendUniversalTxFromCEA{ value: gasAmount }(req);
 
         assertEq(tss.balance, tssBefore + gasAmount, "TSS should receive gas");
     }
@@ -921,7 +921,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         assertEq(tss.balance, tssBefore, "TSS balance unchanged for payload-only");
     }
@@ -952,7 +952,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_GAS_ViaCEA_HappyPath() public {
@@ -979,7 +979,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: gasAmount }(req);
+        gateway.sendUniversalTxFromCEA{ value: gasAmount }(req);
 
         assertEq(tss.balance, tssBefore + gasAmount, "TSS should receive gas");
     }
@@ -996,7 +996,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_GasAndPayload_ViaCEA_RevertWhen_RevertRecipientZero() public {
@@ -1011,7 +1011,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidRecipient.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: 0.002 ether }(req);
+        gateway.sendUniversalTxFromCEA{ value: 0.002 ether }(req);
     }
 
     // =====================================================
@@ -1031,7 +1031,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: tinyGas }(req);
+        gateway.sendUniversalTxFromCEA{ value: tinyGas }(req);
     }
 
     function test_GasAndPayload_ViaCEA_BlockCapEnforced() public {
@@ -1049,7 +1049,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: gasAmount }(req);
+        gateway.sendUniversalTxFromCEA{ value: gasAmount }(req);
     }
 
     function test_GasAndPayload_ViaCEA_PayloadOnly_SkipsCaps() public {
@@ -1065,7 +1065,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         // Should succeed — caps skipped when gasAmount=0
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     // =====================================================
@@ -1080,7 +1080,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.recordLogs();
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: 0.002 ether }(req);
+        gateway.sendUniversalTxFromCEA{ value: 0.002 ether }(req);
 
         bytes32 eventSig = keccak256(
             "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
@@ -1101,7 +1101,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     }
 
     function test_GasAndPayload_NormalRoute_StillEmitsZeroRecipient() public {
-        // Regression: non-viaCEA GAS_AND_PAYLOAD still emits recipient=address(0)
+        // Regression: non-fromCEA GAS_AND_PAYLOAD still emits recipient=address(0)
         uint256 gasAmount = 0.002 ether;
         bytes memory payload = _defaultPayload();
         UniversalTxRequest memory req = UniversalTxRequest({
@@ -1135,7 +1135,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     // =====================================================
 
     function test_GasAndPayload_ViaCEA_RevertWhen_CallerNotCEA() public {
-        // EOA tries GAS_AND_PAYLOAD params via sendUniversalTxViaCEA
+        // EOA tries GAS_AND_PAYLOAD params via sendUniversalTxFromCEA
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: mappedUEA,
             token: address(0),
@@ -1147,7 +1147,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
-        gateway.sendUniversalTxViaCEA{ value: 0.002 ether }(req);
+        gateway.sendUniversalTxFromCEA{ value: 0.002 ether }(req);
     }
 
     // =====================================================
@@ -1178,7 +1178,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         );
 
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: gasAmount }(req);
+        gateway.sendUniversalTxFromCEA{ value: gasAmount }(req);
 
         assertEq(tss.balance, tssBefore + gasAmount, "TSS should receive gas");
     }
@@ -1194,7 +1194,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: 0.001 ether }(req);
+        gateway.sendUniversalTxFromCEA{ value: 0.001 ether }(req);
     }
 
     function test_FUNDS_ViaCEA_Native_RevertWhen_MsgValueMismatch() public {
@@ -1205,7 +1205,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA{ value: 1 ether }(req);
+        gateway.sendUniversalTxFromCEA{ value: 1 ether }(req);
     }
 
     // =====================================================
@@ -1341,7 +1341,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
     }
 
     function test_FUNDS_ViaCEA_EventRecipientIsNeverZero() public {
@@ -1352,7 +1352,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.recordLogs();
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         bytes32 eventSig = keccak256(
             "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
@@ -1380,7 +1380,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.recordLogs();
         vm.prank(address(cea));
-        gateway.sendUniversalTxViaCEA(req);
+        gateway.sendUniversalTxFromCEA(req);
 
         bytes32 eventSig = keccak256(
             "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
@@ -1390,7 +1390,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == eventSig) {
-                // viaCEA is the last field in non-indexed data; decode the full non-indexed data
+                // fromCEA is the last field in non-indexed data; decode the full non-indexed data
                 (
                     address token,
                     uint256 decodedAmount,
@@ -1398,12 +1398,12 @@ contract SendUniversalTxViaCEATest is BaseTest {
                     address revertRecipient,
                     TX_TYPE txType,
                     bytes memory sigData,
-                    bool viaCEA
+                    bool fromCEA
                 ) = abi.decode(
                     logs[i].data,
                     (address, uint256, bytes, address, TX_TYPE, bytes, bool)
                 );
-                assertTrue(viaCEA, "viaCEA must be true for FUNDS via CEA");
+                assertTrue(fromCEA, "fromCEA must be true for FUNDS via CEA");
                 assertEq(uint8(txType), uint8(TX_TYPE.FUNDS), "txType must be FUNDS");
                 assertEq(token, address(tokenA), "token must be tokenA");
                 assertEq(decodedAmount, amount, "amount must match");
@@ -1415,7 +1415,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     }
 
     function test_FUNDS_NormalRoute_ViaCEA_False() public {
-        // Regression: user1 calling sendUniversalTx with FUNDS params must emit viaCEA=false
+        // Regression: user1 calling sendUniversalTx with FUNDS params must emit fromCEA=false
         uint256 amount = 50 ether;
         UniversalTxRequest memory req = UniversalTxRequest({
             recipient: address(0),
@@ -1438,11 +1438,11 @@ contract SendUniversalTxViaCEATest is BaseTest {
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == eventSig) {
-                (,,,,,, bool viaCEA) = abi.decode(
+                (,,,,,, bool fromCEA) = abi.decode(
                     logs[i].data,
                     (address, uint256, bytes, address, TX_TYPE, bytes, bool)
                 );
-                assertFalse(viaCEA, "Non-viaCEA FUNDS must emit viaCEA=false");
+                assertFalse(fromCEA, "Non-fromCEA FUNDS must emit fromCEA=false");
                 found = true;
                 break;
             }
@@ -1451,7 +1451,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     }
 
     function test_FundsAndPayload_NormalBatching_GasLeg_ViaCEA_False() public {
-        // Regression: normal sendUniversalTx batching (Case 2.2) must emit viaCEA=false
+        // Regression: normal sendUniversalTx batching (Case 2.2) must emit fromCEA=false
         // and recipient=address(0) on the gas leg — not mappedUEA.
         uint256 fundsAmount = 1 ether;
         uint256 gasTopUp = 0.002 ether;
@@ -1467,7 +1467,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
             signatureData: bytes("")
         });
 
-        // Expect GAS leg: viaCEA=false, recipient=address(0)
+        // Expect GAS leg: fromCEA=false, recipient=address(0)
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
             user1,
@@ -1480,7 +1480,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
             bytes(""),
             false
         );
-        // Expect FUNDS_AND_PAYLOAD leg: viaCEA=false, recipient=address(0)
+        // Expect FUNDS_AND_PAYLOAD leg: fromCEA=false, recipient=address(0)
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
             user1,

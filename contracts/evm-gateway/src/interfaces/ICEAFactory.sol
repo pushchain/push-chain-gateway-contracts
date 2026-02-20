@@ -19,17 +19,17 @@ interface ICEAFactory {
      */
     function deployCEA(address _uea) external returns (address cea);
     /**
-     * @notice Returns the CEA address and deployment status for a given UEA on Push Chain.
+     * @notice Returns the CEA address and deployment status for a given Push Chain account.
      *
      * @dev
      *  - If the CEA has been deployed, returns (cea, true).
      *  - If the CEA has not been deployed, returns (predictedAddress, false).
      *
-     * @param _uea       Address of the UEA contract on Push Chain.
-     * @return cea       Address of the CEA (deployed or predicted via CREATE2).
-     * @return isDeployed True if the CEA has code deployed at that address.
+     * @param _pushAccount  Address of the Push Chain account (UEA).
+     * @return cea          Address of the CEA (deployed or predicted via CREATE2).
+     * @return isDeployed   True if the CEA has code deployed at that address.
      */
-    function getCEAForUEA(address _uea) external view returns (address cea, bool isDeployed);
+    function getCEAForPushAccount(address _pushAccount) external view returns (address cea, bool isDeployed);
 
     /**
      * @notice Returns true if the given address is a CEA deployed by this factory.

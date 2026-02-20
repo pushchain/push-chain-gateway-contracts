@@ -87,7 +87,7 @@ forge verify-contract --chain sepolia \
 
 1. **CEA-Based Execution**: All operations route through deterministic Chain Execution Account (CEA) contracts
 2. **TSS Authority**: Only TSS_ROLE can trigger withdrawals and executions
-3. **Unified Execution Path**: Single `executeUniversalTx` function handles both withdrawals (empty payload) and executions (multicall payload)
+3. **Unified Execution Path**: Single `finalizeUniversalTx` function handles both withdrawals (empty payload) and executions (multicall payload)
 4. **Token Gating**: Token support is validated via `UniversalGateway.isSupportedToken()` as a single source of truth
 5. **Deterministic CEA Deployment**: CEAFactory uses CREATE2 for predictable CEA addresses per UEA (Universal Execution Account)
 
@@ -97,17 +97,17 @@ forge verify-contract --chain sepolia \
 - A CEA is a smart contract wallet deployed deterministically for each UEA (user's account on Push Chain)
 - Acts as the execution context for all user operations on the external chain
 - One-to-one mapping: `UEA (Push Chain) ↔ CEA (External Chain)`
-- Deployed via CREATE2 using `CEAFactory.deployCEA(originCaller)`
+- Deployed via CREATE2 using `CEAFactory.deployCEA(pushAccount)`
 
 **CEA Execution Flow**:
 
 ```
-User UEA on Push Chain → TSS signs → Vault.executeUniversalTx() → CEA.executeUniversalTx() → Multicall execution
+User UEA on Push Chain → TSS signs → Vault.finalizeUniversalTx() → CEA.executeUniversalTx() → Multicall execution
 ```
 
 **Key Functions**:
-- `getCEAForUEA(uea)`: Returns (ceaAddress, isDeployed) - predictable even before deployment
-- `deployCEA(uea)`: Deploys CEA if not already deployed (idempotent, reverts if already exists)
+- `getCEAForPushAccount(pushAccount)`: Returns (ceaAddress, isDeployed) - predictable even before deployment
+- `deployCEA(pushAccount)`: Deploys CEA if not already deployed (idempotent, reverts if already exists)
 
 ### Multicall Payload Structure
 
@@ -128,14 +128,14 @@ struct Multicall {
 
 ### Vault Operations
 
-#### 1. executeUniversalTx (Main Entry Point)
+#### 1. finalizeUniversalTx (Main Entry Point)
 
 **Signature**:
 ```solidity
-function executeUniversalTx(
-    bytes32 txID,
-    bytes32 universalTxID,
-    address originCaller,      // UEA on Push Chain
+function finalizeUniversalTx(
+    bytes32 txId,
+    bytes32 universalTxId,
+    address pushAccount,       // Push Chain account (UEA) this tx is attributed to
     address token,             // address(0) for native
     address target,            // kept for backward compatibility (not used for routing)
     uint256 amount,            // amount to fund CEA with
@@ -144,10 +144,10 @@ function executeUniversalTx(
 ```
 
 **Flow** (`Vault.sol:136-154`):
-1. Get or deploy CEA for the `originCaller` (UEA)
+1. Get or deploy CEA for the `pushAccount` (UEA)
 2. Fund CEA with tokens/native
-3. Call `CEA.executeUniversalTx(txID, universalTxID, originCaller, data)`
-4. Emit `VaultUniversalTxExecuted` event
+3. Call `CEA.executeUniversalTx(txId, universalTxId, pushAccount, data)`
+4. Emit `VaultUniversalTxFinalized` event
 
 **Funding Logic**:
 - **ERC20**: Transfer tokens to CEA first, then call `CEA.executeUniversalTx()`
@@ -158,8 +158,8 @@ function executeUniversalTx(
 **Signature**:
 ```solidity
 function revertUniversalTxToken(
-    bytes32 txID,
-    bytes32 universalTxID,
+    bytes32 txId,
+    bytes32 universalTxId,
     address token,
     uint256 amount,
     RevertInstructions calldata revertInstruction
@@ -177,7 +177,7 @@ function revertUniversalTxToken(
 ### Validation & Safety
 
 **Parameter Validation** (`_validateParams`):
-- `originCaller != address(0)`: Valid UEA address
+- `pushAccount != address(0)`: Valid Push Chain account address
 - `target != address(0)`: Valid target (even if not used for routing)
 - Token support check via `gateway.isSupportedToken(token)`
 - **Token/Value Invariants**:
@@ -196,11 +196,11 @@ function revertUniversalTxToken(
 
 **Vault.sol Role System**:
 
-| Role | Permissions | Critical Actions |
-|------|-------------|------------------|
-| `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`, `sweep()` |
-| `TSS_ROLE` | Execute operations | `executeUniversalTx()`, `revertUniversalTxToken()` |
-| `PAUSER_ROLE` | Emergency pause | `pause()`, `unpause()` |
+| Role                 | Permissions                 | Critical Actions                                    |
+| -------------------- | --------------------------- | --------------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`, `sweep()`               |
+| `TSS_ROLE`           | Execute operations          | `finalizeUniversalTx()`, `revertUniversalTxToken()` |
+| `PAUSER_ROLE`        | Emergency pause             | `pause()`, `unpause()`                              |
 
 **Security Properties**:
 - ✅ Only TSS can execute withdrawals and executions
@@ -236,10 +236,10 @@ function revertUniversalTxToken(
 ### Events
 
 ```solidity
-event VaultUniversalTxExecuted(
-    bytes32 indexed txID,
-    bytes32 indexed universalTxID,
-    address indexed originCaller,
+event VaultUniversalTxFinalized(
+    bytes32 indexed txId,
+    bytes32 indexed universalTxId,
+    address indexed pushAccount,
     address target,
     address token,
     uint256 amount,
@@ -247,8 +247,8 @@ event VaultUniversalTxExecuted(
 );
 
 event VaultUniversalTxReverted(
-    bytes32 indexed txID,
-    bytes32 indexed universalTxID,
+    bytes32 indexed txId,
+    bytes32 indexed universalTxId,
     address indexed token,
     uint256 amount,
     RevertInstructions revertInstruction
@@ -277,7 +277,7 @@ event TSSUpdated(address indexed oldTSS, address indexed newTSS);
 When testing Vault operations:
 
 **CEA Deployment Tests**:
-- Verify deterministic CEA addresses via `getCEAForUEA()`
+- Verify deterministic CEA addresses via `getCEAForPushAccount()`
 - Test first-time deployment vs. existing CEA
 - Ensure idempotency (no double-deployment)
 
@@ -429,47 +429,47 @@ When upgrading the gateway:
 4. **Deterministic Routing**: Transaction routing is algorithmic and predictable based on fixed rules
 5. **Defense in Depth**: Multiple layers of protection (pausability, reentrancy guards, rate limits, oracle checks, role-based access control)
 
-## sendUniversalTxViaCEA — CEA Inbound Route
+## sendUniversalTxFromCEA — CEA Inbound Route
 
-`sendUniversalTxViaCEA` is the dedicated entry point for CEA contracts calling back into the gateway to send transactions to their linked UEA on Push Chain.
+`sendUniversalTxFromCEA` is the dedicated entry point for CEA contracts calling back into the gateway to send transactions to their linked UEA on Push Chain.
 
-### Design (post-simplification)
+### Design
 
 The function does exactly three things before delegating:
 1. Validates the caller is a registered CEA via `CEAFactory.isCEA()`
 2. Resolves the caller's mapped UEA via `CEAFactory.getUEAForCEA()` and asserts `req.recipient == mappedUEA` (anti-spoof)
-3. Infers TX_TYPE via `_fetchTxType` and calls `_routeUniversalTx(..., viaCEA=true)`
+3. Infers TX_TYPE via `_fetchTxType` and calls `_routeUniversalTx(..., fromCEA=true)`
 
-All type-specific validation (amount checks, rate-limits, batching rules) is handled by the existing routing internals — no per-type branches in `sendUniversalTxViaCEA` itself.
+All type-specific validation (amount checks, rate-limits, batching rules) is handled by the existing routing internals — no per-type branches in `sendUniversalTxFromCEA` itself.
 
 ### Supported TX_TYPEs via CEA
 
 All four TX_TYPEs are allowed (none are rejected):
 
-| TX_TYPE | Condition | Route | Notes |
-|---------|-----------|-------|-------|
-| `GAS` | `amount=0, payload empty, msg.value>0` | Instant | USD caps apply |
-| `GAS_AND_PAYLOAD` | `payload non-empty, amount=0` | Instant | USD caps apply when `msg.value>0`; skipped when `msg.value=0` |
-| `FUNDS` | `amount>0, payload empty` | Standard | Epoch rate-limits apply |
-| `FUNDS_AND_PAYLOAD` | `amount>0, payload non-empty` | Standard | Gas batching allowed (Cases 2.2 / 2.3) |
+| TX_TYPE             | Condition                              | Route    | Notes                                                         |
+| ------------------- | -------------------------------------- | -------- | ------------------------------------------------------------- |
+| `GAS`               | `amount=0, payload empty, msg.value>0` | Instant  | USD caps apply                                                |
+| `GAS_AND_PAYLOAD`   | `payload non-empty, amount=0`          | Instant  | USD caps apply when `msg.value>0`; skipped when `msg.value=0` |
+| `FUNDS`             | `amount>0, payload empty`              | Standard | Epoch rate-limits apply                                       |
+| `FUNDS_AND_PAYLOAD` | `amount>0, payload non-empty`          | Standard | Gas batching allowed (Cases 2.2 / 2.3)                        |
 
 ### Gas Batching via CEA (Cases 2.2 and 2.3)
 
-When a CEA sends `FUNDS_AND_PAYLOAD` with `msg.value > req.amount` (native batching) or `token != address(0)` and `msg.value > 0` (ERC-20 + native gas), the gas leg is now emitted with `recipient=mappedUEA` and `viaCEA=true`.
+When a CEA sends `FUNDS_AND_PAYLOAD` with `msg.value > req.amount` (native batching) or `token != address(0)` and `msg.value > 0` (ERC-20 + native gas), the gas leg is emitted with `recipient=mappedUEA` and `fromCEA=true`.
 
-**Why this matters**: If the gas leg emitted `recipient=address(0)`, Push Chain would interpret it as "caller's UEA" — which for a CEA caller would deploy a new UEA for the CEA address rather than routing to the actual user's UEA. The fix ensures `gasLegRecipient = viaCEA ? req.recipient : address(0)` in `_sendTxWithFunds` Cases 2.2 and 2.3.
+**Why this matters**: If the gas leg emitted `recipient=address(0)`, Push Chain would interpret it as "caller's UEA" — which for a CEA caller would deploy a new UEA for the CEA address rather than routing to the actual user's UEA. The fix ensures `gasLegRecipient = fromCEA ? req.recipient : address(0)` in `_sendTxWithFunds` Cases 2.2 and 2.3.
 
 ### Invariants
 
 - `req.recipient` must always equal the CEA's mapped UEA — never `address(0)`, never an arbitrary address
-- All events emitted via CEA path have `viaCEA=true` and `recipient=mappedUEA`
-- Normal `sendUniversalTx` path is unchanged: still emits `viaCEA=false` and `recipient=address(0)`
+- All events emitted via CEA path have `fromCEA=true` and `recipient=mappedUEA`
+- Normal `sendUniversalTx` path is unchanged: still emits `fromCEA=false` and `recipient=address(0)`
 - CEAs are blocked from calling `sendUniversalTx` directly (reverts `InvalidInput`)
 
 ### Related Files
 
-- `src/UniversalGateway.sol` — `sendUniversalTxViaCEA` (lines ~350-370), `_sendTxWithFunds` Cases 2.2/2.3
-- `src/interfaces/IUniversalGateway.sol` — NatSpec for `sendUniversalTxViaCEA`
+- `src/UniversalGateway.sol` — `sendUniversalTxFromCEA` (lines ~350-370), `_sendTxWithFunds` Cases 2.2/2.3
+- `src/interfaces/IUniversalGateway.sol` — NatSpec for `sendUniversalTxFromCEA`
 - `test/gateway/15_sendUniversalTxViaCEA.t.sol` — 58 tests covering all TX_TYPEs, batching, anti-spoof, event semantics
 
 ## UniversalGatewayPC - Outbound Transaction Handling
@@ -510,12 +510,12 @@ function _fetchTxType(UniversalOutboundTxRequest calldata req) private pure retu
 
 ### TX_TYPE Decision Matrix
 
-| Payload (`req.payload.length`) | Amount (`req.amount`) | TX_TYPE | Behavior |
-|--------------------------------|----------------------|---------|----------|
-| Empty (0 bytes) | > 0 | **FUNDS** | Burns tokens, unlocks on origin chain |
-| Non-empty | > 0 | **FUNDS_AND_PAYLOAD** | Burns tokens, executes payload on origin chain |
-| Non-empty | 0 | **GAS_AND_PAYLOAD** | No burn, executes payload using existing CEA funds |
-| Empty (0 bytes) | 0 | **❌ Reverts** | Empty transaction rejected with `InvalidInput` |
+| Payload (`req.payload.length`) | Amount (`req.amount`) | TX_TYPE               | Behavior                                           |
+| ------------------------------ | --------------------- | --------------------- | -------------------------------------------------- |
+| Empty (0 bytes)                | > 0                   | **FUNDS**             | Burns tokens, unlocks on origin chain              |
+| Non-empty                      | > 0                   | **FUNDS_AND_PAYLOAD** | Burns tokens, executes payload on origin chain     |
+| Non-empty                      | 0                     | **GAS_AND_PAYLOAD**   | No burn, executes payload using existing CEA funds |
+| Empty (0 bytes)                | 0                     | **❌ Reverts**         | Empty transaction rejected with `InvalidInput`     |
 
 ### Payload-Only Transaction Support (NEW)
 
