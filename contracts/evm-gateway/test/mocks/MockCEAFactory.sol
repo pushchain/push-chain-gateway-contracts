@@ -126,6 +126,16 @@ contract MockCEAFactory is ICEAFactory {
         // Note: Real CEAFactory emits CEADeployed event, but we skip it in mock
     }
 
+    /// @inheritdoc ICEAFactory
+    function isCEA(address _cea) external view override returns (bool) {
+        return CEA_to_UEA[_cea] != address(0);
+    }
+
+    /// @inheritdoc ICEAFactory
+    function getUEAForCEA(address _cea) external view override returns (address uea) {
+        return CEA_to_UEA[_cea];
+    }
+
     /// @notice Get the MockCEA instance for a given address (test helper)
     /// @dev This is a test helper, not part of the real CEAFactory
     function getMockCEA(address cea) external view returns (MockCEA) {

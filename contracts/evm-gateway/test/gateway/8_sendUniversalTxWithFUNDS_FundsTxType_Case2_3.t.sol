@@ -48,7 +48,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         bytes payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData
+        bytes signatureData,
+        bool viaCEA
     );
 
     // =========================
@@ -184,7 +185,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: msgValue,
             payload: bytes(""), // Gas event has empty payload
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         // Event 2: Funds event (ERC20 amount)
@@ -197,7 +199,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: erc20Amount,
             payload: encodedPayload, // Funds event has full payload
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -251,7 +254,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: msgValue,
             payload: bytes(""), // Empty for gas event
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         // Funds event: full payload
@@ -264,7 +268,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: erc20Amount,
             payload: encodedPayload, // Full payload preserved
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -432,7 +437,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: msgValue,
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -861,7 +867,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: msgValue,
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         // Event 2: Funds
@@ -874,7 +881,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: erc20Amount,
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -907,7 +915,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: msgValue,
             payload: bytes(""), // Empty
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -941,7 +950,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: msgValue,
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         // Funds event: recipient preserved
@@ -954,7 +964,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: erc20Amount,
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -987,7 +998,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: msgValue,
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         // Funds event: token = tokenA (ERC20)
@@ -1000,7 +1012,8 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             amount: erc20Amount,
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);

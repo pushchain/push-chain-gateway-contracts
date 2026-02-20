@@ -30,4 +30,18 @@ interface ICEAFactory {
      * @return isDeployed True if the CEA has code deployed at that address.
      */
     function getCEAForUEA(address _uea) external view returns (address cea, bool isDeployed);
+
+    /**
+     * @notice Returns true if the given address is a CEA deployed by this factory.
+     * @param _cea  Address to check.
+     * @return      True if `_cea` was deployed by this factory.
+     */
+    function isCEA(address _cea) external view returns (bool);
+
+    /**
+     * @notice Returns the UEA on Push Chain that maps to the given CEA.
+     * @param _cea  CEA address on this chain.
+     * @return uea  Mapped UEA address (address(0) if no mapping exists).
+     */
+    function getUEAForCEA(address _cea) external view returns (address uea);
 }

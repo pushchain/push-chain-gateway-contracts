@@ -78,7 +78,8 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         bytes payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData
+        bytes signatureData,
+        bool viaCEA
     );
 
     // =========================
@@ -420,7 +421,8 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
             bytes(""),
             req.revertRecipient,
             TX_TYPE.GAS,
-            bytes("")
+            bytes(""),
+            false
         );
 
         vm.prank(user1);

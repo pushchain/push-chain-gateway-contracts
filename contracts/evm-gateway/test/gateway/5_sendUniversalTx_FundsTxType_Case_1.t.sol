@@ -35,7 +35,8 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         bytes payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData
+        bytes signatureData,
+        bool viaCEA
     );
 
     // =========================
@@ -161,7 +162,8 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             amount: fundsAmount,
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -384,7 +386,8 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             amount: fundsAmount,
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
@@ -654,7 +657,8 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             amount: fundsAmount,
             payload: bytes(""),
             revertRecipient: revertInst.revertRecipient, // Full struct with revertMsg
-            signatureData: bytes("")
+            signatureData: bytes(""),
+            viaCEA: false
         });
 
         vm.prank(user1);
