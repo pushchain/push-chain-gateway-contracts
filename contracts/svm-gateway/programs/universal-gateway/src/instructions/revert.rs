@@ -63,7 +63,6 @@ pub fn revert_universal_tx(
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
-    nonce: u64,
 ) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
@@ -88,7 +87,6 @@ pub fn revert_universal_tx(
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
-        nonce,
         Some(amount),
         &additional,
         &message_hash,
@@ -200,7 +198,6 @@ pub fn revert_universal_tx_token(
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
-    nonce: u64,
 ) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
@@ -232,7 +229,6 @@ pub fn revert_universal_tx_token(
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
-        nonce,
         Some(amount),
         &additional,
         &message_hash,
