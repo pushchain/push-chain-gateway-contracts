@@ -17,7 +17,7 @@ const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp")
 
 // PDA Seeds
 const CONFIG_SEED = "config";
-const TSS_SEED = "tsspda";
+const TSS_SEED = "tsspda_v2";
 const VAULT_SEED = "vault";
 const RATE_LIMIT_CONFIG_SEED = "rate_limit_config";
 const RATE_LIMIT_SEED = "rate_limit";
@@ -182,40 +182,6 @@ program_cli
             console.log(`   Transaction: ${tx}\n`);
         } catch (error: any) {
             console.error(`❌ Error updating TSS: ${error.message}`);
-            process.exit(1);
-        }
-    });
-
-program_cli
-    .command("tss:reset-nonce")
-    .description("Reset TSS nonce (DANGEROUS - use with caution)")
-    .requiredOption("--nonce <value>", "New nonce value (u64)")
-    .action(async (options) => {
-        try {
-            console.log("=== RESETTING TSS NONCE ===\n");
-            console.log("⚠️  WARNING: This is a dangerous operation!");
-            console.log("⚠️  Only use this for testing or recovery purposes.\n");
-
-            const nonce = BigInt(options.nonce);
-
-            const tssPda = deriveTssPda();
-
-            console.log(`New Nonce: ${nonce}`);
-            console.log(`TSS PDA: ${tssPda.toBase58()}\n`);
-
-            const tx = await program.methods
-                .resetNonce(new anchor.BN(nonce.toString()))
-                .accounts({
-                    tssPda: tssPda,
-                    authority: adminKeypair.publicKey,
-                })
-                .signers([adminKeypair])
-                .rpc();
-
-            console.log(`✅ TSS nonce reset successfully!`);
-            console.log(`   Transaction: ${tx}\n`);
-        } catch (error: any) {
-            console.error(`❌ Error resetting TSS nonce: ${error.message}`);
             process.exit(1);
         }
     });

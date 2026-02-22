@@ -170,13 +170,7 @@ describe("Universal Gateway - Execute Tests", () => {
     let counterBump: number; // Counter PDA bump
     let counterAuthority: Keypair; // Authority for counter
 
-    let currentNonce = 0;
     let txIdCounter = 0;
-
-    const syncNonceFromChain = async () => {
-        const account = await gatewayProgram.account.tssPda.fetch(tssPda);
-        currentNonce = Number(account.nonce);
-    };
 
     const generateTxId = (): number[] => {
         txIdCounter++;
@@ -259,7 +253,7 @@ describe("Universal Gateway - Execute Tests", () => {
         );
 
         [tssPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("tsspda")],
+            [Buffer.from("tsspda_v2")],
             gatewayProgram.programId
         );
         // Get vault ATA and create if needed (admin pays)
@@ -326,9 +320,6 @@ describe("Universal Gateway - Execute Tests", () => {
             }
         }
 
-        // Sync nonce
-        await syncNonceFromChain();
-
         // Fund vault with SOL (admin pays)
         const vaultAmount = asLamports(100);
         const vaultTx = new anchor.web3.Transaction().add(
@@ -346,7 +337,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
     describe("execute_universal_tx (SOL)", () => {
         it("should execute SOL-only payload (increment) with zero amount", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -374,7 +364,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -410,7 +399,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -449,9 +437,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const expectedBalanceChange = -actualRentForExecutedTx + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 15000); // Allow for transaction fees
 
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
-
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             console.log("SOL-only payload with zero amount counterAfter", counterAfter.value.toNumber());
             expect(counterAfter.value.toNumber()).to.equal(
@@ -460,7 +445,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("should allow gateway self-call to withdraw SOL from CEA", async () => {
-            await syncNonceFromChain();
             const sender = generateSender();
             const cea = getCeaAuthorityPda(sender);
 
@@ -484,7 +468,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sigFund = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(fundAmount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -514,7 +497,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     Array.from(sigFund.signature),
                     sigFund.recoveryId,
                     Array.from(sigFund.messageHash),
-                    new anchor.BN(sigFund.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -560,7 +542,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sigW = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: sigFund.nonce.add(new anchor.BN(1)).toNumber(),
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -591,7 +572,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     Array.from(sigW.signature),
                     sigW.recoveryId,
                     Array.from(sigW.messageHash),
-                    new anchor.BN(sigW.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -636,7 +616,6 @@ describe("Universal Gateway - Execute Tests", () => {
         // SOL transfer test removed - covered by CEA staking tests below
 
         it("should reject duplicate tx_id (replay protection)", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -658,7 +637,6 @@ describe("Universal Gateway - Execute Tests", () => {
             // First execution
             const sig1 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -688,7 +666,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     Array.from(sig1.signature),
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
-                    new anchor.BN(sig1.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -712,12 +689,9 @@ describe("Universal Gateway - Execute Tests", () => {
                 .signers([admin])
                 .rpc();
 
-            await syncNonceFromChain();
-
             // Second execution with same tx_id should fail
             const sig2 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -745,7 +719,6 @@ describe("Universal Gateway - Execute Tests", () => {
                         Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig2.signature),
                         sig2.recoveryId,
                         Array.from(sig2.messageHash),
-                        new anchor.BN(sig2.nonce),
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -777,7 +750,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
     describe("execute_universal_tx (SPL)", () => {
         it("should execute SPL token transfer to test-counter", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -810,7 +782,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const tssAccount = await gatewayProgram.account.tssPda.fetch(tssPda);
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: tssAccount.chainId,
                 additional: buildExecuteAdditionalData(
@@ -842,7 +813,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -884,10 +854,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const expectedBalanceChange = -actualRentForExecutedTx - actualRentForCeaAta + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 20000); // Allow for transaction fees (SPL txs are larger)
 
-            // Verify nonce incremented
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
-
             // Verify executed_tx account exists
             const executedTx = await gatewayProgram.account.executedTx.fetch(getExecutedTxPda(txId));
             expect(executedTx).to.not.be.null;
@@ -906,7 +872,6 @@ describe("Universal Gateway - Execute Tests", () => {
             expect(ceaAtaInfo).to.not.be.null; // CEA ATA persists (pull model)
         });
         it("should reject SPL execution if cea ATA owner mismatches", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -950,7 +915,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const remainingAccounts = instructionAccountsToRemaining(counterIx);
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: tssAccount.chainId,
                 additional: buildExecuteAdditionalData(
@@ -979,7 +943,6 @@ describe("Universal Gateway - Execute Tests", () => {
                         Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                         sig.recoveryId,
                         Array.from(sig.messageHash),
-                        new anchor.BN(sig.nonce),
                     )
                     .accounts({
                         caller: admin.publicKey,
@@ -1015,11 +978,8 @@ describe("Universal Gateway - Execute Tests", () => {
                 expect(errorCode).to.equal("InvalidAccount");
             }
 
-            // Nonce already consumed when validate_message ran; refresh cached value
-            await syncNonceFromChain();
         });
         it("should execute SPL-only payload (increment) with zero amount", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -1045,7 +1005,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -1077,7 +1036,6 @@ describe("Universal Gateway - Execute Tests", () => {
                     Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1119,9 +1077,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const expectedBalanceChange = -actualRentForExecutedTx - actualRentForCeaAta + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 20000); // Allow for transaction fees (SPL txs are larger)
 
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
-
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
@@ -1139,7 +1094,6 @@ describe("Universal Gateway - Execute Tests", () => {
     });
 
     it("should allow gateway self-call to withdraw SPL from CEA", async () => {
-        await syncNonceFromChain();
         const sender = generateSender();
         const cea = getCeaAuthorityPda(sender);
         const ceaAta = await getCeaAta(sender, mockUSDT.mint.publicKey);
@@ -1166,7 +1120,6 @@ describe("Universal Gateway - Execute Tests", () => {
         const fundAccounts = instructionAccountsToGatewayMetas(counterIx);
         const sigFund = await signTssMessage({
             instruction: TssInstruction.Execute,
-            nonce: currentNonce,
             amount: BigInt(fundAmount.toString()),
             chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
             additional: buildExecuteAdditionalData(
@@ -1198,7 +1151,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 Array.from(sigFund.signature),
                 sigFund.recoveryId,
                 Array.from(sigFund.messageHash),
-                new anchor.BN(sigFund.nonce),
             )
             .accounts({
                 caller: admin.publicKey,
@@ -1260,7 +1212,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
         const sigW = await signTssMessage({
             instruction: TssInstruction.Execute,
-            nonce: sigFund.nonce.add(new anchor.BN(1)).toNumber(),
             amount: BigInt(0),
             chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
             additional: buildExecuteAdditionalData(
@@ -1293,7 +1244,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 Array.from(sigW.signature),
                 sigW.recoveryId,
                 Array.from(sigW.messageHash),
-                new anchor.BN(sigW.nonce),
             )
             .accounts({
                 caller: admin.publicKey,
@@ -1337,7 +1287,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
     describe("execute payload encode/decode roundtrip", () => {
         it("encodes, decodes, signs, and executes SOL payload", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -1378,11 +1327,9 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const targetProgram = counterProgram.programId;
             const amount = BigInt(0);
             const chainId = tssAccount.chainId;
-            const nonce = currentNonce;
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: nonce,
                 amount: amount,
                 chainId: chainId,
                 additional: buildExecuteAdditionalData(
@@ -1415,7 +1362,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1457,9 +1403,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             expect(actualBalanceChange).to.be.at.least(minExpectedChange);
             expect(actualBalanceChange).to.be.at.most(maxExpectedChange);
 
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(nonce + 1);
-
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
@@ -1467,7 +1410,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
         });
 
         it("encodes, decodes, signs, and executes SPL payload", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -1516,10 +1458,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const targetProgram = counterProgram.programId;
             const amountValue = BigInt(amount.toString());
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
-            const nonce = currentNonce;
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: nonce,
                 amount: amountValue,
                 chainId: chainId,
                 additional: buildExecuteAdditionalData(
@@ -1554,7 +1494,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -1588,9 +1527,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             // Expected: -executed_tx_rent - cea_ata_rent (if created) + relayer_fee - transaction_fees
             const expectedBalanceChange = -actualRentForExecutedTx - actualRentForCeaAta + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 20000); // Allow for transaction fees (SPL txs are larger)
-
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(nonce + 1);
 
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
@@ -1633,7 +1569,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
         describe("account manipulation attacks", () => {
             it("should reject account substitution attack", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1655,7 +1590,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 // Sign with CORRECT accounts
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1692,7 +1626,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1721,7 +1654,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             it("should reject account count mismatch", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1741,7 +1673,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1780,7 +1711,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1809,7 +1739,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             it("should reject writable flag mismatch", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1830,7 +1759,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 // Sign with counter as writable
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1866,7 +1794,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1895,7 +1822,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             it("should reject account reordering attack", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1915,7 +1841,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1951,7 +1876,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -1982,7 +1906,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
         describe("signature and authentication attacks", () => {
             it("should reject invalid signature", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -2007,7 +1930,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -2044,7 +1966,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 corruptedSignature, // Invalid!
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2072,94 +1993,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 );
             });
 
-            it("should reject wrong nonce", async () => {
-                await syncNonceFromChain();
-                const txId = generateTxId();
-                const universalTxId = generateUniversalTxId();
-                const sender = generateSender();
-
-                const counterIx = await counterProgram.methods
-                    .increment(new anchor.BN(1))
-                    .accounts({
-                        counter: counterPda,
-                        authority: counterAuthority.publicKey,
-                    })
-                    .instruction();
-
-                // CRITICAL: Use the EXACT same accounts for signing and remaining_accounts
-                const remainingAccounts = instructionAccountsToRemaining(counterIx);
-                const accounts = remainingAccounts.map((acc) => ({
-                    pubkey: acc.pubkey,
-                    isWritable: acc.isWritable,
-                }));
-
-                // Calculate fees dynamically
-                const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
-
-                // Sign with WRONG nonce (future nonce)
-                const wrongNonce = currentNonce + 5;
-                const sig = await signTssMessage({
-                    instruction: TssInstruction.Execute,
-                    nonce: wrongNonce, // Wrong!
-                    amount: BigInt(0),
-                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
-                    additional: buildExecuteAdditionalData(
-                        new Uint8Array(universalTxId),
-                        new Uint8Array(txId),
-                        counterProgram.programId,
-                        new Uint8Array(sender),
-                        accounts,
-                        counterIx.data,
-                        gasFee,
-                        rentFee
-                    ),
-                });
-
-                const nonceWritableFlags = accountsToWritableFlagsOnly(accounts);
-                await expectExecuteRevert(
-                    "Wrong nonce",
-                    async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                            2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                nonceWritableFlags,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(wrongNonce), // Wrong nonce!
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
-                            .remainingAccounts(remainingAccounts)
-                            .signers([admin])
-                            .rpc();
-                    },
-                    "NonceMismatch"
-                );
-            });
-
             it("should reject tampered message hash", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -2184,7 +2018,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -2218,7 +2051,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
                                 tamperedHash, // Tampered!
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2249,7 +2081,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
         describe("program and target validation", () => {
             it("should reject non-executable destination program", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -2271,7 +2102,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -2304,7 +2134,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Array.from(sig.signature),
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2333,7 +2162,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             it("should reject gateway PDAs in remaining accounts (vault)", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -2357,7 +2185,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -2392,7 +2219,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2421,7 +2247,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             it("should reject target program mismatch (via message hash)", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -2447,7 +2272,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 // Sign for counter program
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -2483,7 +2307,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                                 Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                                 sig.recoveryId,
                                 Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
                             )
                             .accounts({
                                 caller: admin.publicKey,
@@ -2560,7 +2383,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
         });
 
         it("User1: should stake SOL and verify CEA identity persistence", async () => {
-            await syncNonceFromChain();
             const stakeAmount = asLamports(1); // 1 SOL
             const user1Stake = getStakePda(user1Cea);
             const user1StakeVault = getStakeVaultPda(user1Cea);
@@ -2593,7 +2415,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const sig1 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(stakeAmount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -2620,7 +2441,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Buffer.from(stakeIx.data), new anchor.BN(Number(gasFee1)), new anchor.BN(Number(rentFee1)), Array.from(sig1.signature),
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
-                    new anchor.BN(sig1.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2659,7 +2479,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
         });
 
         it("User1: should perform multiple transactions with same CEA", async () => {
-            await syncNonceFromChain();
             const user1Stake = getStakePda(user1Cea);
             const user1StakeVault = getStakeVaultPda(user1Cea);
 
@@ -2685,7 +2504,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const sig2 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(stakeAmount2.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -2715,7 +2533,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Buffer.from(stakeIx2.data), new anchor.BN(Number(gasFee2)), new anchor.BN(Number(rentFee2)), Array.from(sig2.signature),
                     sig2.recoveryId,
                     Array.from(sig2.messageHash),
-                    new anchor.BN(sig2.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2752,7 +2569,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
         });
 
         it("User1: should unstake SOL and verify FUNDS event emission", async () => {
-            await syncNonceFromChain();
             const user1Stake = getStakePda(user1Cea);
             const user1StakeVault = getStakeVaultPda(user1Cea);
             const stakeAccount = await counterProgram.account.stake.fetch(user1Stake);
@@ -2781,7 +2597,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -2808,7 +2623,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2882,7 +2696,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
         });
 
         it("User2: should stake SOL with different CEA", async () => {
-            await syncNonceFromChain();
             const stakeAmount = asLamports(2); // 2 SOL
             const user2Stake = getStakePda(user2Cea);
             const user2StakeVault = getStakeVaultPda(user2Cea);
@@ -2913,7 +2726,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(stakeAmount.toNumber()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -2940,7 +2752,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Buffer.from(stakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -2977,7 +2788,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
         });
 
         it("User2: should unstake own SOL successfully", async () => {
-            await syncNonceFromChain();
             const user2Stake = getStakePda(user2Cea);
             const user2StakeVault = getStakeVaultPda(user2Cea);
             const stakeAccount = await counterProgram.account.stake.fetch(user2Stake);
@@ -3003,7 +2813,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -3030,7 +2839,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -3058,9 +2866,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
         });
 
         it("User3: should stake SPL tokens", async () => {
-            // Sync nonce at start
-            await syncNonceFromChain();
-
             const stakeAmount = asTokenAmount(50); // 50 USDT
             const user3Stake = getStakePda(user3Cea);
 
@@ -3108,10 +2913,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const accounts = instructionAccountsToGatewayMetas(stakeIx);
 
-            // Sync again right before signing - CRITICAL: use exact on-chain nonce
-            await syncNonceFromChain();
-            const onChainNonce = currentNonce;
-
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
 
             // Convert amount to BigInt for signing - must match exactly what we pass to execute
@@ -3119,7 +2920,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: onChainNonce,
                 amount: amountBigInt,
                 chainId,
                 additional: buildExecuteAdditionalData(
@@ -3150,7 +2950,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
                 )
                 .preInstructions([
                     ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
@@ -3209,10 +3008,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 })
                 .instruction();
 
-            // Sync nonce right before signing - CRITICAL: use exact on-chain nonce
-            await syncNonceFromChain();
-            const onChainNonce = currentNonce;
-
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
             const amountBigInt = BigInt(0); // Unstake has zero amount
 
@@ -3226,7 +3021,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             // Sign execute message with the EXACT same accounts that will be in remaining_accounts
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: onChainNonce,
                 amount: amountBigInt,
                 chainId,
                 additional: buildExecuteAdditionalData(
@@ -3254,7 +3048,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
                     sig.recoveryId,
                     Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce), // Must match onChainNonce
                 )
                 .accounts({
                     caller: admin.publicKey,
@@ -3384,17 +3177,12 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const accounts1 = instructionAccountsToGatewayMetas(stakeIx);
 
-            // Sync nonce right before signing - CRITICAL: use exact on-chain nonce
-            await syncNonceFromChain();
-            const onChainNonce = currentNonce;
-
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
             // Convert amount to BigInt for signing - must match exactly what we pass to execute
             const amountBigInt = BigInt(stakeAmount.toString());
 
             const sig1 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: onChainNonce,
                 amount: amountBigInt,
                 chainId,
                 additional: buildExecuteAdditionalData(
@@ -3425,7 +3213,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     Array.from(sig1.signature),
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
-                    new anchor.BN(sig1.nonce), // Must match onChainNonce
                 )
                 .accounts({
                     caller: admin.publicKey,

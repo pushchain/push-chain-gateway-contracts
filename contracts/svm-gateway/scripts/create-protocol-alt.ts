@@ -28,7 +28,7 @@ import fs from "fs";
 
 const PROGRAM_ID = new PublicKey(idl.address);
 const CONFIG_SEED = Buffer.from("config");
-const TSS_SEED = Buffer.from("tsspda");
+const TSS_SEED = Buffer.from("tsspda_v2");
 const VAULT_SEED = Buffer.from("vault");
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -36,10 +36,8 @@ const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xW
 const RENT_SYSVAR = new PublicKey("SysvarRent111111111111111111111111111111111");
 
 async function main() {
-  const connection = new Connection(
-    process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com",
-    "confirmed"
-  );
+  const rpcUrl = process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com";
+  const connection = new Connection(rpcUrl, "confirmed");
 
   const wallet = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(fs.readFileSync("./upgrade-keypair.json", "utf8")))
@@ -161,7 +159,7 @@ async function main() {
   const altConfig = {
     protocolStaticALT: lookupTableAddress.toBase58(),
     accounts: staticAccounts.map(acc => acc.toBase58()),
-    network: process.env.ANCHOR_PROVIDER_URL?.includes("devnet") ? "devnet" : "mainnet",
+    network: rpcUrl.includes("devnet") ? "devnet" : "mainnet",
     createdAt: new Date().toISOString(),
   };
 
