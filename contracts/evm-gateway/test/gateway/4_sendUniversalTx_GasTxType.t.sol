@@ -33,7 +33,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
         address revertRecipient,
         TX_TYPE txType,
         bytes signatureData,
-        bool viaCEA
+        bool fromCEA
     );
 
     // =========================
@@ -241,7 +241,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             payload: nonEmptyPayload, // Payload is present
             revertRecipient: req.revertRecipient,
             signatureData: req.signatureData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -538,7 +538,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             payload: bytes(""), // Empty for GAS
             revertRecipient: revertInst.revertRecipient,
             signatureData: sigData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -575,7 +575,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             payload: encodedPayload, // Non-empty for GAS_AND_PAYLOAD
             revertRecipient: revertInst.revertRecipient,
             signatureData: sigData,
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -605,7 +605,7 @@ contract GatewaySendUniversalTxWithGasTest is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""), // Empty
-            viaCEA: false
+            fromCEA: false
          });
 
         vm.prank(user1);

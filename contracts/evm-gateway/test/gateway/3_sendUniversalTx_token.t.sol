@@ -56,7 +56,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         address revertRecipient,
         TX_TYPE txType,
         bytes signatureData,
-        bool viaCEA
+        bool fromCEA
     );
 
     // =========================

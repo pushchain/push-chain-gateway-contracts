@@ -30,7 +30,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         address revertRecipient,
         TX_TYPE txType,
         bytes signatureData,
-        bool viaCEA
+        bool fromCEA
     );
 
     // =========================
@@ -157,7 +157,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             revertRecipient: req.revertRecipient,
             txType: TX_TYPE.GAS,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -199,7 +199,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             revertRecipient: req.revertRecipient,
             txType: TX_TYPE.GAS_AND_PAYLOAD,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -242,7 +242,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
             revertRecipient: req.revertRecipient,
             txType: TX_TYPE.FUNDS,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);

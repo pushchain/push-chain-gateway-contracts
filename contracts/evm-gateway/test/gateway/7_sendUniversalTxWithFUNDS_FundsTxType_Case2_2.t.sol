@@ -46,7 +46,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
         address revertRecipient,
         TX_TYPE txType,
         bytes signatureData,
-        bool viaCEA
+        bool fromCEA
     );
 
     // =========================
@@ -182,7 +182,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: bytes(""), // Gas event has empty payload
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         // Event 2: Funds event (amount = 6 ETH)
@@ -196,7 +196,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: encodedPayload, // Funds event has full payload
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -239,7 +239,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -313,7 +313,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: bytes(""), // Empty for gas event
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         // Funds event: full payload
@@ -327,7 +327,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: encodedPayload, // Full payload preserved
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -418,7 +418,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -776,7 +776,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         // Event 2: Funds
@@ -790,7 +790,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -824,7 +824,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -859,7 +859,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: bytes(""), // Empty
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
@@ -895,7 +895,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: bytes(""),
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         // Funds event: recipient preserved
@@ -909,7 +909,7 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test is BaseTest {
             payload: encodedPayload,
             revertRecipient: req.revertRecipient,
             signatureData: bytes(""),
-            viaCEA: false
+            fromCEA: false
         });
 
         vm.prank(user1);
