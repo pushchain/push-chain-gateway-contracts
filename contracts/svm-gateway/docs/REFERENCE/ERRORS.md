@@ -72,7 +72,6 @@ Complete list of custom errors with causes and solutions.
 |-------|------|-------|----------|
 | **MessageHashMismatch** | 6019 | Computed hash ≠ provided | Verify message construction |
 | **TssAuthFailed** | 6020 | Signature invalid | Check TSS signature |
-| **NonceMismatch** | 6021 | Nonce ≠ expected | Get current nonce |
 
 ---
 
@@ -125,7 +124,6 @@ Complete list of custom errors with causes and solutions.
 - Paused (6009)
 - MessageHashMismatch (6019)
 - TssAuthFailed (6020)
-- NonceMismatch (6021)
 - PayloadExecuted (6028)
 - InvalidProgram (6027) [execute only]
 ```
@@ -135,7 +133,6 @@ Complete list of custom errors with causes and solutions.
 // Common revert failures:
 - Paused (6009)
 - TssAuthFailed (6020)
-- NonceMismatch (6021)
 - PayloadExecuted (6028)
 - InvalidAmount (6001)
 ```
@@ -155,12 +152,6 @@ Complete list of custom errors with causes and solutions.
 2. Check signature format (64 bytes)
 3. Confirm recovery_id is 0 or 1
 4. Validate ECDSA signature generation
-
-### NonceMismatch (6021)
-1. Get current nonce: `tss_pda.nonce`
-2. Ensure sequential execution
-3. Check for skipped nonces
-4. Verify no concurrent transactions
 
 ### AccountPubkeyMismatch (6023)
 1. Verify remaining_accounts order
@@ -202,9 +193,9 @@ The following error codes are defined in `errors.rs` but are **NEVER thrown** in
 | 6000-6009 | Access & Configuration |
 | 6010-6014 | Validation & Input |
 | 6015-6018 | Rate Limiting |
-| 6019-6021 | TSS & Signatures |
+| 6019-6020 | TSS & Signatures |
 | 6022-6031 | Execute & Internal |
 
 ---
 
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-23

@@ -2,7 +2,7 @@
 
 **Purpose:** Verify TSS authorization for all outbound operations
 **Algorithm:** ECDSA secp256k1 (Ethereum-compatible)
-**Replay Protection:** Monotonic nonce
+**Replay Protection:** Per-tx `ExecutedTx` PDA (seeded by `tx_id`)
 
 ---
 
@@ -13,7 +13,6 @@ All outbound operations (withdraw, execute, revert) require TSS signature valida
 2. **Hash verification** - Verify pre-computed hash matches
 3. **ECDSA recovery** - Recover public key from signature
 4. **Address validation** - Verify recovered address matches stored TSS address
-5. **Nonce check** - Prevent replay attacks
 
 ---
 
@@ -24,7 +23,6 @@ All outbound operations (withdraw, execute, revert) require TSS signature valida
 message = PREFIX
         || instruction_id (1 byte)
         || chain_id (UTF-8 string bytes)
-        || nonce (8 bytes, big-endian)
         || amount (8 bytes, big-endian) [optional]
         || additional_data (variable)
 
@@ -95,20 +93,12 @@ additional_data = [
 
 ## 🔍 Validation Steps
 
-### Step 1: Nonce Check
-```rust
-require!(nonce == tss_pda.nonce, GatewayError::NonceMismatch);
-```
-**Purpose:** Prevent replay attacks
-**Enforcement:** Strict equality, no gaps allowed
-
-### Step 2: Message Reconstruction
+### Step 1: Message Reconstruction
 ```rust
 let mut message = Vec::new();
 message.extend_from_slice(b"PUSH_CHAIN_SVM");
 message.push(instruction_id);
 message.extend_from_slice(tss_pda.chain_id.as_bytes());
-message.extend_from_slice(&nonce.to_be_bytes());
 if let Some(amt) = amount {
     message.extend_from_slice(&amt.to_be_bytes());
 }
@@ -117,7 +107,7 @@ for data in additional_data {
 }
 ```
 
-### Step 3: Hash Verification
+### Step 2: Hash Verification
 ```rust
 let computed_hash = keccak::hash(&message).to_bytes();
 require!(
@@ -127,7 +117,7 @@ require!(
 ```
 **Purpose:** Ensure message integrity
 
-### Step 4: ECDSA Recovery
+### Step 3: ECDSA Recovery
 ```rust
 let recovered_pubkey = secp256k1_recover(
     &message_hash,
@@ -137,14 +127,14 @@ let recovered_pubkey = secp256k1_recover(
 ```
 **Output:** 64-byte uncompressed public key (without 0x04 prefix)
 
-### Step 5: Address Derivation
+### Step 4: Address Derivation
 ```rust
 // Ethereum address = last 20 bytes of keccak256(pubkey)
 let pubkey_hash = keccak::hash(&recovered_pubkey.to_bytes()).to_bytes();
 let recovered_address = &pubkey_hash[12..32];  // 20 bytes
 ```
 
-### Step 6: Address Validation
+### Step 5: Address Validation
 ```rust
 require!(
     recovered_address == tss_pda.tss_eth_address,
@@ -152,27 +142,18 @@ require!(
 );
 ```
 
-### Step 7: Nonce Increment
-```rust
-tss_pda.nonce = tss_pda
-    .nonce
-    .checked_add(1)
-    .ok_or(GatewayError::NonceMismatch)?;
-```
-**Critical:** Prevents nonce reuse
-
 ---
 
 ## 🛡️ Security Properties
 
 ### 1. Replay Protection
 ```
-Transaction A with nonce=5 executes
-  → tss_pda.nonce becomes 6
-    → Replay of A with nonce=5 fails (NonceMismatch)
+Transaction A with tx_id=0xABC executes
+  → ExecutedTx PDA created at [b"executed_tx", 0xABC]
+    → Replay of A fails (Anchor init constraint: account already exists)
 ```
 
-**Invariant:** Each nonce value used exactly once
+**Invariant:** Each tx_id used exactly once — no global ordering required
 
 ### 2. Message Integrity
 ```
@@ -196,13 +177,12 @@ Only TSS private key can produce valid signature
 
 ### 4. Ordering
 ```
-Nonce must increase monotonically
-  → Cannot skip nonces
-    → Cannot execute out-of-order
-      → Prevents front-running attacks
+No global nonce → transactions can execute in any order
+tx_id is included in the signed message → cannot reuse signature with different tx_id
+ExecutedTx PDA uniqueness → each tx_id executes exactly once
 ```
 
-**Invariant:** Transactions execute in strict order
+**Invariant:** No ordering constraint; each tx executes at most once
 
 ---
 
@@ -232,11 +212,11 @@ Nonce must increase monotonically
 - Recovered address must match tss_pda.tss_eth_address
 - Only admin can update TSS address
 
-### 5. Nonce Manipulation
-**Attack:** Skip nonces or reuse old nonces
+### 5. tx_id Collision
+**Attack:** Reuse a tx_id to re-execute a transaction
 **Mitigation:**
-- Strict equality check: `nonce == tss_pda.nonce`
-- checked_add prevents overflow
+- ExecutedTx PDA init constraint fails if account already exists
+- tx_id is included in the TSS-signed message — cannot forge a different tx_id with same signature
 
 ---
 
@@ -260,16 +240,7 @@ pub fn update_tss(
     chain_id: String,
 ) -> Result<()>
 ```
-**Admin-only, resets nonce if address changes**
-
-### Nonce Reset
-```rust
-pub fn reset_nonce(
-    ctx: Context<ResetNonce>,
-    new_nonce: u64,
-) -> Result<()>
-```
-**Emergency recovery, admin-only**
+**Admin-only**
 
 ---
 
@@ -287,9 +258,9 @@ pub fn reset_nonce(
 
 ## 🔍 Key Invariants
 
-1. **Nonce monotonicity:**
+1. **Per-tx uniqueness:**
    ```
-   tss_pda.nonce is strictly increasing
+   Each tx_id can execute exactly once (ExecutedTx PDA init)
    ```
 
 2. **Signature uniqueness:**
@@ -304,7 +275,7 @@ pub fn reset_nonce(
 
 4. **Message binding:**
    ```
-   Signature binds to exact message content
+   Signature binds to exact message content including tx_id
    Any modification → invalid signature
    ```
 
@@ -318,4 +289,4 @@ pub fn reset_nonce(
 
 ---
 
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-23

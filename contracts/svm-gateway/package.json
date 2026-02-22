@@ -13,7 +13,6 @@
     "config:show": " ts-node app/config-cli.ts config:show",
     "config:tss-init": " ts-node app/config-cli.ts tss:init",
     "config:tss-update": " ts-node app/config-cli.ts tss:update",
-    "config:tss-reset-nonce": " ts-node app/config-cli.ts tss:reset-nonce",
     "config:pause": " ts-node app/config-cli.ts pause",
     "config:unpause": " ts-node app/config-cli.ts unpause",
     "config:caps-set": " ts-node app/config-cli.ts caps:set",
