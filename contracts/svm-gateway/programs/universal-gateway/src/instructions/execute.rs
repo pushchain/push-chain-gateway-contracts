@@ -1,10 +1,11 @@
 use crate::errors::GatewayError;
 use crate::instructions::tss::validate_message;
 use crate::state::{
-    Config, ExecutedTx, GatewayAccountMeta, RevertInstructions, TssPda, TxType, UniversalTx,
-    UniversalTxExecuted, CEA_SEED, EXECUTED_TX_SEED, TSS_SEED, VAULT_SEED,
+    Config, ExecutedTx, GatewayAccountMeta, RateLimitConfig, TokenRateLimit, TssPda, TxType,
+    UniversalTx, UniversalTxExecuted, CEA_SEED, EXECUTED_TX_SEED, RATE_LIMIT_CONFIG_SEED,
+    TSS_SEED, VAULT_SEED,
 };
-use crate::utils::validate_remaining_accounts;
+use crate::utils::{validate_remaining_accounts, validate_token_and_consume_rate_limit};
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     hash::hash,
@@ -23,7 +24,7 @@ use spl_token::state::Account as SplAccount;
 // =========================
 
 #[derive(Accounts)]
-#[instruction(instruction_id: u8, tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64)]
+#[instruction(instruction_id: u8, tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32])]
 pub struct WithdrawAndExecute<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -76,7 +77,6 @@ pub struct WithdrawAndExecute<'info> {
     pub destination_program: UncheckedAccount<'info>,
 
     // --- Optional SPL accounts
-
     /// CHECK: Recipient wallet for withdraw mode
     #[account(mut)]
     pub recipient: Option<UncheckedAccount<'info>>,
@@ -103,10 +103,21 @@ pub struct WithdrawAndExecute<'info> {
     /// CHECK: Recipient ATA for SPL withdraw (CEA ATA → recipient ATA)
     #[account(mut)]
     pub recipient_ata: Option<UncheckedAccount<'info>>,
+
+    // --- Optional rate limit accounts (CEA withdrawal path only) ---
+    #[account(
+        seeds = [RATE_LIMIT_CONFIG_SEED],
+        bump,
+    )]
+    pub rate_limit_config: Option<Account<'info, RateLimitConfig>>,
+
+    /// Token-specific rate limit state (CEA withdrawal path only)
+    #[account(mut)]
+    pub token_rate_limit: Option<Account<'info, TokenRateLimit>>,
 }
 
 pub fn withdraw_and_execute(
-    ctx: Context<WithdrawAndExecute>,
+    mut ctx: Context<WithdrawAndExecute>,
     instruction_id: u8,
     tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
@@ -119,7 +130,6 @@ pub fn withdraw_and_execute(
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
-    nonce: u64,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
@@ -156,7 +166,6 @@ pub fn withdraw_and_execute(
             &message_hash,
             &signature,
             recovery_id,
-            nonce,
         )?;
         None
     } else {
@@ -176,7 +185,6 @@ pub fn withdraw_and_execute(
             &message_hash,
             &signature,
             recovery_id,
-            nonce,
         )?;
 
         // Verify target program is executable (execute mode only)
@@ -261,10 +269,10 @@ pub fn withdraw_and_execute(
         let cea_key = ctx.accounts.cea_authority.key();
         let accounts = execute_accounts.unwrap();
 
-        // Check if target is gateway itself (for CEA withdrawals)
+        // Check if target is gateway itself (CEA → UEA inbound route)
         if target == *ctx.program_id {
-            return handle_cea_withdrawal(
-                &ctx,
+            return send_universal_tx_via_cea(
+                &mut ctx,
                 tx_id,
                 universal_tx_id,
                 sender,
@@ -322,7 +330,10 @@ fn internal_withdraw(
     token: Pubkey,
     cea_seeds: &[&[u8]],
 ) -> Result<()> {
-    let recipient = ctx.accounts.recipient.as_ref()
+    let recipient = ctx
+        .accounts
+        .recipient
+        .as_ref()
         .ok_or(error!(GatewayError::InvalidAccount))?;
     let target = recipient.key();
     let is_native = token == Pubkey::default();
@@ -336,11 +347,8 @@ fn internal_withdraw(
     if is_native {
         // SOL: CEA → target
         if amount > 0 {
-            let transfer_ix = system_instruction::transfer(
-                &ctx.accounts.cea_authority.key(),
-                &target,
-                amount,
-            );
+            let transfer_ix =
+                system_instruction::transfer(&ctx.accounts.cea_authority.key(), &target, amount);
 
             invoke_signed(
                 &transfer_ix,
@@ -371,10 +379,8 @@ fn internal_withdraw(
             .ok_or(error!(GatewayError::InvalidAccount))?;
 
         // Validate recipient_ata: derivation matches (target, mint), owner, mint
-        let expected_recipient_ata = spl_associated_token_account::get_associated_token_address(
-            &target,
-            &token_mint.key(),
-        );
+        let expected_recipient_ata =
+            spl_associated_token_account::get_associated_token_address(&target, &token_mint.key());
         require!(
             recipient_ata.key() == expected_recipient_ata,
             GatewayError::InvalidAccount
@@ -420,22 +426,24 @@ fn internal_withdraw(
 }
 
 // ============================================
-//    CEA WITHDRAWAL HANDLER (UNIFIED)
+//    CEA → UEA INBOUND HANDLER
 // ============================================
 
-/// Args for CEA withdrawal when target_program == gateway itself.
-/// Layout: [8-byte discriminator][borsh(WithdrawFromCeaArgs)].
+/// Args for the CEA → UEA inbound route (target_program == gateway itself).
+/// Layout: [8-byte discriminator][borsh(SendUniversalTxViaCeaArgs)].
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct WithdrawFromCeaArgs {
-    pub token: Pubkey, // Pubkey::default() for SOL; mint for SPL
-    pub amount: u64,   // 0 => withdraw full balance
+pub struct SendUniversalTxViaCeaArgs {
+    pub token: Pubkey,    // Pubkey::default() for SOL; mint for SPL
+    pub amount: u64,      // must be > 0
+    pub payload: Vec<u8>, // empty = Funds, non-empty = FundsAndPayload
 }
 
-/// Handle withdrawal from CEA when target_program == gateway itself
-fn handle_cea_withdrawal(
-    ctx: &Context<WithdrawAndExecute>,
-    tx_id: [u8; 32],
-    universal_tx_id: [u8; 32],
+/// CEA → UEA inbound route: mirrors the inbound FUNDS deposit flow.
+/// Called when target_program == gateway itself (instruction_id=2, destination_program=gateway).
+fn send_universal_tx_via_cea(
+    ctx: &mut Context<WithdrawAndExecute>,
+    _tx_id: [u8; 32],
+    _universal_tx_id: [u8; 32],
     sender: [u8; 20],
     ix_data: &[u8],
     cea_seeds: &[&[u8]],
@@ -450,70 +458,28 @@ fn handle_cea_withdrawal(
     // ix_data must be at least 8 bytes for the Anchor-style discriminator
     require!(ix_data.len() >= 8, GatewayError::InvalidInput);
 
-    // First 8 bytes = discriminator for "global:withdraw_from_cea"
+    // First 8 bytes = discriminator for "global:send_universal_tx_via_cea"
     let discr = &ix_data[..8];
-    let expected = hash(b"global:withdraw_from_cea").to_bytes();
+    let expected = hash(b"global:send_universal_tx_via_cea").to_bytes();
     require!(discr == &expected[..8], GatewayError::InvalidInput);
 
     // Remaining bytes are Borsh-encoded args
-    let args = WithdrawFromCeaArgs::try_from_slice(&ix_data[8..])
+    let args = SendUniversalTxViaCeaArgs::try_from_slice(&ix_data[8..])
         .map_err(|_| error!(GatewayError::InvalidInput))?;
 
     // Validate args.token matches derived token
     require!(args.token == token, GatewayError::InvalidMint);
-    if args.token == Pubkey::default() {
-        // Handle SOL withdrawal
-        let cea_balance = ctx.accounts.cea_authority.lamports();
-        let withdraw_amount = if args.amount == 0 {
-            cea_balance
-        } else {
-            require!(
-                args.amount <= cea_balance,
-                GatewayError::InsufficientBalance
-            );
-            args.amount
-        };
 
-        if withdraw_amount > 0 {
-            // Transfer from CEA to vault
-            let transfer_ix = system_instruction::transfer(
-                &ctx.accounts.cea_authority.key(),
-                &ctx.accounts.vault_sol.key(),
-                withdraw_amount,
-            );
+    // amount must be explicit — draining the full CEA balance is not allowed
+    require!(args.amount > 0, GatewayError::InvalidAmount);
 
-            invoke_signed(
-                &transfer_ix,
-                &[
-                    ctx.accounts.cea_authority.to_account_info(),
-                    ctx.accounts.vault_sol.to_account_info(),
-                    ctx.accounts.system_program.to_account_info(),
-                ],
-                &[cea_seeds],
-            )?;
-
-            // Emit FUNDS event to unlock funds on Push Chain
-            emit!(UniversalTx {
-                sender: ctx.accounts.cea_authority.key(),
-                recipient: sender,
-                token: Pubkey::default(),
-                amount: withdraw_amount,
-                payload: vec![],
-                revert_instruction: RevertInstructions {
-                    fund_recipient: ctx.accounts.cea_authority.key(),
-                    revert_msg: vec![],
-                },
-                tx_type: TxType::Funds,
-                signature_data: vec![],
-            });
-        }
+    // Validate balance
+    if token == Pubkey::default() {
+        require!(
+            args.amount <= ctx.accounts.cea_authority.lamports(),
+            GatewayError::InsufficientBalance
+        );
     } else {
-        // Handle SPL withdrawal (not using helper - different subset of accounts)
-        let vault_ata = ctx
-            .accounts
-            .vault_ata
-            .as_ref()
-            .ok_or(error!(GatewayError::InvalidAccount))?;
         let cea_ata = ctx
             .accounts
             .cea_ata
@@ -524,72 +490,97 @@ fn handle_cea_withdrawal(
             .mint
             .as_ref()
             .ok_or(error!(GatewayError::InvalidAccount))?;
-
         require!(args.token == mint.key(), GatewayError::InvalidMint);
-
-        // Check CEA ATA balance
         let cea_ata_data = cea_ata.try_borrow_data()?.to_vec();
         let parsed_cea_ata =
             SplAccount::unpack(&cea_ata_data).map_err(|_| error!(GatewayError::InvalidAccount))?;
-        let cea_balance = parsed_cea_ata.amount;
+        require!(
+            args.amount <= parsed_cea_ata.amount,
+            GatewayError::InsufficientBalance
+        );
+    }
 
-        let withdraw_amount = if args.amount == 0 {
-            cea_balance
-        } else {
-            require!(
-                args.amount <= cea_balance,
-                GatewayError::InsufficientBalance
-            );
-            args.amount
-        };
+    let withdraw_amount = args.amount;
 
-        if withdraw_amount > 0 {
-            // Transfer from CEA ATA to vault ATA
-            let transfer_ix = spl_token::instruction::transfer(
+    // Apply the same epoch-based rate limit as the inbound FUNDS route.
+    let rl_config = ctx
+        .accounts
+        .rate_limit_config
+        .as_ref()
+        .ok_or(error!(GatewayError::InvalidAccount))?;
+    let token_rate_limit = ctx
+        .accounts
+        .token_rate_limit
+        .as_mut()
+        .ok_or(error!(GatewayError::InvalidAccount))?;
+
+    validate_token_and_consume_rate_limit(token_rate_limit, token, withdraw_amount as u128, rl_config)?;
+
+    // Transfer
+    if args.token == Pubkey::default() {
+        invoke_signed(
+            &system_instruction::transfer(
+                &ctx.accounts.cea_authority.key(),
+                &ctx.accounts.vault_sol.key(),
+                withdraw_amount,
+            ),
+            &[
+                ctx.accounts.cea_authority.to_account_info(),
+                ctx.accounts.vault_sol.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[cea_seeds],
+        )?;
+    } else {
+        let vault_ata = ctx
+            .accounts
+            .vault_ata
+            .as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+        let cea_ata = ctx
+            .accounts
+            .cea_ata
+            .as_ref()
+            .ok_or(error!(GatewayError::InvalidAccount))?;
+
+        invoke_signed(
+            &spl_token::instruction::transfer(
                 &spl_token::ID,
                 &cea_ata.key(),
                 &vault_ata.key(),
                 &ctx.accounts.cea_authority.key(),
                 &[],
                 withdraw_amount,
-            )?;
-
-            invoke_signed(
-                &transfer_ix,
-                &[
-                    cea_ata.to_account_info(),
-                    vault_ata.to_account_info(),
-                    ctx.accounts.cea_authority.to_account_info(),
-                ],
-                &[cea_seeds],
-            )?;
-
-            // Emit FUNDS event to unlock funds on Push Chain
-            emit!(UniversalTx {
-                sender: ctx.accounts.cea_authority.key(),
-                recipient: sender,
-                token: mint.key(),
-                amount: withdraw_amount,
-                payload: vec![],
-                revert_instruction: RevertInstructions {
-                    fund_recipient: ctx.accounts.cea_authority.key(),
-                    revert_msg: vec![],
-                },
-                tx_type: TxType::Funds,
-                signature_data: vec![],
-            });
-        }
+            )?,
+            &[
+                cea_ata.to_account_info(),
+                vault_ata.to_account_info(),
+                ctx.accounts.cea_authority.to_account_info(),
+            ],
+            &[cea_seeds],
+        )?;
     }
 
-    // Emit execution event
-    emit!(UniversalTxExecuted {
-        tx_id,
-        universal_tx_id,
-        sender,
-        target: *ctx.program_id,
+    // tx_type is always FUNDS or FUNDS_AND_PAYLOAD (withdraw_amount > 0 is enforced above).
+    let tx_type = if args.payload.is_empty() {
+        TxType::Funds
+    } else {
+        TxType::FundsAndPayload
+    };
+
+    emit!(UniversalTx {
+        sender: ctx.accounts.cea_authority.key(),
+        recipient: sender,
         token,
-        amount: 0, // Withdrawal doesn't have an amount in execute context
-        payload: vec![],
+        amount: withdraw_amount,
+        payload: args.payload,
+        revert_instruction: crate::state::RevertInstructions {
+            fund_recipient: ctx.accounts.cea_authority.key(),
+            revert_msg: vec![],
+        },
+        tx_type,
+        signature_data: vec![],
+        via_cea: true,
     });
 
     Ok(())
@@ -623,22 +614,22 @@ fn derive_token_and_mode(ctx: &Context<WithdrawAndExecute>) -> Result<(Pubkey, b
 fn validate_account_presence(ctx: &Context<WithdrawAndExecute>, is_native: bool) -> Result<()> {
     if is_native {
         require!(
-            ctx.accounts.vault_ata.is_none() &&
-            ctx.accounts.cea_ata.is_none() &&
-            ctx.accounts.mint.is_none() &&
-            ctx.accounts.token_program.is_none() &&
-            ctx.accounts.rent.is_none() &&
-            ctx.accounts.associated_token_program.is_none(),
+            ctx.accounts.vault_ata.is_none()
+                && ctx.accounts.cea_ata.is_none()
+                && ctx.accounts.mint.is_none()
+                && ctx.accounts.token_program.is_none()
+                && ctx.accounts.rent.is_none()
+                && ctx.accounts.associated_token_program.is_none(),
             GatewayError::InvalidAccount
         );
     } else {
         require!(
-            ctx.accounts.vault_ata.is_some() &&
-            ctx.accounts.cea_ata.is_some() &&
-            ctx.accounts.mint.is_some() &&
-            ctx.accounts.token_program.is_some() &&
-            ctx.accounts.rent.is_some() &&
-            ctx.accounts.associated_token_program.is_some(),
+            ctx.accounts.vault_ata.is_some()
+                && ctx.accounts.cea_ata.is_some()
+                && ctx.accounts.mint.is_some()
+                && ctx.accounts.token_program.is_some()
+                && ctx.accounts.rent.is_some()
+                && ctx.accounts.associated_token_program.is_some(),
             GatewayError::InvalidAccount
         );
     }
@@ -651,10 +642,16 @@ fn validate_mode_accounts_and_derive_target(
     is_withdraw: bool,
 ) -> Result<Pubkey> {
     if is_withdraw {
-        require!(ctx.accounts.recipient.is_some(), GatewayError::InvalidAccount);
+        require!(
+            ctx.accounts.recipient.is_some(),
+            GatewayError::InvalidAccount
+        );
         Ok(ctx.accounts.recipient.as_ref().unwrap().key())
     } else {
-        require!(ctx.accounts.recipient.is_none(), GatewayError::InvalidAccount);
+        require!(
+            ctx.accounts.recipient.is_none(),
+            GatewayError::InvalidAccount
+        );
         Ok(ctx.accounts.destination_program.key())
     }
 }
@@ -756,27 +753,25 @@ fn build_and_validate_tss_withdraw(
     message_hash: &[u8; 32],
     signature: &[u8; 64],
     recovery_id: u8,
-    nonce: u64,
 ) -> Result<()> {
     let token_bytes = token.to_bytes();
     let target_bytes = target.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
 
-    // New ordering: common fields first, then mode-specific
+    // Common fields first, then mode-specific
     let additional: [&[u8]; 6] = [
-        &tx_id[..],            // 0 - common (matches function param order)
-        &universal_tx_id[..],  // 1 - common
-        &sender[..],           // 2 - common
-        &token_bytes[..],      // 3 - common
-        &gas_fee_buf,          // 4 - common
-        &target_bytes[..],     // 5 - withdraw specific (recipient)
+        &tx_id[..],           // 0 - common (matches function param order)
+        &universal_tx_id[..], // 1 - common
+        &sender[..],          // 2 - common
+        &token_bytes[..],     // 3 - common
+        &gas_fee_buf,         // 4 - common
+        &target_bytes[..],    // 5 - withdraw specific (recipient)
     ];
 
     validate_message(
         tss_pda,
         1, // instruction_id for withdraw
-        nonce,
         Some(amount),
         &additional,
         message_hash,
@@ -813,7 +808,6 @@ fn build_and_validate_tss_execute<'info>(
     message_hash: &[u8; 32],
     signature: &[u8; 64],
     recovery_id: u8,
-    nonce: u64,
 ) -> Result<Vec<GatewayAccountMeta>> {
     // 1. Reconstruct accounts from remaining_accounts
     let accounts = reconstruct_accounts_from_flags(remaining_accounts, writable_flags);
@@ -845,21 +839,20 @@ fn build_and_validate_tss_execute<'info>(
     // New ordering: common fields first, then mode-specific
     // This matches withdraw format for common fields
     let additional: [&[u8]; 9] = [
-        &tx_id[..],            // 0 - common (matches function param order)
-        &universal_tx_id[..],  // 1 - common
-        &sender[..],           // 2 - common
-        &token_bytes,          // 3 - common
-        &gas_fee_buf,          // 4 - common
-        &target.to_bytes(),    // 5 - execute specific (target program)
-        &accounts_buf,         // 6 - execute specific
-        &ix_data_buf,          // 7 - execute specific
-        &rent_fee_buf,         // 8 - execute specific
+        &tx_id[..],           // 0 - common (matches function param order)
+        &universal_tx_id[..], // 1 - common
+        &sender[..],          // 2 - common
+        &token_bytes,         // 3 - common
+        &gas_fee_buf,         // 4 - common
+        &target.to_bytes(),   // 5 - execute specific (target program)
+        &accounts_buf,        // 6 - execute specific
+        &ix_data_buf,         // 7 - execute specific
+        &rent_fee_buf,        // 8 - execute specific
     ];
 
     validate_message(
         tss_pda,
         2, // instruction_id for execute
-        nonce,
         Some(amount),
         &additional,
         message_hash,
@@ -922,18 +915,15 @@ fn process_spl_vault_to_cea_transfer<'info>(
         ata_program.key() == spl_associated_token_account::ID,
         GatewayError::InvalidAccount
     );
-    require!(
-        rent.key() == rent_sysvar::ID,
-        GatewayError::InvalidAccount
-    );
+    require!(rent.key() == rent_sysvar::ID, GatewayError::InvalidAccount);
 
     // Validate token parameter matches mint
     require!(token == mint.key(), GatewayError::InvalidMint);
 
     // SECURITY: Validate vault_ata ownership and mint
     let vault_ata_data = vault_ata.try_borrow_data()?.to_vec();
-    let parsed_vault_ata = SplAccount::unpack(&vault_ata_data)
-        .map_err(|_| error!(GatewayError::InvalidAccount))?;
+    let parsed_vault_ata =
+        SplAccount::unpack(&vault_ata_data).map_err(|_| error!(GatewayError::InvalidAccount))?;
     require!(
         parsed_vault_ata.owner == ctx.accounts.vault_sol.key(),
         GatewayError::InvalidOwner
@@ -981,12 +971,9 @@ fn process_spl_vault_to_cea_transfer<'info>(
 
     // Validate existing CEA ATA: mint + owner
     let cea_ata_data = cea_ata.try_borrow_data()?.to_vec();
-    let parsed_cea_ata = SplAccount::unpack(&cea_ata_data)
-        .map_err(|_| error!(GatewayError::InvalidAccount))?;
-    require!(
-        parsed_cea_ata.mint == mint.key(),
-        GatewayError::InvalidMint
-    );
+    let parsed_cea_ata =
+        SplAccount::unpack(&cea_ata_data).map_err(|_| error!(GatewayError::InvalidAccount))?;
+    require!(parsed_cea_ata.mint == mint.key(), GatewayError::InvalidMint);
     require!(
         parsed_cea_ata.owner == ctx.accounts.cea_authority.key(),
         GatewayError::InvalidOwner

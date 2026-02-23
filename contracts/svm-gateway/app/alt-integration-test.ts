@@ -45,7 +45,7 @@ import { signTssMessage, buildWithdrawAdditionalData, TssInstruction, generateUn
 const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
 
 const CONFIG_SEED = Buffer.from("config");
-const TSS_SEED = Buffer.from("tsspda");
+const TSS_SEED = Buffer.from("tsspda_v2");
 const VAULT_SEED = Buffer.from("vault");
 const CEA_SEED = Buffer.from("push_identity");
 const EXECUTED_TX_SEED = Buffer.from("executed_tx");
@@ -84,6 +84,8 @@ interface TokenAltConfig {
   createdAt: string;
 }
 
+const TARGET_SPL_SYMBOL = "USDT";
+
 let protocolAltConfig: ProtocolAltConfig;
 let tokenAltConfig: TokenAltConfig;
 
@@ -107,8 +109,35 @@ try {
 
 const protocolAltAddress = new PublicKey(protocolAltConfig.protocolStaticALT);
 const tokenAlts = new Map<string, PublicKey>();
+const rpcNetwork = connection.rpcEndpoint.includes("devnet") ? "devnet" : "mainnet";
+const selectedTokenConfigs = tokenAltConfig.tokens.filter(
+  (token) => token.symbol.toUpperCase() === TARGET_SPL_SYMBOL
+);
 
-for (const token of tokenAltConfig.tokens) {
+if (selectedTokenConfigs.length === 0) {
+  const available = tokenAltConfig.tokens.map((t) => t.symbol).join(", ");
+  throw new Error(
+    `No '${TARGET_SPL_SYMBOL}' entry found in alt-config-tokens.json. Available: ${available || "none"}`
+  );
+}
+if (selectedTokenConfigs.length > 1) {
+  console.warn(
+    `⚠️  Found ${selectedTokenConfigs.length} '${TARGET_SPL_SYMBOL}' entries, using all matching entries.`
+  );
+}
+
+if (protocolAltConfig.network !== rpcNetwork) {
+  console.warn(
+    `⚠️  Protocol ALT config network is '${protocolAltConfig.network}' but RPC looks like '${rpcNetwork}'`
+  );
+}
+if (tokenAltConfig.network !== rpcNetwork) {
+  console.warn(
+    `⚠️  Token ALT config network is '${tokenAltConfig.network}' but RPC looks like '${rpcNetwork}'`
+  );
+}
+
+for (const token of selectedTokenConfigs) {
   tokenAlts.set(token.mint, new PublicKey(token.altAddress));
 }
 
@@ -224,80 +253,69 @@ async function main() {
     }
   }
 
-  // Test 3: Compare Transaction Sizes
-  console.log("\n📋 Test 3: Compare Transaction Sizes (SOL Withdraw)");
+  // Test 3: SOL Withdraw — submit WITHOUT ALT then WITH ALT, compare real tx sizes
+  console.log("\n📋 Test 3: SOL Withdraw — submit with and without ALT");
   console.log("-".repeat(60));
 
-  const sender: number[] = Array(20).fill(1); // Mock EVM address
-  const txId = Array.from(Keypair.generate().publicKey.toBytes());
-  const universalTxId = Array.from(Keypair.generate().publicKey.toBytes());
-  const amountBn = new anchor.BN(0.1 * LAMPORTS_PER_SOL);
+  // Load program
+  const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
+  const program = new Program(idl as anchor.Idl, provider);
+
+  const sender: number[] = Array(20).fill(1);
+  const amountBn = new anchor.BN(0.001 * LAMPORTS_PER_SOL);
   const gasFeeBn = new anchor.BN(0.001 * LAMPORTS_PER_SOL);
   const amountBig = BigInt(amountBn.toString());
   const gasFeeBig = BigInt(gasFeeBn.toString());
+  const recipient = provider.wallet.publicKey; // withdraw back to admin
 
   const [ceaAuthority] = PublicKey.findProgramAddressSync(
     [CEA_SEED, Buffer.from(sender)],
     PROGRAM_ID
   );
 
-  const [executedTx] = PublicKey.findProgramAddressSync(
-    [EXECUTED_TX_SEED, Buffer.from(txId)],
-    PROGRAM_ID
-  );
+  // Fetch TSS chainId once
+  const tssAccount = await (program.account as any).tssPda.fetch(tssPda);
+  const tssChainId: string = tssAccount.chainId;
 
-  const recipient = Keypair.generate().publicKey;
+  // Helper: build a fresh signed withdraw instruction (new txId each call)
+  const buildWithdrawInstruction = async () => {
+    const freshTxId = Array.from(Keypair.generate().publicKey.toBytes());
+    const freshUniversalTxId = Array.from(Keypair.generate().publicKey.toBytes());
+    const [freshExecutedTx] = PublicKey.findProgramAddressSync(
+      [EXECUTED_TX_SEED, Buffer.from(freshTxId)],
+      PROGRAM_ID
+    );
 
-  // Load program
-  const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
-  const program = new Program(idl as anchor.Idl, provider);
-
-  // Build instruction (will be used for both tests)
-  let tssNonce: number | undefined;
-  let tssChainId: string | undefined;
-  const buildInstruction = async () => {
-    // Fetch TSS nonce
-    const tssAccount = await (program.account as any).tssPda.fetch(tssPda);
-    const nonce = typeof tssAccount.nonce === "number"
-      ? tssAccount.nonce
-      : tssAccount.nonce.toNumber();
-    const chainId = tssAccount.chainId;
-    tssNonce = nonce;
-    tssChainId = chainId;
-
-    // Sign message
     const additional = buildWithdrawAdditionalData(
-      Buffer.from(universalTxId),
-      Buffer.from(txId),
+      Buffer.from(freshUniversalTxId),
+      Buffer.from(freshTxId),
       Buffer.from(sender),
-      PublicKey.default, // SOL (token = zero pubkey)
+      PublicKey.default, // SOL
       recipient,
       gasFeeBig
     );
 
     const { signature, recoveryId, messageHash } = await signTssMessage({
       instruction: TssInstruction.Withdraw,
-      nonce: nonce,
       amount: amountBig,
       additional,
-      chainId,
+      chainId: tssChainId,
     });
 
-    return program.methods
+    const ix = await program.methods
       .withdrawAndExecute(
-        1, // instruction_id (withdraw)
-        Array.from(txId),
-        Array.from(universalTxId),
+        1,
+        Array.from(freshTxId),
+        Array.from(freshUniversalTxId),
         amountBn,
         sender,
-        Buffer.alloc(0), // writable_flags (empty for withdraw)
-        Buffer.alloc(0), // ix_data (empty for withdraw)
+        Buffer.alloc(0),
+        Buffer.alloc(0),
         gasFeeBn,
-        new anchor.BN(0), // rent_fee
+        new anchor.BN(0),
         Array.from(signature),
         recoveryId,
         Array.from(messageHash),
-        new anchor.BN(nonce),
       )
       .accounts({
         caller: provider.wallet.publicKey,
@@ -305,7 +323,7 @@ async function main() {
         vaultSol,
         ceaAuthority,
         tssPda,
-        executedTx,
+        executedTx: freshExecutedTx,
         systemProgram: SystemProgram.programId,
         destinationProgram: SystemProgram.programId,
         recipient,
@@ -316,176 +334,215 @@ async function main() {
         rent: null,
         associatedTokenProgram: null,
         recipientAta: null,
+        rateLimitConfig: null,
+        tokenRateLimit: null,
       })
       .instruction();
+
+    return ix;
   };
 
-  const instruction = await buildInstruction();
-  let legacySize = 0;
-  let legacyAccounts = 0;
+  let solNoAltSize = 0;
+  let solAltSize = 0;
 
-  // Test WITHOUT ALTs (legacy transaction)
+  // Submit WITHOUT ALT (legacy v0 with no lookup tables)
   {
-    const { blockhash } = await connection.getLatestBlockhash();
-
-    const legacyTx = new Transaction({
-      recentBlockhash: blockhash,
-      feePayer: provider.wallet.publicKey,
-    }).add(instruction);
-
-    const serialized = legacyTx.serialize({
-      requireAllSignatures: false,
-      verifySignatures: false,
-    });
-
-    legacySize = serialized.length;
-    legacyAccounts = legacyTx.instructions[0].keys.length;
-    console.log("\n📊 Transaction WITHOUT ALTs (legacy):");
-    console.log(`   Size: ${legacySize} bytes`);
-    console.log(`   Accounts: ${legacyAccounts}`);
-  }
-
-  // Test WITH Protocol ALT (versioned transaction)
-  {
-    const { blockhash } = await connection.getLatestBlockhash();
+    const ix = await buildWithdrawInstruction();
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
     const messageV0 = new TransactionMessage({
       payerKey: provider.wallet.publicKey,
       recentBlockhash: blockhash,
-      instructions: [instruction],
+      instructions: [ix],
+    }).compileToV0Message([]); // no ALTs
+
+    const versionedTx = new VersionedTransaction(messageV0);
+    (provider.wallet as any).signTransaction
+      ? await (provider.wallet as any).signTransaction(versionedTx)
+      : versionedTx.sign([adminKeypair]);
+
+    solNoAltSize = versionedTx.serialize().length;
+
+    const txSig = await connection.sendTransaction(versionedTx);
+    await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
+
+    console.log(`\n✅ SOL Withdraw WITHOUT ALT confirmed: ${txSig}`);
+    console.log(`   Serialized size: ${solNoAltSize} bytes`);
+    console.log(`   Accounts in instruction: ${ix.keys.length}`);
+  }
+
+  // Submit WITH Protocol ALT (versioned v0)
+  {
+    const ix = await buildWithdrawInstruction();
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+
+    const messageV0 = new TransactionMessage({
+      payerKey: provider.wallet.publicKey,
+      recentBlockhash: blockhash,
+      instructions: [ix],
     }).compileToV0Message([protocolAlt.value]);
 
     const versionedTx = new VersionedTransaction(messageV0);
+    versionedTx.sign([adminKeypair]);
 
-    const serialized = versionedTx.serialize();
+    solAltSize = versionedTx.serialize().length;
 
-    console.log("\n📊 Transaction WITH Protocol ALT (v0):");
-    console.log(`   Size: ${serialized.length} bytes`);
-    console.log(`   ALTs used: 1`);
-    console.log(`   Accounts in ALT: ${protocolAlt.value.state.addresses.length}`);
+    const txSig = await connection.sendTransaction(versionedTx);
+    await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
 
-    const savings = legacySize - serialized.length;
-    console.log(`   Savings: ${savings} bytes (${((savings / legacySize) * 100).toFixed(1)}%)`);
+    console.log(`\n✅ SOL Withdraw WITH ALT confirmed: ${txSig}`);
+    console.log(`   Serialized size: ${solAltSize} bytes`);
+    console.log(`   ALTs used: 1 (${protocolAlt.value.state.addresses.length} accounts)`);
   }
 
-  // Test 3b: Compare Transaction Sizes (SPL Withdraw)
-  if (tokenAltConfig.tokens.length > 0) {
-    if (tssNonce === undefined || tssChainId === undefined) {
-      throw new Error("Missing TSS nonce/chainId for SPL test");
-    }
-    console.log("\n📋 Test 3b: Compare Transaction Sizes (SPL Withdraw)");
+  const solSavings = solNoAltSize - solAltSize;
+  console.log(`\n📊 SOL Withdraw savings: ${solSavings} bytes (${((solSavings / solNoAltSize) * 100).toFixed(1)}%)`);
+
+  // Test 3b: SPL Withdraw — submit with and without ALT
+  if (selectedTokenConfigs.length > 0) {
+    console.log("\n📋 Test 3b: SPL Withdraw — submit with and without ALT");
     console.log("-".repeat(60));
 
-    const tokenInfo = tokenAltConfig.tokens[0];
-    const mintPubkey = new PublicKey(tokenInfo.mint);
+    let tokenInfo: TokenAltConfig["tokens"][number] | null = null;
+    for (const candidate of selectedTokenConfigs) {
+      const candidateMint = new PublicKey(candidate.mint);
+      const candidateMintInfo = await connection.getAccountInfo(candidateMint);
+      if (candidateMintInfo && candidateMintInfo.owner.equals(TOKEN_PROGRAM_ID)) {
+        tokenInfo = candidate;
+        break;
+      }
+      console.warn(
+        `⚠️  Skipping token ${candidate.symbol} (${candidate.mint}) - mint is not an SPL mint on this cluster`
+      );
+    }
+
+    if (!tokenInfo) {
+      console.warn("⚠️  Skipping SPL ALT submit test: no valid SPL mint found for current cluster.");
+      console.warn("   Recreate token ALTs for this cluster (likely devnet) and retry.");
+      console.warn("   Example:");
+      console.warn("   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com npx ts-node scripts/create-token-alt.ts");
+    } else {
+      const mintPubkey = new PublicKey(tokenInfo.mint);
     const vaultAta = getAssociatedTokenAddressSync(mintPubkey, vaultSol, true);
     const ceaAta = getAssociatedTokenAddressSync(mintPubkey, ceaAuthority, true);
     const recipientAta = getAssociatedTokenAddressSync(mintPubkey, recipient, true);
 
-    const splTxId = Array.from(Keypair.generate().publicKey.toBytes());
-    const splUniversalTxId = Array.from(Keypair.generate().publicKey.toBytes());
-    const splExecutedTx = getExecutedTxPda(Buffer.from(splTxId));
+    const tokenAltAddress = tokenAlts.get(tokenInfo.mint);
+    const tokenAlt = tokenAltAddress
+      ? (await connection.getAddressLookupTable(tokenAltAddress)).value
+      : null;
 
-    const splAdditional = buildWithdrawAdditionalData(
-      Buffer.from(splUniversalTxId),
-      Buffer.from(splTxId),
-      Buffer.from(sender),
-      mintPubkey,
-      recipient,
-      gasFeeBig
-    );
+    const buildSplInstruction = async () => {
+      const freshTxId = Array.from(Keypair.generate().publicKey.toBytes());
+      const freshUniversalTxId = Array.from(Keypair.generate().publicKey.toBytes());
+      const freshExecutedTx = getExecutedTxPda(Buffer.from(freshTxId));
 
-    const splSig = await signTssMessage({
-      instruction: TssInstruction.Withdraw,
-      nonce: tssNonce,
-      amount: amountBig,
-      additional: splAdditional,
-      chainId: tssChainId,
-    });
-
-    const splInstruction = await program.methods
-      .withdrawAndExecute(
-        1, // instruction_id (withdraw)
-        Array.from(splTxId),
-        Array.from(splUniversalTxId),
-        amountBn,
-        sender,
-        Buffer.alloc(0),
-        Buffer.alloc(0),
-        gasFeeBn,
-        new anchor.BN(0),
-        Array.from(splSig.signature),
-        splSig.recoveryId,
-        Array.from(splSig.messageHash),
-        new anchor.BN(tssNonce),
-      )
-      .accounts({
-        caller: provider.wallet.publicKey,
-        config: configPda,
-        vaultSol,
-        ceaAuthority,
-        tssPda,
-        executedTx: splExecutedTx,
-        systemProgram: SystemProgram.programId,
-        destinationProgram: SystemProgram.programId,
+      const splAdditional = buildWithdrawAdditionalData(
+        Buffer.from(freshUniversalTxId),
+        Buffer.from(freshTxId),
+        Buffer.from(sender),
+        mintPubkey,
         recipient,
-        vaultAta,
-        ceaAta,
-        mint: mintPubkey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        recipientAta,
-      })
-      .instruction();
+        gasFeeBig
+      );
 
-    // Legacy SPL tx size
-    {
-      const { blockhash } = await connection.getLatestBlockhash();
-      const legacyTx = new Transaction({
-        recentBlockhash: blockhash,
-        feePayer: provider.wallet.publicKey,
-      }).add(splInstruction);
-
-      const serialized = legacyTx.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
+      const splSig = await signTssMessage({
+        instruction: TssInstruction.Withdraw,
+        amount: amountBig,
+        additional: splAdditional,
+        chainId: tssChainId,
       });
 
-      console.log("\n📊 SPL Transaction WITHOUT ALTs (legacy):");
-      console.log(`   Size: ${serialized.length} bytes`);
-      console.log(`   Accounts: ${legacyTx.instructions[0].keys.length}`);
-    }
+      return program.methods
+        .withdrawAndExecute(
+          1,
+          Array.from(freshTxId),
+          Array.from(freshUniversalTxId),
+          amountBn,
+          sender,
+          Buffer.alloc(0),
+          Buffer.alloc(0),
+          gasFeeBn,
+          new anchor.BN(0),
+          Array.from(splSig.signature),
+          splSig.recoveryId,
+          Array.from(splSig.messageHash),
+        )
+        .accounts({
+          caller: provider.wallet.publicKey,
+          config: configPda,
+          vaultSol,
+          ceaAuthority,
+          tssPda,
+          executedTx: freshExecutedTx,
+          systemProgram: SystemProgram.programId,
+          destinationProgram: SystemProgram.programId,
+          recipient,
+          vaultAta,
+          ceaAta,
+          mint: mintPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          recipientAta,
+          rateLimitConfig: null,
+          tokenRateLimit: null,
+        })
+        .instruction();
+    };
 
-    // v0 SPL tx size with Protocol ALT + Token ALT
+    let splNoAltSize = 0;
+    let splAltSize = 0;
+
+    // Submit WITHOUT ALT
     {
-      const { blockhash } = await connection.getLatestBlockhash();
-      const tokenAltAddress = tokenAlts.get(tokenInfo.mint);
-      const tokenAlt = tokenAltAddress
-        ? await connection.getAddressLookupTable(tokenAltAddress)
-        : null;
-
-      const alts = [protocolAlt.value];
-      if (tokenAlt?.value) {
-        alts.push(tokenAlt.value);
-      }
+      const ix = await buildSplInstruction();
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
       const messageV0 = new TransactionMessage({
         payerKey: provider.wallet.publicKey,
         recentBlockhash: blockhash,
-        instructions: [splInstruction],
+        instructions: [ix],
+      }).compileToV0Message([]);
+
+      const versionedTx = new VersionedTransaction(messageV0);
+      versionedTx.sign([adminKeypair]);
+      splNoAltSize = versionedTx.serialize().length;
+
+      const txSig = await connection.sendTransaction(versionedTx);
+      await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
+
+      console.log(`\n✅ SPL Withdraw WITHOUT ALT confirmed: ${txSig}`);
+      console.log(`   Serialized size: ${splNoAltSize} bytes`);
+    }
+
+    // Submit WITH Protocol ALT + Token ALT
+    {
+      const ix = await buildSplInstruction();
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+
+      const alts = tokenAlt ? [protocolAlt.value, tokenAlt] : [protocolAlt.value];
+
+      const messageV0 = new TransactionMessage({
+        payerKey: provider.wallet.publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
       }).compileToV0Message(alts);
 
       const versionedTx = new VersionedTransaction(messageV0);
-      const serialized = versionedTx.serialize();
+      versionedTx.sign([adminKeypair]);
+      splAltSize = versionedTx.serialize().length;
 
-      console.log("\n📊 SPL Transaction WITH ALTs (v0):");
-      console.log(`   Size: ${serialized.length} bytes`);
+      const txSig = await connection.sendTransaction(versionedTx);
+      await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
+
+      console.log(`\n✅ SPL Withdraw WITH ALT confirmed: ${txSig}`);
+      console.log(`   Serialized size: ${splAltSize} bytes`);
       console.log(`   ALTs used: ${alts.length}`);
-      console.log(`   Accounts in Protocol ALT: ${protocolAlt.value.state.addresses.length}`);
-      if (tokenAlt?.value) {
-        console.log(`   Accounts in Token ALT: ${tokenAlt.value.state.addresses.length}`);
-      }
+    }
+
+    const splSavings = splNoAltSize - splAltSize;
+    console.log(`\n📊 SPL Withdraw savings: ${splSavings} bytes (${((splSavings / splNoAltSize) * 100).toFixed(1)}%)`);
     }
   }
 
@@ -510,21 +567,21 @@ async function main() {
   console.log(`\n   SOL transaction: ${solAlts.length} ALT(s)`);
 
   // Get ALTs for SPL transaction (if we have token ALTs)
-  if (tokenAltConfig.tokens.length > 0) {
-    const firstToken = tokenAltConfig.tokens[0];
+  if (selectedTokenConfigs.length > 0) {
+    const firstToken = selectedTokenConfigs[0];
     const splAlts = altHelper.getAltsForTransaction(new PublicKey(firstToken.mint));
     console.log(`   SPL transaction (${firstToken.symbol}): ${splAlts.length} ALT(s)`);
   }
 
   // Estimate savings
-  const solSavings = altHelper.estimateSavings(null);
+  const estimatedSolSavings = altHelper.estimateSavings(null);
   console.log(`\n   Estimated savings:`);
-  console.log(`   - SOL: ${solSavings} bytes`);
+  console.log(`   - SOL: ${estimatedSolSavings} bytes`);
 
-  if (tokenAltConfig.tokens.length > 0) {
-    const firstToken = tokenAltConfig.tokens[0];
-    const splSavings = altHelper.estimateSavings(new PublicKey(firstToken.mint));
-    console.log(`   - SPL (${firstToken.symbol}): ${splSavings} bytes`);
+  if (selectedTokenConfigs.length > 0) {
+    const firstToken = selectedTokenConfigs[0];
+    const estimatedSplSavings = altHelper.estimateSavings(new PublicKey(firstToken.mint));
+    console.log(`   - SPL (${firstToken.symbol}): ${estimatedSplSavings} bytes`);
   }
 
   // Summary
@@ -532,14 +589,8 @@ async function main() {
   console.log("✅ ALT Integration Test Complete\n");
   console.log("Summary:");
   console.log(`  - Protocol ALT: ${protocolAlt.value.state.addresses.length} accounts`);
-  console.log(`  - Token ALTs: ${tokenAltConfig.tokens.length} tokens`);
-  console.log(`  - SOL savings: ${solSavings} bytes per transaction`);
-  console.log("\nNext steps:");
-  console.log("  1. Use AltHelper in your backend service");
-  console.log("  2. Load ALTs once at startup: altHelper.loadFromConfigFiles(...)");
-  console.log("  3. Fetch ALT accounts: await altHelper.fetchAltAccounts()");
-  console.log("  4. Get ALTs per transaction: altHelper.getAltsForTransaction(mint)");
-  console.log("  5. Build versioned transactions with ALTs");
+  console.log(`  - Token ALTs used: ${selectedTokenConfigs.length} (${TARGET_SPL_SYMBOL})`);
+  console.log(`  - SOL tx savings: ${solNoAltSize - solAltSize} bytes per transaction`);
   console.log();
 }
 

@@ -10,7 +10,7 @@ Quick reference for all account types in the gateway.
 |---------|-------|------|---------|
 | **Config** | `[b"config"]` | 279 bytes | Gateway configuration (admin, caps, oracle) |
 | **Vault** | `[b"vault"]` | System | Native SOL custody (no data) |
-| **TssPda** | `[b"tsspda"]` | 137 bytes | TSS address, chain ID, nonce |
+| **TssPda** | `[b"tsspda_v2"]` | 129 bytes | TSS address, chain ID |
 | **CEA** | `[b"push_identity", sender[20]]` | System | Per-user execution authority |
 | **ExecutedTx** | `[b"executed_tx", tx_id[32]]` | 8 bytes | Replay protection (discriminator only) |
 | **RateLimitConfig** | `[b"rate_limit_config"]` | 157 bytes | Global rate limit settings |
@@ -46,14 +46,13 @@ pub struct Config {
 pub struct TssPda {
     pub tss_eth_address: [u8; 20],  // 20 bytes - Ethereum address
     pub chain_id: String,            // Variable (max 64) - Cluster pubkey
-    pub nonce: u64,                  // 8 bytes - Replay protection
     pub authority: Pubkey,           // 32 bytes - Admin who can update
     pub bump: u8,                    // 1 byte
 }
 ```
 
 **Authority:** Admin-only for updates
-**Nonce:** Incremented on every outbound transaction
+**Replay protection:** Per-tx via `ExecutedTx` PDA (seeded by `tx_id`), not a global nonce
 
 ---
 
@@ -133,14 +132,13 @@ Not PDAs of gateway, but validated:
 - Config (caps, oracle, pause)
 - RateLimitConfig (settings)
 - TokenRateLimit (threshold)
-- TssPda (address, nonce)
+- TssPda (address, chain_id)
 
 ### Mutable (System)
 - Vault (balances)
 - CEA (balances)
 - RateLimitConfig (consumed tracking)
 - TokenRateLimit (epoch tracking)
-- TssPda (nonce increment)
 
 ### Init (One-Time)
 - ExecutedTx (per tx_id)
@@ -148,4 +146,4 @@ Not PDAs of gateway, but validated:
 
 ---
 
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-23

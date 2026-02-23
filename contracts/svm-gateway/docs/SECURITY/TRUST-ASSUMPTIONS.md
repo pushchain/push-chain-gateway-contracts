@@ -101,8 +101,8 @@
 
 | Threat | Attack Vector | Mitigation |
 |--------|---------------|------------|
-| **Replay attack** | Reuse valid signature | Nonce + ExecutedTx PDA |
-| **Front-running** | Execute before user tx | Nonce ordering |
+| **Replay attack** | Reuse valid signature | ExecutedTx PDA (per tx_id init constraint) |
+| **Front-running** | Execute TSS tx in different order | Each tx independently TSS-signed (no shared state) |
 | **Signature forgery** | Fake TSS signature | ECDSA verification |
 | **Amount manipulation** | Change amount in message | Message hash binding |
 | **Unauthorized withdrawal** | Withdraw without TSS | TSS signature required |
@@ -171,7 +171,7 @@
 - ❌ Can update TSS address (TssPda.authority is set to admin), enabling fund drain
 - ⚠️ Can pause (DoS)
 - ⚠️ Can change USD caps (economic impact)
-- ⚠️ Can reset nonce (disrupts outbound flow)
+- ⚠️ Can update TSS chain_id (disrupts message signing)
 - **Mitigation:** Multi-sig, time-lock, separate TSS authority from admin
 
 ### If TSS Compromised

@@ -30,7 +30,7 @@
 
 ### Critical Security Areas
 1. **TSS Signature Validation** - See [TSS-VALIDATION.md](./SECURITY/TSS-VALIDATION.md)
-   - Replay protection via nonce
+   - Replay protection via `ExecutedTx` PDA (per tx_id)
    - Message hash construction
    - ECDSA secp256k1 recovery
 
@@ -84,7 +84,7 @@
 │  ┌─────────────────────────────────────────┐                │
 │  │           TSS VALIDATION                 │                │
 │  │    • ECDSA secp256k1 signatures          │                │
-│  │    • Nonce-based replay protection       │                │
+│  │    • tx_id-based replay protection (ExecutedTx PDA) │    │
 │  │    • Message hash verification           │                │
 │  └─────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
@@ -107,9 +107,9 @@
 - [ ] Amount overflow checks
 
 ### Replay Protection
-- [ ] Nonce incrementation
-- [ ] tx_id uniqueness via init
+- [ ] ExecutedTx PDA creation (tx_id uniqueness via init)
 - [ ] Message hash integrity
+- [ ] No replay of tx_id (PDA exists check)
 
 ### CEA Security
 - [ ] PDA derivation correctness
@@ -148,7 +148,7 @@ User → Event (emit UniversalTx)
 
 WITHDRAW/EXECUTE:
 TSS → Config (check paused)
-TSS → TssPda (validate signature, increment nonce)
+TSS → TssPda (validate signature)
 TSS → ExecutedTx (init - replay protection)
 TSS → Vault → CEA (transfer amount)
 TSS → Vault → Caller (transfer gas fee)
@@ -157,7 +157,7 @@ TSS → Event (emit UniversalTxExecuted)
 
 REVERT:
 TSS → Config (check paused)
-TSS → TssPda (validate signature, increment nonce)
+TSS → TssPda (validate signature)
 TSS → ExecutedTx (init - replay protection)
 TSS → Vault → Recipient (transfer amount)
 TSS → Vault → Caller (transfer gas fee)

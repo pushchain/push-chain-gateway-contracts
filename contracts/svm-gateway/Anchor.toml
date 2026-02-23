@@ -12,8 +12,8 @@ universal_gateway = "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp"
 url = "https://api.apr.dev"
 
 [provider]
-# cluster = "localnet"
-cluster = "https://api.devnet.solana.com"
+cluster = "localnet"
+# cluster = "https://api.devnet.solana.com"
 wallet = "./upgrade-keypair.json"
 
 [scripts]

@@ -67,9 +67,6 @@ pub enum GatewayError {
     #[msg("TSS authentication failed")]
     TssAuthFailed,
 
-    #[msg("Nonce mismatch")]
-    NonceMismatch,
-
     #[msg("Account list length mismatch")]
     AccountListLengthMismatch,
 

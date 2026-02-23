@@ -7,7 +7,7 @@ pub mod utils;
 
 use instructions::*;
 
-declare_id!("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+declare_id!("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
 
 #[program]
 pub mod universal_gateway {
@@ -125,10 +125,6 @@ pub mod universal_gateway {
         instructions::tss::update_tss(ctx, tss_eth_address, chain_id)
     }
 
-    pub fn reset_nonce(ctx: Context<ResetNonce>, new_nonce: u64) -> Result<()> {
-        instructions::tss::reset_nonce(ctx, new_nonce)
-    }
-
     // =========================
     //    WITHDRAW & EXECUTE
     // =========================
@@ -148,7 +144,6 @@ pub mod universal_gateway {
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
         instructions::execute::withdraw_and_execute(
             ctx,
@@ -164,7 +159,6 @@ pub mod universal_gateway {
             signature,
             recovery_id,
             message_hash,
-            nonce,
         )
     }
 
@@ -182,7 +176,6 @@ pub mod universal_gateway {
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
         instructions::revert::revert_universal_tx(
             ctx,
@@ -194,7 +187,6 @@ pub mod universal_gateway {
             signature,
             recovery_id,
             message_hash,
-            nonce,
         )
     }
 
@@ -209,7 +201,6 @@ pub mod universal_gateway {
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
         instructions::revert::revert_universal_tx_token(
             ctx,
@@ -221,7 +212,6 @@ pub mod universal_gateway {
             signature,
             recovery_id,
             message_hash,
-            nonce,
         )
     }
 

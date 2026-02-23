@@ -69,7 +69,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         );
 
         [tssPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("tsspda")],
+            [Buffer.from("tsspda_v2")],
             program.programId
         );
 
@@ -338,7 +338,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         it("Rejects TSS initialization by non-admin", async () => {
             // Use the correct TSS PDA seed (just "tss", not with extra bytes)
             const [actualTssPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from("tsspda")],
+                [Buffer.from("tsspda_v2")],
                 program.programId
             );
 
@@ -444,81 +444,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             expect(tss.chainId).to.equal(newChainId);
         });
 
-        it("Resets nonce when TSS address changes", async () => {
-            // Set nonce to a non-zero value first
-            await program.methods
-                .resetNonce(new anchor.BN(50))
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            let tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal("50");
-
-            // Update TSS with a different address - should reset nonce to 0
-            const newTssEthAddress = Array.from(Buffer.alloc(20, 3));
-            await program.methods
-                .updateTss(newTssEthAddress, "1")
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal("0");
-            expect(Buffer.from(tss.tssEthAddress).equals(Buffer.from(newTssEthAddress))).to.be.true;
-        });
-
-        it("Does not reset nonce when TSS address unchanged", async () => {
-            // Set nonce to a non-zero value
-            await program.methods
-                .resetNonce(new anchor.BN(100))
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            let tss = await program.account.tssPda.fetch(tssPda);
-            const currentAddress = Array.from(tss.tssEthAddress);
-            const currentNonce = tss.nonce.toString();
-
-            // Update TSS with same address but different chain_id - nonce should NOT reset
-            await program.methods
-                .updateTss(currentAddress, "999")
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal(currentNonce); // Nonce unchanged
-            expect(tss.chainId).to.equal("999");
-        });
-
-        it("Resets TSS nonce", async () => {
-            const newNonce = new anchor.BN(100);
-
-            await program.methods
-                .resetNonce(newNonce)
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            const tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal(newNonce.toString());
-        });
     });
 
 
@@ -566,15 +491,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         const expectedTssEthAddress = getTssEthAddress();
         await program.methods
             .updateTss(expectedTssEthAddress, TSS_CHAIN_ID)
-            .accounts({
-                tssPda,
-                authority: admin.publicKey,
-            })
-            .signers([admin])
-            .rpc();
-
-        await program.methods
-            .resetNonce(new anchor.BN(0))
             .accounts({
                 tssPda,
                 authority: admin.publicKey,

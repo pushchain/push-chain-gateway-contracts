@@ -33,7 +33,6 @@ pub fn withdraw_and_execute(
     signature: [u8; 64],           // TSS signature
     recovery_id: u8,               // ECDSA recovery ID
     message_hash: [u8; 32],        // Pre-computed message hash
-    nonce: u64,                    // Replay protection nonce
 ) -> Result<()>
 ```
 
@@ -58,8 +57,6 @@ TSS Request
   │    ├─ Build additional_data array
   │    ├─ Reconstruct message hash
   │    ├─ Verify ECDSA signature
-  │    ├─ Check nonce matches tss_pda.nonce
-  │    ├─ Increment tss_pda.nonce
   │    └─ Validate remaining_accounts (execute mode only)
   │
   ├─ Phase 3: Transfers
@@ -87,7 +84,7 @@ TSS Request
   │         │    └─ data = ix_data
   │         └─ invoke_signed(cpi_ix, &[cea_seeds])
   │
-  └─ Emit: UniversalTxExecuted event
+  └─ Emit: UniversalTxExecuted event (except CEA withdrawal: emits UniversalTx only, via_cea=true)
 ```
 
 ---
@@ -100,7 +97,6 @@ PREFIX = "PUSH_CHAIN_SVM"
 message = PREFIX
         || instruction_id (1 byte)
         || chain_id (string bytes)
-        || nonce (8 bytes BE)
         || amount (8 bytes BE)
         || additional_data
 hash = keccak256(message)
@@ -213,9 +209,6 @@ require!(rent_fee <= gas_fee, ...);
 
 ### 6. TSS Signature Validation
 ```rust
-// Check nonce
-require!(nonce == tss_pda.nonce, GatewayError::NonceMismatch);
-
 // Rebuild message
 let computed_hash = keccak::hash(&message_bytes);
 require!(computed_hash == message_hash, GatewayError::MessageHashMismatch);
@@ -224,9 +217,6 @@ require!(computed_hash == message_hash, GatewayError::MessageHashMismatch);
 let pubkey = secp256k1_recover(&message_hash, recovery_id, &signature)?;
 let address = keccak::hash(&pubkey.to_bytes())[12..32];
 require!(address == tss_pda.tss_eth_address, GatewayError::TssAuthFailed);
-
-// Increment nonce (replay protection)
-tss_pda.nonce += 1;
 ```
 
 ### 7. Replay Protection
@@ -323,7 +313,8 @@ pub struct UniversalTxExecuted {
 }
 ```
 
-**When Emitted:** After successful withdraw or execute
+**When Emitted:** After successful withdraw (mode 1) or execute (mode 2) where target != gateway program
+**NOT emitted for CEA withdrawal** (target == gateway): emits `UniversalTx` only (via `send_universal_tx_via_cea`, `via_cea=true`)
 
 ---
 
@@ -343,9 +334,6 @@ pub struct UniversalTxExecuted {
 ### Recipient Balance (Withdraw Mode)
 - **SOL:** `recipient.lamports += amount`
 - **SPL:** `recipient_ata.amount += amount`
-
-### TSS State
-- **Nonce:** `tss_pda.nonce += 1`
 
 ### Replay Protection
 - **ExecutedTx:** New PDA created with discriminator only
@@ -372,25 +360,30 @@ When destination_program == gateway_program_id, the gateway executes a special C
 
 **Payload Structure (execute.rs:451-463):**
 ```
-[discriminator: 8 bytes]  // hash(b"global:withdraw_from_cea").to_bytes()[..8]
-[borsh_args: variable]    // WithdrawFromCeaArgs (Borsh-encoded)
+[discriminator: 8 bytes]  // hash(b"global:send_universal_tx_via_cea").to_bytes()[..8]
+[borsh_args: variable]    // SendUniversalTxViaCeaArgs (Borsh-encoded)
 ```
 
-**WithdrawFromCeaArgs:** (execute.rs:429-432)
+**SendUniversalTxViaCeaArgs:** (execute.rs:429-433)
 ```rust
-struct WithdrawFromCeaArgs {
+struct SendUniversalTxViaCeaArgs {
     token: Pubkey,      // Must match derived token (Pubkey::default() for SOL, mint for SPL)
-    amount: u64,        // Amount to withdraw (0 = withdraw full balance)
-    // NOTE: NO recipient field - recipient comes from withdraw_and_execute accounts, NOT payload
+    amount: u64,        // Amount to withdraw (must be > 0, no auto-drain of full balance)
+    payload: Vec<u8>,   // empty = Funds tx_type, non-empty = FundsAndPayload tx_type (via_cea=true)
+    // NOTE: NO recipient field - recipient (UEA address) comes from withdraw_and_execute sender param
 }
 ```
 
+**Emitted UniversalTx event:**
+- `via_cea: true` — Push Chain UE module uses `recipient` directly as existing UEA (no new UEA derivation)
+- `tx_type: Funds` if payload empty, `FundsAndPayload` if payload non-empty
+
 **Validation:**
 1. ix_data must be >= 8 bytes
-2. First 8 bytes must match hash(b"global:withdraw_from_cea")[..8]
-3. Remaining bytes must deserialize as WithdrawFromCeaArgs (token + amount only)
+2. First 8 bytes must match hash(b"global:send_universal_tx_via_cea")[..8]
+3. Remaining bytes must deserialize as SendUniversalTxViaCeaArgs (token + amount + payload)
 4. args.token must match derived token (Pubkey::default() for SOL, mint for SPL)
-5. Recipient comes from the `recipient` account in withdraw_and_execute, NOT from payload
+5. Recipient (UEA) comes from the `sender` param in withdraw_and_execute, NOT from payload
 
 **Integration Example:**
 ```typescript
@@ -398,30 +391,34 @@ import { sha256 } from "js-sha3";
 import { serialize } from "borsh";
 
 // 1. Compute discriminator
-const discr = Buffer.from(sha256("global:withdraw_from_cea"), "hex").slice(0, 8);
+const discr = Buffer.from(sha256("global:send_universal_tx_via_cea"), "hex").slice(0, 8);
 
-// 2. Manually Borsh-encode WithdrawFromCeaArgs (token + amount ONLY)
-// NOTE: There is NO withdrawFromCea instruction in lib.rs, so we use raw Borsh encoding
-class WithdrawFromCeaArgs {
+// 2. Manually Borsh-encode SendUniversalTxViaCeaArgs (token + amount + payload)
+// NOTE: There is NO sendUniversalTxViaCea instruction in lib.rs, so we use raw Borsh encoding
+class SendUniversalTxViaCeaArgs {
   token: Uint8Array; // 32 bytes
   amount: bigint;    // u64
+  payload: Uint8Array; // Vec<u8>
 
-  constructor(token: Uint8Array, amount: bigint) {
+  constructor(token: Uint8Array, amount: bigint, payload: Uint8Array) {
     this.token = token;
     this.amount = amount;
+    this.payload = payload;
   }
 }
 
 const schema = {
   struct: {
     token: { array: { type: 'u8', len: 32 } },
-    amount: 'u64'
+    amount: 'u64',
+    payload: { vec: 'u8' },
   }
 };
 
-const args = new WithdrawFromCeaArgs(
+const args = new SendUniversalTxViaCeaArgs(
   mintPubkey.toBytes(), // or new PublicKey(0).toBytes() for SOL
-  BigInt(amount)
+  BigInt(amount),
+  new Uint8Array([])    // empty = Funds, non-empty = FundsAndPayload
 );
 
 const argsEncoded = serialize(schema, args);
@@ -430,18 +427,19 @@ const argsEncoded = serialize(schema, args);
 const ix_data = Buffer.concat([discr, Buffer.from(argsEncoded)]);
 
 // 4. Use in withdraw_and_execute with instruction_id=2
-// IMPORTANT: recipient comes from accounts, NOT from payload
+// IMPORTANT: recipient (UEA) comes from `sender` param (20-byte Push Chain address), NOT from .accounts()
+// Execute mode REQUIRES recipient: null in .accounts()
 await program.methods
   .withdrawAndExecute(
     2, // instruction_id: execute
-    // ... other params ...
+    // ... other params (amount, sender: [u8; 20], etc.) ...
     [], // writable_flags: empty for CEA self-withdraw
-    ix_data, // [discriminator][borsh(token, amount)]
+    ix_data, // [discriminator][borsh(token, amount, payload)]
     // ... signature params ...
   )
   .accounts({
     destinationProgram: gatewayProgramId, // Triggers CEA self-withdraw
-    recipient: finalRecipientPubkey, // ← Recipient comes from HERE, not payload
+    recipient: null, // ← Execute mode requires None; UEA comes from sender param
     // ... other accounts ...
   })
   .rpc();
@@ -483,8 +481,7 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 |-------|-------|----------|
 | `MessageHashMismatch` | TSS message reconstruction failed | Check message format |
 | `TssAuthFailed` | Signature invalid or wrong TSS address | Verify TSS key |
-| `NonceMismatch` | Nonce doesn't match current | Get latest nonce |
-| Anchor Init Error | tx_id already used (PDA exists) | Use unique tx_id - Replay protection via init failure, NOT PayloadExecuted error |
+| Anchor Init Error | tx_id already used (PDA exists) | Use unique tx_id - replay protection via init failure |
 | `AccountListLengthMismatch` | remaining_accounts count wrong | Check accounts array |
 | `AccountPubkeyMismatch` | Account at position doesn't match | Verify account order |
 | `UnexpectedOuterSigner` | Account in remaining has is_signer=true | Remove signer flag |
@@ -495,15 +492,11 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 
 ## 🔍 Invariants
 
-1. **Nonce Monotonicity:**
-   ```
-   tss_pda.nonce is strictly increasing
-   ```
-
-2. **Replay Protection:**
+1. **Replay Protection:**
    ```
    Each tx_id can execute exactly once
    ExecutedTx PDA exists <=> tx executed
+   Transactions can execute in any order (no global nonce)
    ```
 
 3. **Balance Conservation:**
@@ -556,4 +549,4 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 
 ---
 
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-23

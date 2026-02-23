@@ -10,7 +10,7 @@ All events emitted by the gateway for monitoring and cross-chain coordination.
 ```rust
 #[event]
 pub struct UniversalTx {
-    pub sender: Pubkey,                // User who deposited
+    pub sender: Pubkey,                // User who deposited (or CEA for via_cea=true)
     pub recipient: [u8; 20],           // Push Chain destination ([0; 20] = UEA)
     pub token: Pubkey,                 // Token (Pubkey::default() = SOL)
     pub amount: u64,                   // Bridge amount
@@ -18,6 +18,7 @@ pub struct UniversalTx {
     pub revert_instruction: RevertInstructions,
     pub tx_type: TxType,               // Gas/GasAndPayload/Funds/FundsAndPayload
     pub signature_data: Vec<u8>,       // User signature data
+    pub via_cea: bool,                 // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as existing UEA
 }
 ```
 
@@ -46,8 +47,11 @@ pub struct UniversalTxExecuted {
 }
 ```
 
-**Emitted:** After successful withdraw or execute
+**Emitted:** After successful withdraw (mode 1) or execute (mode 2) where target != gateway program
+**NOT emitted for CEA withdrawal** (target == gateway): `UniversalTx` is emitted instead (via `send_universal_tx_via_cea`)
 **Purpose:** Confirm execution on Solana
+
+---
 
 ### RevertUniversalTx
 ```rust
@@ -182,8 +186,7 @@ revert_universal_tx() or revert_universal_tx_token()
 ### CEA Withdrawal Flow
 ```
 withdraw_and_execute(target=gateway)
-  → UniversalTx emitted (Funds type)
-  → UniversalTxExecuted emitted
+  → UniversalTx emitted (Funds or FundsAndPayload, via_cea=true)
 ```
 
 ---

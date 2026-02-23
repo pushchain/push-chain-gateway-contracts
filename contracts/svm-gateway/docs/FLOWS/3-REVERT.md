@@ -19,7 +19,7 @@ Revert allows TSS to return deposited funds when cross-chain transaction fails o
 ```
 TSS Request
   │
-  ├─ Validate TSS signature (nonce, message hash, ECDSA)
+  ├─ Validate TSS signature (message hash, ECDSA)
   ├─ Create executed_tx PDA (replay protection)
   ├─ Transfer: Vault → Recipient (amount)
   ├─ Emit: RevertUniversalTx event  ← **EMITTED AFTER funds transfer, BEFORE gas transfer (revert.rs:114, 269)**
@@ -35,7 +35,6 @@ TSS Request
 message = PREFIX
         || instruction_id (1 byte = 3)
         || chain_id (string bytes)
-        || nonce (8 bytes BE)
         || amount (8 bytes BE)
         || universal_tx_id[32]
         || tx_id[32]
@@ -50,7 +49,6 @@ hash = keccak256(message)
 message = PREFIX
         || instruction_id (1 byte = 4)
         || chain_id (string bytes)
-        || nonce (8 bytes BE)
         || amount (8 bytes BE)
         || universal_tx_id[32]
         || tx_id[32]
@@ -72,7 +70,6 @@ hash = keccak256(message)
 | **Recipient** | `require!(recipient != Pubkey::default())` |
 | **Recipient match** | `require!(recipient == revert_instruction.fund_recipient)` |
 | **TSS signature** | ECDSA secp256k1 recovery + address match |
-| **Nonce** | `require!(nonce == tss_pda.nonce); tss_pda.nonce++` |
 | **Replay** | ExecutedTx PDA init (fails if tx_id reused) |
 | **SPL ATA** | Owner == vault, Mint == token_mint |
 | **SPL recipient** | ATA owner == recipient, mint == token_mint |
@@ -87,9 +84,6 @@ hash = keccak256(message)
 
 ### Vault → Caller (Relayer)
 - **SOL:** `vault.lamports -= gas_fee`
-
-### TSS
-- **Nonce:** `tss_pda.nonce += 1`
 
 ### Replay Protection
 - **ExecutedTx PDA created** for tx_id
@@ -135,4 +129,4 @@ pub struct RevertUniversalTx {
 
 ---
 
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-23
