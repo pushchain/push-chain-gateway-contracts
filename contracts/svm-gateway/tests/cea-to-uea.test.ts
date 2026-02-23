@@ -46,18 +46,12 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
     let counterPda: PublicKey;
     let counterAuthority: Keypair;
 
-    let currentNonce = 0;
     let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
 
     const generateTxId = makeTxIdGenerator();
     const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, gatewayProgram.programId);
     const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, gatewayProgram.programId);
     const getCeaAta = (sender: number[], mint: PublicKey) => _getCeaAta(sender, mint, gatewayProgram.programId);
-
-    const syncNonceFromChain = async () => {
-        const account = await gatewayProgram.account.tssPda.fetch(tssPda);
-        currentNonce = Number(account.nonce);
-    };
 
     before(async () => {
         admin = sharedState.getAdmin();
@@ -180,7 +174,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
     describe("CEA → UEA: SOL", () => {
         it("should allow gateway self-call to withdraw SOL from CEA", async () => {
-            await syncNonceFromChain();
             const sender = generateSender();
             const cea = getCeaAuthorityPda(sender);
 
@@ -204,7 +197,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const sigFund = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(fundAmount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -266,7 +258,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const sigW = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: sigFund.nonce.add(new anchor.BN(1)).toNumber(),
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -322,7 +313,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
         });
 
         it("should emit FundsAndPayload + via_cea when CEA withdrawal has non-empty payload", async () => {
-            await syncNonceFromChain();
             const sender = generateSender();
             const cea = getCeaAuthorityPda(sender);
 
@@ -344,7 +334,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const sigFund = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(fundAmount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -406,7 +395,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const sigW = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: sigFund.nonce.add(new anchor.BN(1)).toNumber(),
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -479,7 +467,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
     describe("CEA → UEA: SPL", () => {
         it("should allow gateway self-call to withdraw SPL from CEA", async () => {
-            await syncNonceFromChain();
             const sender = generateSender();
             const cea = getCeaAuthorityPda(sender);
             const ceaAta = await getCeaAta(sender, mockUSDT.mint.publicKey);
@@ -506,7 +493,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             const fundAccounts = instructionAccountsToGatewayMetas(counterIx);
             const sigFund = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(fundAmount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -587,7 +573,6 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const sigW = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: sigFund.nonce.add(new anchor.BN(1)).toNumber(),
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
