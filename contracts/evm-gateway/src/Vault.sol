@@ -139,7 +139,7 @@ contract Vault is
     /// @dev All execution now routes through CEA.executeUniversalTx with multicall payload
     ///      target parameter kept for backwards compatibility / metadata but not used for routing
     function finalizeUniversalTx(
-        bytes32 txId,
+        bytes32 subTxId,
         bytes32 universalTxId,
         address pushAccount,
         address token,
@@ -154,15 +154,15 @@ contract Vault is
         }
 
         // Single execution path for all operations
-        _finalizeUniversalTx(txId, universalTxId, pushAccount, token, target, amount, data, cea);
+        _finalizeUniversalTx(subTxId, universalTxId, pushAccount, token, target, amount, data, cea);
 
         // Emit event
-        emit VaultUniversalTxFinalized(txId, universalTxId, pushAccount, target, token, amount, data);
+        emit VaultUniversalTxFinalized(subTxId, universalTxId, pushAccount, target, token, amount, data);
     }
 
     /// @inheritdoc IVault
     function revertUniversalTxToken(
-        bytes32 txId,
+        bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
@@ -176,9 +176,9 @@ contract Vault is
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
         IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.revertUniversalTxToken(txId, universalTxId, token, amount, revertInstruction);
+        gateway.revertUniversalTxToken(subTxId, universalTxId, token, amount, revertInstruction);
 
-        emit VaultUniversalTxReverted(txId, universalTxId, token, amount, revertInstruction);
+        emit VaultUniversalTxReverted(subTxId, universalTxId, token, amount, revertInstruction);
     }
 
     // =========================
@@ -207,7 +207,7 @@ contract Vault is
     /**
      * @dev Unified execution handler - all operations route through CEA.executeUniversalTx
      * @notice data parameter is now a multicall payload (abi.encode(Multicall[]))
-     * @param txId   Gateway transaction ID
+     * @param subTxId   Gateway transaction ID
      * @param universalTxId Universal transaction ID
      * @param pushAccount   Push Chain account (UEA) this transaction is attributed to
      * @param token         Token address (address(0) for native)
@@ -217,7 +217,7 @@ contract Vault is
      * @param cea           CEA address (already deployed or newly created)
      */
     function _finalizeUniversalTx(
-        bytes32 txId,
+        bytes32 subTxId,
         bytes32 universalTxId,
         address pushAccount,
         address token,
@@ -234,10 +234,10 @@ contract Vault is
             // ERC20: transfer to CEA first, then execute multicall
             if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
             IERC20(token).safeTransfer(cea, amount);
-            ICEA(cea).executeUniversalTx(txId, universalTxId, pushAccount, data);
+            ICEA(cea).executeUniversalTx(subTxId, universalTxId, pushAccount, data);
         } else {
             // Native: forward value to CEA during executeUniversalTx call
-            ICEA(cea).executeUniversalTx{ value: amount }(txId, universalTxId, pushAccount, data);
+            ICEA(cea).executeUniversalTx{ value: amount }(subTxId, universalTxId, pushAccount, data);
         }
     }
 }

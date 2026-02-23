@@ -35,7 +35,7 @@ At a high level, the function performs the following actions:
    - Burns the PRC20 amount from the gateway’s balance.
 
 6. **Create a canonical outbound transaction ID**
-   - Uses an incrementing `nonce` and hashes the request fields to form `txId`.
+   - Uses an incrementing `nonce` and hashes the request fields to form `subTxId`.
 
 7. **Emit the outbound event**
    - Emits `UniversalTxOutbound(...)` containing all essential data for relayers/executors.
@@ -49,11 +49,11 @@ The outbound gateway infers `TX_TYPE` using two decision variables:
 - **hasPayload** = `req.payload.length > 0`
 - **hasFunds** = `req.amount > 0`
 
-| Inferred TX_TYPE | hasPayload | hasFunds | Meaning |
-|---|---|---|---|
-| `TX_TYPE.FUNDS` | NO | YES | Funds-only outbound withdrawal (burn → unlock on origin) |
-| `TX_TYPE.FUNDS_AND_PAYLOAD` | YES | YES | Withdraw funds and execute a payload on the origin chain |
-| `TX_TYPE.GAS_AND_PAYLOAD` | YES | NO | Execute payload-only on origin chain (no funds burned) |
+| Inferred TX_TYPE            | hasPayload | hasFunds | Meaning                                                  |
+| --------------------------- | ---------- | -------- | -------------------------------------------------------- |
+| `TX_TYPE.FUNDS`             | NO         | YES      | Funds-only outbound withdrawal (burn → unlock on origin) |
+| `TX_TYPE.FUNDS_AND_PAYLOAD` | YES        | YES      | Withdraw funds and execute a payload on the origin chain |
+| `TX_TYPE.GAS_AND_PAYLOAD`   | YES        | NO       | Execute payload-only on origin chain (no funds burned)   |
 
 Notes:
 - In this contract version, `_validateCommon` currently requires `amount > 0`, which means the practical reachable types are `FUNDS` and `FUNDS_AND_PAYLOAD`.

@@ -3,13 +3,13 @@ pragma solidity 0.8.26;
 
 /**
  * @title   UniversalGatewayPC
- * @notice  Universal Gateway implementation for Push Chain 
- * 
- * @dev 
+ * @notice  Universal Gateway implementation for Push Chain
+ *
+ * @dev
  *         - Strictly to be deployed on Push Chain.
  *         - Allows users to withdraw PRC20 (wrapped) tokens back to the origin chain.
  *         - Allows users to withdraw PRC20 and attach a payload for arbitrary call execution on the origin chain.
- *         - This contract does NOT handle deposits or inbound transfers. 
+ *         - This contract does NOT handle deposits or inbound transfers.
  *         - This contract does NOT custody user assets; PRC20 are burned at request time.
  *         - The Gateway includes a withdrawal fees for withdrwal from Push Chain to origin chain.
  */
@@ -50,7 +50,9 @@ contract UniversalGatewayPC is
     /// @param universalCore    address of the UniversalCore.
     /// @param vaultPC          address of the VaultPC.
     function initialize(address admin, address pauser, address universalCore, address vaultPC) external initializer {
-        if (admin == address(0) || pauser == address(0) || universalCore == address(0) || vaultPC == address(0)) revert Errors.ZeroAddress();
+        if (admin == address(0) || pauser == address(0) || universalCore == address(0) || vaultPC == address(0)) {
+            revert Errors.ZeroAddress();
+        }
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -80,11 +82,7 @@ contract UniversalGatewayPC is
         _unpause();
     }
 
-    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req)
-        external
-        whenNotPaused
-        nonReentrant
-    {
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external whenNotPaused nonReentrant {
         _validateCommon(req.target, req.token, req.revertRecipient);
 
         // Determine TX_TYPE based on user input (rejects empty transactions internally)
@@ -105,19 +103,24 @@ contract UniversalGatewayPC is
         uint256 _nonce = nonce;
         nonce = _nonce + 1;
 
-        bytes32 txID = keccak256(
-            abi.encode(
-                msg.sender,
-                req.token,
-                req.amount,
-                keccak256(req.payload),
-                chainNamespace,
-               _nonce
-            )
+        bytes32 subTxId = keccak256(
+            abi.encode(msg.sender, req.token, req.amount, keccak256(req.payload), chainNamespace, _nonce)
         );
 
         emit UniversalTxOutbound(
-            txID, msg.sender, chainNamespace, req.token, req.target, req.amount, gasToken, gasFee, gasLimitUsed, req.payload, protocolFee, req.revertRecipient, txType
+            subTxId,
+            msg.sender,
+            chainNamespace,
+            req.token,
+            req.target,
+            req.amount,
+            gasToken,
+            gasFee,
+            gasLimitUsed,
+            req.payload,
+            protocolFee,
+            req.revertRecipient,
+            txType
         );
     }
 
@@ -133,11 +136,7 @@ contract UniversalGatewayPC is
      * @param req               UniversalOutboundTxRequest struct
      * @return inferred         The inferred TX_TYPE for routing
      */
-    function _fetchTxType(UniversalOutboundTxRequest calldata req)
-        private
-        pure
-        returns (TX_TYPE inferred)
-    {
+    function _fetchTxType(UniversalOutboundTxRequest calldata req) private pure returns (TX_TYPE inferred) {
         bool hasPayload = req.payload.length > 0;
         bool hasFunds = req.amount > 0;
 
@@ -166,11 +165,7 @@ contract UniversalGatewayPC is
     /// @param rawTarget        raw destination address on origin chain.
     /// @param token            PRC20 token address on Push Chain.
     /// @param revertRecipient  address to receive funds in case of revert.
-    function _validateCommon(
-        bytes calldata rawTarget,
-        address token,
-        address revertRecipient
-    ) internal pure {
+    function _validateCommon(bytes calldata rawTarget, address token, address revertRecipient) internal pure {
         if (rawTarget.length == 0) revert Errors.InvalidInput();
         if (token == address(0)) revert Errors.ZeroAddress();
         if (revertRecipient == address(0)) revert Errors.InvalidRecipient();

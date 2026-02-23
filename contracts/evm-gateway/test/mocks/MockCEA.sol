@@ -49,12 +49,11 @@ contract MockCEA is ICEA {
      * @notice Executes a universal transaction using multicall payload
      * @dev Decodes and executes multicall for testing purposes
      */
-    function executeUniversalTx(
-        bytes32 txID,
-        bytes32 universalTxID,
-        address originCaller,
-        bytes calldata payload
-    ) external payable override {
+    function executeUniversalTx(bytes32 subTxId, bytes32 universalTxID, address originCaller, bytes calldata payload)
+        external
+        payable
+        override
+    {
         executeCallCount++;
 
         // Revert if configured (for rollback testing)
@@ -70,7 +69,7 @@ contract MockCEA is ICEA {
         }
 
         // Store call parameters for test assertions
-        lastTxID = txID;
+        lastTxID = subTxId;
         lastUniversalTxID = universalTxID;
         lastUEA = originCaller;
         lastPayload = payload;
@@ -96,7 +95,7 @@ contract MockCEA is ICEA {
             // Real CEA would require explicit approval steps in multicall
             _autoApproveTokens(calls[i].to);
 
-            (bool success, ) = calls[i].to.call{value: calls[i].value}(calls[i].data);
+            (bool success,) = calls[i].to.call{ value: calls[i].value }(calls[i].data);
             require(success, "MockCEA: call failed");
         }
     }
@@ -130,7 +129,7 @@ contract MockCEA is ICEA {
 
         if (token == address(0)) {
             // Native token withdrawal
-            (bool success, ) = payable(recipient).call{value: amount}("");
+            (bool success,) = payable(recipient).call{ value: amount }("");
             require(success, "MockCEA: native transfer failed");
         } else {
             // ERC20 token withdrawal
@@ -139,5 +138,5 @@ contract MockCEA is ICEA {
     }
 
     // Helper to receive native tokens
-    receive() external payable {}
+    receive() external payable { }
 }
