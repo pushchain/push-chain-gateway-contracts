@@ -171,7 +171,7 @@
 - ❌ Can update TSS address (TssPda.authority is set to admin), enabling fund drain
 - ⚠️ Can pause (DoS)
 - ⚠️ Can change USD caps (economic impact)
-- ⚠️ Can reset nonce (disrupts outbound flow)
+- ⚠️ Can update TSS chain_id (disrupts message signing)
 - **Mitigation:** Multi-sig, time-lock, separate TSS authority from admin
 
 ### If TSS Compromised

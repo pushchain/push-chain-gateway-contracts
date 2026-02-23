@@ -50,18 +50,12 @@ describe("Universal Gateway - Execute Tests", () => {
     let counterBump: number; // Counter PDA bump
     let counterAuthority: Keypair; // Authority for counter
 
-    let currentNonce = 0;
     let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
 
     const generateTxId = makeTxIdGenerator();
     const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, gatewayProgram.programId);
     const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, gatewayProgram.programId);
     const getCeaAta = (sender: number[], mint: PublicKey) => _getCeaAta(sender, mint, gatewayProgram.programId);
-
-    const syncNonceFromChain = async () => {
-        const account = await gatewayProgram.account.tssPda.fetch(tssPda);
-        currentNonce = Number(account.nonce);
-    };
 
     const getStakeAta = async (stakePda: PublicKey, mint: PublicKey): Promise<PublicKey> => {
         return getAssociatedTokenAddress(
@@ -101,7 +95,7 @@ describe("Universal Gateway - Execute Tests", () => {
         );
 
         [tssPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("tsspda")],
+            [Buffer.from("tsspda_v2")],
             gatewayProgram.programId
         );
 
@@ -208,9 +202,6 @@ describe("Universal Gateway - Execute Tests", () => {
             }
         }
 
-        // Sync nonce
-        await syncNonceFromChain();
-
         // Fund vault with SOL (admin pays)
         const vaultAmount = asLamports(100);
         const vaultTx = new anchor.web3.Transaction().add(
@@ -230,7 +221,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
     describe("execute_universal_tx (SOL)", () => {
         it("should execute SOL-only payload (increment) with zero amount", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -258,7 +248,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -280,20 +269,6 @@ describe("Universal Gateway - Execute Tests", () => {
             // Convert accounts to writable flags for Solana transaction
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount: executeAmount,
-                sender,
-                writableFlags,
-                ixData: Buffer.from(counterIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -313,9 +288,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const expectedBalanceChange = -actualRentForExecutedTx + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 15000); // Allow for transaction fees
 
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
-
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             console.log("SOL-only payload with zero amount counterAfter", counterAfter.value.toNumber());
             expect(counterAfter.value.toNumber()).to.equal(
@@ -324,7 +296,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("should reject duplicate tx_id (replay protection)", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -346,7 +317,6 @@ describe("Universal Gateway - Execute Tests", () => {
             // First execution
             const sig1 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -362,30 +332,13 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const writableFlags1 = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount,
-                sender,
-                writableFlags: writableFlags1,
-                ixData: Buffer.from(counterIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig: sig1,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-            })
                 .remainingAccounts(remaining)
                 .signers([admin])
                 .rpc();
 
-            await syncNonceFromChain();
-
             // Second execution with same tx_id should fail
             const sig2 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -402,20 +355,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             try {
                 const writableFlags2 = accountsToWritableFlagsOnly(accounts);
-                await withdrawAndExecute({
-                    instructionId: 2,
-                    txId,
-                    universalTxId,
-                    amount,
-                    sender,
-                    writableFlags: writableFlags2,
-                    ixData: Buffer.from(counterIx.data),
-                    gasFee: new anchor.BN(Number(gasFee)),
-                    rentFee: new anchor.BN(Number(rentFee)),
-                    sig: sig2,
-                    caller: admin.publicKey,
-                    destinationProgram: counterProgram.programId,
-                })
                     .remainingAccounts(remaining)
                     .signers([admin])
                     .rpc();
@@ -428,7 +367,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
     describe("execute_universal_tx (SPL)", () => {
         it("should execute SPL token transfer to test-counter", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -461,7 +399,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const tssAccount = await gatewayProgram.account.tssPda.fetch(tssPda);
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: tssAccount.chainId,
                 additional: buildExecuteAdditionalData(
@@ -482,26 +419,6 @@ describe("Universal Gateway - Execute Tests", () => {
             console.log("SPL token transfer to test-counter counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             const splWritableFlags1 = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount,
-                sender,
-                writableFlags: splWritableFlags1,
-                ixData: Buffer.from(counterIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-                vaultAta: vaultUsdtAccount,
-                ceaAta: ceaAta,
-                mint: mockUSDT.mint.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -524,10 +441,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const expectedBalanceChange = -actualRentForExecutedTx - actualRentForCeaAta + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 20000); // Allow for transaction fees (SPL txs are larger)
 
-            // Verify nonce incremented
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
-
             // Verify executed_tx account exists
             const executedTx = await gatewayProgram.account.executedTx.fetch(getExecutedTxPda(txId));
             expect(executedTx).to.not.be.null;
@@ -546,7 +459,6 @@ describe("Universal Gateway - Execute Tests", () => {
             expect(ceaAtaInfo).to.not.be.null; // CEA ATA persists (pull model)
         });
         it("should reject SPL execution if cea ATA owner mismatches", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -590,7 +502,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const remainingAccounts = instructionAccountsToRemaining(counterIx);
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(amount.toString()),
                 chainId: tssAccount.chainId,
                 additional: buildExecuteAdditionalData(
@@ -608,26 +519,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             try {
                 const splWritableFlags2 = accountsToWritableFlagsOnly(accounts);
-                await withdrawAndExecute({
-                    instructionId: 2,
-                    txId,
-                    universalTxId,
-                    amount,
-                    sender,
-                    writableFlags: splWritableFlags2,
-                    ixData: Buffer.from(counterIx.data),
-                    gasFee: new anchor.BN(Number(gasFee)),
-                    rentFee: new anchor.BN(Number(rentFee)),
-                    sig,
-                    caller: admin.publicKey,
-                    destinationProgram: counterProgram.programId,
-                    vaultAta: vaultUsdtAccount,
-                    ceaAta: maliciousAta, // Malicious ATA - wrong owner (checked at line 546-559)
-                    mint: mockUSDT.mint.publicKey,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                })
                     .remainingAccounts(remainingAccounts)
                     .signers([admin])
                     .rpc();
@@ -644,11 +535,8 @@ describe("Universal Gateway - Execute Tests", () => {
                 expect(errorCode).to.equal("InvalidAccount");
             }
 
-            // Nonce already consumed when validate_message ran; refresh cached value
-            await syncNonceFromChain();
         });
         it("should execute SPL-only payload (increment) with zero amount", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -674,7 +562,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -695,26 +582,6 @@ describe("Universal Gateway - Execute Tests", () => {
             console.log("SPL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             const splWritableFlags4 = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount,
-                sender,
-                writableFlags: splWritableFlags4,
-                ixData: Buffer.from(counterIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-                vaultAta: vaultUsdtAccount,
-                ceaAta: ceaAta,
-                mint: mockUSDT.mint.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -737,9 +604,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const expectedBalanceChange = -actualRentForExecutedTx - actualRentForCeaAta + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 20000); // Allow for transaction fees (SPL txs are larger)
 
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(sig.nonce.toNumber() + 1);
-
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
@@ -758,7 +622,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
     describe("execute payload encode/decode roundtrip", () => {
         it("encodes, decodes, signs, and executes SOL payload", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -799,11 +662,9 @@ describe("Universal Gateway - Execute Tests", () => {
             const targetProgram = counterProgram.programId;
             const amount = BigInt(0);
             const chainId = tssAccount.chainId;
-            const nonce = currentNonce;
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: nonce,
                 amount: amount,
                 chainId: chainId,
                 additional: buildExecuteAdditionalData(
@@ -822,20 +683,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
             const decodedWritableFlags = accountsToWritableFlagsOnly(decoded.accounts);
-            await withdrawAndExecute({
-                instructionId: decoded.instructionId,
-                txId,
-                universalTxId,
-                amount: new anchor.BN(Number(amount)),
-                sender,
-                writableFlags: decodedWritableFlags,
-                ixData: Buffer.from(decoded.ixData),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: targetProgram,
-            })
                 .remainingAccounts(
                     decoded.accounts.map((a) => ({
                         pubkey: a.pubkey,
@@ -858,9 +705,6 @@ describe("Universal Gateway - Execute Tests", () => {
             expect(actualBalanceChange).to.be.at.least(minExpectedChange);
             expect(actualBalanceChange).to.be.at.most(maxExpectedChange);
 
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(nonce + 1);
-
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
@@ -868,7 +712,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("encodes, decodes, signs, and executes SPL payload", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -917,10 +760,8 @@ describe("Universal Gateway - Execute Tests", () => {
             const targetProgram = counterProgram.programId;
             const amountValue = BigInt(amount.toString());
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
-            const nonce = currentNonce;
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: nonce,
                 amount: amountValue,
                 chainId: chainId,
                 additional: buildExecuteAdditionalData(
@@ -941,26 +782,6 @@ describe("Universal Gateway - Execute Tests", () => {
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
             const accountsForSigningWritableFlags = accountsToWritableFlagsOnly(accountsForSigning);
-            await withdrawAndExecute({
-                instructionId: decoded.instructionId,
-                txId,
-                universalTxId,
-                amount: new anchor.BN(amount.toString()),
-                sender,
-                writableFlags: accountsForSigningWritableFlags,
-                ixData: Buffer.from(decoded.ixData),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: targetProgram,
-                vaultAta: vaultUsdtAccount,
-                ceaAta: ceaAtaForDecodeSpl,
-                mint: mockUSDT.mint.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-            })
                 .remainingAccounts(remainingAccounts) // Includes ceaAta (needed for CPI)
                 .signers([admin])
                 .rpc();
@@ -975,9 +796,6 @@ describe("Universal Gateway - Execute Tests", () => {
             // Expected: -executed_tx_rent - cea_ata_rent (if created) + relayer_fee - transaction_fees
             const expectedBalanceChange = -actualRentForExecutedTx - actualRentForCeaAta + relayerFee;
             expect(actualBalanceChange).to.be.closeTo(expectedBalanceChange, 20000); // Allow for transaction fees (SPL txs are larger)
-
-            await syncNonceFromChain();
-            expect(currentNonce).to.equal(nonce + 1);
 
             const counterAfter = await counterProgram.account.counter.fetch(counterPda);
             expect(counterAfter.value.toNumber()).to.equal(
@@ -1020,7 +838,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
         describe("account manipulation attacks", () => {
             it("should reject account substitution attack", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1042,7 +859,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 // Sign with CORRECT accounts
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1068,20 +884,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Account substitution",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: correctWritableFlags,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig,
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
                             .remainingAccounts(substitutedRemaining) // Substituted accounts!
                             .signers([admin])
                             .rpc();
@@ -1091,7 +893,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             it("should reject account count mismatch", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1111,7 +912,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1139,20 +939,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Account count mismatch (fewer)",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: correctWritableFlags2,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig,
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
                             .remainingAccounts(fewerRemaining)
                             .signers([admin])
                             .rpc();
@@ -1162,7 +948,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             it("should reject writable flag mismatch", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1183,7 +968,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 // Sign with counter as writable
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1208,20 +992,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Writable flag mismatch",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: correctWritableFlags3,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig,
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
                             .remainingAccounts(wrongWritableRemaining)
                             .signers([admin])
                             .rpc();
@@ -1231,7 +1001,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             it("should reject account reordering attack", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1251,7 +1020,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1276,20 +1044,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Account reordering",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: correctWritableFlags4,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig,
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
                             .remainingAccounts(reorderedRemaining)
                             .signers([admin])
                             .rpc();
@@ -1301,7 +1055,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
         describe("signature and authentication attacks", () => {
             it("should reject invalid signature", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1326,7 +1079,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1349,20 +1101,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Invalid signature",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: sigWritableFlags,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig: { signature: corruptedSignature, recoveryId: sig.recoveryId, messageHash: sig.messageHash, nonce: sig.nonce }, // Invalid!
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -1371,77 +1109,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 );
             });
 
-            it("should reject wrong nonce", async () => {
-                await syncNonceFromChain();
-                const txId = generateTxId();
-                const universalTxId = generateUniversalTxId();
-                const sender = generateSender();
-
-                const counterIx = await counterProgram.methods
-                    .increment(new anchor.BN(1))
-                    .accounts({
-                        counter: counterPda,
-                        authority: counterAuthority.publicKey,
-                    })
-                    .instruction();
-
-                // CRITICAL: Use the EXACT same accounts for signing and remaining_accounts
-                const remainingAccounts = instructionAccountsToRemaining(counterIx);
-                const accounts = remainingAccounts.map((acc) => ({
-                    pubkey: acc.pubkey,
-                    isWritable: acc.isWritable,
-                }));
-
-                // Calculate fees dynamically
-                const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
-
-                // Sign with WRONG nonce (future nonce)
-                const wrongNonce = currentNonce + 5;
-                const sig = await signTssMessage({
-                    instruction: TssInstruction.Execute,
-                    nonce: wrongNonce, // Wrong!
-                    amount: BigInt(0),
-                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
-                    additional: buildExecuteAdditionalData(
-                        new Uint8Array(universalTxId),
-                        new Uint8Array(txId),
-                        counterProgram.programId,
-                        new Uint8Array(sender),
-                        accounts,
-                        counterIx.data,
-                        gasFee,
-                        rentFee
-                    ),
-                });
-
-                const nonceWritableFlags = accountsToWritableFlagsOnly(accounts);
-                await expectExecuteRevert(
-                    "Wrong nonce",
-                    async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: nonceWritableFlags,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig: { signature: sig.signature, recoveryId: sig.recoveryId, messageHash: sig.messageHash, nonce: new anchor.BN(wrongNonce) }, // Wrong nonce!
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
-                            .remainingAccounts(remainingAccounts)
-                            .signers([admin])
-                            .rpc();
-                    },
-                    "NonceMismatch"
-                );
-            });
-
             it("should reject tampered message hash", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1466,7 +1134,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1489,20 +1156,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Tampered message hash",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: hashWritableFlags,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig: { signature: sig.signature, recoveryId: sig.recoveryId, messageHash: tamperedHash, nonce: sig.nonce }, // Tampered!
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -1514,7 +1167,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
         describe("program and target validation", () => {
             it("should reject non-executable destination program", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1536,7 +1188,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1555,20 +1206,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Non-executable destination program",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: progWritableFlags,
-                            ixData: Buffer.from([0x01]),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig,
-                            caller: admin.publicKey,
-                            destinationProgram: nonExecutableAccount,
-                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -1578,7 +1215,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             it("should reject gateway PDAs in remaining accounts (vault)", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1602,7 +1238,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1626,20 +1261,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Gateway vault PDA in remaining accounts",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: maliciousWritableFlags,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig,
-                            caller: admin.publicKey,
-                            destinationProgram: counterProgram.programId,
-                        })
                             .remainingAccounts(maliciousRemaining)
                             .signers([admin])
                             .rpc();
@@ -1649,7 +1270,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             it("should reject target program mismatch (via message hash)", async () => {
-                await syncNonceFromChain();
                 const txId = generateTxId();
                 const universalTxId = generateUniversalTxId();
                 const sender = generateSender();
@@ -1675,7 +1295,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 // Sign for counter program
                 const sig = await signTssMessage({
                     instruction: TssInstruction.Execute,
-                    nonce: currentNonce,
                     amount: BigInt(0),
                     chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                     additional: buildExecuteAdditionalData(
@@ -1700,20 +1319,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 await expectExecuteRevert(
                     "Target program mismatch (caught by message hash validation)",
                     async () => {
-                        return await withdrawAndExecute({
-                            instructionId: 2,
-                            txId,
-                            universalTxId,
-                            amount: new anchor.BN(0),
-                            sender,
-                            writableFlags: targetMismatchWritableFlags,
-                            ixData: Buffer.from(counterIx.data),
-                            gasFee: new anchor.BN(Number(gasFee)),
-                            rentFee: new anchor.BN(Number(rentFee)),
-                            sig,
-                            caller: admin.publicKey,
-                            destinationProgram: differentProgram,
-                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -1771,7 +1376,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("User1: should stake SOL and verify CEA identity persistence", async () => {
-            await syncNonceFromChain();
             const stakeAmount = asLamports(1); // 1 SOL
             const user1Stake = getStakePda(user1Cea);
             const user1StakeVault = getStakeVaultPda(user1Cea);
@@ -1806,7 +1410,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig1 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(stakeAmount.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -1822,20 +1425,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const user1WritableFlags1 = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId: txId1,
-                universalTxId: universalTxId1,
-                amount: stakeAmount,
-                sender: user1Sender,
-                writableFlags: user1WritableFlags1,
-                ixData: Buffer.from(stakeIx.data),
-                gasFee: new anchor.BN(Number(gasFee1)),
-                rentFee: new anchor.BN(Number(rentFee1)),
-                sig: sig1,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
                 .rpc();
@@ -1855,7 +1444,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("User1: should perform multiple transactions with same CEA", async () => {
-            await syncNonceFromChain();
             const user1Stake = getStakePda(user1Cea);
             const user1StakeVault = getStakeVaultPda(user1Cea);
 
@@ -1883,7 +1471,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig2 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(stakeAmount2.toString()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -1902,20 +1489,6 @@ describe("Universal Gateway - Execute Tests", () => {
             expect(ceaBefore.toString()).to.equal(user1Cea.toString());
 
             const user1WritableFlags2 = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId: txId2,
-                universalTxId: universalTxId2,
-                amount: stakeAmount2,
-                sender: user1Sender,
-                writableFlags: user1WritableFlags2,
-                ixData: Buffer.from(stakeIx2.data),
-                gasFee: new anchor.BN(Number(gasFee2)),
-                rentFee: new anchor.BN(Number(rentFee2)),
-                sig: sig2,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx2))
                 .signers([admin])
                 .rpc();
@@ -1933,7 +1506,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("User1: should unstake SOL and verify FUNDS event emission", async () => {
-            await syncNonceFromChain();
             const user1Stake = getStakePda(user1Cea);
             const user1StakeVault = getStakeVaultPda(user1Cea);
             const stakeAccount = await counterProgram.account.stake.fetch(user1Stake);
@@ -1964,7 +1536,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -1980,20 +1551,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const user1UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            const tx = await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount: new anchor.BN(0),
-                sender: user1Sender,
-                writableFlags: user1UnstakeWritableFlags,
-                ixData: Buffer.from(unstakeIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-            })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
                 .signers([admin])
                 .rpc();
@@ -2048,7 +1605,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("User2: should stake SOL with different CEA", async () => {
-            await syncNonceFromChain();
             const stakeAmount = asLamports(2); // 2 SOL
             const user2Stake = getStakePda(user2Cea);
             const user2StakeVault = getStakeVaultPda(user2Cea);
@@ -2081,7 +1637,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(stakeAmount.toNumber()),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -2097,20 +1652,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const user2WritableFlags = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount: stakeAmount,
-                sender: user2Sender,
-                writableFlags: user2WritableFlags,
-                ixData: Buffer.from(stakeIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
                 .rpc();
@@ -2128,7 +1669,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("User2: should unstake own SOL successfully", async () => {
-            await syncNonceFromChain();
             const user2Stake = getStakePda(user2Cea);
             const user2StakeVault = getStakeVaultPda(user2Cea);
             const stakeAccount = await counterProgram.account.stake.fetch(user2Stake);
@@ -2156,7 +1696,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -2172,20 +1711,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const user2UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount: new anchor.BN(0),
-                sender: user2Sender,
-                writableFlags: user2UnstakeWritableFlags,
-                ixData: Buffer.from(unstakeIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-            })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
                 .signers([admin])
                 .rpc();
@@ -2194,9 +1719,6 @@ describe("Universal Gateway - Execute Tests", () => {
         });
 
         it("User3: should stake SPL tokens", async () => {
-            // Sync nonce at start
-            await syncNonceFromChain();
-
             const stakeAmount = asTokenAmount(50); // 50 USDT
             const user3Stake = getStakePda(user3Cea);
 
@@ -2246,10 +1768,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const accounts = instructionAccountsToGatewayMetas(stakeIx);
 
-            // Sync again right before signing - CRITICAL: use exact on-chain nonce
-            await syncNonceFromChain();
-            const onChainNonce = currentNonce;
-
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
 
             // Convert amount to BigInt for signing - must match exactly what we pass to execute
@@ -2257,7 +1775,6 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: onChainNonce,
                 amount: amountBigInt,
                 chainId,
                 additional: buildExecuteAdditionalData(
@@ -2274,26 +1791,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const user3StakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount: stakeAmount,
-                sender: user3Sender,
-                writableFlags: user3StakeWritableFlags,
-                ixData: Buffer.from(stakeIx.data),
-                gasFee: gasFeeBn,
-                rentFee: rentFeeBn,
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-                vaultAta: vaultUsdtAccount,
-                ceaAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
-                mint: mockUSDT.mint.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-            })
                 .preInstructions([
                     ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
                 ])
@@ -2335,10 +1832,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 })
                 .instruction();
 
-            // Sync nonce right before signing - CRITICAL: use exact on-chain nonce
-            await syncNonceFromChain();
-            const onChainNonce = currentNonce;
-
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
             const amountBigInt = BigInt(0); // Unstake has zero amount
 
@@ -2352,7 +1845,6 @@ describe("Universal Gateway - Execute Tests", () => {
             // Sign execute message with the EXACT same accounts that will be in remaining_accounts
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: onChainNonce,
                 amount: amountBigInt,
                 chainId,
                 additional: buildExecuteAdditionalData(
@@ -2369,26 +1861,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const user3UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            const tx = await withdrawAndExecute({
-                instructionId: 2,
-                txId,
-                universalTxId,
-                amount: new anchor.BN(0),
-                sender: user3Sender,
-                writableFlags: user3UnstakeWritableFlags,
-                ixData: Buffer.from(unstakeIx.data),
-                gasFee: new anchor.BN(Number(gasFee)),
-                rentFee: new anchor.BN(Number(rentFee)),
-                sig,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-                vaultAta: vaultUsdtAccount,
-                ceaAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
-                mint: mockUSDT.mint.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -2501,17 +1973,12 @@ describe("Universal Gateway - Execute Tests", () => {
 
             const accounts1 = instructionAccountsToGatewayMetas(stakeIx);
 
-            // Sync nonce right before signing - CRITICAL: use exact on-chain nonce
-            await syncNonceFromChain();
-            const onChainNonce = currentNonce;
-
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
             // Convert amount to BigInt for signing - must match exactly what we pass to execute
             const amountBigInt = BigInt(stakeAmount.toString());
 
             const sig1 = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: onChainNonce,
                 amount: amountBigInt,
                 chainId,
                 additional: buildExecuteAdditionalData(
@@ -2528,26 +1995,6 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const accounts1WritableFlags = accountsToWritableFlagsOnly(accounts1);
-            await withdrawAndExecute({
-                instructionId: 2,
-                txId: txId1,
-                universalTxId: universalTxId1,
-                amount: stakeAmount,
-                sender: user4Sender,
-                writableFlags: accounts1WritableFlags,
-                ixData: Buffer.from(stakeIx.data),
-                gasFee: gasFeeBn,
-                rentFee: rentFeeBn,
-                sig: sig1,
-                caller: admin.publicKey,
-                destinationProgram: counterProgram.programId,
-                vaultAta: vaultUsdtAccount,
-                ceaAta: await getCeaAta(user4Sender, mockUSDT.mint.publicKey),
-                mint: mockUSDT.mint.publicKey,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
                 .rpc();

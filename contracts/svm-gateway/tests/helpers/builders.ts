@@ -22,7 +22,6 @@ export interface WithdrawAndExecuteArgs {
         signature: ArrayLike<number>;
         recoveryId: number;
         messageHash: ArrayLike<number>;
-        nonce: anchor.BN | number;
     };
     caller: PublicKey;
     destinationProgram?: PublicKey;
@@ -91,7 +90,6 @@ export const makeWithdrawAndExecuteBuilder = (
             Array.from(sig.signature),
             sig.recoveryId,
             Array.from(sig.messageHash),
-            typeof sig.nonce === "number" ? new anchor.BN(sig.nonce) : sig.nonce,
         )
         .accounts({
             caller,

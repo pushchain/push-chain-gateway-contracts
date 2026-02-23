@@ -43,9 +43,8 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 - **`set_token_rate_limit`** - Configure per-token rate limit threshold
 - **`set_pyth_price_feed`** - Update Pyth price feed address
 - **`set_pyth_confidence_threshold`** - Update Pyth confidence threshold
-- **`init_tss`** - Initialize TSS with ETH address and chain ID (no nonce param)
+- **`init_tss`** - Initialize TSS with ETH address and chain ID
 - **`update_tss`** - Update TSS address and chain ID
-- **`reset_nonce`** - Reset TSS nonce (authority only)
 
 ## Key Concepts
 
@@ -63,8 +62,8 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 
 ### TSS Signature Verification
 - TSS signs message hash with ECDSA secp256k1
-- Nonce-based replay protection
-- Message format: `PREFIX | instruction_id | chain_id | nonce | amount | tx_id | universal_tx_id | sender | token | gas_fee | [mode-specific]`
+- Per-tx replay protection via `ExecutedTx` PDA (seeded by `tx_id`) — no global nonce
+- Message format: `PREFIX | instruction_id | chain_id | amount | tx_id | universal_tx_id | sender | token | gas_fee | [mode-specific]`
 - **Common fields** (same order for both withdraw and execute):
   1. `tx_id` (32 bytes) - matches function parameter order
   2. `universal_tx_id` (32 bytes)
@@ -80,7 +79,7 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 ```
 config          → [b"config"]                    // Gateway config, authorities, caps
 vault_sol       → [b"vault"]                     // SOL vault (also ATA authority)
-tss_pda         → [b"tsspda"]                    // TSS state (eth_address, nonce, chain_id)
+tss_pda         → [b"tsspda_v2"]                 // TSS state (eth_address, chain_id, authority, bump)
 cea_authority   → [b"push_identity", sender]     // User's CEA (sender = 20-byte EVM address)
 executed_tx     → [b"executed_tx", tx_id]        // Replay protection (32-byte tx_id)
 rate_limit_config → [b"rate_limit_config"]       // Rate limit global config
@@ -147,7 +146,7 @@ import {
 // 1. Derive PDAs
 const [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], programId);
 const [vaultSol] = PublicKey.findProgramAddressSync([Buffer.from("vault")], programId);
-const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], programId);
+const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda_v2")], programId);
 const [ceaAuthority] = PublicKey.findProgramAddressSync(
   [Buffer.from("push_identity"), Buffer.from(sender)], // sender = 20-byte EVM address
   programId
@@ -159,7 +158,7 @@ const [executedTx] = PublicKey.findProgramAddressSync(
 
 // 2. Fetch TSS state
 const tssAccount = await program.account.tssPda.fetch(tssPda);
-const { nonce, chainId } = tssAccount;
+const { chainId } = tssAccount;
 
 // 3. Build TSS message (withdraw)
 const additional = buildWithdrawAdditionalData(
@@ -173,7 +172,6 @@ const additional = buildWithdrawAdditionalData(
 
 const { signature, recoveryId, messageHash } = await signTssMessage({
   instruction: TssInstruction.Withdraw,
-  nonce,
   amount: BigInt(withdrawAmount),
   additional,
   chainId,
@@ -194,7 +192,6 @@ await program.methods
     signature,                // [u8; 64] - signature
     recoveryId,               // u8 - recovery_id
     messageHash,              // [u8; 32] - message_hash
-    nonce,                    // u64 - nonce
   )
   .accounts({
     caller: relayerKeypair.publicKey,
@@ -252,7 +249,6 @@ const additional = buildExecuteAdditionalData(
 
 const { signature, recoveryId, messageHash } = await signTssMessage({
   instruction: 2, // Execute
-  nonce,
   amount,
   additional,
   chainId,
@@ -272,7 +268,6 @@ await program.methods
     signature,                // [u8; 64] - signature
     recoveryId,               // u8 - recovery_id
     messageHash,              // [u8; 32] - message_hash
-    nonce,                    // u64 - nonce
   )
   .accounts({
     caller: relayerKeypair.publicKey,
@@ -335,9 +330,8 @@ const executeAdditional = buildExecuteAdditionalData(
 );
 
 // Sign the message
-const { signature, recoveryId, messageHash, nonce } = await signTssMessage({
+const { signature, recoveryId, messageHash } = await signTssMessage({
   instruction: TssInstruction.Withdraw,  // or TssInstruction.Execute
-  nonce,
   amount: BigInt(withdrawAmount),
   additional: withdrawAdditional,
   chainId,
@@ -411,7 +405,7 @@ See [ALT Integration Guide](../../INTEGRATION_GUIDE.md#12-address-lookup-tables-
 ## Security Features
 
 - **TSS Signature Verification** - ECDSA secp256k1 with ETH address recovery
-- **Nonce-Based Replay Protection** - executed_tx PDA prevents double-execution
+- **Per-tx Replay Protection** - `executed_tx` PDA (seeded by `tx_id`) prevents double-execution without global nonce
 - **Pause Functionality** - Emergency stop for all user operations
 - **Rate Limiting** - Dynamic thresholds per token (inbound only), configurable by admin
 - **USD Caps** - Pyth oracle price validation (configurable min/max caps via set_caps_usd)
@@ -424,7 +418,6 @@ See [ALT Integration Guide](../../INTEGRATION_GUIDE.md#12-address-lookup-tables-
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `MessageHashMismatch` | Wrong TSS message construction | Verify field order and endianness (see tss.ts) |
-| `NonceMismatch` | Using wrong nonce | Fetch latest nonce from TSS PDA |
 | `InvalidAccount` | Account derivation error | Check PDA seeds and ATA derivation |
 | `RateLimitExceeded` | Token threshold reached | Wait for rate limit reset or increase threshold |
 | `ExecutedTx` | Transaction already executed | tx_id must be unique (check executed_tx PDA) |

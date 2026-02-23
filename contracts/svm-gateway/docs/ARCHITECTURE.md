@@ -101,9 +101,9 @@
 - **Access:** Read-only for users, mutable for admin
 
 ### 4. TSS PDA (Authorization State)
-- **Type:** Global PDA
-- **Contains:** TSS address, nonce, chain ID
-- **Purpose:** ECDSA signature verification + replay protection
+- **Type:** Global PDA (`[b"tsspda_v2"]`)
+- **Contains:** TSS address, chain ID
+- **Purpose:** ECDSA signature verification
 
 ### 5. Rate Limit Accounts
 - **RateLimitConfig:** Global block/epoch settings
@@ -139,7 +139,6 @@
 ### TSS Management
 - `init_tss` - Initialize TSS state
 - `update_tss` - Update TSS address
-- `reset_nonce` - Emergency nonce reset
 
 ### View Functions
 - `get_sol_price` - Query current SOL/USD price
@@ -160,7 +159,7 @@
 
 ### Layer 3: Validation
 - TSS ECDSA signature verification
-- Nonce-based replay protection
+- Per-tx replay protection via `ExecutedTx` PDA (seeded by `tx_id`)
 - Account ownership validation
 - Amount/balance checks
 
@@ -186,13 +185,12 @@ User Wallet [100 SOL]
 
 ### Withdraw (Native SOL)
 ```
-TSS signs withdrawal [50 SOL, nonce=42]
+TSS signs withdrawal [50 SOL, tx_id=0xABC]
     │
     ├─ Validate signature (ECDSA)
-    ├─ Check nonce (must == 42)
+    ├─ Create ExecutedTx PDA for tx_id (replay protection)
     ├─ Transfer: Vault → CEA [50 SOL]
     ├─ Transfer: CEA → Recipient [50 SOL]
-    ├─ Increment nonce (43)
     └─ Emit: UniversalTxExecuted event
 ```
 
@@ -276,7 +274,6 @@ TSS signs execute [amount=10, target=DeFi_Program]
 | **Gas deposit USD** | Configurable (set via set_caps_usd) | Fee abstraction cap (not fixed) |
 | **Chain ID length** | 64 bytes | Cluster pubkey max |
 | **tx_id uniqueness** | Global | Replay protection |
-| **Nonce** | Sequential | Prevents reordering |
 | **Block USD cap** | Configurable | DoS protection |
 | **Token epoch limit** | Per-token | Economic security |
 
@@ -315,4 +312,4 @@ TSS signs execute [amount=10, target=DeFi_Program]
 
 ---
 
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-23

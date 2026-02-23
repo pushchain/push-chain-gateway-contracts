@@ -30,7 +30,7 @@
 
 ### Critical Security Areas
 1. **TSS Signature Validation** - See [TSS-VALIDATION.md](./SECURITY/TSS-VALIDATION.md)
-   - Replay protection via nonce
+   - Replay protection via `ExecutedTx` PDA (per tx_id)
    - Message hash construction
    - ECDSA secp256k1 recovery
 
@@ -148,7 +148,7 @@ User → Event (emit UniversalTx)
 
 WITHDRAW/EXECUTE:
 TSS → Config (check paused)
-TSS → TssPda (validate signature, increment nonce)
+TSS → TssPda (validate signature)
 TSS → ExecutedTx (init - replay protection)
 TSS → Vault → CEA (transfer amount)
 TSS → Vault → Caller (transfer gas fee)
@@ -157,7 +157,7 @@ TSS → Event (emit UniversalTxExecuted)
 
 REVERT:
 TSS → Config (check paused)
-TSS → TssPda (validate signature, increment nonce)
+TSS → TssPda (validate signature)
 TSS → ExecutedTx (init - replay protection)
 TSS → Vault → Recipient (transfer amount)
 TSS → Vault → Caller (transfer gas fee)

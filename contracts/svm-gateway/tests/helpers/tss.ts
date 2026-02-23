@@ -34,27 +34,23 @@ export interface TssSignature {
     signature: number[];
     recoveryId: number;
     messageHash: number[];
-    nonce: anchor.BN;
 }
 
 interface SignParams {
     instruction: TssInstruction;
-    nonce: number;
     amount?: bigint;
     additional: Uint8Array[];
     chainId?: string;
 }
 
-export async function signTssMessage({ instruction, nonce, amount, additional, chainId }: SignParams): Promise<TssSignature> {
+export async function signTssMessage({ instruction, amount, additional, chainId }: SignParams): Promise<TssSignature> {
     // Build message EXACTLY like Rust program
     const chainIdToUse = chainId ?? TSS_CHAIN_ID;
     const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
     const instructionId = Buffer.from([instruction]);
     const chainIdBytes = Buffer.from(chainIdToUse, 'utf8');
-    const nonceBE = Buffer.alloc(8);
-    nonceBE.writeBigUInt64BE(BigInt(nonce));
 
-    const segments: Buffer[] = [PREFIX, instructionId, chainIdBytes, nonceBE];
+    const segments: Buffer[] = [PREFIX, instructionId, chainIdBytes];
 
     if (typeof amount === "bigint") {
         const amountBE = Buffer.alloc(8);
@@ -80,7 +76,6 @@ export async function signTssMessage({ instruction, nonce, amount, additional, c
         signature: Array.from(signature),
         recoveryId,
         messageHash: Array.from(messageHash),
-        nonce: new anchor.BN(nonce),
     };
 }
 

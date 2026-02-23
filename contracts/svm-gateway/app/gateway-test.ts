@@ -230,7 +230,7 @@ async function run() {
         PROGRAM_ID
     );
     const [tssPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("tsspda")],
+        [Buffer.from("tsspda_v2")],
         PROGRAM_ID
     );
     const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
@@ -1285,7 +1285,7 @@ async function run() {
     } catch (e) {
         console.log("TSS init check failed, attempting init anyway");
         const initTssTx = await program.methods
-            .initTss(Array.from(ethAddrBytes) as any, new anchor.BN(1))
+            .initTss(Array.from(ethAddrBytes) as any, "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG")
             .accounts({
                 tssPda: tssPda,
                 authority: admin,
@@ -1300,16 +1300,12 @@ async function run() {
     // 12.2 Build message for SOL withdraw to admin using instruction_id=1
     const withdrawAmountTss = new anchor.BN(0.0005 * LAMPORTS_PER_SOL).toNumber();
     const withdrawGasFee = new anchor.BN(0.001 * LAMPORTS_PER_SOL).toNumber(); // Gas fee for withdraw
-    // Fetch chain_id and nonce from TSS account (chain_id is now a String - Solana cluster pubkey)
-    let nonce = 0; // default
+    // Fetch chain_id from TSS account (chain_id is now a String - Solana cluster pubkey)
     let chainId = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"; // Default to Devnet cluster pubkey
     try {
-        // Attempt to read current nonce and chain_id from on-chain TSS PDA
+        // Attempt to read chain_id from on-chain TSS PDA
         const tssAcc: any = await (program.account as any).tssPda.fetch(tssPda);
         if (tssAcc) {
-            if (typeof tssAcc.nonce !== "undefined") {
-                nonce = Number(tssAcc.nonce);
-            }
             if (typeof tssAcc.chainId !== "undefined") {
                 chainId = tssAcc.chainId; // String: Solana cluster pubkey
             }
@@ -1348,7 +1344,6 @@ async function run() {
     );
     const { signature, recoveryId, messageHash } = await signTssMessage({
         instruction: TssInstruction.Withdraw,
-        nonce,
         amount: BigInt(withdrawAmountTss),
         additional: withdrawAdditional,
         chainId,
@@ -1374,7 +1369,6 @@ async function run() {
             Array.from(signature) as any,
             recoveryId,
             Array.from(messageHash) as any,
-            new anchor.BN(nonce),
         )
         .accounts({
             caller: admin, // The caller/relayer who pays for the transaction
@@ -1472,7 +1466,6 @@ async function run() {
             );
             const { signature: signatureSPL, recoveryId: recoveryIdSPL, messageHash: messageHashSPL } = await signTssMessage({
                 instruction: TssInstruction.Withdraw,
-                nonce: nonce + 1,
                 amount: BigInt(splWithdrawAmount),
                 additional: splWithdrawAdditional,
                 chainId,
@@ -1500,7 +1493,6 @@ async function run() {
                     Array.from(signatureSPL) as any,
                     recoveryIdSPL,
                     Array.from(messageHashSPL) as any,
-                    new anchor.BN(nonce + 1),
                 )
                 .accounts({
                     caller: admin, // The caller/relayer who pays for the transaction
@@ -1590,12 +1582,6 @@ async function run() {
         throw new Error("TSS private key does not match on-chain TSS address! Check your .env");
     }
 
-    // Helper to sync nonce from chain
-    const syncNonceFromChain = async () => {
-        const account = await (program.account as any).tssPda.fetch(tssPda);
-        return Number(account.nonce);
-    };
-
     async function runExecuteSolTest() {
         console.log("👉 withdrawAndExecute (execute SOL) via encoded payload");
 
@@ -1632,7 +1618,6 @@ async function run() {
         const targetProgram = counterProgram.programId;
         const amount = BigInt(0);
         const chainId = tssAccount.chainId;
-        const nonce = Number(tssAccount.nonce);
 
         console.log("🔍 Payload decoded - accounts:", decoded.accounts.length, "ixData:", decoded.ixData.length);
         console.log("🔍 Amount:", amount.toString());
@@ -1644,7 +1629,6 @@ async function run() {
         // Sign using the proven TSS helpers
         const sig = await signTssMessage({
             instruction: TssInstruction.Execute,
-            nonce: nonce,
             amount: amount,
             chainId: chainId,
             additional: buildExecuteAdditionalData(
@@ -1675,7 +1659,6 @@ async function run() {
         const counterBefore = await counterProgram.account.counter.fetch(counterPda);
         const ceaBalanceBefore = await connection.getBalance(ceaAuthority);
         const relayerBalanceBefore = await connection.getBalance(relayer);
-        const nonceBefore = Number((await (program.account as any).tssPda.fetch(tssPda)).nonce);
         const executedTxExistsBefore = (await connection.getAccountInfo(executedTx)) !== null;
         const executedTxRent = await getExecutedTxRent(connection);
 
@@ -1693,7 +1676,6 @@ async function run() {
                 sig.signature,
                 sig.recoveryId,
                 sig.messageHash,
-                sig.nonce,
             )
             .accounts({
                 caller: relayer,  // Relayer is now both fee payer and caller
@@ -1739,9 +1721,6 @@ async function run() {
 
         const executedTxExistsAfter = (await connection.getAccountInfo(executedTx)) !== null;
         assert.isTrue(executedTxExistsAfter && !executedTxExistsBefore, "ExecutedTx PDA should be created");
-
-        const nonceAfter = Number((await (program.account as any).tssPda.fetch(tssPda)).nonce);
-        assert.equal(nonceAfter, nonceBefore + 1, "Nonce should increment");
 
         console.log(`Counter: ${counterBefore.value.toNumber()} → ${counterAfter.value.toNumber()} ✅`);
     }
@@ -1792,7 +1771,6 @@ async function run() {
         const targetProgram = counterProgram.programId;
         const amount = BigInt(executeAmount.toString());
         const chainId = tssAfterSol.chainId;
-        const nonce = Number(tssAfterSol.nonce);
 
         console.log("🔍 SPL Payload decoded - accounts:", decoded.accounts.length, "ixData:", decoded.ixData.length);
         console.log("🔍 gasFee:", gasFee.toString(), "rentFee:", rentFee.toString());
@@ -1803,7 +1781,6 @@ async function run() {
         // Sign using the proven TSS helpers
         const sig = await signTssMessage({
             instruction: TssInstruction.Execute,
-            nonce: nonce,
             amount: amount,
             chainId: chainId,
             additional: buildExecuteAdditionalData(
@@ -1833,7 +1810,6 @@ async function run() {
         const recipientTokenBefore = (await spl.getAccount(userProvider.connection as any, executeRecipientAta.address)).amount;
         const vaultAtaBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta.address)).amount;
         const relayerBalanceBeforeSpl = await connection.getBalance(relayer);
-        const nonceBeforeSpl = Number((await (program.account as any).tssPda.fetch(tssPda)).nonce);
         const executedTxExistsBeforeSpl = (await connection.getAccountInfo(executedTx)) !== null;
         const executedTxRentSpl = await getExecutedTxRent(connection);
 
@@ -1851,7 +1827,6 @@ async function run() {
                 sig.signature,
                 sig.recoveryId,
                 sig.messageHash,
-                sig.nonce,
             )
             .accounts({
                 caller: relayer,  // Relayer is now both fee payer and caller
@@ -1906,9 +1881,6 @@ async function run() {
 
         const executedTxExistsAfterSpl = (await connection.getAccountInfo(executedTx)) !== null;
         assert.isTrue(executedTxExistsAfterSpl && !executedTxExistsBeforeSpl, "ExecutedTx PDA should be created");
-
-        const nonceAfterSpl = Number((await (program.account as any).tssPda.fetch(tssPda)).nonce);
-        assert.equal(nonceAfterSpl, nonceBeforeSpl + 1, "Nonce should increment");
 
         console.log(`Recipient SPL: ${recipientTokenBefore.toString()} → ${recipientTokenAfter.toString()} ✅`);
     }
@@ -2055,7 +2027,6 @@ async function run() {
 
     // Test 1: Account substitution attack
     console.log("🔒 Testing: Account substitution attack...");
-    const currentNonce1 = await syncNonceFromChain();
     const tssAccount1: any = await (program.account as any).tssPda.fetch(tssPda);
     const securityTxId1 = anchor.web3.Keypair.generate().publicKey.toBytes();
     const securitySender1 = Buffer.alloc(20, 0x33);
@@ -2079,7 +2050,6 @@ async function run() {
 
     const securitySig1 = await signTssMessage({
         instruction: TssInstruction.Execute,
-        nonce: currentNonce1,
         amount: BigInt(0),
         chainId: tssAccount1.chainId,
         additional: buildExecuteAdditionalData(
@@ -2119,7 +2089,6 @@ async function run() {
                     securitySig1.signature,
                     securitySig1.recoveryId,
                     securitySig1.messageHash,
-                    securitySig1.nonce,
                 )
                 .accounts({
                     caller: relayer,
@@ -2149,7 +2118,6 @@ async function run() {
 
     // Test 2: Invalid signature
     console.log("🔒 Testing: Invalid signature...");
-    const currentNonce2 = await syncNonceFromChain();
     const tssAccount2: any = await (program.account as any).tssPda.fetch(tssPda);
     const securityTxId2 = anchor.web3.Keypair.generate().publicKey.toBytes();
     const securitySender2 = Buffer.alloc(20, 0x44);
@@ -2173,7 +2141,6 @@ async function run() {
 
     const securitySig2 = await signTssMessage({
         instruction: TssInstruction.Execute,
-        nonce: currentNonce2,
         amount: BigInt(0),
         chainId: tssAccount2.chainId,
         additional: buildExecuteAdditionalData(
@@ -2210,7 +2177,6 @@ async function run() {
                     corruptedSig,
                     securitySig2.recoveryId,
                     securitySig2.messageHash,
-                    securitySig2.nonce,
                 )
                 .accounts({
                     caller: relayer,
@@ -2242,101 +2208,8 @@ async function run() {
         "TssAuthFailed"
     );
 
-    // Test 3: Wrong nonce
-    console.log("🔒 Testing: Wrong nonce...");
-    const currentNonce3 = await syncNonceFromChain();
-    const tssAccount3: any = await (program.account as any).tssPda.fetch(tssPda);
-    const securityTxId3 = anchor.web3.Keypair.generate().publicKey.toBytes();
-    const securitySender3 = Buffer.alloc(20, 0x55);
-
-    const securityCounterIx3 = await counterProgram.methods
-        .increment(new anchor.BN(1))
-        .accounts({
-            counter: counterPda,
-            authority: admin,
-        })
-        .instruction();
-
-    const wrongNonce = currentNonce3 + 10;
-    // Calculate fees for security test
-    const { gasFee: gasFee3, rentFee: rentFee3 } = await calculateSolExecuteFees(connection);
-    const securityPayloadFields3 = instructionToPayloadFields({
-        instruction: securityCounterIx3,
-        rentFee: rentFee3,
-    });
-    const securityAccounts3 = securityPayloadFields3.accounts;
-    const universalTxId3 = generateUniversalTxId();
-
-    const securitySig3 = await signTssMessage({
-        instruction: TssInstruction.Execute,
-        nonce: wrongNonce, // Sign with wrong nonce
-        amount: BigInt(0),
-        chainId: tssAccount3.chainId,
-        additional: buildExecuteAdditionalData(
-            universalTxId3,
-            securityTxId3,
-            counterProgram.programId,
-            securitySender3,
-            securityAccounts3,
-            securityCounterIx3.data,
-            gasFee3,
-            rentFee3
-        ),
-    });
-    const writableFlags3 = accountsToWritableFlags(securityAccounts3);
-
-    await expectExecuteRevertDevnet(
-        "Wrong nonce",
-        async () => {
-            return await relayerProgram.methods
-                .withdrawAndExecute(
-                    2,                                    // instruction_id = execute
-                    Array.from(securityTxId3),
-                    Array.from(universalTxId3),
-                    new anchor.BN(0),
-                    Array.from(securitySender3),
-                    writableFlags3,
-                    Buffer.from(securityCounterIx3.data),
-                    new anchor.BN(Number(gasFee3)),
-                    new anchor.BN(Number(rentFee3)),
-                    securitySig3.signature,
-                    securitySig3.recoveryId,
-                    securitySig3.messageHash,
-                    new anchor.BN(wrongNonce), // Wrong nonce!
-                )
-                .accounts({
-                    caller: relayer,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(Array.from(securitySender3)),
-                    tssPda,
-                    executedTx: getExecutedTxPda(securityTxId3),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    rateLimitConfig: null,
-                    tokenRateLimit: null,
-                    systemProgram: SystemProgram.programId,
-                })
-                .remainingAccounts(securityAccounts3.map((a) => ({
-                    pubkey: a.pubkey,
-                    isWritable: a.isWritable,
-                    isSigner: false,
-                })))
-                .rpc();
-        },
-        "NonceMismatch"
-    );
-
-    // Test 4: Account count mismatch
+    // Test 3: Account count mismatch
     console.log("🔒 Testing: Account count mismatch...");
-    const currentNonce4 = await syncNonceFromChain();
     const tssAccount4: any = await (program.account as any).tssPda.fetch(tssPda);
     const securityTxId4 = anchor.web3.Keypair.generate().publicKey.toBytes();
     const securitySender4 = Buffer.alloc(20, 0x66);
@@ -2360,7 +2233,6 @@ async function run() {
 
     const securitySig4 = await signTssMessage({
         instruction: TssInstruction.Execute,
-        nonce: currentNonce4,
         amount: BigInt(0),
         chainId: tssAccount4.chainId,
         additional: buildExecuteAdditionalData(
@@ -2400,7 +2272,6 @@ async function run() {
                     securitySig4.signature,
                     securitySig4.recoveryId,
                     securitySig4.messageHash,
-                    securitySig4.nonce,
                 )
                 .accounts({
                     caller: relayer,
@@ -2486,7 +2357,6 @@ async function run() {
 
         const sig = await signTssMessage({
             instruction: TssInstruction.Execute,
-            nonce: await syncNonceFromChain(),
             amount: BigInt(0),
             chainId: (await (program.account as any).tssPda.fetch(tssPda)).chainId,
             additional: buildExecuteAdditionalData(
@@ -2547,7 +2417,6 @@ async function run() {
                     sig.signature,
                     sig.recoveryId,
                     sig.messageHash,
-                    sig.nonce,
                 )
                 .accounts({
                     ...baseAccounts,
@@ -2581,7 +2450,6 @@ async function run() {
                     sig.signature,
                     sig.recoveryId,
                     sig.messageHash,
-                    sig.nonce,
                 )
                 .accounts(baseAccounts)
                 .remainingAccounts(
@@ -2738,7 +2606,6 @@ async function run() {
 
     // Test 1: Send max-fit SOL transaction (should succeed)
     console.log(`\n   Test 1: SOL max-fit (dummy=${maxSolResult.dummyAccounts} targetN=${maxSolResult.actualTargetAccounts} full=${maxSolResult.fullIxDataSize} txSize=${maxSolResult.txSize}) - should succeed`);
-    const currentNonceHeavy = await syncNonceFromChain();
     const tssAccountHeavy: any = await (program.account as any).tssPda.fetch(tssPda);
     const heavyTxId = anchor.web3.Keypair.generate().publicKey.toBytes();
     const heavySender = Buffer.alloc(20, 0xAA);
@@ -2776,7 +2643,6 @@ async function run() {
 
     const heavySig = await signTssMessage({
         instruction: TssInstruction.Execute,
-        nonce: currentNonceHeavy,
         amount: BigInt(0),
         chainId: tssAccountHeavy.chainId,
         additional: buildExecuteAdditionalData(
@@ -2809,7 +2675,6 @@ async function run() {
                 heavySig.signature,
                 heavySig.recoveryId,
                 heavySig.messageHash,
-                heavySig.nonce,
             )
             .accounts({
                 caller: relayer,
@@ -2853,7 +2718,6 @@ async function run() {
 
     // Test 2: Send max-fit SPL transaction (should succeed)
     console.log(`\n   Test 2: SPL max-fit (dummy=${maxSplResult.dummyAccounts} targetN=${maxSplResult.actualTargetAccounts} full=${maxSplResult.fullIxDataSize} txSize=${maxSplResult.txSize}) - should succeed`);
-    const currentNonceHeavySpl = await syncNonceFromChain();
     const heavyTxIdSpl = anchor.web3.Keypair.generate().publicKey.toBytes();
     const heavySenderSpl = Buffer.alloc(20, 0xBB);
     const heavyCeaSpl = getCeaAuthorityPda(Array.from(heavySenderSpl));
@@ -2896,7 +2760,6 @@ async function run() {
 
     const heavySigSpl = await signTssMessage({
         instruction: TssInstruction.Execute,
-        nonce: currentNonceHeavySpl,
         amount: BigInt(0),
         chainId: (await (program.account as any).tssPda.fetch(tssPda)).chainId,
         additional: buildExecuteAdditionalData(
@@ -2930,7 +2793,6 @@ async function run() {
                 heavySigSpl.signature,
                 heavySigSpl.recoveryId,
                 heavySigSpl.messageHash,
-                heavySigSpl.nonce,
             )
             .accounts({
                 caller: relayer,
@@ -2996,10 +2858,8 @@ async function run() {
 
     // Test revert function with real TSS signature
     try {
-        // Get current TSS nonce
+        // Get TSS account info
         const tssAccount: any = await (program.account as any).tssPda.fetch(tssPda);
-        const currentNonce = tssAccount.nonce;
-        console.log(`Current TSS nonce: ${currentNonce}`);
         console.log(`TSS chain ID: ${tssAccount.chainId}`);
 
         // Generate tx_id for revert (use crypto for proper randomness)
@@ -3029,25 +2889,22 @@ async function run() {
         // Generate universal_tx_id for revert
         const universalTxIdRevert = generateUniversalTxId();
 
-        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + nonce + amount + universal_tx_id + tx_id + recipient + gas_fee
+        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + amount + universal_tx_id + tx_id + recipient + gas_fee
         // NO origin_caller for revert functions
         const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdBE = Buffer.from([instructionId]);
         const chainIdBytes = Buffer.from(chainIdString, 'utf8'); // UTF-8 bytes of cluster pubkey string
-        const nonceBE = Buffer.alloc(8);
-        nonceBE.writeBigUInt64BE(BigInt(currentNonce));
         const amountBE = Buffer.alloc(8);
         amountBE.writeBigUInt64BE(BigInt(amount));
         const recipientBytesBE = admin.toBuffer();
         const gasFeeBE = Buffer.alloc(8);
         gasFeeBE.writeBigUInt64BE(BigInt(revertGasFee));
 
-        // Order matches revert_universal_tx.rs line 395-400
+        // Order matches revert_universal_tx.rs
         const messageData = Buffer.concat([
             PREFIX,
             instructionIdBE,
             chainIdBytes,          // UTF-8 bytes of chain_id string
-            nonceBE,
             amountBE,
             Buffer.from(universalTxIdRevert), // universal_tx_id (32 bytes) - MUST be first in additional_data
             Buffer.from(txIdRevert), // tx_id (32 bytes)
@@ -3082,7 +2939,6 @@ async function run() {
                 Array.from(signature),
                 recoveryId,
                 Array.from(messageHash),
-                currentNonce
             )
             .accounts({
                 config: configPda,

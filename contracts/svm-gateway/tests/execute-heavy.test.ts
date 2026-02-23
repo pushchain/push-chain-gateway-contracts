@@ -37,17 +37,11 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
     let vaultPda: PublicKey;
     let tssPda: PublicKey;
 
-    let currentNonce = 0;
     let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
 
     const generateTxId = makeTxIdGenerator();
     const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, gatewayProgram.programId);
     const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, gatewayProgram.programId);
-
-    const syncNonceFromChain = async () => {
-        const account = await gatewayProgram.account.tssPda.fetch(tssPda);
-        currentNonce = Number(account.nonce);
-    };
 
     before(async () => {
         admin = sharedState.getAdmin();
@@ -71,7 +65,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         );
 
         [tssPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("tsspda")],
+            [Buffer.from("tsspda_v2")],
             gatewayProgram.programId
         );
 
@@ -109,8 +103,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             }
         }
 
-        await syncNonceFromChain();
-
         // Fund vault with SOL (needed for rent_fee transfers to CEA)
         const vaultAmount = 100 * anchor.web3.LAMPORTS_PER_SOL;
         const vaultTx = new anchor.web3.Transaction().add(
@@ -127,7 +119,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
     describe("Heavy batch_operation tests", () => {
         it("should execute batch_operation with 10 accounts and 100 bytes data", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -166,7 +157,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -212,7 +202,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         });
 
         it("should execute batch_operation with 8 accounts and 150 bytes data", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -247,7 +236,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -300,7 +288,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         });
 
         it("should execute batch_operation with 10 accounts and 100 bytes data (near limit)", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -335,7 +322,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
@@ -388,7 +374,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         });
 
         it("should fail when transaction exceeds 1232 bytes limit (18 accounts + 400 bytes)", async () => {
-            await syncNonceFromChain();
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const sender = generateSender();
@@ -424,7 +409,6 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
             const sig = await signTssMessage({
                 instruction: TssInstruction.Execute,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(

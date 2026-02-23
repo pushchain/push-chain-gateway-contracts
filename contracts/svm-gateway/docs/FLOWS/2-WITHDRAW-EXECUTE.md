@@ -33,7 +33,6 @@ pub fn withdraw_and_execute(
     signature: [u8; 64],           // TSS signature
     recovery_id: u8,               // ECDSA recovery ID
     message_hash: [u8; 32],        // Pre-computed message hash
-    nonce: u64,                    // Replay protection nonce
 ) -> Result<()>
 ```
 
@@ -58,8 +57,6 @@ TSS Request
   │    ├─ Build additional_data array
   │    ├─ Reconstruct message hash
   │    ├─ Verify ECDSA signature
-  │    ├─ Check nonce matches tss_pda.nonce
-  │    ├─ Increment tss_pda.nonce
   │    └─ Validate remaining_accounts (execute mode only)
   │
   ├─ Phase 3: Transfers
@@ -100,7 +97,6 @@ PREFIX = "PUSH_CHAIN_SVM"
 message = PREFIX
         || instruction_id (1 byte)
         || chain_id (string bytes)
-        || nonce (8 bytes BE)
         || amount (8 bytes BE)
         || additional_data
 hash = keccak256(message)
@@ -213,9 +209,6 @@ require!(rent_fee <= gas_fee, ...);
 
 ### 6. TSS Signature Validation
 ```rust
-// Check nonce
-require!(nonce == tss_pda.nonce, GatewayError::NonceMismatch);
-
 // Rebuild message
 let computed_hash = keccak::hash(&message_bytes);
 require!(computed_hash == message_hash, GatewayError::MessageHashMismatch);
@@ -224,9 +217,6 @@ require!(computed_hash == message_hash, GatewayError::MessageHashMismatch);
 let pubkey = secp256k1_recover(&message_hash, recovery_id, &signature)?;
 let address = keccak::hash(&pubkey.to_bytes())[12..32];
 require!(address == tss_pda.tss_eth_address, GatewayError::TssAuthFailed);
-
-// Increment nonce (replay protection)
-tss_pda.nonce += 1;
 ```
 
 ### 7. Replay Protection
@@ -344,9 +334,6 @@ pub struct UniversalTxExecuted {
 ### Recipient Balance (Withdraw Mode)
 - **SOL:** `recipient.lamports += amount`
 - **SPL:** `recipient_ata.amount += amount`
-
-### TSS State
-- **Nonce:** `tss_pda.nonce += 1`
 
 ### Replay Protection
 - **ExecutedTx:** New PDA created with discriminator only
@@ -493,8 +480,7 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 |-------|-------|----------|
 | `MessageHashMismatch` | TSS message reconstruction failed | Check message format |
 | `TssAuthFailed` | Signature invalid or wrong TSS address | Verify TSS key |
-| `NonceMismatch` | Nonce doesn't match current | Get latest nonce |
-| Anchor Init Error | tx_id already used (PDA exists) | Use unique tx_id - Replay protection via init failure, NOT PayloadExecuted error |
+| Anchor Init Error | tx_id already used (PDA exists) | Use unique tx_id - replay protection via init failure |
 | `AccountListLengthMismatch` | remaining_accounts count wrong | Check accounts array |
 | `AccountPubkeyMismatch` | Account at position doesn't match | Verify account order |
 | `UnexpectedOuterSigner` | Account in remaining has is_signer=true | Remove signer flag |
@@ -505,15 +491,11 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 
 ## 🔍 Invariants
 
-1. **Nonce Monotonicity:**
-   ```
-   tss_pda.nonce is strictly increasing
-   ```
-
-2. **Replay Protection:**
+1. **Replay Protection:**
    ```
    Each tx_id can execute exactly once
    ExecutedTx PDA exists <=> tx executed
+   Transactions can execute in any order (no global nonce)
    ```
 
 3. **Balance Conservation:**
@@ -566,4 +548,4 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 
 ---
 
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-02-23

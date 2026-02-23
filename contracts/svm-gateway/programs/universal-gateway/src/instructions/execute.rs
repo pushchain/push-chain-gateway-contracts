@@ -24,7 +24,7 @@ use spl_token::state::Account as SplAccount;
 // =========================
 
 #[derive(Accounts)]
-#[instruction(instruction_id: u8, tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32], nonce: u64)]
+#[instruction(instruction_id: u8, tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32])]
 pub struct WithdrawAndExecute<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -130,7 +130,6 @@ pub fn withdraw_and_execute(
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
-    nonce: u64,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     require!(!config.paused, GatewayError::Paused);
@@ -167,7 +166,6 @@ pub fn withdraw_and_execute(
             &message_hash,
             &signature,
             recovery_id,
-            nonce,
         )?;
         None
     } else {
@@ -187,7 +185,6 @@ pub fn withdraw_and_execute(
             &message_hash,
             &signature,
             recovery_id,
-            nonce,
         )?;
 
         // Verify target program is executable (execute mode only)
@@ -756,14 +753,13 @@ fn build_and_validate_tss_withdraw(
     message_hash: &[u8; 32],
     signature: &[u8; 64],
     recovery_id: u8,
-    nonce: u64,
 ) -> Result<()> {
     let token_bytes = token.to_bytes();
     let target_bytes = target.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
 
-    // New ordering: common fields first, then mode-specific
+    // Common fields first, then mode-specific
     let additional: [&[u8]; 6] = [
         &tx_id[..],           // 0 - common (matches function param order)
         &universal_tx_id[..], // 1 - common
@@ -776,7 +772,6 @@ fn build_and_validate_tss_withdraw(
     validate_message(
         tss_pda,
         1, // instruction_id for withdraw
-        nonce,
         Some(amount),
         &additional,
         message_hash,
@@ -813,7 +808,6 @@ fn build_and_validate_tss_execute<'info>(
     message_hash: &[u8; 32],
     signature: &[u8; 64],
     recovery_id: u8,
-    nonce: u64,
 ) -> Result<Vec<GatewayAccountMeta>> {
     // 1. Reconstruct accounts from remaining_accounts
     let accounts = reconstruct_accounts_from_flags(remaining_accounts, writable_flags);
@@ -859,7 +853,6 @@ fn build_and_validate_tss_execute<'info>(
     validate_message(
         tss_pda,
         2, // instruction_id for execute
-        nonce,
         Some(amount),
         &additional,
         message_hash,

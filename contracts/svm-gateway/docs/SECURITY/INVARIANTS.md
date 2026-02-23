@@ -54,13 +54,7 @@ CEA signs for program P ⟹ TSS authorized the transaction
 
 ## 🔄 State Transition Invariants
 
-### 7. Nonce Monotonicity
-```
-tss_pda.nonce_after == tss_pda.nonce_before + 1 (for outbound tx)
-```
-**Enforcement:** checked_add in validate_message
-
-### 8. Config Immutability (During Transaction)
+### 7. Config Immutability (During Transaction)
 ```
 config state unchanged during deposit/withdraw/revert
 (except pause state via admin)
@@ -82,12 +76,6 @@ config.vault_bump never changes after initialization
 ∀ tx_id: executed_tx(tx_id) exists ⟹ transaction executed
 ```
 **Enforcement:** init constraint on ExecutedTx PDA
-
-### 11. Nonce Gaps Forbidden
-```
-Cannot skip nonces: nonce_used must == tss_pda.nonce
-```
-**Enforcement:** Strict equality check before increment
 
 ---
 

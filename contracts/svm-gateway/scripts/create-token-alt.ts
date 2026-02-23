@@ -36,29 +36,75 @@ interface TokenConfig {
   decimals: number;
 }
 
-// Popular tokens on Solana
-const SUPPORTED_TOKENS: TokenConfig[] = [
-  {
-    symbol: "USDC",
-    mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // Mainnet
-    decimals: 6,
-  },
-  {
-    symbol: "USDT",
-    mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // Mainnet
-    decimals: 6,
-  },
-  // Add more tokens as needed
-];
+interface TokenFileShape {
+  symbol?: unknown;
+  mint?: unknown;
+  decimals?: unknown;
+}
 
-// Devnet test tokens
-const DEVNET_TOKENS: TokenConfig[] = [
-  {
-    symbol: "USDC-DEV",
-    mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", // Devnet USDC
-    decimals: 6,
-  },
-];
+function loadTokenConfigs(tokensDir: string): TokenConfig[] {
+  if (!fs.existsSync(tokensDir)) {
+    throw new Error(`Tokens directory not found: ${tokensDir}`);
+  }
+
+  const files = fs
+    .readdirSync(tokensDir)
+    .filter((file) => file.endsWith(".json"))
+    .sort();
+
+  if (files.length === 0) {
+    throw new Error(`No token JSON files found in: ${tokensDir}`);
+  }
+
+  const parsed: TokenConfig[] = [];
+  const seenMints = new Set<string>();
+
+  for (const file of files) {
+    const fullPath = `${tokensDir}/${file}`;
+    let raw: TokenFileShape;
+    try {
+      raw = JSON.parse(fs.readFileSync(fullPath, "utf8")) as TokenFileShape;
+    } catch (error: any) {
+      console.warn(`⚠️  Skipping ${file}: invalid JSON (${error.message})`);
+      continue;
+    }
+
+    if (
+      typeof raw.symbol !== "string" ||
+      typeof raw.mint !== "string" ||
+      typeof raw.decimals !== "number"
+    ) {
+      console.warn(`⚠️  Skipping ${file}: expected { symbol, mint, decimals }`);
+      continue;
+    }
+
+    try {
+      // Validate mint format early.
+      new PublicKey(raw.mint);
+    } catch {
+      console.warn(`⚠️  Skipping ${file}: invalid mint pubkey '${raw.mint}'`);
+      continue;
+    }
+
+    if (seenMints.has(raw.mint)) {
+      console.warn(`⚠️  Skipping ${file}: duplicate mint '${raw.mint}'`);
+      continue;
+    }
+    seenMints.add(raw.mint);
+
+    parsed.push({
+      symbol: raw.symbol,
+      mint: raw.mint,
+      decimals: raw.decimals,
+    });
+  }
+
+  if (parsed.length === 0) {
+    throw new Error(`No valid token entries found in: ${tokensDir}`);
+  }
+
+  return parsed;
+}
 
 async function createTokenALT(
   connection: Connection,
@@ -199,20 +245,20 @@ async function createTokenALT(
 }
 
 async function main() {
-  const connection = new Connection(
-    process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com",
-    "confirmed"
-  );
+  const rpcUrl = process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com";
+  const connection = new Connection(rpcUrl, "confirmed");
 
   const wallet = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(fs.readFileSync("./upgrade-keypair.json", "utf8")))
   );
 
-  const isDevnet = process.env.ANCHOR_PROVIDER_URL?.includes("devnet");
-  const tokens = isDevnet ? DEVNET_TOKENS : SUPPORTED_TOKENS;
+  const isDevnet = rpcUrl.includes("devnet");
+  const tokensDir = "./tokens";
+  const tokens = loadTokenConfigs(tokensDir);
 
   console.log("🔧 Creating Token-Specific ALTs for withdraw_and_execute");
   console.log(`Network: ${isDevnet ? "Devnet" : "Mainnet"}`);
+  console.log(`Token source: ${tokensDir}`);
   console.log(`Tokens to process: ${tokens.length}`);
 
   const altConfigs = [];
@@ -220,6 +266,17 @@ async function main() {
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     try {
+      // Skip tokens that are not valid SPL mints on the selected cluster.
+      const mintInfo = await connection.getAccountInfo(new PublicKey(token.mint));
+      if (!mintInfo) {
+        console.warn(`⚠️  Skipping ${token.symbol}: mint account not found on this cluster (${token.mint})`);
+        continue;
+      }
+      if (!mintInfo.owner.equals(TOKEN_PROGRAM_ID)) {
+        console.warn(`⚠️  Skipping ${token.symbol}: mint is not owned by SPL Token program (${token.mint})`);
+        continue;
+      }
+
       const config = await createTokenALT(connection, wallet, token);
       altConfigs.push(config);
 

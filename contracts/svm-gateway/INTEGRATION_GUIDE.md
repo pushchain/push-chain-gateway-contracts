@@ -167,7 +167,6 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 |-------|------|-------|------------|-------|
 | `accounts_count` | u32 | 4 bytes | BE | In payload and accounts_buf |
 | `ix_data_length` | u32 | 4 bytes | BE | In payload and ix_data_buf |
-| `nonce` | u64 | 8 bytes | BE | From TSS PDA account |
 | `amount` | u64 | 8 bytes | BE | From event (reject if > u64::MAX) |
 | `gas_fee` | u64 | 8 bytes | BE | From event (reject if > u64::MAX) |
 | `rent_fee` | u64 | 8 bytes | BE | Decoded from payload (execute flows only, reject if > u64::MAX) |
@@ -208,8 +207,7 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
    - `3` = Revert SOL
    - `4` = Revert SPL
 2. `chain_id`: UTF-8 bytes (see 3.1.2 above) - **NO length prefix**
-3. `nonce`: u64 BE (8 bytes) - current TSS nonce from on-chain TSS PDA
-4. `amount`: u64 BE (8 bytes) - present for all instructions
+3. `amount`: u64 BE (8 bytes) - present for all instructions
 
 **Additional fields** (order-critical, depends on instruction):
 
@@ -354,7 +352,7 @@ Final: [0xAC, 0x80] (2 bytes)
 
 ### 3.5 Signing Algorithm
 
-1. Concatenate all segments in order: `PREFIX + instruction_id + chain_id + nonce + amount + additional_fields`
+1. Concatenate all segments in order: `PREFIX + instruction_id + chain_id + amount + additional_fields`
 2. Compute Keccak-256 hash of concatenated bytes → `message_hash`
 3. Sign `message_hash` with secp256k1 ECDSA (using TSS private key)
 4. Extract:
@@ -371,16 +369,14 @@ Final: [0xAC, 0x80] (2 bytes)
 - Test usage: `contracts/svm-gateway/tests/execute.test.ts` and `tests/withdraw.test.ts` (search for `signTssMessage`)
 - **Note**: Use the `buildWithdrawAdditionalData()` or `buildExecuteAdditionalData()` helpers to construct the `additional` array with correct ordering (common fields first)
 
-### 3.6 Getting TSS Nonce and Chain ID
+### 3.6 Getting TSS Chain ID
 
 **Fetch from on-chain TSS PDA**:
-- PDA seeds: `["tsspda"]`
-- Account contains: `{ tss_eth_address, chain_id, nonce, authority, bump }`
-- Read `chain_id` (Rust `String`) and `nonce` (u64)
+- PDA seeds: `["tsspda_v2"]`
+- Account contains: `{ tss_eth_address, chain_id, authority, bump }`
+- Read `chain_id` (Rust `String`)
 - **CRITICAL**: Use `chain_id` exactly as stored (UTF-8 bytes, no modification)
   - This should match the event's `chainId` field (source chain identifier)
-- Use current `nonce` for signing (must match exactly, or transaction fails)
-- Nonce increments after successful execution (atomic)
 
 **Reference**: See `TssPda` struct in `contracts/svm-gateway/programs/universal-gateway/src/state.rs`
 
@@ -407,7 +403,6 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `signature`: [u8; 64] - TSS signature
 - `recovery_id`: u8 - signature recovery ID (0 or 1)
 - `message_hash`: [u8; 32] - keccak256 hash of TSS message
-- `nonce`: u64 - TSS nonce (must match current on-chain nonce)
 
 **IMPORTANT - No `target` parameter**: The target is derived from mode-specific optional accounts:
 - **Withdraw (instruction_id=1)**: Derived from `recipient` account key
@@ -418,7 +413,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `config`: PDA `["config"]`
 - `vault_sol`: PDA `["vault"]` (uses config.vault_bump)
 - `cea_authority`: PDA `["push_identity", sender]`
-- `tss_pda`: PDA `["tsspda"]`
+- `tss_pda`: PDA `["tsspda_v2"]`
 - `executed_tx`: PDA `["executed_tx", tx_id]` (will be created)
 - `system_program`: System program
 
@@ -516,7 +511,6 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `signature`: [u8; 64]
 - `recovery_id`: u8
 - `message_hash`: [u8; 32]
-- `nonce`: u64
 
 **revert_instruction**:
 - `fund_recipient`: Pubkey (32 bytes) - where to send reverted funds
@@ -539,7 +533,7 @@ All PDAs use `findProgramAddressSync` with gateway program ID.
 **PDAs**:
 - `config`: `["config"]`
 - `vault`: `["vault"]` (bump stored in config)
-- `tss_pda`: `["tsspda"]`
+- `tss_pda`: `["tsspda_v2"]`
 - `cea_authority`: `["push_identity", sender]` (sender = 20-byte EVM address)
 - `executed_tx`: `["executed_tx", tx_id]` (tx_id = 32 bytes)
 - `rate_limit_config`: `["rate_limit_config"]`
@@ -630,13 +624,13 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - `1` = Withdraw (unified SOL/SPL)
    - `2` = Execute (unified SOL/SPL)
 2. Fetch TSS PDA from Solana:
-   - Derive TSS PDA: `["tsspda"]`
-   - Read account: get `chain_id` (string) and `nonce` (u64)
+   - Derive TSS PDA: `["tsspda_v2"]`
+   - Read account: get `chain_id` (string)
 3. Build message hash based on instruction_id (common fields first):
    - **Withdraw (1)**:
-     `PREFIX | 0x01 | chain_id | nonce | amount | tx_id | universal_tx_id | sender | token | gas_fee | target`
+     `PREFIX | 0x01 | chain_id | amount | tx_id | universal_tx_id | sender | token | gas_fee | target`
    - **Execute (2)**:
-     `PREFIX | 0x02 | chain_id | nonce | amount | tx_id | universal_tx_id | sender | token | gas_fee | target_program | accounts_buf | ix_data_buf | rent_fee`
+     `PREFIX | 0x02 | chain_id | amount | tx_id | universal_tx_id | sender | token | gas_fee | target_program | accounts_buf | ix_data_buf | rent_fee`
 4. For execute: build `accounts_buf` and `ix_data_buf` with length prefixes (section 3.3)
 
 ### 7.4 TSS Signing
@@ -654,7 +648,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - **Execute (2)**: Set `destination_program` account (target program), `recipient` = None, `remaining_accounts` = decoded accounts
 3. Build instruction using Anchor client or raw instruction:
    - Function: `withdraw_and_execute`
-   - Parameters: `instruction_id`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`, `nonce`
+   - Parameters: `instruction_id`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT**: No `target` parameter - target is derived from optional accounts
    - Accounts: Required accounts + mode-specific optional accounts + SPL accounts (if token) + remaining_accounts (if execute)
 4. For execute mode: convert accounts to writable_flags (bitpacked, see section 3.4)
@@ -667,14 +661,12 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 **Common errors**:
 - `MessageHashMismatch`: TSS message construction incorrect (check field order)
-- `NonceMismatch`: Nonce changed (fetch latest)
 - `ConstraintSeeds`: PDA derivation incorrect (check seeds)
 - `InvalidAccount`: Accounts don't match (check order/flags)
 - `InsufficientBalance`: Vault doesn't have enough funds
 - `Paused`: Gateway is paused (check config)
 
 **Retry logic**:
-- Nonce mismatch: Fetch new nonce, rebuild message, retry
 - Transaction expired: Get new blockhash, retry
 - Account errors: Verify PDA derivation and account order
 
@@ -746,11 +738,11 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 - Only when constructing payloads off-chain (tests/tools) do you estimate and encode it
 - Can be 0 if target program doesn't need rent
 
-### 8.4 Nonce Management
+### 8.4 Replay Protection
 
-- Always fetch latest nonce from TSS PDA before signing
-- Nonce increments atomically after successful execution
-- If nonce mismatch: fetch new nonce, rebuild message, retry
+- Each transaction uses a unique `tx_id` (32 bytes) — must be deterministic and stable across retries
+- The `executed_tx` PDA (seeded by `["executed_tx", tx_id]`) is created on first execution; Anchor's `init` constraint rejects reuse
+- No global nonce — transactions can be submitted in any order without blocking each other
 
 ### 8.5 Transaction Size Limits
 
@@ -769,7 +761,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - Verify `instructionId == 2` (execute mode)
    - Validate: `rentFee <= gasFee`, accounts and ixData present
 3. **Derive PDAs**: CEA authority, executed_tx, config, vault, tss_pda
-4. **Fetch TSS state**: Get `chain_id` and `nonce` from TSS PDA
+4. **Fetch TSS state**: Get `chain_id` from TSS PDA (`["tsspda_v2"]`)
 5. **Build writable flags**: Convert `accounts[]` to bitpacked `writable_flags` (1 bit per account, MSB first)
 6. **Build TSS message**:
    - Use `buildExecuteAdditionalData()` helper (see `tests/helpers/tss.ts`)
@@ -783,7 +775,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 7. **Sign**: Call `signTssMessage()` → Keccak-256 hash → secp256k1 sign → signature + recovery_id
 8. **Build Solana transaction**:
    - Function: `withdraw_and_execute`
-   - Parameters: `instruction_id=2`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`, `nonce`
+   - Parameters: `instruction_id=2`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT - No target parameter**: Target derived from `destination_program` account
    - Accounts:
      - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`
@@ -800,7 +792,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - Verify `instructionId == 1` (withdraw mode)
    - Validate: `accounts` empty, `ixData` empty, `rentFee == 0`
 3. **Derive PDAs**: Same as execute (see section 5)
-4. **Fetch TSS state**: Get `chain_id` and `nonce` from TSS PDA
+4. **Fetch TSS state**: Get `chain_id` from TSS PDA (`["tsspda_v2"]`)
 5. **Build TSS message**:
    - Use `buildWithdrawAdditionalData()` helper (see `tests/helpers/tss.ts`)
    - instruction_id = 1
@@ -812,7 +804,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 6. **Sign**: Call `signTssMessage()` → Keccak-256 hash → secp256k1 sign → signature + recovery_id
 7. **Build Solana transaction**:
    - Function: `withdraw_and_execute`
-   - Parameters: `instruction_id=1`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags=[]`, `ix_data=[]`, `gas_fee`, `rent_fee=0`, `signature`, `recovery_id`, `message_hash`, `nonce`
+   - Parameters: `instruction_id=1`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags=[]`, `ix_data=[]`, `gas_fee`, `rent_fee=0`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT - No target parameter**: Target derived from `recipient` account
    - Accounts:
      - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`
@@ -832,7 +824,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
        - SPL: `[universal_tx_id, tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
    - **Note**: `signTssMessage()` does **not** auto-include `universal_tx_id` / `tx_id`. Include them in `additional` as specified.
 3. **Sign and submit**: 
-   - `signTssMessage()` returns signature, recovery_id, message_hash, nonce
+   - `signTssMessage()` returns signature, recovery_id, message_hash
    - See account structs: `RevertUniversalTx` or `RevertUniversalTxToken` in `revert.rs`
 
 ---
@@ -843,7 +835,6 @@ Before production:
 - [ ] Payload decode matches encode (roundtrip)
 - [ ] TSS message hash matches on-chain reconstruction
 - [ ] Account order/flags match in all three places (hash, param, remaining)
-- [ ] Nonce increments correctly
 - [ ] Fee calculations correct (relayer receives gas_fee - rent_fee)
 - [ ] CEA ATA creation works (SPL execute)
 - [ ] Error handling for all error codes
@@ -870,8 +861,8 @@ Before production:
 
 **Key Functions**:
 - `signTssMessage()` - Builds and signs TSS message hash
-  - Takes: `{ instruction, nonce, amount, additional, chainId }`
-  - Returns: `{ signature, recoveryId, messageHash, nonce }`
+  - Takes: `{ instruction, amount, additional, chainId }`
+  - Returns: `{ signature, recoveryId, messageHash }`
 - `buildExecuteAdditionalData()` - Constructs additional fields for execute (instruction_id=2)
   - Format: [tx_id, universal_tx_id, sender, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
   - **Common fields first**, then execute-specific
@@ -957,7 +948,7 @@ Before production:
 **State Structures** (see `state.rs`):
 - `GatewayAccountMeta` - Account metadata (pubkey + is_writable)
 - `Config` - Gateway configuration (min/max caps, paused state, etc.)
-- `TssPda` - TSS state (nonce, chain_id, tss_eth_address, authority, bump)
+- `TssPda` - TSS state (chain_id, tss_eth_address, authority, bump)
 - `ExecutedTx` - Replay protection tracker (8-byte discriminator only)
 
 ---

@@ -55,7 +55,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
     let vaultUsdtAccount: PublicKey;
     let recipientUsdtAccount: PublicKey;
 
-    let currentNonce = 0;
     let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
 
     const generateTxId = makeTxIdGenerator();
@@ -64,31 +63,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
     const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, program.programId);
     const getTokenRateLimitPda = (tokenMint: PublicKey) => _getTokenRateLimitPda(tokenMint, program.programId);
 
-    const syncNonceFromChain = async () => {
-        const account = await program.account.tssPda.fetch(tssPda);
-        currentNonce = Number(account.nonce);
-    };
-
     const signTssMessageWithChainId = async (params: {
         instruction: TssInstruction;
-        nonce: number;
         amount?: bigint;
         additional: Uint8Array[];
     }) => {
         const tssAccount = await program.account.tssPda.fetch(tssPda);
         return signTssMessage({ ...params, chainId: tssAccount.chainId });
-    };
-
-    const setNonceOnChain = async (value: number) => {
-        await program.methods
-            .resetNonce(new anchor.BN(value))
-            .accounts({
-                tssPda,
-                authority: admin.publicKey,
-            })
-            .signers([admin])
-            .rpc();
-        currentNonce = value;
     };
 
     const expectRejection = async (promise: Promise<unknown>, message: string) => {
@@ -140,7 +121,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
         [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
-        [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda")], program.programId);
+        [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda_v2")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
         mockPriceFeed = sharedState.getMockPriceFeed();
@@ -312,15 +293,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             );
         }
 
-        await syncNonceFromChain();
-
         withdrawAndExecute = makeWithdrawAndExecuteBuilder(program, configPda, vaultPda, tssPda);
     });
 
     describe("withdraw", () => {
         it("transfers SOL with a valid signature", async () => {
             const withdrawLamports = 2 * anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -338,7 +316,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 additional: tssAdditional,
             });
@@ -372,13 +349,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
             const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
-
-            await syncNonceFromChain();
         });
 
         it("rejects tampered signatures", async () => {
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -396,7 +370,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const valid = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 additional: tssAdditional,
             });
@@ -420,8 +393,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc(),
                 "TssAuthFailed"
             );
-
-            await syncNonceFromChain();
         });
 
         it("rejects withdrawals while paused", async () => {
@@ -432,7 +403,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .rpc();
 
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -450,7 +420,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 additional: tssAdditional,
             });
@@ -477,14 +446,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({ pauser: pauser.publicKey, config: configPda })
                 .signers([pauser])
                 .rpc();
-
-            await syncNonceFromChain();
         });
 
         it("rejects withdrawals that exceed the vault balance", async () => {
             const vaultLamports = await provider.connection.getBalance(vaultPda);
             const excessive = vaultLamports + anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -502,7 +468,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(excessive),
                 additional: tssAdditional,
             });
@@ -523,8 +488,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc(),
                 "custom program error"
             );
-
-            await syncNonceFromChain();
         });
     });
 
@@ -532,7 +495,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
         it("transfers SPL tokens with a valid signature", async () => {
             const withdrawTokens = 1_000;
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -552,7 +514,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: withdrawRaw,
                 additional: tssAdditional,
             });
@@ -619,15 +580,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 Number(tx.meta.preBalances[relayerIndex]);
 
             expect(callerBalanceChange).to.equal(metaDelta);
-            
-
-            await syncNonceFromChain();
         });
 
         it("rejects SPL withdrawals with a tampered signature", async () => {
             const withdrawTokens = 200;
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -647,7 +604,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: withdrawRaw,
                 additional: tssAdditional,
             });
@@ -678,15 +634,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc(),
                 "TssAuthFailed"
             );
-
-            await syncNonceFromChain();
         });
     });
 
     describe("revert withdrawals", () => {
         it("reverts a SOL withdrawal with a valid signature", async () => {
             const revertAmount = anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -700,7 +653,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Include universalTxId, txId, recipient, and gas_fee in additional array
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
-                nonce: currentNonce,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -718,7 +670,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
-                    signature.nonce
                 )
                 .accounts({
                     config: configPda,
@@ -740,14 +691,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
             const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
-
-            await syncNonceFromChain();
         });
 
         it("reverts an SPL withdrawal with a valid signature", async () => {
             const revertTokens = 500;
             const revertRaw = BigInt(revertTokens) * TOKEN_MULTIPLIER;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -764,7 +712,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Include universalTxId, txId, mint, fund_recipient, and gas_fee in additional array
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
-                nonce: currentNonce,
                 amount: revertRaw,
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -781,7 +728,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
-                    signature.nonce
                 )
                 .accounts({
                     config: configPda,
@@ -806,15 +752,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
             const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
-
-            await syncNonceFromChain();
         });
     });
 
     describe("error conditions", () => {
         it("rejects zero-amount withdrawals", async () => {
-            await setNonceOnChain(currentNonce);
-
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
@@ -831,7 +773,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 additional: tssAdditional,
             });
@@ -901,8 +842,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
         });
 
         it("rejects withdrawals with zero originCaller", async () => {
-            await setNonceOnChain(currentNonce);
-
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId(); // Unique tx_id for this test
             const zeroOriginCaller = Array.from(Buffer.alloc(20, 0)); // All zeros
@@ -927,7 +866,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
                 additional: tssAdditional,
             });
@@ -959,13 +897,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
             } catch {
                 // Expected - account doesn't exist (atomic transaction rollback)
             }
-
-            await syncNonceFromChain();
         });
 
         it("rejects withdrawals with zero recipient", async () => {
-            await setNonceOnChain(currentNonce);
-
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const originCaller = generateOriginCaller();
@@ -983,7 +917,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
                 additional: tssAdditional,
             });
@@ -1014,13 +947,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     errorStr.includes("recipient")
                 ).to.be.true;
             }
-
-            await syncNonceFromChain();
         });
 
         it("rejects duplicate txID (replay protection)", async () => {
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -1038,7 +968,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 additional: tssAdditional,
             });
@@ -1073,11 +1002,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
             expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
-            await syncNonceFromChain();
-
             // Second withdrawal with same txID should fail
-            await setNonceOnChain(currentNonce);
-
             const tssAdditional2 = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
                 new Uint8Array(txId),
@@ -1089,7 +1014,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature2 = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 additional: tssAdditional2,
             });
@@ -1125,13 +1049,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
                 expect(isReplayError).to.be.true;
             }
-
-            await syncNonceFromChain();
         });
 
         it("does NOT set executed=true on failed withdrawal (griefing protection)", async () => {
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -1149,7 +1070,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const valid = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 additional: tssAdditional,
             });
@@ -1187,8 +1107,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
             }
 
             // Now try with VALID signature - should succeed (proves tx_id wasn't bricked)
-            await setNonceOnChain(currentNonce);
-
             const tssAdditional2 = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
                 new Uint8Array(txId),
@@ -1200,7 +1118,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const validSig = await signTssMessageWithChainId({
                 instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
                 amount: BigInt(withdrawLamports),
                 additional: tssAdditional2,
             });
@@ -1222,15 +1139,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Verify executed_tx account exists after success (account existence = executed)
             const executedTx = await program.account.executedTx.fetch(executedTxPda);
             expect(executedTx).to.exist; // Account existence = transaction executed
-
-            await syncNonceFromChain();
         });
     });
 
     describe("revert error conditions", () => {
         it("rejects revert with zero amount", async () => {
-            await setNonceOnChain(currentNonce);
-
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
@@ -1242,7 +1155,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1258,7 +1170,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
-                        signature.nonce
                     )
                     .accounts({
                         config: configPda,
@@ -1273,13 +1184,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc(),
                 "InvalidAmount"
             );
-
-            await syncNonceFromChain();
         });
 
         it("rejects revert with zero fundRecipient", async () => {
-            await setNonceOnChain(currentNonce);
-
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
@@ -1292,7 +1199,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
-                nonce: currentNonce,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1310,7 +1216,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
-                        signature.nonce
                     )
                     .accounts({
                         config: configPda,
@@ -1332,13 +1237,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     errorStr.includes("AnchorError")
                 ).to.be.true;
             }
-
-            await syncNonceFromChain();
         });
 
         it("rejects duplicate revert txID (replay protection)", async () => {
             const revertAmount = anchor.web3.LAMPORTS_PER_SOL;
-            await setNonceOnChain(currentNonce);
 
             // Fund vault before revert (needed for the transfer)
             const vaultBalance = await provider.connection.getBalance(vaultPda);
@@ -1361,7 +1263,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
-                nonce: currentNonce,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1377,7 +1278,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
-                    signature.nonce
                 )
                 .accounts({
                     config: configPda,
@@ -1397,13 +1297,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
             expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
-            await syncNonceFromChain();
-
             // Second revert with same txID should fail
-            await setNonceOnChain(currentNonce);
             const signature2 = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
-                nonce: currentNonce,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1419,7 +1315,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature2.signature,
                         signature2.recoveryId,
                         signature2.messageHash,
-                        signature2.nonce
                     )
                     .accounts({
                         config: configPda,
@@ -1449,13 +1344,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
                 expect(isReplayError).to.be.true;
             }
-
-            await syncNonceFromChain();
         });
 
         it("rejects SPL revert with zero amount", async () => {
-            await setNonceOnChain(currentNonce);
-
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
@@ -1469,7 +1360,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
-                nonce: currentNonce,
                 amount: BigInt(0),
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1485,7 +1375,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
-                        signature.nonce
                     )
                     .accounts({
                         config: configPda,
@@ -1503,13 +1392,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc(),
                 "InvalidAmount"
             );
-
-            await syncNonceFromChain();
         });
 
         it("rejects SPL revert with zero fundRecipient", async () => {
-            await setNonceOnChain(currentNonce);
-
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(txId);
@@ -1525,7 +1410,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
-                nonce: currentNonce,
                 amount: revertRaw,
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1541,7 +1425,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.signature,
                         signature.recoveryId,
                         signature.messageHash,
-                        signature.nonce
                     )
                     .accounts({
                         config: configPda,
@@ -1559,14 +1442,11 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc(),
                 "InvalidRecipient"
             );
-
-            await syncNonceFromChain();
         });
 
         it("rejects SPL revert duplicate txID (replay protection)", async () => {
             const revertTokens = 500;
             const revertRaw = BigInt(revertTokens) * TOKEN_MULTIPLIER;
-            await setNonceOnChain(currentNonce);
 
             const txId = generateTxId();
             const universalTxId = generateUniversalTxId();
@@ -1581,7 +1461,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
-                nonce: currentNonce,
                 amount: revertRaw,
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1597,7 +1476,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.signature,
                     signature.recoveryId,
                     signature.messageHash,
-                    signature.nonce
                 )
                 .accounts({
                     config: configPda,
@@ -1620,13 +1498,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
             expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
-            await syncNonceFromChain();
-
             // Second revert with same txID should fail
-            await setNonceOnChain(currentNonce);
             const signature2 = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
-                nonce: currentNonce,
                 amount: revertRaw,
                 additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1642,7 +1516,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature2.signature,
                         signature2.recoveryId,
                         signature2.messageHash,
-                        signature2.nonce
                     )
                     .accounts({
                         config: configPda,
@@ -1674,8 +1547,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     allLogs.includes("AccountDiscriminatorAlreadySet");
                 expect(isReplayError).to.be.true;
             }
-
-            await syncNonceFromChain();
         });
     });
 });
