@@ -7,7 +7,7 @@ pub mod utils;
 
 use instructions::*;
 
-declare_id!("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+declare_id!("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
 
 #[program]
 pub mod universal_gateway {

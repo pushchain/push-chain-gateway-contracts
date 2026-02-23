@@ -87,7 +87,7 @@ TSS Request
   │         │    └─ data = ix_data
   │         └─ invoke_signed(cpi_ix, &[cea_seeds])
   │
-  └─ Emit: UniversalTxExecuted event
+  └─ Emit: UniversalTxExecuted event (except CEA withdrawal: emits UniversalTx only, via_cea=true)
 ```
 
 ---
@@ -323,7 +323,8 @@ pub struct UniversalTxExecuted {
 }
 ```
 
-**When Emitted:** After successful withdraw or execute
+**When Emitted:** After successful withdraw (mode 1) or execute (mode 2) where target != gateway program
+**NOT emitted for CEA withdrawal** (target == gateway): emits `UniversalTx` only (via `send_universal_tx_via_cea`, `via_cea=true`)
 
 ---
 
@@ -372,25 +373,30 @@ When destination_program == gateway_program_id, the gateway executes a special C
 
 **Payload Structure (execute.rs:451-463):**
 ```
-[discriminator: 8 bytes]  // hash(b"global:withdraw_from_cea").to_bytes()[..8]
-[borsh_args: variable]    // WithdrawFromCeaArgs (Borsh-encoded)
+[discriminator: 8 bytes]  // hash(b"global:send_universal_tx_via_cea").to_bytes()[..8]
+[borsh_args: variable]    // SendUniversalTxViaCeaArgs (Borsh-encoded)
 ```
 
-**WithdrawFromCeaArgs:** (execute.rs:429-432)
+**SendUniversalTxViaCeaArgs:** (execute.rs:429-433)
 ```rust
-struct WithdrawFromCeaArgs {
+struct SendUniversalTxViaCeaArgs {
     token: Pubkey,      // Must match derived token (Pubkey::default() for SOL, mint for SPL)
     amount: u64,        // Amount to withdraw (0 = withdraw full balance)
-    // NOTE: NO recipient field - recipient comes from withdraw_and_execute accounts, NOT payload
+    payload: Vec<u8>,   // empty = Funds tx_type, non-empty = FundsAndPayload tx_type (via_cea=true)
+    // NOTE: NO recipient field - recipient (UEA address) comes from withdraw_and_execute sender param
 }
 ```
 
+**Emitted UniversalTx event:**
+- `via_cea: true` — Push Chain UE module uses `recipient` directly as existing UEA (no new UEA derivation)
+- `tx_type: Funds` if payload empty, `FundsAndPayload` if payload non-empty
+
 **Validation:**
 1. ix_data must be >= 8 bytes
-2. First 8 bytes must match hash(b"global:withdraw_from_cea")[..8]
-3. Remaining bytes must deserialize as WithdrawFromCeaArgs (token + amount only)
+2. First 8 bytes must match hash(b"global:send_universal_tx_via_cea")[..8]
+3. Remaining bytes must deserialize as SendUniversalTxViaCeaArgs (token + amount + payload)
 4. args.token must match derived token (Pubkey::default() for SOL, mint for SPL)
-5. Recipient comes from the `recipient` account in withdraw_and_execute, NOT from payload
+5. Recipient (UEA) comes from the `sender` param in withdraw_and_execute, NOT from payload
 
 **Integration Example:**
 ```typescript
@@ -398,30 +404,34 @@ import { sha256 } from "js-sha3";
 import { serialize } from "borsh";
 
 // 1. Compute discriminator
-const discr = Buffer.from(sha256("global:withdraw_from_cea"), "hex").slice(0, 8);
+const discr = Buffer.from(sha256("global:send_universal_tx_via_cea"), "hex").slice(0, 8);
 
-// 2. Manually Borsh-encode WithdrawFromCeaArgs (token + amount ONLY)
-// NOTE: There is NO withdrawFromCea instruction in lib.rs, so we use raw Borsh encoding
-class WithdrawFromCeaArgs {
+// 2. Manually Borsh-encode SendUniversalTxViaCeaArgs (token + amount + payload)
+// NOTE: There is NO sendUniversalTxViaCea instruction in lib.rs, so we use raw Borsh encoding
+class SendUniversalTxViaCeaArgs {
   token: Uint8Array; // 32 bytes
   amount: bigint;    // u64
+  payload: Uint8Array; // Vec<u8>
 
-  constructor(token: Uint8Array, amount: bigint) {
+  constructor(token: Uint8Array, amount: bigint, payload: Uint8Array) {
     this.token = token;
     this.amount = amount;
+    this.payload = payload;
   }
 }
 
 const schema = {
   struct: {
     token: { array: { type: 'u8', len: 32 } },
-    amount: 'u64'
+    amount: 'u64',
+    payload: { vec: 'u8' },
   }
 };
 
-const args = new WithdrawFromCeaArgs(
+const args = new SendUniversalTxViaCeaArgs(
   mintPubkey.toBytes(), // or new PublicKey(0).toBytes() for SOL
-  BigInt(amount)
+  BigInt(amount),
+  new Uint8Array([])    // empty = Funds, non-empty = FundsAndPayload
 );
 
 const argsEncoded = serialize(schema, args);
@@ -430,13 +440,13 @@ const argsEncoded = serialize(schema, args);
 const ix_data = Buffer.concat([discr, Buffer.from(argsEncoded)]);
 
 // 4. Use in withdraw_and_execute with instruction_id=2
-// IMPORTANT: recipient comes from accounts, NOT from payload
+// IMPORTANT: recipient (UEA) is the `sender` param, NOT from payload; via_cea=true in emitted event
 await program.methods
   .withdrawAndExecute(
     2, // instruction_id: execute
     // ... other params ...
     [], // writable_flags: empty for CEA self-withdraw
-    ix_data, // [discriminator][borsh(token, amount)]
+    ix_data, // [discriminator][borsh(token, amount, payload)]
     // ... signature params ...
   )
   .accounts({

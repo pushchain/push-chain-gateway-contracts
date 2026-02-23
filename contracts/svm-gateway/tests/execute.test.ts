@@ -6,144 +6,21 @@ import { PublicKey, Keypair, SystemProgram, ComputeBudgetProgram } from "@solana
 import { expect } from "chai";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import * as spl from "@solana/spl-token";
-import { encodeExecutePayload, decodeExecutePayload, instructionToPayloadFields, accountsToWritableFlags } from "../app/execute-payload";
+import { encodeExecutePayload, decodeExecutePayload, instructionToPayloadFields } from "../app/execute-payload";
 import * as sharedState from "./shared-state";
 import { signTssMessage, buildExecuteAdditionalData, TssInstruction, GatewayAccountMeta, generateUniversalTxId } from "./helpers/tss";
 import { ensureTestSetup } from "./helpers/test-setup";
-import { createHash } from "crypto";
-
-// Helper to compute Anchor-style discriminator (first 8 bytes of SHA-256)
-const computeDiscriminator = (name: string): Buffer => {
-    return createHash("sha256").update(name).digest().slice(0, 8);
-};
-
-const USDT_DECIMALS = 6;
-const TOKEN_MULTIPLIER = BigInt(10 ** USDT_DECIMALS);
-
-// Compute buffer for transaction fees and compute units (in lamports)
-// This covers Solana transaction fees (~5-20k) and compute unit costs
-const COMPUTE_BUFFER = BigInt(100_000); // 0.0001 SOL buffer for compute + tx fees
-
-// Base rent_fee for target program rent needs (in lamports)
-// This is transferred to CEA for target program account creation/rent
-// Can be adjusted per test based on target program requirements
-const BASE_RENT_FEE = BigInt(1_500_000); // 0.0015 SOL base for target program rent needs
-
-// Helper to calculate actual rent for ExecutedTx account (8 bytes)
-// ExecutedTx::LEN = 8 (discriminator only)
-const getExecutedTxRent = async (connection: anchor.web3.Connection): Promise<number> => {
-    const rent = await connection.getMinimumBalanceForRentExemption(8);
-    return rent;
-};
-
-// Helper to calculate actual rent for Token Account (165 bytes)
-// Standard SPL token account size
-const getTokenAccountRent = async (connection: anchor.web3.Connection): Promise<number> => {
-    const rent = await connection.getMinimumBalanceForRentExemption(165);
-    return rent;
-};
-
-// Helper to check if CEA ATA exists
-const ceaAtaExists = async (connection: anchor.web3.Connection, ceaAta: PublicKey): Promise<boolean> => {
-    const accountInfo = await connection.getAccountInfo(ceaAta);
-    return accountInfo !== null && accountInfo.data.length > 0;
-};
-
-/**
- * Calculate gas_fee and rent_fee dynamically for SOL execute operations
- * 
- * gas_fee = rent_fee + executed_tx_rent + compute_buffer
- * - rent_fee: For target program rent needs (transferred to CEA)
- * - executed_tx_rent: Gateway account creation cost (paid by relayer, reimbursed via gas_fee)
- * - compute_buffer: Transaction fees and compute unit costs
- * 
- * @param connection - Solana connection
- * @param rentFee - Rent fee for target program (defaults to BASE_RENT_FEE)
- * @returns Object with gasFee and rentFee as BigInt
- */
-const calculateSolExecuteFees = async (
-    connection: anchor.web3.Connection,
-    rentFee: bigint = BASE_RENT_FEE
-): Promise<{ gasFee: bigint; rentFee: bigint }> => {
-    const executedTxRent = BigInt(await getExecutedTxRent(connection));
-
-    // gas_fee must cover: rent_fee + executed_tx_rent + compute_buffer
-    const gasFee = rentFee + executedTxRent + COMPUTE_BUFFER;
-
-    return { gasFee, rentFee };
-};
-
-/**
- * Calculate gas_fee and rent_fee dynamically for SPL execute operations
- * 
- * gas_fee = rent_fee + executed_tx_rent + (cea_ata_rent if created) + compute_buffer
- * - rent_fee: For target program rent needs (transferred to CEA)
- * - executed_tx_rent: Gateway account creation cost (paid by relayer, reimbursed via gas_fee)
- * - cea_ata_rent: CEA ATA creation cost if account doesn't exist (paid by relayer, reimbursed via gas_fee)
- * - compute_buffer: Transaction fees and compute unit costs
- * 
- * @param connection - Solana connection
- * @param ceaAta - CEA ATA public key to check if it exists
- * @param rentFee - Rent fee for target program (defaults to BASE_RENT_FEE)
- * @returns Object with gasFee and rentFee as BigInt
- */
-const calculateSplExecuteFees = async (
-    connection: anchor.web3.Connection,
-    ceaAta: PublicKey,
-    rentFee: bigint = BASE_RENT_FEE
-): Promise<{ gasFee: bigint; rentFee: bigint }> => {
-    const executedTxRent = BigInt(await getExecutedTxRent(connection));
-    const ceaAtaExisted = await ceaAtaExists(connection, ceaAta);
-    const ceaAtaRent = ceaAtaExisted ? BigInt(0) : BigInt(await getTokenAccountRent(connection));
-
-    // gas_fee must cover: rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buffer
-    const gasFee = rentFee + executedTxRent + ceaAtaRent + COMPUTE_BUFFER;
-
-    return { gasFee, rentFee };
-};
-
-/**
- * Calculate rent_fee for target program based on account size
- * Used when target program needs specific account rent (e.g., stake account)
- * 
- * @param connection - Solana connection
- * @param accountSize - Size of account needed by target program
- * @param additionalBuffer - Additional buffer on top of rent exemption (defaults to 500k)
- * @returns Rent fee as BigInt
- */
-const calculateRentFeeForAccountSize = async (
-    connection: anchor.web3.Connection,
-    accountSize: number,
-    additionalBuffer: bigint = BigInt(500_000)
-): Promise<bigint> => {
-    const rentExempt = await connection.getMinimumBalanceForRentExemption(accountSize);
-    return BigInt(rentExempt) + additionalBuffer;
-};
-
-const asLamports = (sol: number) => new anchor.BN(sol * anchor.web3.LAMPORTS_PER_SOL);
-const asTokenAmount = (tokens: number) => new anchor.BN(Number(BigInt(tokens) * TOKEN_MULTIPLIER));
-
-// SECURITY CRITICAL: These helpers MUST produce accounts in the SAME ORDER.
-// The accounts used for TSS signing (via buildExecuteAdditionalData) MUST exactly match
-// the accounts passed to .remainingAccounts() (same order, same pubkeys, same isWritable).
-// Any mismatch will cause MessageHashMismatch (correct - TSS signature protects integrity).
-const instructionAccountsToGatewayMetas = (ix: anchor.web3.TransactionInstruction): GatewayAccountMeta[] =>
-    ix.keys.map((key) => ({
-        pubkey: key.pubkey,
-        isWritable: key.isWritable,
-    }));
-
-const instructionAccountsToRemaining = (ix: anchor.web3.TransactionInstruction) =>
-    ix.keys.map((key) => ({
-        pubkey: key.pubkey,
-        isWritable: key.isWritable,
-        isSigner: false,
-    }));
-
-// Helper to convert accounts to writable flags for execute calls
-const accountsToWritableFlagsOnly = (accounts: GatewayAccountMeta[]) => {
-    return accountsToWritableFlags(accounts);
-};
+import {
+    USDT_DECIMALS, TOKEN_MULTIPLIER, COMPUTE_BUFFER, BASE_RENT_FEE,
+    asLamports, asTokenAmount,
+    makeTxIdGenerator, generateSender,
+    getExecutedTxPda as _getExecutedTxPda, getCeaAuthorityPda as _getCeaAuthorityPda,
+    getCeaAta as _getCeaAta,
+    getExecutedTxRent, getTokenAccountRent, ceaAtaExists,
+    calculateSolExecuteFees, calculateSplExecuteFees, calculateRentFeeForAccountSize,
+    instructionAccountsToGatewayMetas, instructionAccountsToRemaining, accountsToWritableFlagsOnly,
+} from "./helpers/test-utils";
+import { makeWithdrawAndExecuteBuilder, WithdrawAndExecuteArgs } from "./helpers/builders";
 
 describe("Universal Gateway - Execute Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -161,6 +38,9 @@ describe("Universal Gateway - Execute Tests", () => {
     let configPda: PublicKey;
     let vaultPda: PublicKey;
     let tssPda: PublicKey;
+    let rateLimitConfigPda: PublicKey;
+    let nativeSolTokenRateLimitPda: PublicKey;
+    let usdtTokenRateLimitPda: PublicKey;
 
     let mockUSDT: any;
     let vaultUsdtAccount: PublicKey;
@@ -171,49 +51,16 @@ describe("Universal Gateway - Execute Tests", () => {
     let counterAuthority: Keypair; // Authority for counter
 
     let currentNonce = 0;
-    let txIdCounter = 0;
+    let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
+
+    const generateTxId = makeTxIdGenerator();
+    const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, gatewayProgram.programId);
+    const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, gatewayProgram.programId);
+    const getCeaAta = (sender: number[], mint: PublicKey) => _getCeaAta(sender, mint, gatewayProgram.programId);
 
     const syncNonceFromChain = async () => {
         const account = await gatewayProgram.account.tssPda.fetch(tssPda);
         currentNonce = Number(account.nonce);
-    };
-
-    const generateTxId = (): number[] => {
-        txIdCounter++;
-        const buffer = Buffer.alloc(32);
-        buffer.writeUInt32BE(txIdCounter, 0);
-        buffer.writeUInt32BE(Date.now() % 0xFFFFFFFF, 4);
-        for (let i = 8; i < 32; i++) {
-            buffer[i] = Math.floor(Math.random() * 256);
-        }
-        return Array.from(buffer);
-    };
-
-    const generateSender = (): number[] => {
-        const buffer = Buffer.alloc(20);
-        for (let i = 0; i < 20; i++) {
-            buffer[i] = Math.floor(Math.random() * 256);
-        }
-        if (buffer.every(b => b === 0)) {
-            buffer[0] = 1;
-        }
-        return Array.from(buffer);
-    };
-
-    const getExecutedTxPda = (txId: number[]): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("executed_tx"), Buffer.from(txId)],
-            gatewayProgram.programId
-        );
-        return pda;
-    };
-
-    const getCeaAuthorityPda = (sender: number[]): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("push_identity"), Buffer.from(sender)],
-            gatewayProgram.programId
-        );
-        return pda;
     };
 
     const getStakeAta = async (stakePda: PublicKey, mint: PublicKey): Promise<PublicKey> => {
@@ -224,11 +71,6 @@ describe("Universal Gateway - Execute Tests", () => {
             TOKEN_PROGRAM_ID,
             ASSOCIATED_TOKEN_PROGRAM_ID
         );
-    };
-
-    const getCeaAta = async (sender: number[], mint: PublicKey): Promise<PublicKey> => {
-        const ceaAuthority = getCeaAuthorityPda(sender);
-        return getAssociatedTokenAddress(mint, ceaAuthority, true);
     };
 
 
@@ -262,6 +104,44 @@ describe("Universal Gateway - Execute Tests", () => {
             [Buffer.from("tsspda")],
             gatewayProgram.programId
         );
+
+        [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit_config")],
+            gatewayProgram.programId
+        );
+        [nativeSolTokenRateLimitPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit"), Buffer.alloc(32, 0)],
+            gatewayProgram.programId
+        );
+        [usdtTokenRateLimitPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit"), mockUSDT.mint.publicKey.toBuffer()],
+            gatewayProgram.programId
+        );
+
+        // Initialize native SOL and USDT token rate limits if not already done
+        const veryLargeThreshold = new anchor.BN("1000000000000000000000");
+        for (const [pda, mint] of [
+            [nativeSolTokenRateLimitPda, PublicKey.default],
+            [usdtTokenRateLimitPda, mockUSDT.mint.publicKey],
+        ] as [PublicKey, PublicKey][]) {
+            try {
+                await gatewayProgram.account.tokenRateLimit.fetch(pda);
+            } catch {
+                await gatewayProgram.methods
+                    .setTokenRateLimit(veryLargeThreshold)
+                    .accounts({
+                        config: configPda,
+                        rateLimitConfig: rateLimitConfigPda,
+                        tokenRateLimit: pda,
+                        tokenMint: mint,
+                        admin: admin.publicKey,
+                        systemProgram: SystemProgram.programId,
+                    })
+                    .signers([admin])
+                    .rpc();
+            }
+        }
+
         // Get vault ATA and create if needed (admin pays)
         vaultUsdtAccount = await getAssociatedTokenAddress(
             mockUSDT.mint.publicKey,
@@ -315,6 +195,8 @@ describe("Universal Gateway - Execute Tests", () => {
                 .accounts({
                     counter: counterPda,
                     authority: counterAuthority.publicKey,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([counterAuthority])
@@ -342,6 +224,8 @@ describe("Universal Gateway - Execute Tests", () => {
 
         // Fund vault with tokens
         await mockUSDT.mintTo(vaultUsdtAccount, 1000);
+
+        withdrawAndExecute = makeWithdrawAndExecuteBuilder(gatewayProgram, configPda, vaultPda, tssPda);
     });
 
     describe("execute_universal_tx (SOL)", () => {
@@ -396,40 +280,20 @@ describe("Universal Gateway - Execute Tests", () => {
             // Convert accounts to writable flags for Solana transaction
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    executeAmount,
-                    Array.from(sender),
-                    writableFlags,
-                    Buffer.from(counterIx.data),
-                    new anchor.BN(Number(gasFee)),
-                    new anchor.BN(Number(rentFee)),
-                    Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(sender),
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: executeAmount,
+                sender,
+                writableFlags,
+                ixData: Buffer.from(counterIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -458,182 +322,6 @@ describe("Universal Gateway - Execute Tests", () => {
                 counterBefore.value.toNumber() + incrementAmount.toNumber(),
             );
         });
-
-        it("should allow gateway self-call to withdraw SOL from CEA", async () => {
-            await syncNonceFromChain();
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
-
-            // 1) Fund CEA via execute (amount > 0, target = counterProgram)
-            const txIdFund = generateTxId();
-            const universalTxIdFund = generateUniversalTxId();
-            const fundAmount = asLamports(1);
-            const counterIx = await counterProgram.methods
-                .increment(new anchor.BN(0))
-                .accounts({ counter: counterPda, authority: counterAuthority.publicKey })
-                .instruction();
-            // CRITICAL: Use the EXACT same accounts for signing and remaining_accounts
-            const remainingAccounts = instructionAccountsToRemaining(counterIx);
-            const fundAccounts = remainingAccounts.map((acc) => ({
-                pubkey: acc.pubkey,
-                isWritable: acc.isWritable,
-            }));
-
-            // Calculate fees dynamically for fund operation
-            const { gasFee: gasFeeFund, rentFee: rentFeeFund } = await calculateSolExecuteFees(provider.connection);
-
-            const sigFund = await signTssMessage({
-                instruction: TssInstruction.Execute,
-                nonce: currentNonce,
-                amount: BigInt(fundAmount.toString()),
-                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
-                additional: buildExecuteAdditionalData(
-                    new Uint8Array(universalTxIdFund),
-                    new Uint8Array(txIdFund),
-                    counterProgram.programId,
-                    new Uint8Array(sender),
-                    fundAccounts,
-                    counterIx.data,
-                    gasFeeFund,
-                    rentFeeFund
-                ),
-            });
-
-            const fundWritableFlags = accountsToWritableFlagsOnly(fundAccounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txIdFund),
-                    Array.from(universalTxIdFund),
-                    fundAmount,
-                    Array.from(sender),
-                    fundWritableFlags,
-                    Buffer.from(counterIx.data),
-                    new anchor.BN(Number(gasFeeFund)),
-                    new anchor.BN(Number(rentFeeFund)),
-                    Array.from(sigFund.signature),
-                    sigFund.recoveryId,
-                    Array.from(sigFund.messageHash),
-                    new anchor.BN(sigFund.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txIdFund),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
-                .remainingAccounts(remainingAccounts)
-                .signers([admin])
-                .rpc();
-
-            const ceaBalBefore = await provider.connection.getBalance(cea);
-            expect(ceaBalBefore).to.be.greaterThan(0);
-
-            // 2) Withdraw all SOL from CEA via gateway self-call (target = gateway)
-            const txIdWithdraw = generateTxId();
-            const universalTxIdWithdraw = generateUniversalTxId();
-            const withdrawDiscr = computeDiscriminator("global:withdraw_from_cea");
-            const withdrawArgs = Buffer.concat([
-                Buffer.alloc(32, 0), // token = Pubkey::default()
-                (() => {
-                    const b = Buffer.alloc(8);
-                    b.writeBigUInt64LE(BigInt(0)); // amount = 0 => all
-                    return b;
-                })(),
-            ]);
-            const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
-
-            // Calculate fees dynamically for withdraw operation
-            const { gasFee: gasFeeWithdraw, rentFee: rentFeeWithdraw } = await calculateSolExecuteFees(provider.connection);
-
-            const sigW = await signTssMessage({
-                instruction: TssInstruction.Execute,
-                nonce: sigFund.nonce.add(new anchor.BN(1)).toNumber(),
-                amount: BigInt(0),
-                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
-                additional: buildExecuteAdditionalData(
-                    new Uint8Array(universalTxIdWithdraw),
-                    new Uint8Array(txIdWithdraw),
-                    gatewayProgram.programId,
-                    new Uint8Array(sender),
-                    [],
-                    withdrawIxData,
-                    gasFeeWithdraw,
-                    rentFeeWithdraw
-                ),
-            });
-
-            const callerBalanceBeforeWithdraw = await provider.connection.getBalance(admin.publicKey);
-            const withdrawWritableFlags = accountsToWritableFlagsOnly([]);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txIdWithdraw),
-                    Array.from(universalTxIdWithdraw),
-                    new anchor.BN(0),
-                    Array.from(sender),
-                    withdrawWritableFlags,
-                    withdrawIxData,
-                    new anchor.BN(Number(gasFeeWithdraw)),
-                    new anchor.BN(Number(rentFeeWithdraw)),
-                    Array.from(sigW.signature),
-                    sigW.recoveryId,
-                    Array.from(sigW.messageHash),
-                    new anchor.BN(sigW.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txIdWithdraw),
-                    destinationProgram: gatewayProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-
-            const callerBalanceAfterWithdraw = await provider.connection.getBalance(admin.publicKey);
-            const actualBalanceChangeWithdraw = callerBalanceAfterWithdraw - callerBalanceBeforeWithdraw;
-            // Balance flow (Option 1: relayer pays gateway costs, gets relayer_fee reimbursement):
-            // 1. Caller PAYS for executed_tx account creation: -890k (replay protection account)
-            // 2. Caller PAYS transaction fees: ~-10-20k (Solana network compute fees)
-            // 3. Vault TRANSFERS relayer_fee to caller: relayer_fee = gas_fee - rent_fee (reimbursement for gateway costs)
-            // relayer_fee = (rent_fee + executed_tx_rent + compute_buffer) - rent_fee = executed_tx_rent + compute_buffer
-            // Net expected: -executed_tx_rent - tx_fees + (executed_tx_rent + compute_buffer) ≈ +compute_buffer - tx_fees
-            // Note: CEA is a PDA - caller doesn't pay for its creation (auto-created by Solana on first transfer)
-            const actualRentForExecutedTx = await getExecutedTxRent(provider.connection);
-            const relayerFeeWithdraw = Number(gasFeeWithdraw - rentFeeWithdraw);
-            const expectedBalanceChangeWithdraw = -actualRentForExecutedTx + relayerFeeWithdraw;
-            // Use tight tolerance (50k) to catch missing relayer_fee reimbursement
-            expect(actualBalanceChangeWithdraw).to.be.closeTo(expectedBalanceChangeWithdraw, 50000);
-
-            const ceaBalAfter = await provider.connection.getBalance(cea);
-            expect(ceaBalAfter).to.equal(0);
-        });
-
-        // SOL transfer test removed - covered by CEA staking tests below
 
         it("should reject duplicate tx_id (replay protection)", async () => {
             await syncNonceFromChain();
@@ -674,40 +362,20 @@ describe("Universal Gateway - Execute Tests", () => {
             });
 
             const writableFlags1 = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    amount,
-                    Array.from(sender),
-                    writableFlags1,
-                    Buffer.from(counterIx.data),
-                    new anchor.BN(Number(gasFee)),
-                    new anchor.BN(Number(rentFee)),
-                    Array.from(sig1.signature),
-                    sig1.recoveryId,
-                    Array.from(sig1.messageHash),
-                    new anchor.BN(sig1.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(sender),
-                    tssPda: tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount,
+                sender,
+                writableFlags: writableFlags1,
+                ixData: Buffer.from(counterIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig: sig1,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(remaining)
                 .signers([admin])
                 .rpc();
@@ -734,37 +402,20 @@ describe("Universal Gateway - Execute Tests", () => {
 
             try {
                 const writableFlags2 = accountsToWritableFlagsOnly(accounts);
-                await gatewayProgram.methods
-                    .withdrawAndExecute(
-                    2,
-                        Array.from(txId),
-                        Array.from(universalTxId),
-                        amount,
-                        Array.from(sender),
-                        writableFlags2,
-                        Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig2.signature),
-                        sig2.recoveryId,
-                        Array.from(sig2.messageHash),
-                        new anchor.BN(sig2.nonce),
-                    )
-                    .accounts({
-                        caller: admin.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(sender),
-                        tssPda: tssPda,
-                        executedTx: getExecutedTxPda(txId),
-                        destinationProgram: counterProgram.programId,
-                        recipient: null,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                await withdrawAndExecute({
+                    instructionId: 2,
+                    txId,
+                    universalTxId,
+                    amount,
+                    sender,
+                    writableFlags: writableFlags2,
+                    ixData: Buffer.from(counterIx.data),
+                    gasFee: new anchor.BN(Number(gasFee)),
+                    rentFee: new anchor.BN(Number(rentFee)),
+                    sig: sig2,
+                    caller: admin.publicKey,
+                    destinationProgram: counterProgram.programId,
+                })
                     .remainingAccounts(remaining)
                     .signers([admin])
                     .rpc();
@@ -831,37 +482,26 @@ describe("Universal Gateway - Execute Tests", () => {
             console.log("SPL token transfer to test-counter counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             const splWritableFlags1 = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    amount,
-                    Array.from(sender),
-                    splWritableFlags1,
-                    Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultAta: vaultUsdtAccount,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(sender),
-                    ceaAta: ceaAta,
-                    mint: mockUSDT.mint.publicKey,
-                    tssPda: tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                    recipientAta: null,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount,
+                sender,
+                writableFlags: splWritableFlags1,
+                ixData: Buffer.from(counterIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+                vaultAta: vaultUsdtAccount,
+                ceaAta: ceaAta,
+                mint: mockUSDT.mint.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -968,37 +608,26 @@ describe("Universal Gateway - Execute Tests", () => {
 
             try {
                 const splWritableFlags2 = accountsToWritableFlagsOnly(accounts);
-                await gatewayProgram.methods
-                    .withdrawAndExecute(
-                    2,
-                        Array.from(txId),
-                        Array.from(universalTxId),
-                        amount,
-                        Array.from(sender),
-                        splWritableFlags2,
-                        Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                        sig.recoveryId,
-                        Array.from(sig.messageHash),
-                        new anchor.BN(sig.nonce),
-                    )
-                    .accounts({
-                        caller: admin.publicKey,
-                        config: configPda,
-                        vaultAta: vaultUsdtAccount,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(sender),
-                        ceaAta: maliciousAta, // Malicious ATA - wrong owner (checked at line 546-559)
-                        mint: mockUSDT.mint.publicKey,
-                        tssPda: tssPda,
-                        executedTx: getExecutedTxPda(txId),
-                        destinationProgram: counterProgram.programId,
-                        recipient: null,
-                        tokenProgram: TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                        associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                        recipientAta: null,
-                    })
+                await withdrawAndExecute({
+                    instructionId: 2,
+                    txId,
+                    universalTxId,
+                    amount,
+                    sender,
+                    writableFlags: splWritableFlags2,
+                    ixData: Buffer.from(counterIx.data),
+                    gasFee: new anchor.BN(Number(gasFee)),
+                    rentFee: new anchor.BN(Number(rentFee)),
+                    sig,
+                    caller: admin.publicKey,
+                    destinationProgram: counterProgram.programId,
+                    vaultAta: vaultUsdtAccount,
+                    ceaAta: maliciousAta, // Malicious ATA - wrong owner (checked at line 546-559)
+                    mint: mockUSDT.mint.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                })
                     .remainingAccounts(remainingAccounts)
                     .signers([admin])
                     .rpc();
@@ -1066,37 +695,26 @@ describe("Universal Gateway - Execute Tests", () => {
             console.log("SPL-only payload with zero amount counterBefore", counterBefore.value.toNumber());
             const balanceBefore = await provider.connection.getBalance(admin.publicKey);
             const splWritableFlags4 = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    amount,
-                    Array.from(sender),
-                    splWritableFlags4,
-                    Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultAta: vaultUsdtAccount,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(sender),
-                    ceaAta: ceaAta,
-                    mint: mockUSDT.mint.publicKey,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                    recipientAta: null,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount,
+                sender,
+                writableFlags: splWritableFlags4,
+                ixData: Buffer.from(counterIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+                vaultAta: vaultUsdtAccount,
+                ceaAta: ceaAta,
+                mint: mockUSDT.mint.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -1136,203 +754,6 @@ describe("Universal Gateway - Execute Tests", () => {
             // CEA ATA is created by init_if_needed even for zero-amount (persists for pull model)
             expect(ceaAtaInfo).to.not.be.null;
         });
-    });
-
-    it("should allow gateway self-call to withdraw SPL from CEA", async () => {
-        await syncNonceFromChain();
-        const sender = generateSender();
-        const cea = getCeaAuthorityPda(sender);
-        const ceaAta = await getCeaAta(sender, mockUSDT.mint.publicKey);
-
-        // Fund CEA ATA via execute (amount > 0, target = counterProgram)
-        const txIdFund = generateTxId();
-        const universalTxIdFund = generateUniversalTxId();
-        const fundAmount = asTokenAmount(25);
-
-        // Calculate rent_fee for target program (stake account needs 48 bytes)
-        const rentFeeLamports = await calculateRentFeeForAccountSize(provider.connection, 48, BigInt(500_000));
-
-        // Calculate gas_fee dynamically (includes CEA ATA rent if needed)
-        const ceaAtaExistedBefore = await ceaAtaExists(provider.connection, ceaAta);
-        const { gasFee: gasFeeLamports, rentFee: calculatedRentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, rentFeeLamports);
-
-        const rentFeeBn = new anchor.BN(rentFeeLamports.toString());
-        const gasFeeBn = new anchor.BN(gasFeeLamports.toString());
-
-        const counterIx = await counterProgram.methods
-            .increment(new anchor.BN(0))
-            .accounts({ counter: counterPda, authority: counterAuthority.publicKey })
-            .instruction();
-        const fundAccounts = instructionAccountsToGatewayMetas(counterIx);
-        const sigFund = await signTssMessage({
-            instruction: TssInstruction.Execute,
-            nonce: currentNonce,
-            amount: BigInt(fundAmount.toString()),
-            chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
-            additional: buildExecuteAdditionalData(
-                new Uint8Array(universalTxIdFund),
-                new Uint8Array(txIdFund),
-                counterProgram.programId,
-                new Uint8Array(sender),
-                fundAccounts,
-                counterIx.data,
-                gasFeeLamports,
-                rentFeeLamports,
-                mockUSDT.mint.publicKey
-            ),
-        });
-
-        const callerBalanceBeforeFund = await provider.connection.getBalance(admin.publicKey);
-        const fundWritableFlagsSpl = accountsToWritableFlagsOnly(fundAccounts);
-        await gatewayProgram.methods
-            .withdrawAndExecute(
-                    2,
-                Array.from(txIdFund),
-                Array.from(universalTxIdFund),
-                fundAmount,
-                Array.from(sender),
-                fundWritableFlagsSpl,
-                Buffer.from(counterIx.data),
-                gasFeeBn,
-                rentFeeBn,
-                Array.from(sigFund.signature),
-                sigFund.recoveryId,
-                Array.from(sigFund.messageHash),
-                new anchor.BN(sigFund.nonce),
-            )
-            .accounts({
-                caller: admin.publicKey,
-                config: configPda,
-                vaultAta: vaultUsdtAccount,
-                vaultSol: vaultPda,
-                ceaAuthority: cea,
-                ceaAta,
-                mint: mockUSDT.mint.publicKey,
-                tssPda,
-                executedTx: getExecutedTxPda(txIdFund),
-                destinationProgram: counterProgram.programId,
-                recipient: null,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                recipientAta: null,
-            })
-            .remainingAccounts(instructionAccountsToRemaining(counterIx))
-            .signers([admin])
-            .rpc();
-console.log("withdrawAndExecute (execute SPL) succeeded");
-        // Verify caller received relayer_fee reimbursement
-        const callerBalanceAfterFund = await provider.connection.getBalance(admin.publicKey);
-        const callerBalanceChangeFund = callerBalanceAfterFund - callerBalanceBeforeFund;
-        // Option 1: Relayer pays gateway costs, gets relayer_fee reimbursement
-        // Caller pays for:
-        // 1. executed_tx account rent (~890k)
-        // 2. CEA ATA rent (if it doesn't exist - caller is payer per line 465 in execute.rs) (~2M)
-        // 3. Transaction fees (varies by transaction size)
-        // Caller receives: relayer_fee = gas_fee - rent_fee as reimbursement
-        const actualRentForExecutedTx = await getExecutedTxRent(provider.connection);
-        const actualRentForCeaAta = ceaAtaExistedBefore ? 0 : await getTokenAccountRent(provider.connection);
-        const relayerFeeFund = Number(gasFeeLamports - rentFeeLamports);
-        // Expected: -executed_tx_rent - cea_ata_rent (if created) + relayer_fee - transaction_fees
-        const expectedBalanceChangeFund = -actualRentForExecutedTx - actualRentForCeaAta + relayerFeeFund;
-        expect(callerBalanceChangeFund).to.be.closeTo(expectedBalanceChangeFund, 100000); // Allow for transaction fees (SPL txs are larger)
-
-        const ceaAtaBefore = await provider.connection.getTokenAccountBalance(ceaAta);
-        expect(Number(ceaAtaBefore.value.amount)).to.be.greaterThan(0);
-
-        // Withdraw all SPL from CEA via gateway self-call (target = gateway)
-        const txIdWithdraw = generateTxId();
-        const universalTxIdWithdraw = generateUniversalTxId();
-        const withdrawDiscr = computeDiscriminator("global:withdraw_from_cea");
-        const withdrawArgs = Buffer.concat([
-            mockUSDT.mint.publicKey.toBuffer(),
-            (() => {
-                const b = Buffer.alloc(8);
-                b.writeBigUInt64LE(BigInt(0)); // all
-                return b;
-            })(),
-        ]);
-        const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
-
-        // Calculate fees dynamically for withdraw operation (CEA ATA already exists)
-        const { gasFee: gasFeeWithdrawSpl, rentFee: rentFeeWithdrawSpl } = await calculateSplExecuteFees(provider.connection, ceaAta);
-
-        const sigW = await signTssMessage({
-            instruction: TssInstruction.Execute,
-            nonce: sigFund.nonce.add(new anchor.BN(1)).toNumber(),
-            amount: BigInt(0),
-            chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
-            additional: buildExecuteAdditionalData(
-                new Uint8Array(universalTxIdWithdraw),
-                new Uint8Array(txIdWithdraw),
-                gatewayProgram.programId,
-                new Uint8Array(sender),
-                [],
-                withdrawIxData,
-                gasFeeWithdrawSpl,
-                rentFeeWithdrawSpl,
-                mockUSDT.mint.publicKey
-            ),
-        });
-
-        const callerBalanceBeforeWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
-        const withdrawWritableFlagsSpl = accountsToWritableFlagsOnly([]);
-        console.log("withdrawAndExecute (execute SPL) start");
-        await gatewayProgram.methods
-            .withdrawAndExecute(
-                    2,
-                Array.from(txIdWithdraw),
-                Array.from(universalTxIdWithdraw),
-                new anchor.BN(0),
-                Array.from(sender),
-                withdrawWritableFlagsSpl,
-                withdrawIxData,
-                new anchor.BN(Number(gasFeeWithdrawSpl)),
-                new anchor.BN(Number(rentFeeWithdrawSpl)),
-                Array.from(sigW.signature),
-                sigW.recoveryId,
-                Array.from(sigW.messageHash),
-                new anchor.BN(sigW.nonce),
-            )
-            .accounts({
-                caller: admin.publicKey,
-                config: configPda,
-                vaultAta: vaultUsdtAccount,
-                vaultSol: vaultPda,
-                ceaAuthority: cea,
-                ceaAta,
-                mint: mockUSDT.mint.publicKey,
-                tssPda,
-                executedTx: getExecutedTxPda(txIdWithdraw),
-                destinationProgram: gatewayProgram.programId,
-                recipient: null,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                recipientAta: null,
-            })
-            .signers([admin])
-            .rpc();
-console.log("withdrawAndExecute (execute SPL) succeeded");
-        // Verify caller received relayer_fee reimbursement (self-withdraw should also pay the caller)
-        const callerBalanceAfterWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
-        const callerBalanceChangeWithdrawSpl = callerBalanceAfterWithdrawSpl - callerBalanceBeforeWithdrawSpl;
-        // Option 1: Relayer pays gateway costs, gets relayer_fee reimbursement
-        // Caller pays for:
-        // 1. executed_tx account rent (~890k)
-        // 2. Transaction fees (varies by transaction size)
-        // Caller receives: relayer_fee = gas_fee - rent_fee (reimbursement for gateway costs)
-        // relayer_fee = (rent_fee + executed_tx_rent + compute_buffer) - rent_fee = executed_tx_rent + compute_buffer
-        // Reuse actualRentForExecutedTx from above (same test scope)
-        const relayerFeeWithdrawSpl = Number(gasFeeWithdrawSpl - rentFeeWithdrawSpl);
-        // Expected: -executed_tx_rent + relayer_fee - transaction_fees
-        const expectedBalanceChangeWithdrawSpl = -actualRentForExecutedTx + relayerFeeWithdrawSpl;
-        expect(callerBalanceChangeWithdrawSpl).to.be.closeTo(expectedBalanceChangeWithdrawSpl, 15000); // Allow for transaction fees
-
-        const ceaAtaAfter = await provider.connection.getTokenAccountBalance(ceaAta);
-        expect(Number(ceaAtaAfter.value.amount)).to.equal(0);
     });
 
     describe("execute payload encode/decode roundtrip", () => {
@@ -1401,40 +822,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
             const decodedWritableFlags = accountsToWritableFlagsOnly(decoded.accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    decoded.instructionId,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(Number(amount)),
-                    Array.from(sender),
-                    decodedWritableFlags,
-                    Buffer.from(decoded.ixData),
-                    new anchor.BN(Number(gasFee)),
-                    new anchor.BN(Number(rentFee)),
-                    Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(Array.from(sender)),
-                    tssPda,
-                    executedTx: getExecutedTxPda(Array.from(txId)),
-                    destinationProgram: targetProgram,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: decoded.instructionId,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(Number(amount)),
+                sender,
+                writableFlags: decodedWritableFlags,
+                ixData: Buffer.from(decoded.ixData),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: targetProgram,
+            })
                 .remainingAccounts(
                     decoded.accounts.map((a) => ({
                         pubkey: a.pubkey,
@@ -1540,40 +941,26 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             const callerBalanceBefore = await provider.connection.getBalance(admin.publicKey);
 
             const accountsForSigningWritableFlags = accountsToWritableFlagsOnly(accountsForSigning);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    decoded.instructionId,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(amount.toString()),
-                    Array.from(sender),
-                    accountsForSigningWritableFlags,
-                    Buffer.from(decoded.ixData),
-                    new anchor.BN(Number(gasFee)),
-                    new anchor.BN(Number(rentFee)),
-                    Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultAta: vaultUsdtAccount,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(Array.from(sender)),
-                    ceaAta: ceaAtaForDecodeSpl,
-                    mint: mockUSDT.mint.publicKey,
-                    tssPda,
-                    executedTx: getExecutedTxPda(Array.from(txId)),
-                    destinationProgram: targetProgram,
-                    recipient: null,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                    recipientAta: null,
-                })
+            await withdrawAndExecute({
+                instructionId: decoded.instructionId,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(amount.toString()),
+                sender,
+                writableFlags: accountsForSigningWritableFlags,
+                ixData: Buffer.from(decoded.ixData),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: targetProgram,
+                vaultAta: vaultUsdtAccount,
+                ceaAta: ceaAtaForDecodeSpl,
+                mint: mockUSDT.mint.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
                 .remainingAccounts(remainingAccounts) // Includes ceaAta (needed for CPI)
                 .signers([admin])
                 .rpc();
@@ -1681,37 +1068,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Account substitution",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                correctWritableFlags,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: correctWritableFlags,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig,
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(substitutedRemaining) // Substituted accounts!
                             .signers([admin])
                             .rpc();
@@ -1769,37 +1139,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Account count mismatch (fewer)",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                correctWritableFlags2,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: correctWritableFlags2,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig,
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(fewerRemaining)
                             .signers([admin])
                             .rpc();
@@ -1855,37 +1208,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Writable flag mismatch",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                correctWritableFlags3,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: correctWritableFlags3,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig,
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(wrongWritableRemaining)
                             .signers([admin])
                             .rpc();
@@ -1940,37 +1276,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Account reordering",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                correctWritableFlags4,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: correctWritableFlags4,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig,
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(reorderedRemaining)
                             .signers([admin])
                             .rpc();
@@ -2030,40 +1349,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Invalid signature",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                sigWritableFlags,
-                                Buffer.from(counterIx.data),
-                                new anchor.BN(Number(gasFee)),
-                                new anchor.BN(Number(rentFee)),
-                                corruptedSignature, // Invalid!
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: sigWritableFlags,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig: { signature: corruptedSignature, recoveryId: sig.recoveryId, messageHash: sig.messageHash, nonce: sig.nonce }, // Invalid!
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -2119,37 +1418,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Wrong nonce",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                            2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                nonceWritableFlags,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(wrongNonce), // Wrong nonce!
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: nonceWritableFlags,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig: { signature: sig.signature, recoveryId: sig.recoveryId, messageHash: sig.messageHash, nonce: new anchor.BN(wrongNonce) }, // Wrong nonce!
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -2207,37 +1489,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Tampered message hash",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                hashWritableFlags,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                tamperedHash, // Tampered!
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: hashWritableFlags,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig: { signature: sig.signature, recoveryId: sig.recoveryId, messageHash: tamperedHash, nonce: sig.nonce }, // Tampered!
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -2290,40 +1555,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Non-executable destination program",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                progWritableFlags,
-                                Buffer.from([0x01]),
-                                new anchor.BN(Number(gasFee)),
-                                new anchor.BN(Number(rentFee)),
-                                Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: nonExecutableAccount,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: progWritableFlags,
+                            ixData: Buffer.from([0x01]),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig,
+                            caller: admin.publicKey,
+                            destinationProgram: nonExecutableAccount,
+                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -2381,37 +1626,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Gateway vault PDA in remaining accounts",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                maliciousWritableFlags,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: counterProgram.programId,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: maliciousWritableFlags,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig,
+                            caller: admin.publicKey,
+                            destinationProgram: counterProgram.programId,
+                        })
                             .remainingAccounts(maliciousRemaining)
                             .signers([admin])
                             .rpc();
@@ -2472,37 +1700,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                 await expectExecuteRevert(
                     "Target program mismatch (caught by message hash validation)",
                     async () => {
-                        return await gatewayProgram.methods
-                            .withdrawAndExecute(
-                    2,
-                                Array.from(txId),
-                                Array.from(universalTxId),
-                                new anchor.BN(0),
-                                Array.from(sender),
-                                targetMismatchWritableFlags,
-                                Buffer.from(counterIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                                sig.recoveryId,
-                                Array.from(sig.messageHash),
-                                new anchor.BN(sig.nonce),
-                            )
-                            .accounts({
-                                caller: admin.publicKey,
-                                config: configPda,
-                                vaultSol: vaultPda,
-                                ceaAuthority: getCeaAuthorityPda(sender),
-                                tssPda,
-                                executedTx: getExecutedTxPda(txId),
-                                destinationProgram: differentProgram,
-                                recipient: null,
-                                vaultAta: null,
-                                ceaAta: null,
-                                mint: null,
-                                tokenProgram: null,
-                                rent: null,
-                                associatedTokenProgram: null,
-                                recipientAta: null,
-                                systemProgram: SystemProgram.programId,
-                            })
+                        return await withdrawAndExecute({
+                            instructionId: 2,
+                            txId,
+                            universalTxId,
+                            amount: new anchor.BN(0),
+                            sender,
+                            writableFlags: targetMismatchWritableFlags,
+                            ixData: Buffer.from(counterIx.data),
+                            gasFee: new anchor.BN(Number(gasFee)),
+                            rentFee: new anchor.BN(Number(rentFee)),
+                            sig,
+                            caller: admin.publicKey,
+                            destinationProgram: differentProgram,
+                        })
                             .remainingAccounts(remainingAccounts)
                             .signers([admin])
                             .rpc();
@@ -2575,6 +1786,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authority: user1Cea,
                     stake: user1Stake,
                     stakeVault: user1StakeVault,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -2609,37 +1822,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             const user1WritableFlags1 = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId1),
-                    Array.from(universalTxId1),
-                    stakeAmount,
-                    Array.from(user1Sender),
-                    user1WritableFlags1,
-                    Buffer.from(stakeIx.data), new anchor.BN(Number(gasFee1)), new anchor.BN(Number(rentFee1)), Array.from(sig1.signature),
-                    sig1.recoveryId,
-                    Array.from(sig1.messageHash),
-                    new anchor.BN(sig1.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user1Cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId1),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId: txId1,
+                universalTxId: universalTxId1,
+                amount: stakeAmount,
+                sender: user1Sender,
+                writableFlags: user1WritableFlags1,
+                ixData: Buffer.from(stakeIx.data),
+                gasFee: new anchor.BN(Number(gasFee1)),
+                rentFee: new anchor.BN(Number(rentFee1)),
+                sig: sig1,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
                 .rpc();
@@ -2674,6 +1870,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authority: user1Cea,
                     stake: user1Stake,
                     stakeVault: user1StakeVault,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -2704,37 +1902,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             expect(ceaBefore.toString()).to.equal(user1Cea.toString());
 
             const user1WritableFlags2 = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId2),
-                    Array.from(universalTxId2),
-                    stakeAmount2,
-                    Array.from(user1Sender),
-                    user1WritableFlags2,
-                    Buffer.from(stakeIx2.data), new anchor.BN(Number(gasFee2)), new anchor.BN(Number(rentFee2)), Array.from(sig2.signature),
-                    sig2.recoveryId,
-                    Array.from(sig2.messageHash),
-                    new anchor.BN(sig2.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user1Cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId2),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId: txId2,
+                universalTxId: universalTxId2,
+                amount: stakeAmount2,
+                sender: user1Sender,
+                writableFlags: user1WritableFlags2,
+                ixData: Buffer.from(stakeIx2.data),
+                gasFee: new anchor.BN(Number(gasFee2)),
+                rentFee: new anchor.BN(Number(rentFee2)),
+                sig: sig2,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx2))
                 .signers([admin])
                 .rpc();
@@ -2771,6 +1952,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authority: user1Cea,
                     stake: user1Stake,
                     stakeVault: user1StakeVault,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -2797,37 +1980,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             const user1UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            const tx = await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(0),
-                    Array.from(user1Sender),
-                    user1UnstakeWritableFlags,
-                    Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user1Cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            const tx = await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(0),
+                sender: user1Sender,
+                writableFlags: user1UnstakeWritableFlags,
+                ixData: Buffer.from(unstakeIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
                 .signers([admin])
                 .rpc();
@@ -2896,6 +2062,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authority: user2Cea,
                     stake: user2Stake,
                     stakeVault: user2StakeVault,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -2929,37 +2097,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             const user2WritableFlags = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    stakeAmount,
-                    Array.from(user2Sender),
-                    user2WritableFlags,
-                    Buffer.from(stakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user2Cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: stakeAmount,
+                sender: user2Sender,
+                writableFlags: user2WritableFlags,
+                ixData: Buffer.from(stakeIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
                 .rpc();
@@ -2992,6 +2143,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authority: user2Cea,
                     stake: user2Stake,
                     stakeVault: user2StakeVault,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -3019,37 +2172,20 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             const user2UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(0),
-                    Array.from(user2Sender),
-                    user2UnstakeWritableFlags,
-                    Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user2Cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(0),
+                sender: user2Sender,
+                writableFlags: user2UnstakeWritableFlags,
+                ixData: Buffer.from(unstakeIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(instructionAccountsToRemaining(unstakeIx))
                 .signers([admin])
                 .rpc();
@@ -3102,6 +2238,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authorityAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
                     stakeAta: await getStakeAta(user3Stake, mockUSDT.mint.publicKey),
                     tokenProgram: TOKEN_PROGRAM_ID,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -3136,43 +2274,29 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             const user3StakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    stakeAmount, // Must match amountBigInt
-                    Array.from(user3Sender),
-                    user3StakeWritableFlags,
-                    Buffer.from(stakeIx.data),
-                    gasFeeBn,
-                    rentFeeBn,
-                    Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: stakeAmount,
+                sender: user3Sender,
+                writableFlags: user3StakeWritableFlags,
+                ixData: Buffer.from(stakeIx.data),
+                gasFee: gasFeeBn,
+                rentFee: rentFeeBn,
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+                vaultAta: vaultUsdtAccount,
+                ceaAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
+                mint: mockUSDT.mint.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
                 .preInstructions([
                     ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
                 ])
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultAta: vaultUsdtAccount,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user3Cea,
-                    ceaAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
-                    mint: mockUSDT.mint.publicKey,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                    recipientAta: null,
-                })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
                 .rpc();
@@ -3205,6 +2329,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authorityAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
                     stakeAta: await getStakeAta(user3Stake, mockUSDT.mint.publicKey),
                     tokenProgram: TOKEN_PROGRAM_ID,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -3243,37 +2369,26 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             const user3UnstakeWritableFlags = accountsToWritableFlagsOnly(accounts);
-            const tx = await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(0), // Must match amountBigInt
-                    Array.from(user3Sender),
-                    user3UnstakeWritableFlags,
-                    Buffer.from(unstakeIx.data), new anchor.BN(Number(gasFee)), new anchor.BN(Number(rentFee)), Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce), // Must match onChainNonce
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultAta: vaultUsdtAccount,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user3Cea,
-                    ceaAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
-                    mint: mockUSDT.mint.publicKey,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                    recipientAta: null,
-                })
+            const tx = await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(0),
+                sender: user3Sender,
+                writableFlags: user3UnstakeWritableFlags,
+                ixData: Buffer.from(unstakeIx.data),
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+                vaultAta: vaultUsdtAccount,
+                ceaAta: await getCeaAta(user3Sender, mockUSDT.mint.publicKey),
+                mint: mockUSDT.mint.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
                 .remainingAccounts(remainingAccounts)
                 .signers([admin])
                 .rpc();
@@ -3378,6 +2493,8 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     authorityAta: await getCeaAta(user4Sender, mockUSDT.mint.publicKey),
                     stakeAta: await getStakeAta(user4Stake, mockUSDT.mint.publicKey),
                     tokenProgram: TOKEN_PROGRAM_ID,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .instruction();
@@ -3411,40 +2528,26 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             });
 
             const accounts1WritableFlags = accountsToWritableFlagsOnly(accounts1);
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId1),
-                    Array.from(universalTxId1),
-                    stakeAmount, // Must match amountBigInt
-                    Array.from(user4Sender),
-                    accounts1WritableFlags,
-                    Buffer.from(stakeIx.data),
-                    gasFeeBn,
-                    rentFeeBn,
-                    Array.from(sig1.signature),
-                    sig1.recoveryId,
-                    Array.from(sig1.messageHash),
-                    new anchor.BN(sig1.nonce), // Must match onChainNonce
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultAta: vaultUsdtAccount,
-                    vaultSol: vaultPda,
-                    ceaAuthority: user4Cea,
-                    ceaAta: await getCeaAta(user4Sender, mockUSDT.mint.publicKey),
-                    mint: mockUSDT.mint.publicKey,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId1),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-                    recipientAta: null,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId: txId1,
+                universalTxId: universalTxId1,
+                amount: stakeAmount,
+                sender: user4Sender,
+                writableFlags: accounts1WritableFlags,
+                ixData: Buffer.from(stakeIx.data),
+                gasFee: gasFeeBn,
+                rentFee: rentFeeBn,
+                sig: sig1,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+                vaultAta: vaultUsdtAccount,
+                ceaAta: await getCeaAta(user4Sender, mockUSDT.mint.publicKey),
+                mint: mockUSDT.mint.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
                 .remainingAccounts(instructionAccountsToRemaining(stakeIx))
                 .signers([admin])
                 .rpc();

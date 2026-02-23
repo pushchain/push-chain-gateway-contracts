@@ -216,31 +216,8 @@ min_cap_usd <= max_cap_usd
 ```
 ⚠️ CRITICAL: Gas deposit succeeds ⟹ pyth_price > 0 (NO staleness or confidence checks)
 ```
-**Enforcement:** calculate_sol_price() (utils.rs:20-23) uses `get_price_unchecked()`:
-```rust
-let price = price_update.get_price_unchecked(&feed_id);
-// TODO: check time in mainnet (utils.rs:20 comment)
-require!(price.price > 0, GatewayError::InvalidPrice);  // ONLY check
+- staleness check will be part of mainnet. 
 ```
-
-**⚠️ CRITICAL SECURITY LIMITATIONS:**
-- **NO publish_time/freshness check** - Stale prices from hours/days ago are accepted
-- **NO confidence threshold enforcement** - Despite storing `pyth_confidence_threshold` (state.rs:90), it is NEVER used
-- Code comment says "TODO: check time in mainnet" but check is not implemented
-- Admin can configure confidence threshold via `set_pyth_confidence_threshold`, but the value is ignored
-
-**ATTACK VECTOR:**
-1. Attacker waits for Pyth oracle to become stale (e.g., price feed paused)
-2. Attacker uses outdated price to bypass USD caps:
-   - If SOL price dropped: deposit more SOL than cap allows (thinks SOL is worth more)
-   - If SOL price spiked: deposit less SOL than minimum (thinks SOL is worth less)
-3. Rate limiting is bypassed via price manipulation
-
-**MITIGATION:**
-- Admin MUST monitor Pyth oracle health externally
-- Consider implementing staleness check (e.g., require publish_time within last 60 seconds)
-- Consider using `get_price_no_older_than()` instead of `get_price_unchecked()`
-
 ---
 
 ## 🔄 Event Invariants
@@ -254,9 +231,10 @@ deposit succeeds ⟹ exactly 1 or 2 UniversalTx events emitted
 
 ### 27. Execute Event
 ```
-withdraw_and_execute succeeds ⟹ exactly 1 UniversalTxExecuted event
+withdraw_and_execute succeeds (target != gateway) ⟹ exactly 1 UniversalTxExecuted event
+withdraw_and_execute succeeds (target == gateway, CEA withdrawal) ⟹ exactly 1 UniversalTx event (via_cea=true)
 ```
-**Enforcement:** emit! at end of withdraw_and_execute
+**Enforcement:** emit! inside send_universal_tx_via_cea for CEA path
 
 ### 28. Revert Event
 ```

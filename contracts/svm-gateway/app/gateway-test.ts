@@ -2,6 +2,7 @@
 import * as dotenv from "dotenv";
 dotenv.config({ path: "../.env" });
 dotenv.config();
+import { createHash } from "crypto";
 
 import * as anchor from "@coral-xyz/anchor";
 import {
@@ -1391,6 +1392,8 @@ async function run() {
             rent: null,
             associatedTokenProgram: null,
             recipientAta: null,
+            rateLimitConfig: null,
+            tokenRateLimit: null,
             systemProgram: SystemProgram.programId,
         })
         .signers([adminKeypair])
@@ -1515,6 +1518,8 @@ async function run() {
                     rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                     associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                     recipientAta: adminAta.address,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([adminKeypair])
@@ -1706,6 +1711,8 @@ async function run() {
                 rent: null,
                 associatedTokenProgram: null,
                 recipientAta: null,                   // null for execute mode
+                rateLimitConfig: null,
+                tokenRateLimit: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(remainingAccounts)
@@ -1862,6 +1869,8 @@ async function run() {
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 recipientAta: null,                   // null for execute mode
+                rateLimitConfig: null,
+                tokenRateLimit: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(remainingAccounts)
@@ -1904,8 +1913,118 @@ async function run() {
         console.log(`Recipient SPL: ${recipientTokenBefore.toString()} → ${recipientTokenAfter.toString()} ✅`);
     }
 
+    async function runCeaWithdrawSolTest() {
+        console.log("👉 sendUniversalTxViaCea (CEA self-withdraw SOL → vault)");
+
+        const senderBytes = Buffer.alloc(20, 0x33); // arbitrary 20-byte Push Chain sender
+        const ceaAuthority = getCeaAuthorityPda(Array.from(senderBytes));
+
+        // Fund the CEA directly so it has lamports to withdraw
+        const fundAmount = 5_000_000; // 0.005 SOL
+        const fundTx = new anchor.web3.Transaction().add(
+            anchor.web3.SystemProgram.transfer({
+                fromPubkey: admin,
+                toPubkey: ceaAuthority,
+                lamports: fundAmount,
+            })
+        );
+        await adminProvider.sendAndConfirm(fundTx, [adminKeypair]);
+        const ceaBalBefore = await connection.getBalance(ceaAuthority);
+        console.log(`CEA funded: ${ceaBalBefore} lamports`);
+
+        // Build ix_data: discriminator(send_universal_tx_via_cea) + borsh(SendUniversalTxViaCeaArgs)
+        const discriminator = createHash("sha256")
+            .update("global:send_universal_tx_via_cea")
+            .digest()
+            .slice(0, 8);
+        const tokenBytes = Buffer.alloc(32, 0); // SOL = Pubkey::default()
+        const amountBytes = Buffer.alloc(8);
+        amountBytes.writeBigUInt64LE(BigInt(0)); // 0 = withdraw full balance
+        const payloadLenBytes = Buffer.from([0, 0, 0, 0]); // empty Vec<u8>
+        const ixData = Buffer.concat([discriminator, tokenBytes, amountBytes, payloadLenBytes]);
+
+        const txId = anchor.web3.Keypair.generate().publicKey.toBytes();
+        const universalTxId = generateUniversalTxId();
+        const { gasFee, rentFee } = await calculateSolExecuteFees(connection, BigInt(0));
+        const nonce = await syncNonceFromChain();
+        const chainId = (await (program.account as any).tssPda.fetch(tssPda)).chainId;
+
+        const sig = await signTssMessage({
+            instruction: TssInstruction.Execute,
+            nonce,
+            amount: BigInt(0),
+            chainId,
+            additional: buildExecuteAdditionalData(
+                universalTxId,
+                txId,
+                program.programId, // destination_program = gateway itself
+                senderBytes,
+                [],               // no remaining accounts
+                ixData,
+                gasFee,
+                rentFee,
+            ),
+        });
+
+        const executedTx = getExecutedTxPda(txId);
+        const vaultBalBefore = await connection.getBalance(vaultPda);
+        const relayerBalBefore = await connection.getBalance(relayer);
+
+        const txSig = await relayerProgram.methods
+            .withdrawAndExecute(
+                2,
+                Array.from(txId),
+                Array.from(universalTxId),
+                new anchor.BN(0),
+                Array.from(senderBytes),
+                Buffer.from([]),   // writable_flags: no remaining accounts
+                ixData,
+                new anchor.BN(Number(gasFee)),
+                new anchor.BN(Number(rentFee)),
+                Array.from(sig.signature),
+                sig.recoveryId,
+                Array.from(sig.messageHash),
+                new anchor.BN(sig.nonce),
+            )
+            .accounts({
+                caller: relayer,
+                config: configPda,
+                vaultSol: vaultPda,
+                ceaAuthority,
+                tssPda,
+                executedTx,
+                destinationProgram: program.programId,
+                recipient: null,
+                vaultAta: null,
+                ceaAta: null,
+                mint: null,
+                tokenProgram: null,
+                rent: null,
+                associatedTokenProgram: null,
+                recipientAta: null,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([relayerKeypair])
+            .rpc();
+
+        const ceaBalAfter = await connection.getBalance(ceaAuthority);
+        const vaultBalAfter = await connection.getBalance(vaultPda);
+        const relayerBalAfter = await connection.getBalance(relayer);
+
+        assert.equal(ceaBalAfter, 0, "CEA should be fully drained");
+        assert.isAbove(vaultBalAfter, vaultBalBefore, "Vault should receive CEA funds");
+        assert.isAbove(relayerBalAfter - relayerBalBefore, -200_000, "Relayer net loss should be minimal");
+
+        console.log(`CEA drained: ${ceaBalBefore} → ${ceaBalAfter} lamports ✅`);
+        console.log(`Vault gained: ${vaultBalBefore} → ${vaultBalAfter} lamports ✅`);
+        console.log(`Tx: ${txSig}`);
+    }
+
     await runExecuteSolTest();
     await runExecuteSplTest();
+    await runCeaWithdrawSolTest();
 
     // 13.6 Execute security validations (negative tests on devnet)
     console.log("\n=== 13.6 Testing execute security validations (negative tests) ===");
@@ -2018,6 +2137,8 @@ async function run() {
                     rent: null,
                     associatedTokenProgram: null,
                     recipientAta: null,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(substitutedRemaining)
@@ -2107,6 +2228,8 @@ async function run() {
                     rent: null,
                     associatedTokenProgram: null,
                     recipientAta: null,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts2.map((a) => ({
@@ -2197,6 +2320,8 @@ async function run() {
                     rent: null,
                     associatedTokenProgram: null,
                     recipientAta: null,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(securityAccounts3.map((a) => ({
@@ -2293,6 +2418,8 @@ async function run() {
                     rent: null,
                     associatedTokenProgram: null,
                     recipientAta: null,
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
                     systemProgram: SystemProgram.programId,
                 })
                 .remainingAccounts(fewerRemaining)
@@ -2392,6 +2519,8 @@ async function run() {
             rent: null,
             associatedTokenProgram: null,
             recipientAta: null,
+            rateLimitConfig: null,
+            tokenRateLimit: null,
             systemProgram: SystemProgram.programId,
         };
 
@@ -2698,6 +2827,8 @@ async function run() {
                 rent: null,
                 associatedTokenProgram: null,
                 recipientAta: null,
+                rateLimitConfig: null,
+                tokenRateLimit: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(heavyAccounts.map(a => ({
@@ -2817,6 +2948,8 @@ async function run() {
                 rent: anchor.web3.SYSVAR_RENT_PUBKEY,
                 associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
                 recipientAta: null,
+                rateLimitConfig: null,
+                tokenRateLimit: null,
                 systemProgram: SystemProgram.programId,
             })
             .remainingAccounts(heavyAccountsSpl.map(a => ({

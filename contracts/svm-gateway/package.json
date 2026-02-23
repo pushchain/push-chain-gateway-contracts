@@ -26,10 +26,12 @@
     "test:setup": "TEST_FILE=tests/00-setup.test.ts anchor test",
     "test:execute": "TEST_FILE=tests/execute.test.ts anchor test",
     "test:execute-heavy": "TEST_FILE=tests/execute-heavy.test.ts anchor test",
+    "test:cea-to-uea": "TEST_FILE=tests/cea-to-uea.test.ts anchor test",
     "test:withdraw": "TEST_FILE=tests/withdraw.test.ts anchor test",
     "test:admin": "TEST_FILE=tests/admin.test.ts anchor test",
     "test:rate-limit": "TEST_FILE=tests/rate-limit.test.ts anchor test",
-    "test:universal-tx": "TEST_FILE=tests/universal-tx.test.ts anchor test"
+    "test:universal-tx": "TEST_FILE=tests/universal-tx.test.ts anchor test",
+    "devnet:test": "ts-node app/gateway-test.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

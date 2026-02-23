@@ -5,50 +5,18 @@ import { TestCounter } from "../target/types/test_counter";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { accountsToWritableFlags } from "../app/execute-payload";
 import * as sharedState from "./shared-state";
 import { signTssMessage, buildExecuteAdditionalData, TssInstruction, GatewayAccountMeta, generateUniversalTxId } from "./helpers/tss";
 import { ensureTestSetup } from "./helpers/test-setup";
-import { createHash } from "crypto";
-
-// Helper to compute Anchor-style discriminator (first 8 bytes of SHA-256)
-const computeDiscriminator = (name: string): Buffer => {
-    return createHash("sha256").update(name).digest().slice(0, 8);
-};
-
-const COMPUTE_BUFFER = BigInt(100_000);
-const BASE_RENT_FEE = BigInt(1_500_000);
-
-const getExecutedTxRent = async (connection: anchor.web3.Connection): Promise<number> => {
-    const rent = await connection.getMinimumBalanceForRentExemption(8);
-    return rent;
-};
-
-const calculateSolExecuteFees = async (
-    connection: anchor.web3.Connection,
-    rentFee: bigint = BASE_RENT_FEE
-): Promise<{ gasFee: bigint; rentFee: bigint }> => {
-    const executedTxRent = BigInt(await getExecutedTxRent(connection));
-    const gasFee = rentFee + executedTxRent + COMPUTE_BUFFER;
-    return { gasFee, rentFee };
-};
-
-const instructionAccountsToGatewayMetas = (ix: anchor.web3.TransactionInstruction): GatewayAccountMeta[] =>
-    ix.keys.map((key) => ({
-        pubkey: key.pubkey,
-        isWritable: key.isWritable,
-    }));
-
-const instructionAccountsToRemaining = (ix: anchor.web3.TransactionInstruction) =>
-    ix.keys.map((key) => ({
-        pubkey: key.pubkey,
-        isWritable: key.isWritable,
-        isSigner: false,
-    }));
-
-const accountsToWritableFlagsOnly = (accounts: GatewayAccountMeta[]) => {
-    return accountsToWritableFlags(accounts);
-};
+import {
+    COMPUTE_BUFFER, BASE_RENT_FEE,
+    computeDiscriminator,
+    makeTxIdGenerator, generateSender,
+    getExecutedTxPda as _getExecutedTxPda, getCeaAuthorityPda as _getCeaAuthorityPda,
+    getExecutedTxRent, calculateSolExecuteFees,
+    instructionAccountsToGatewayMetas, instructionAccountsToRemaining, accountsToWritableFlagsOnly,
+} from "./helpers/test-utils";
+import { makeWithdrawAndExecuteBuilder, WithdrawAndExecuteArgs } from "./helpers/builders";
 
 describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -70,49 +38,15 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
     let tssPda: PublicKey;
 
     let currentNonce = 0;
-    let txIdCounter = 0;
+    let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
+
+    const generateTxId = makeTxIdGenerator();
+    const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, gatewayProgram.programId);
+    const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, gatewayProgram.programId);
 
     const syncNonceFromChain = async () => {
         const account = await gatewayProgram.account.tssPda.fetch(tssPda);
         currentNonce = Number(account.nonce);
-    };
-
-    const generateTxId = (): number[] => {
-        txIdCounter++;
-        const buffer = Buffer.alloc(32);
-        buffer.writeUInt32BE(txIdCounter, 0);
-        buffer.writeUInt32BE(Date.now() % 0xFFFFFFFF, 4);
-        for (let i = 8; i < 32; i++) {
-            buffer[i] = Math.floor(Math.random() * 256);
-        }
-        return Array.from(buffer);
-    };
-
-    const generateSender = (): number[] => {
-        const buffer = Buffer.alloc(20);
-        for (let i = 0; i < 20; i++) {
-            buffer[i] = Math.floor(Math.random() * 256);
-        }
-        if (buffer.every(b => b === 0)) {
-            buffer[0] = 1;
-        }
-        return Array.from(buffer);
-    };
-
-    const getExecutedTxPda = (txId: number[]): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("executed_tx"), Buffer.from(txId)],
-            gatewayProgram.programId
-        );
-        return pda;
-    };
-
-    const getCeaAuthorityPda = (sender: number[]): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("push_identity"), Buffer.from(sender)],
-            gatewayProgram.programId
-        );
-        return pda;
     };
 
     before(async () => {
@@ -187,6 +121,8 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             })
         );
         await provider.sendAndConfirm(vaultTx, [admin]);
+
+        withdrawAndExecute = makeWithdrawAndExecuteBuilder(gatewayProgram, configPda, vaultPda, tssPda);
     });
 
     describe("Heavy batch_operation tests", () => {
@@ -251,40 +187,20 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(0),
-                    Array.from(sender),
-                    writableFlags,
-                    ixData,
-                    new anchor.BN(Number(gasFee)),
-                    new anchor.BN(Number(rentFee)),
-                    Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(0),
+                sender,
+                writableFlags,
+                ixData,
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(remaining)
                 .signers([admin])
                 .rpc();
@@ -359,40 +275,20 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(0),
-                    Array.from(sender),
-                    writableFlags,
-                    ixData,
-                    new anchor.BN(Number(gasFee)),
-                    new anchor.BN(Number(rentFee)),
-                    Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(0),
+                sender,
+                writableFlags,
+                ixData,
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(remaining)
                 .signers([admin])
                 .rpc();
@@ -467,40 +363,20 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await gatewayProgram.methods
-                .withdrawAndExecute(
-                    2,
-                    Array.from(txId),
-                    Array.from(universalTxId),
-                    new anchor.BN(0),
-                    Array.from(sender),
-                    writableFlags,
-                    ixData,
-                    new anchor.BN(Number(gasFee)),
-                    new anchor.BN(Number(rentFee)),
-                    Array.from(sig.signature),
-                    sig.recoveryId,
-                    Array.from(sig.messageHash),
-                    new anchor.BN(sig.nonce),
-                )
-                .accounts({
-                    caller: admin.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: cea,
-                    tssPda,
-                    executedTx: getExecutedTxPda(txId),
-                    destinationProgram: counterProgram.programId,
-                    recipient: null,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 2,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(0),
+                sender,
+                writableFlags,
+                ixData,
+                gasFee: new anchor.BN(Number(gasFee)),
+                rentFee: new anchor.BN(Number(rentFee)),
+                sig,
+                caller: admin.publicKey,
+                destinationProgram: counterProgram.programId,
+            })
                 .remainingAccounts(remaining)
                 .signers([admin])
                 .rpc();
@@ -567,40 +443,20 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
             // This should fail with transaction size error
             try {
-                await gatewayProgram.methods
-                    .withdrawAndExecute(
-                    2,
-                        Array.from(txId),
-                        Array.from(universalTxId),
-                        new anchor.BN(0),
-                        Array.from(sender),
-                        writableFlags,
-                        ixData,
-                        new anchor.BN(Number(gasFee)),
-                        new anchor.BN(Number(rentFee)),
-                        Array.from(sig.signature),
-                        sig.recoveryId,
-                        Array.from(sig.messageHash),
-                        new anchor.BN(sig.nonce),
-                    )
-                    .accounts({
-                        caller: admin.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: cea,
-                        tssPda,
-                        executedTx: getExecutedTxPda(txId),
-                        destinationProgram: counterProgram.programId,
-                        recipient: null,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                await withdrawAndExecute({
+                    instructionId: 2,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(0),
+                    sender,
+                    writableFlags,
+                    ixData,
+                    gasFee: new anchor.BN(Number(gasFee)),
+                    rentFee: new anchor.BN(Number(rentFee)),
+                    sig,
+                    caller: admin.publicKey,
+                    destinationProgram: counterProgram.programId,
+                })
                     .remainingAccounts(remaining)
                     .signers([admin])
                     .rpc();

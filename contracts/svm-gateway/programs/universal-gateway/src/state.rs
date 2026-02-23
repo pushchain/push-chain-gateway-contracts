@@ -189,6 +189,7 @@ pub struct UniversalTx {
     pub revert_instruction: RevertInstructions,
     pub tx_type: TxType,
     pub signature_data: Vec<u8>,
+    pub via_cea: bool, // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as UEA
 }
 
 /// Revert withdraw event (parity with EVM `RevertUniversalTx`).

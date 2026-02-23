@@ -7,15 +7,17 @@ import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddres
 import * as sharedState from "./shared-state";
 import { signTssMessage, TssInstruction, generateUniversalTxId, buildWithdrawAdditionalData } from "./helpers/tss";
 import { ensureTestSetup } from "./helpers/test-setup";
-
-const USDT_DECIMALS = 6;
-const TOKEN_MULTIPLIER = BigInt(10 ** USDT_DECIMALS);
+import {
+    USDT_DECIMALS, TOKEN_MULTIPLIER,
+    asLamports, asTokenAmount,
+    makeTxIdGenerator, generateSender,
+    getExecutedTxPda as _getExecutedTxPda, getCeaAuthorityPda as _getCeaAuthorityPda,
+    getTokenRateLimitPda as _getTokenRateLimitPda,
+} from "./helpers/test-utils";
+import { makeWithdrawAndExecuteBuilder, WithdrawAndExecuteArgs } from "./helpers/builders";
 
 // Gas fee constants (in lamports)
 const DEFAULT_GAS_FEE = BigInt(5000); // 0.000005 SOL for relayer
-
-const asLamports = (sol: number) => new anchor.BN(sol * anchor.web3.LAMPORTS_PER_SOL);
-const asTokenAmount = (tokens: number) => new anchor.BN(Number(BigInt(tokens) * TOKEN_MULTIPLIER));
 
 const toBytes = (pubkey: PublicKey) => pubkey.toBuffer();
 
@@ -54,64 +56,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
     let recipientUsdtAccount: PublicKey;
 
     let currentNonce = 0;
-    let txIdCounter = 0; // Counter to ensure unique tx_ids across tests
+    let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
+
+    const generateTxId = makeTxIdGenerator();
+    const generateOriginCaller = generateSender; // same function, aliased for readability
+    const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, program.programId);
+    const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, program.programId);
+    const getTokenRateLimitPda = (tokenMint: PublicKey) => _getTokenRateLimitPda(tokenMint, program.programId);
 
     const syncNonceFromChain = async () => {
         const account = await program.account.tssPda.fetch(tssPda);
         currentNonce = Number(account.nonce);
-    };
-
-    // Helper to generate a unique tx_id (32 bytes) - uses counter + random for uniqueness
-    const generateTxId = (): number[] => {
-        txIdCounter++;
-        const buffer = Buffer.alloc(32);
-        buffer.writeUInt32BE(txIdCounter, 0);
-        buffer.writeUInt32BE(Date.now() % 0xFFFFFFFF, 4);
-        // Fill rest with random
-        for (let i = 8; i < 32; i++) {
-            buffer[i] = Math.floor(Math.random() * 256);
-        }
-        return Array.from(buffer);
-    };
-
-    // Helper to generate an origin_caller EVM address (20 bytes)
-    const generateOriginCaller = (): number[] => {
-        const buffer = Buffer.alloc(20);
-        for (let i = 0; i < 20; i++) {
-            buffer[i] = Math.floor(Math.random() * 256);
-        }
-        // Ensure it's not all zeros (would fail validation)
-        if (buffer.every(b => b === 0)) {
-            buffer[0] = 1;
-        }
-        return Array.from(buffer);
-    };
-
-    // Helper to derive executed_tx PDA from tx_id
-    const getExecutedTxPda = (txId: number[]): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("executed_tx"), Buffer.from(txId)],
-            program.programId
-        );
-        return pda;
-    };
-
-    // Helper to get token rate limit PDA
-    const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("rate_limit"), tokenMint.toBuffer()],
-            program.programId
-        );
-        return pda;
-    };
-
-    // Helper to derive CEA authority PDA from sender
-    const getCeaAuthorityPda = (sender: number[]): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("push_identity"), Buffer.from(sender)],
-            program.programId
-        );
-        return pda;
     };
 
     const signTssMessageWithChainId = async (params: {
@@ -358,6 +313,8 @@ describe("Universal Gateway - Withdraw Tests", () => {
         }
 
         await syncNonceFromChain();
+
+        withdrawAndExecute = makeWithdrawAndExecuteBuilder(program, configPda, vaultPda, tssPda);
     });
 
     describe("withdraw", () => {
@@ -390,40 +347,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const initialRecipient = await provider.connection.getBalance(recipient.publicKey);
             const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
-            await program.methods
-                .withdrawAndExecute(
-                    1,                                    // instruction_id = withdraw
-                    txId,                                 // [u8; 32]
-                    Array.from(universalTxId),            // [u8; 32]
-                    new anchor.BN(withdrawLamports),      // amount
-                    originCaller,                         // sender [u8; 20]
-                    Buffer.alloc(0),                                   // writable_flags (empty for withdraw)
-                    Buffer.from([]),                      // ix_data (empty for withdraw)
-                    new anchor.BN(Number(DEFAULT_GAS_FEE)), // gas_fee
-                    new anchor.BN(0),                     // rent_fee (0 for withdraw)
-                    signature.signature,                  // [u8; 64]
-                    signature.recoveryId,                 // u8
-                    signature.messageHash,                // [u8; 32]
-                    signature.nonce                       // u64
-                )
-                .accounts({
-                    caller: relayer.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(originCaller),
-                    tssPda,
-                    executedTx: executedTxPda,
-                    destinationProgram: SystemProgram.programId,
-                    recipient: recipient.publicKey,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 1,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(withdrawLamports),
+                sender: originCaller,
+                gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                sig: signature,
+                caller: relayer.publicKey,
+                recipient: recipient.publicKey,
+            })
                 .signers([relayer])
                 .rpc();
 
@@ -471,40 +405,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             corrupted[0] ^= 0xff;
 
             await expectRejection(
-                program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(withdrawLamports),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        corrupted,
-                        valid.recoveryId,
-                        valid.messageHash,
-                        valid.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(withdrawLamports),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash, nonce: valid.nonce },
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc(),
                 "TssAuthFailed"
@@ -545,40 +456,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             await expectRejection(
-                program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(withdrawLamports),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        signature.signature,
-                        signature.recoveryId,
-                        signature.messageHash,
-                        signature.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(withdrawLamports),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: signature,
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc(),
                 "Paused"
@@ -620,40 +508,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             await expectRejection(
-                program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(excessive),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        signature.signature,
-                        signature.recoveryId,
-                        signature.messageHash,
-                        signature.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(excessive),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: signature,
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc(),
                 "custom program error"
@@ -698,40 +563,24 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const ceaAtaBefore = await provider.connection.getAccountInfo(ceaAta);
 
-            const sig = await program.methods
-                .withdrawAndExecute(
-                    1,                                    // instruction_id = withdraw
-                    txId,
-                    Array.from(universalTxId),
-                    new anchor.BN(Number(withdrawRaw)),
-                    originCaller,
-                    Buffer.alloc(0),                                   // writable_flags (empty for withdraw)
-                    Buffer.from([]),                      // ix_data (empty for withdraw)
-                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                    new anchor.BN(0),                     // rent_fee (0 for withdraw)
-                    signature.signature,
-                    signature.recoveryId,
-                    signature.messageHash,
-                    signature.nonce
-                )
-                .accounts({
-                    caller: relayer.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: ceaAuthority,
-                    tssPda,
-                    executedTx: executedTxPda,
-                    destinationProgram: SystemProgram.programId,
-                    recipient: recipient.publicKey,
-                    vaultAta: vaultUsdtAccount,
-                    ceaAta: ceaAta,
-                    mint: mockUSDT.mint.publicKey,
-                    tokenProgram: TOKEN_PROGRAM_ID,
-                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-                    recipientAta: recipientUsdtAccount,
-                    systemProgram: SystemProgram.programId,
-                })
+            const sig = await withdrawAndExecute({
+                instructionId: 1,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(Number(withdrawRaw)),
+                sender: originCaller,
+                gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                sig: signature,
+                caller: relayer.publicKey,
+                recipient: recipient.publicKey,
+                vaultAta: vaultUsdtAccount,
+                ceaAta: ceaAta,
+                mint: mockUSDT.mint.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                recipientAta: recipientUsdtAccount,
+            })
                 .signers([relayer])
                 .rpc();
 
@@ -807,40 +656,24 @@ describe("Universal Gateway - Withdraw Tests", () => {
             corrupted[0] ^= 0xff;
 
             await expectRejection(
-                program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(Number(withdrawRaw)),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        corrupted,
-                        signature.recoveryId,
-                        signature.messageHash,
-                        signature.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: ceaAuthority,
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: vaultUsdtAccount,
-                        ceaAta: ceaAta,
-                        mint: mockUSDT.mint.publicKey,
-                        tokenProgram: TOKEN_PROGRAM_ID,
-                        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-                        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-                        recipientAta: recipientUsdtAccount,
-                        systemProgram: SystemProgram.programId,
-                    })
+                withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(Number(withdrawRaw)),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: { signature: corrupted, recoveryId: signature.recoveryId, messageHash: signature.messageHash, nonce: signature.nonce },
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                    vaultAta: vaultUsdtAccount,
+                    ceaAta: ceaAta,
+                    mint: mockUSDT.mint.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                    recipientAta: recipientUsdtAccount,
+                })
                     .signers([relayer])
                     .rpc(),
                 "TssAuthFailed"
@@ -1004,40 +837,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             await expectRejection(
-                program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(0),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        signature.signature,
-                        signature.recoveryId,
-                        signature.messageHash,
-                        signature.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(0),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: signature,
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc(),
                 "InvalidAmount"
@@ -1071,40 +881,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             await expectRejection(
-                program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        signature.signature,
-                        signature.recoveryId,
-                        signature.messageHash,
-                        new anchor.BN(currentNonce + 5)
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: { signature: signature.signature, recoveryId: signature.recoveryId, messageHash: signature.messageHash, nonce: new anchor.BN(currentNonce + 5) },
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc(),
                 "NonceMismatch"
@@ -1146,40 +933,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             try {
-                await program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
-                        zeroOriginCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        signature.signature,
-                        signature.recoveryId,
-                        signature.messageHash,
-                        signature.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(zeroOriginCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                await withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
+                    sender: zeroOriginCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: signature,
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc();
                 expect.fail("Should have thrown InvalidInput error");
@@ -1227,40 +991,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Anchor throws account validation error for zero recipient
             // Our program also validates this, but Anchor might catch it first
             try {
-                await program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        signature.signature,
-                        signature.recoveryId,
-                        signature.messageHash,
-                        signature.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: zeroRecipient,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                await withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: signature,
+                    caller: relayer.publicKey,
+                    recipient: zeroRecipient,
+                })
                     .signers([relayer])
                     .rpc();
                 expect.fail("Should have thrown an error for zero recipient");
@@ -1304,40 +1045,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // First withdrawal should succeed
             const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
-            await program.methods
-                .withdrawAndExecute(
-                    1,
-                    txId,
-                    Array.from(universalTxId),
-                    new anchor.BN(withdrawLamports),
-                    originCaller,
-                    Buffer.alloc(0),
-                    Buffer.from([]),
-                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                    new anchor.BN(0),
-                    signature.signature,
-                    signature.recoveryId,
-                    signature.messageHash,
-                    signature.nonce
-                )
-                .accounts({
-                    caller: relayer.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(originCaller),
-                    tssPda,
-                    executedTx: executedTxPda,
-                    destinationProgram: SystemProgram.programId,
-                    recipient: recipient.publicKey,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 1,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(withdrawLamports),
+                sender: originCaller,
+                gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                sig: signature,
+                caller: relayer.publicKey,
+                recipient: recipient.publicKey,
+            })
                 .signers([relayer])
                 .rpc();
 
@@ -1377,40 +1095,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             try {
-                await program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(withdrawLamports),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        signature2.signature,
-                        signature2.recoveryId,
-                        signature2.messageHash,
-                        signature2.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                await withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(withdrawLamports),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: signature2,
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc();
                 expect.fail("Should have thrown PayloadExecuted error");
@@ -1465,40 +1160,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // Attempt withdrawal with corrupted signature (should fail)
             try {
-                await program.methods
-                    .withdrawAndExecute(
-                        1,
-                        txId,
-                        Array.from(universalTxId),
-                        new anchor.BN(withdrawLamports),
-                        originCaller,
-                        Buffer.alloc(0),
-                        Buffer.from([]),
-                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                        new anchor.BN(0),
-                        corrupted,
-                        valid.recoveryId,
-                        valid.messageHash,
-                        valid.nonce
-                    )
-                    .accounts({
-                        caller: relayer.publicKey,
-                        config: configPda,
-                        vaultSol: vaultPda,
-                        ceaAuthority: getCeaAuthorityPda(originCaller),
-                        tssPda,
-                        executedTx: executedTxPda,
-                        destinationProgram: SystemProgram.programId,
-                        recipient: recipient.publicKey,
-                        vaultAta: null,
-                        ceaAta: null,
-                        mint: null,
-                        tokenProgram: null,
-                        rent: null,
-                        associatedTokenProgram: null,
-                        recipientAta: null,
-                        systemProgram: SystemProgram.programId,
-                    })
+                await withdrawAndExecute({
+                    instructionId: 1,
+                    txId,
+                    universalTxId,
+                    amount: new anchor.BN(withdrawLamports),
+                    sender: originCaller,
+                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash, nonce: valid.nonce },
+                    caller: relayer.publicKey,
+                    recipient: recipient.publicKey,
+                })
                     .signers([relayer])
                     .rpc();
                 expect.fail("Should have failed with TssAuthFailed");
@@ -1533,40 +1205,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 additional: tssAdditional2,
             });
 
-            await program.methods
-                .withdrawAndExecute(
-                    1,
-                    txId,
-                    Array.from(universalTxId),
-                    new anchor.BN(withdrawLamports),
-                    originCaller,
-                    Buffer.alloc(0),
-                    Buffer.from([]),
-                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                    new anchor.BN(0),
-                    validSig.signature,
-                    validSig.recoveryId,
-                    validSig.messageHash,
-                    validSig.nonce
-                )
-                .accounts({
-                    caller: relayer.publicKey,
-                    config: configPda,
-                    vaultSol: vaultPda,
-                    ceaAuthority: getCeaAuthorityPda(originCaller),
-                    tssPda,
-                    executedTx: executedTxPda,
-                    destinationProgram: SystemProgram.programId,
-                    recipient: recipient.publicKey,
-                    vaultAta: null,
-                    ceaAta: null,
-                    mint: null,
-                    tokenProgram: null,
-                    rent: null,
-                    associatedTokenProgram: null,
-                    recipientAta: null,
-                    systemProgram: SystemProgram.programId,
-                })
+            await withdrawAndExecute({
+                instructionId: 1,
+                txId,
+                universalTxId,
+                amount: new anchor.BN(withdrawLamports),
+                sender: originCaller,
+                gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                sig: validSig,
+                caller: relayer.publicKey,
+                recipient: recipient.publicKey,
+            })
                 .signers([relayer])
                 .rpc();
 
