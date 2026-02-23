@@ -122,6 +122,16 @@ contract Vault is
         emit TSSUpdated(old, newTss);
     }
 
+    /// @notice             Allows the admin to update the CEAFactory address
+    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
+    /// @param newCEAFactory New CEAFactory address
+    function setCEAFactory(address newCEAFactory) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newCEAFactory == address(0)) revert Errors.ZeroAddress();
+        address old = address(CEAFactory);
+        CEAFactory = ICEAFactory(newCEAFactory);
+        emit CEAFactoryUpdated(old, newCEAFactory);
+    }
+
     /// @notice             Allows the admin to sweep tokens from the contract
     /// @dev                Only callable by DEFAULT_ADMIN_ROLE
     /// @param token        Token address

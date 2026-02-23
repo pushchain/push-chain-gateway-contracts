@@ -26,10 +26,8 @@ contract UpgradeVault is Script {
     // ========================================
     //     CONFIGURATION PARAMETERS
     // ========================================
-    // **TODO: UPDATE THESE BEFORE UPGRADE**
-
-    // Existing proxy address (from previous deployment)
-    address constant VAULT_PROXY = address(0); // TODO: Set to existing vault proxy address
+    // Sepolia vault proxy
+    address constant VAULT_PROXY = 0xe8D77b8BC708aeA8E3735f686DcD33004a7Cd294;
 
     // ========================================
     //         UPGRADE STATE
@@ -162,10 +160,13 @@ contract UpgradeVault is Script {
         address gateway = address(vault.gateway());
         address ceaFactory = address(vault.CEAFactory());
 
+        address tssAddress = vault.TSS_ADDRESS();
+
         console.log("OK: Implementation updated successfully");
         console.log("OK: Vault state preserved");
         console.log("OK: Gateway reference intact:", gateway);
         console.log("OK: CEAFactory reference intact:", ceaFactory);
+        console.log("OK: TSS_ADDRESS intact:", tssAddress);
         console.log("");
     }
 
