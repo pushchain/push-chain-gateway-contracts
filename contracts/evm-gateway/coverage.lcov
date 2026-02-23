@@ -1,5 +1,5 @@
-Warning: This is a nightly build of Foundry. It is recommended to use the latest stable version. Visit https://book.getfoundry.sh/announcements for more information. 
-To mute this warning set `FOUNDRY_DISABLE_NIGHTLY_WARNING` in your environment. 
+Warning: This is a nightly build of Foundry. It is recommended to use the latest stable version. Visit https://book.getfoundry.sh/announcements for more information.
+To mute this warning set `FOUNDRY_DISABLE_NIGHTLY_WARNING` in your environment.
 
 Warning: `--ir-minimum` enables `viaIR` with minimum optimization, which can result in inaccurate source mappings.
 Only use this flag as a workaround if you are experiencing "stack too deep" errors.
@@ -721,7 +721,7 @@ Ran 67 tests for test/gateway/11_executeUniversalTx.t.sol:GatewayExecuteUniversa
 [PASS] testExecuteCall_SuccessNoValue() (gas: 157832)
 [PASS] testExecuteCall_SuccessWithValue() (gas: 126910)
 [PASS] testExecuteCall_TargetReverts_Reverts() (gas: 141393)
-[PASS] testExecuteUniversalTx_DuplicateTxID_Reverts() (gas: 156900)
+[PASS] testExecuteUniversalTx_DuplicatesubTxId_Reverts() (gas: 156900)
 [PASS] testExecuteUniversalTx_ERC20Path_InsufficientBalance_Reverts() (gas: 81707)
 [PASS] testExecuteUniversalTx_ERC20Path_NoRemainingTokens() (gas: 156235)
 [PASS] testExecuteUniversalTx_ERC20Path_OnlyVault_Reverts() (gas: 169196)
@@ -734,9 +734,9 @@ Ran 67 tests for test/gateway/11_executeUniversalTx.t.sol:GatewayExecuteUniversa
 [PASS] testExecuteUniversalTx_ERC20WithArbitraryCall() (gas: 154536)
 [PASS] testExecuteUniversalTx_EmptyPayload_Succeeds() (gas: 153692)
 [PASS] testExecuteUniversalTx_EventEmittedCorrectly() (gas: 153303)
-[PASS] testExecuteUniversalTx_MultipleExecutionsDifferentTxIDs() (gas: 256271)
+[PASS] testExecuteUniversalTx_MultipleExecutionsDifferentsubTxIds() (gas: 256271)
 [PASS] testExecuteUniversalTx_NativePath_ComplexPayload_Succeeds() (gas: 130990)
-[PASS] testExecuteUniversalTx_NativePath_DuplicateTxID_Reverts() (gas: 137612)
+[PASS] testExecuteUniversalTx_NativePath_DuplicatesubTxId_Reverts() (gas: 137612)
 [PASS] testExecuteUniversalTx_NativePath_EmptyPayload_Succeeds() (gas: 126834)
 [PASS] testExecuteUniversalTx_NativePath_EventEmission_Complete() (gas: 123872)
 [PASS] testExecuteUniversalTx_NativePath_GasExhaustion_Reverts() (gas: 2988621)
@@ -770,7 +770,7 @@ Ran 67 tests for test/gateway/11_executeUniversalTx.t.sol:GatewayExecuteUniversa
 [PASS] testSafeApprove_StandardERC20_Success() (gas: 163342)
 [PASS] testSafeApprove_USDTStyle_FromNonZero_Reverts() (gas: 2252760)
 [PASS] testSafeApprove_USDTStyle_FromZero_Success() (gas: 165945)
-[PASS] testWithdrawFunds_DuplicateTxID_Reverts() (gas: 146370)
+[PASS] testWithdrawFunds_DuplicatesubTxId_Reverts() (gas: 146370)
 [PASS] testWithdrawFunds_EventEmission_Complete() (gas: 116617)
 [PASS] testWithdrawFunds_InsufficientBalance_Reverts() (gas: 81481)
 [PASS] testWithdrawFunds_MultipleTokens_Success() (gas: 222579)

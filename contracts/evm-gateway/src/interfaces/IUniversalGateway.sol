@@ -46,16 +46,16 @@ interface IUniversalGateway {
     );
 
     /// @notice                     Universal tx execution event that is executed on External Chains.
-    /// @param txId          Gateway transaction identifier
-    /// @param universalTxId        Universal transaction identifier
+    /// @param subTxId          Gateway transaction identifier
+    /// @param universalsubTxId        Universal transaction identifier
     /// @param pushAccount          Push Chain account (UEA) this transaction is attributed to
     /// @param target               Target contract address to execute call
     /// @param token                Token address being sent
     /// @param amount               Amount of token being sent
     /// @param data                 Calldata to be executed on target contract on external chain
     event UniversalTxExecuted(
-        bytes32 indexed txId,
-        bytes32 indexed universalTxId,
+        bytes32 indexed subTxId,
+        bytes32 indexed universalsubTxId,
         address indexed pushAccount,
         address target,
         address token,
@@ -69,15 +69,15 @@ interface IUniversalGateway {
     event VaultUpdated(address indexed oldVault, address indexed newVault);
 
     /// @notice                     Revert withdraw event: For withdrawals/actions during a revert
-    /// @param txId                 Gateway transaction identifier
-    /// @param universalTxId        Universal transaction identifier
+    /// @param subTxId                 Gateway transaction identifier
+    /// @param universalsubTxId        Universal transaction identifier
     /// @param to                   Recipient address on external chain
     /// @param token                Token address being reverted
     /// @param amount               Amount of token being reverted
     /// @param revertInstruction    Revert settings configuration
     event RevertUniversalTx(
-        bytes32 indexed txId,
-        bytes32 indexed universalTxId,
+        bytes32 indexed subTxId,
+        bytes32 indexed universalsubTxId,
         address indexed to,
         address token,
         uint256 amount,
@@ -198,27 +198,27 @@ interface IUniversalGateway {
     // =========================
 
     /// @notice             Revert universal transaction with tokens to the recipient specified in revertInstruction
-    /// @param txId         gateway transaction identifier (for replay protection)
-    /// @param universalTxId universal transaction identifier
+    /// @param subTxId         gateway transaction identifier (for replay protection)
+    /// @param universalsubTxId universal transaction identifier
     /// @param token        token address to revert
     /// @param amount       amount of token to revert
     /// @param revertCFG    revert settings
     function revertUniversalTxToken(
-        bytes32 txId,
-        bytes32 universalTxId,
+        bytes32 subTxId,
+        bytes32 universalsubTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertCFG
     ) external;
 
     /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param txId         gateway transaction identifier (for replay protection)
-    /// @param universalTxId universal transaction identifier
+    /// @param subTxId         gateway transaction identifier (for replay protection)
+    /// @param universalsubTxId universal transaction identifier
     /// @param amount       amount of native token to revert
     /// @param revertCFG    revert settings
     function revertUniversalTx(
-        bytes32 txId,
-        bytes32 universalTxId,
+        bytes32 subTxId,
+        bytes32 universalsubTxId,
         uint256 amount,
         RevertInstructions calldata revertCFG
     ) external payable;

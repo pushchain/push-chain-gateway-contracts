@@ -133,8 +133,8 @@ struct Multicall {
 **Signature**:
 ```solidity
 function finalizeUniversalTx(
-    bytes32 txId,
-    bytes32 universalTxId,
+    bytes32 subTxId,
+    bytes32 universalsubTxId,
     address pushAccount,       // Push Chain account (UEA) this tx is attributed to
     address token,             // address(0) for native
     address target,            // kept for backward compatibility (not used for routing)
@@ -146,7 +146,7 @@ function finalizeUniversalTx(
 **Flow** (`Vault.sol:136-154`):
 1. Get or deploy CEA for the `pushAccount` (UEA)
 2. Fund CEA with tokens/native
-3. Call `CEA.executeUniversalTx(txId, universalTxId, pushAccount, data)`
+3. Call `CEA.executeUniversalTx(subTxId, universalsubTxId, pushAccount, data)`
 4. Emit `VaultUniversalTxFinalized` event
 
 **Funding Logic**:
@@ -158,8 +158,8 @@ function finalizeUniversalTx(
 **Signature**:
 ```solidity
 function revertUniversalTxToken(
-    bytes32 txId,
-    bytes32 universalTxId,
+    bytes32 subTxId,
+    bytes32 universalsubTxId,
     address token,
     uint256 amount,
     RevertInstructions calldata revertInstruction
@@ -237,8 +237,8 @@ function revertUniversalTxToken(
 
 ```solidity
 event VaultUniversalTxFinalized(
-    bytes32 indexed txId,
-    bytes32 indexed universalTxId,
+    bytes32 indexed subTxId,
+    bytes32 indexed universalsubTxId,
     address indexed pushAccount,
     address target,
     address token,
@@ -247,8 +247,8 @@ event VaultUniversalTxFinalized(
 );
 
 event VaultUniversalTxReverted(
-    bytes32 indexed txId,
-    bytes32 indexed universalTxId,
+    bytes32 indexed subTxId,
+    bytes32 indexed universalsubTxId,
     address indexed token,
     uint256 amount,
     RevertInstructions revertInstruction

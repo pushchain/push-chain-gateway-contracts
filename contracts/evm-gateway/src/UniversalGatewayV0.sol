@@ -589,20 +589,20 @@ contract UniversalGatewayV0 is
 
     //
     function revertUniversalTxToken(
-        bytes32 txId,
-        bytes32 universalTxId,
+        bytes32 subTxId,
+        bytes32 universalsubTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        if (isExecuted[txId]) revert Errors.PayloadExecuted();
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
 
-        isExecuted[txId] = true;
+        isExecuted[subTxId] = true;
         IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
 
         emit RevertUniversalTx(
-            txId,
-            universalTxId,
+            subTxId,
+            universalsubTxId,
             revertInstruction.revertRecipient,
             token,
             amount,
@@ -613,23 +613,23 @@ contract UniversalGatewayV0 is
     }
 
     function revertUniversalTx(
-        bytes32 txId,
-        bytes32 universalTxId,
+        bytes32 subTxId,
+        bytes32 universalsubTxId,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txId]) revert Errors.PayloadExecuted();
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
 
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txId] = true;
+        isExecuted[subTxId] = true;
         (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
 
         emit RevertUniversalTx(
-            txId,
-            universalTxId,
+            subTxId,
+            universalsubTxId,
             revertInstruction.revertRecipient,
             address(0),
             amount,

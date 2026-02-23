@@ -492,11 +492,11 @@ contract GatewayAdminSettersTest is BaseTest {
         gateway.setL2SequencerGracePeriod(300);
 
         // TSS operations should be blocked
-        bytes32 txID = bytes32(uint256(1));
-        bytes32 universalTxID = bytes32(uint256(1001));
+        bytes32 subTxId = bytes32(uint256(1));
+        bytes32 universalsubTxId = bytes32(uint256(1001));
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertUniversalTx(txID, universalTxID, 1, RevertInstructions(user2, ""));
+        gateway.revertUniversalTx(subTxId, universalsubTxId, 1, RevertInstructions(user2, ""));
     }
 
     // =========================

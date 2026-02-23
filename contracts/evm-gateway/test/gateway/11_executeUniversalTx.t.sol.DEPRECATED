@@ -48,8 +48,8 @@ contract GatewayExecuteUniversalTxTest is Test {
     bytes public constant EMPTY_PAYLOAD = "";
 
     event UniversalTxExecuted(
-        bytes32 indexed txID,
-        bytes32 indexed universalTxID,
+        bytes32 indexed subTxId,
+        bytes32 indexed universalsubTxId,
         address indexed originCaller,
         address target,
         address token,
@@ -130,14 +130,14 @@ contract GatewayExecuteUniversalTxTest is Test {
     }
 
     // Input Validation Tests
-    function testExecuteUniversalTx_DuplicateTxID_Reverts() public {
+    function testExecuteUniversalTx_DuplicatesubTxId_Reverts() public {
         // Transfer tokens from Vault (test contract) to Gateway
         token.transfer(address(gateway), AMOUNT * 2);
 
         // First execution succeeds
         gateway.executeUniversalTx(TX_ID, UNIVERSAL_TX_ID, ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
 
-        // Second execution with same txID reverts
+        // Second execution with same subTxId reverts
         vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
         gateway.executeUniversalTx(TX_ID, UNIVERSAL_TX_ID, ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
     }
@@ -265,7 +265,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         );
         // Non-payable function called with value should fail
         assertFalse(success);
-        // Verify txID was not executed
+        // Verify subTxId was not executed
         assertFalse(gateway.isExecuted(TX_ID));
     }
 
@@ -645,22 +645,22 @@ contract GatewayExecuteUniversalTxTest is Test {
         assertEq(token.allowance(address(gateway), address(0x7)), 500e18);
     }
 
-    function testExecuteUniversalTx_MultipleExecutionsDifferentTxIDs() public {
-        bytes32 txId1 = keccak256("tx1");
-        bytes32 txId2 = keccak256("tx2");
+    function testExecuteUniversalTx_MultipleExecutionsDifferentsubTxIds() public {
+        bytes32 subTxId1 = keccak256("tx1");
+        bytes32 subTxId2 = keccak256("tx2");
 
         // Transfer tokens from Vault (test contract) to Gateway for first execution
         token.transfer(address(gateway), AMOUNT);
 
-        gateway.executeUniversalTx(txId1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
+        gateway.executeUniversalTx(subTxId1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
 
         // Transfer more tokens for second execution
         token.transfer(address(gateway), AMOUNT);
 
-        gateway.executeUniversalTx(txId2, bytes32(uint256(2002)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
+        gateway.executeUniversalTx(subTxId2, bytes32(uint256(2002)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
 
-        assertTrue(gateway.isExecuted(txId1));
-        assertTrue(gateway.isExecuted(txId2));
+        assertTrue(gateway.isExecuted(subTxId1));
+        assertTrue(gateway.isExecuted(subTxId2));
     }
 
     function testIsExecutedMapping() public {
@@ -738,14 +738,14 @@ contract GatewayExecuteUniversalTxTest is Test {
         gateway.executeUniversalTx{ value: 1 }(TX_ID, UNIVERSAL_TX_ID, ORIGIN_CALLER, address(target), 0, PAYLOAD);
     }
 
-    function testExecuteUniversalTx_NativePath_DuplicateTxID_Reverts() public {
+    function testExecuteUniversalTx_NativePath_DuplicatesubTxId_Reverts() public {
         vm.deal(address(this), AMOUNT * 2);
 
         // First execution succeeds
         // Native token executeUniversalTx requires TSS_ROLE (test contract has this role)
         gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, UNIVERSAL_TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
 
-        // Second execution with same txID reverts
+        // Second execution with same subTxId reverts
         // Native token executeUniversalTx requires TSS_ROLE (test contract has this role)
         vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
         gateway.executeUniversalTx{ value: AMOUNT }(TX_ID, UNIVERSAL_TX_ID, ORIGIN_CALLER, address(target), AMOUNT, PAYLOAD);
@@ -797,7 +797,7 @@ contract GatewayExecuteUniversalTxTest is Test {
     // =========================
 
     function testWithdrawFunds_Success() public {
-        bytes32 txID = keccak256("withdraw-funds-1");
+        bytes32 subTxId = keccak256("withdraw-funds-1");
         address recipient = address(0x999);
         uint256 withdrawAmount = 500e18;
 
@@ -809,127 +809,127 @@ contract GatewayExecuteUniversalTxTest is Test {
 
         // Expect UniversalTxExecuted event
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTxExecuted(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, recipient, address(token), withdrawAmount, bytes(""));
+        emit IUniversalGateway.UniversalTxExecuted(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, recipient, address(token), withdrawAmount, bytes(""));
 
         // Execute as Vault (this contract has VAULT_ROLE)
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), recipient, withdrawAmount);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), recipient, withdrawAmount);
 
-        assertTrue(gateway.isExecuted(txID));
+        assertTrue(gateway.isExecuted(subTxId));
         assertEq(token.balanceOf(recipient), initialRecipientBalance + withdrawAmount);
         assertEq(token.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
     }
 
     function testWithdrawFunds_OnlyVault_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-2");
+        bytes32 subTxId = keccak256("withdraw-funds-2");
         token.transfer(address(gateway), AMOUNT);
 
         // Non-Vault user should not be able to withdraw funds
         vm.prank(user);
         vm.expectRevert();
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
 
         // Vault should be able to withdraw
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
-        assertTrue(gateway.isExecuted(txID));
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        assertTrue(gateway.isExecuted(subTxId));
     }
 
     function testWithdrawFunds_WhenPaused_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-3");
+        bytes32 subTxId = keccak256("withdraw-funds-3");
         token.transfer(address(gateway), AMOUNT);
 
         vm.prank(admin);
         gateway.pause();
 
         vm.expectRevert();
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
     }
 
-    function testWithdrawFunds_DuplicateTxID_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-4");
+    function testWithdrawFunds_DuplicatesubTxId_Reverts() public {
+        bytes32 subTxId = keccak256("withdraw-funds-4");
         token.transfer(address(gateway), AMOUNT * 2);
 
         // First withdrawal succeeds
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
 
-        // Second withdrawal with same txID reverts
+        // Second withdrawal with same subTxId reverts
         vm.expectRevert(abi.encodeWithSelector(Errors.PayloadExecuted.selector));
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
     }
 
     function testWithdrawFunds_ZeroueaAddress_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-5");
+        bytes32 subTxId = keccak256("withdraw-funds-5");
         token.transfer(address(gateway), AMOUNT);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ZERO_ADDRESS, address(token), address(target), AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ZERO_ADDRESS, address(token), address(target), AMOUNT);
     }
 
     function testWithdrawFunds_ZeroRecipient_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-6");
+        bytes32 subTxId = keccak256("withdraw-funds-6");
         token.transfer(address(gateway), AMOUNT);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), ZERO_ADDRESS, AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), ZERO_ADDRESS, AMOUNT);
     }
 
     function testWithdrawFunds_ZeroAmount_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-7");
+        bytes32 subTxId = keccak256("withdraw-funds-7");
         token.transfer(address(gateway), AMOUNT);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), 0);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), 0);
     }
 
     function testWithdrawFunds_ZeroToken_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-8");
+        bytes32 subTxId = keccak256("withdraw-funds-8");
         token.transfer(address(gateway), AMOUNT);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidInput.selector));
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, ZERO_ADDRESS, address(target), AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, ZERO_ADDRESS, address(target), AMOUNT);
     }
 
     function testWithdrawFunds_InsufficientBalance_Reverts() public {
-        bytes32 txID = keccak256("withdraw-funds-9");
+        bytes32 subTxId = keccak256("withdraw-funds-9");
         uint256 largeAmount = AMOUNT * 2;
 
         // Transfer only a small amount
         token.transfer(address(gateway), AMOUNT);
 
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), largeAmount);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), largeAmount);
     }
 
     function testWithdrawFunds_MultipleTokens_Success() public {
-        bytes32 txID1 = keccak256("withdraw-funds-10");
-        bytes32 txID2 = keccak256("withdraw-funds-11");
+        bytes32 subTxId1 = keccak256("withdraw-funds-10");
+        bytes32 subTxId2 = keccak256("withdraw-funds-11");
 
         // Transfer both tokens
         token.transfer(address(gateway), AMOUNT);
         usdtToken.transfer(address(gateway), 1000e6);
 
         // Withdraw tokenA
-        gateway.withdrawTokens(txID1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT);
-        assertTrue(gateway.isExecuted(txID1));
+        gateway.withdrawTokens(subTxId1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        assertTrue(gateway.isExecuted(subTxId1));
 
         // Withdraw USDT
-        gateway.withdrawTokens(txID2, bytes32(uint256(2002)), ORIGIN_CALLER, address(usdtToken), address(target), 1000e6);
-        assertTrue(gateway.isExecuted(txID2));
+        gateway.withdrawTokens(subTxId2, bytes32(uint256(2002)), ORIGIN_CALLER, address(usdtToken), address(target), 1000e6);
+        assertTrue(gateway.isExecuted(subTxId2));
     }
 
     function testWithdrawFunds_EventEmission_Complete() public {
-        bytes32 txID = keccak256("withdraw-funds-12");
+        bytes32 subTxId = keccak256("withdraw-funds-12");
         address recipient = address(0x888);
         token.transfer(address(gateway), AMOUNT);
 
         // Expect complete event emission
         vm.expectEmit(true, true, true, true);
-        emit IUniversalGateway.UniversalTxExecuted(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, recipient, address(token), AMOUNT, bytes(""));
+        emit IUniversalGateway.UniversalTxExecuted(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, recipient, address(token), AMOUNT, bytes(""));
 
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), recipient, AMOUNT);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), recipient, AMOUNT);
     }
 
     function testWithdrawFunds_PartialWithdrawal_Success() public {
-        bytes32 txID = keccak256("withdraw-funds-13");
+        bytes32 subTxId = keccak256("withdraw-funds-13");
         uint256 totalAmount = AMOUNT * 2;
         uint256 withdrawAmount = AMOUNT;
 
@@ -938,15 +938,15 @@ contract GatewayExecuteUniversalTxTest is Test {
         uint256 initialGatewayBalance = token.balanceOf(address(gateway));
         uint256 initialRecipientBalance = token.balanceOf(address(target));
 
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), withdrawAmount);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), withdrawAmount);
 
         assertEq(token.balanceOf(address(gateway)), initialGatewayBalance - withdrawAmount);
         assertEq(token.balanceOf(address(target)), initialRecipientBalance + withdrawAmount);
-        assertTrue(gateway.isExecuted(txID));
+        assertTrue(gateway.isExecuted(subTxId));
     }
 
     function testWithdrawFunds_StateNotUpdatedOnRevert() public {
-        bytes32 txID = keccak256("withdraw-funds-14");
+        bytes32 subTxId = keccak256("withdraw-funds-14");
         uint256 largeAmount = AMOUNT * 2;
 
         // Transfer only a small amount
@@ -954,14 +954,14 @@ contract GatewayExecuteUniversalTxTest is Test {
 
         // Try to withdraw more than available
         vm.expectRevert(abi.encodeWithSelector(Errors.InvalidAmount.selector));
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), largeAmount);
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), largeAmount);
 
         // State should not be updated
-        assertFalse(gateway.isExecuted(txID));
+        assertFalse(gateway.isExecuted(subTxId));
 
         // Should be able to withdraw the available amount
-        gateway.withdrawTokens(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
-        assertTrue(gateway.isExecuted(txID));
+        gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        assertTrue(gateway.isExecuted(subTxId));
     }
 
     // =========================
@@ -969,7 +969,7 @@ contract GatewayExecuteUniversalTxTest is Test {
     // =========================
 
     function testExecuteUniversalTx_ERC20Path_RemainingTokensReturnedToVault() public {
-        bytes32 txID = keccak256("remaining-tokens");
+        bytes32 subTxId = keccak256("remaining-tokens");
         uint256 extraAmount = 100e18;
         uint256 totalAmount = AMOUNT + extraAmount;
 
@@ -985,7 +985,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         // Use a payload that transfers tokens (receiveToken function)
         bytes memory tokenPayload = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), AMOUNT);
 
-        gateway.executeUniversalTx(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT, tokenPayload);
+        gateway.executeUniversalTx(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT, tokenPayload);
 
         // Remaining tokens should be returned to vault
         // Gateway should have 0 balance after execution (target received AMOUNT, vault received extraAmount)
@@ -997,13 +997,13 @@ contract GatewayExecuteUniversalTxTest is Test {
     }
 
     function testExecuteUniversalTx_ERC20Path_NoRemainingTokens() public {
-        bytes32 txID = keccak256("no-remaining");
+        bytes32 subTxId = keccak256("no-remaining");
         uint256 vaultBalanceBefore = token.balanceOf(address(this));
 
         // Transfer exact amount needed
         token.transfer(address(gateway), AMOUNT);
 
-        gateway.executeUniversalTx(txID, bytes32(uint256(2000 + uint256(txID))), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
+        gateway.executeUniversalTx(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
 
         // No tokens should be returned (gateway balance is 0)
         assertEq(token.balanceOf(address(gateway)), 0);

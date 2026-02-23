@@ -26,12 +26,12 @@ The gateway exposes a single entry point `sendUniversalTx` (and its CEA variant 
 
 Transaction types (inferred automatically — never set explicitly by callers):
 
-| TX_TYPE | Condition | Route |
-|---------|-----------|-------|
-| `GAS` | No payload, no funds, `msg.value > 0` | Instant (low confirmations) |
-| `GAS_AND_PAYLOAD` | Payload present, no funds | Instant |
-| `FUNDS` | Funds present, no payload | Standard (high confirmations) |
-| `FUNDS_AND_PAYLOAD` | Funds present, payload present | Standard |
+| TX_TYPE             | Condition                             | Route                         |
+| ------------------- | ------------------------------------- | ----------------------------- |
+| `GAS`               | No payload, no funds, `msg.value > 0` | Instant (low confirmations)   |
+| `GAS_AND_PAYLOAD`   | Payload present, no funds             | Instant                       |
+| `FUNDS`             | Funds present, no payload             | Standard (high confirmations) |
+| `FUNDS_AND_PAYLOAD` | Funds present, payload present        | Standard                      |
 
 ## Architecture and Roles
 
@@ -113,8 +113,8 @@ event UniversalTx(
 );
 
 event RevertUniversalTx(
-    bytes32 indexed txId,
-    bytes32 indexed universalTxId,
+    bytes32 indexed subTxId,
+    bytes32 indexed universalsubTxId,
     address indexed to,
     address token,
     uint256 amount,
@@ -179,8 +179,8 @@ Key functions:
 - `sendUniversalTx(UniversalTxRequest)` — native gas
 - `sendUniversalTx(UniversalTokenTxRequest)` — ERC-20 gas (swap to native)
 - `sendUniversalTxFromCEA(UniversalTxRequest)` — CEA-originated
-- `revertUniversalTxToken(txId, universalTxId, token, amount, revertCFG)` — ERC-20 revert (Vault only)
-- `revertUniversalTx(txId, universalTxId, amount, revertCFG)` — native revert (TSS only)
+- `revertUniversalTxToken(subTxId, universalsubTxId, token, amount, revertCFG)` — ERC-20 revert (Vault only)
+- `revertUniversalTx(subTxId, universalsubTxId, amount, revertCFG)` — native revert (TSS only)
 - `isSupportedToken(token)` — token support check
 - `getMinMaxValueForNative()` — current min/max native amounts
 - `currentTokenUsage(token)` — epoch usage query
@@ -206,19 +206,19 @@ Revert paths (role-gated):
 
 Foundry test suites under `test/`:
 
-| File | Coverage |
-|------|----------|
-| `test/gateway/1_adminActions.t.sol` | Admin setters, role checks |
-| `test/gateway/2-9_sendUniversalTx*.t.sol` | All TX_TYPE routing paths |
-| `test/gateway/10_withdrawTokens.t.sol` | Revert/refund paths |
-| `test/gateway/12_rateLimit_BlockBased.t.sol` | Per-block USD cap |
-| `test/gateway/13_rateLimit_EpochBased.t.sol` | Epoch rate limits |
-| `test/gateway/14_gatewayPC.t.sol` | UniversalGatewayPC (Push Chain side) |
+| File                                          | Coverage                             |
+| --------------------------------------------- | ------------------------------------ |
+| `test/gateway/1_adminActions.t.sol`           | Admin setters, role checks           |
+| `test/gateway/2-9_sendUniversalTx*.t.sol`     | All TX_TYPE routing paths            |
+| `test/gateway/10_withdrawTokens.t.sol`        | Revert/refund paths                  |
+| `test/gateway/12_rateLimit_BlockBased.t.sol`  | Per-block USD cap                    |
+| `test/gateway/13_rateLimit_EpochBased.t.sol`  | Epoch rate limits                    |
+| `test/gateway/14_gatewayPC.t.sol`             | UniversalGatewayPC (Push Chain side) |
 | `test/gateway/15_sendUniversalTxViaCEA.t.sol` | CEA route (`sendUniversalTxFromCEA`) |
-| `test/vault/Vault.t.sol` | Vault finalization, CEA deployment |
-| `test/vault/VaultWithdrawal.t.sol` | Vault withdrawal paths |
-| `test/vault/VaultPC.t.sol` | VaultPC (Push Chain side) |
-| `test/oracle/OracleTest.t.sol` | Oracle price feed, sequencer checks |
+| `test/vault/Vault.t.sol`                      | Vault finalization, CEA deployment   |
+| `test/vault/VaultWithdrawal.t.sol`            | Vault withdrawal paths               |
+| `test/vault/VaultPC.t.sol`                    | VaultPC (Push Chain side)            |
+| `test/oracle/OracleTest.t.sol`                | Oracle price feed, sequencer checks  |
 
 Run tests:
 ```bash
