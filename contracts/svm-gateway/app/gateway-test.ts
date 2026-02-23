@@ -1918,12 +1918,10 @@ async function run() {
         const txId = anchor.web3.Keypair.generate().publicKey.toBytes();
         const universalTxId = generateUniversalTxId();
         const { gasFee, rentFee } = await calculateSolExecuteFees(connection, BigInt(0));
-        const nonce = await syncNonceFromChain();
         const chainId = (await (program.account as any).tssPda.fetch(tssPda)).chainId;
 
         const sig = await signTssMessage({
             instruction: TssInstruction.Execute,
-            nonce,
             amount: BigInt(0),
             chainId,
             additional: buildExecuteAdditionalData(
@@ -1956,7 +1954,6 @@ async function run() {
                 Array.from(sig.signature),
                 sig.recoveryId,
                 Array.from(sig.messageHash),
-                new anchor.BN(sig.nonce),
             )
             .accounts({
                 caller: relayer,

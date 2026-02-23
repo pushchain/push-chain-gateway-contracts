@@ -793,52 +793,6 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc(),
                 "InvalidAmount"
             );
-
-            await syncNonceFromChain();
-        });
-
-        it("rejects withdrawals with incorrect nonce", async () => {
-            await setNonceOnChain(currentNonce);
-
-            const txId = generateTxId();
-            const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
-
-            const tssAdditional = buildWithdrawAdditionalData(
-                new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
-                PublicKey.default,
-                recipient.publicKey,
-                DEFAULT_GAS_FEE
-            );
-
-            const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.Withdraw,
-                nonce: currentNonce,
-                amount: BigInt(anchor.web3.LAMPORTS_PER_SOL),
-                additional: tssAdditional,
-            });
-
-            await expectRejection(
-                withdrawAndExecute({
-                    instructionId: 1,
-                    txId,
-                    universalTxId,
-                    amount: new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
-                    sender: originCaller,
-                    gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                    sig: { signature: signature.signature, recoveryId: signature.recoveryId, messageHash: signature.messageHash, nonce: new anchor.BN(currentNonce + 5) },
-                    caller: relayer.publicKey,
-                    recipient: recipient.publicKey,
-                })
-                    .signers([relayer])
-                    .rpc(),
-                "NonceMismatch"
-            );
-
-            await syncNonceFromChain();
         });
 
         it("rejects withdrawals with zero originCaller", async () => {
