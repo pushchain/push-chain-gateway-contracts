@@ -385,7 +385,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     amount: new anchor.BN(withdrawLamports),
                     sender: originCaller,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                    sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash, nonce: valid.nonce },
+                    sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash },
                     caller: relayer.publicKey,
                     recipient: recipient.publicKey,
                 })
@@ -619,7 +619,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     amount: new anchor.BN(Number(withdrawRaw)),
                     sender: originCaller,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                    sig: { signature: corrupted, recoveryId: signature.recoveryId, messageHash: signature.messageHash, nonce: signature.nonce },
+                    sig: { signature: corrupted, recoveryId: signature.recoveryId, messageHash: signature.messageHash },
                     caller: relayer.publicKey,
                     recipient: recipient.publicKey,
                     vaultAta: vaultUsdtAccount,
@@ -1041,7 +1041,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     amount: new anchor.BN(withdrawLamports),
                     sender: originCaller,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
-                    sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash, nonce: valid.nonce },
+                    sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash },
                     caller: relayer.publicKey,
                     recipient: recipient.publicKey,
                 })
