@@ -334,6 +334,8 @@ async function main() {
         rent: null,
         associatedTokenProgram: null,
         recipientAta: null,
+        rateLimitConfig: null,
+        tokenRateLimit: null,
       })
       .instruction();
 
@@ -483,6 +485,8 @@ async function main() {
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           recipientAta,
+          rateLimitConfig: null,
+          tokenRateLimit: null,
         })
         .instruction();
     };

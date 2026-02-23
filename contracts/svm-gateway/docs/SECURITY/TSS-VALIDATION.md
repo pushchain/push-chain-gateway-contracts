@@ -191,8 +191,8 @@ ExecutedTx PDA uniqueness → each tx_id executes exactly once
 ### 1. Replay Attack
 **Attack:** Reuse valid signature for same transaction
 **Mitigation:**
-- Nonce increments after each use
-- ExecutedTx PDA prevents duplicate tx_id
+- ExecutedTx PDA prevents duplicate tx_id (init constraint fails if PDA exists)
+- tx_id is included in TSS-signed message (cannot reuse signature with different tx_id)
 
 ### 2. Message Tampering
 **Attack:** Modify amount/recipient but keep signature

@@ -169,7 +169,7 @@ async function main() {
   console.log("💾 ALT config saved to:", outputPath);
   console.log();
   console.log("🎉 Done! Use this ALT for ALL withdraw_and_execute transactions.");
-  console.log("   Savings: 128 bytes per transaction");
+  console.log("   Savings: 185 bytes per transaction (7×32 - ALT overhead of 32+7)");
 }
 
 main().catch(console.error);

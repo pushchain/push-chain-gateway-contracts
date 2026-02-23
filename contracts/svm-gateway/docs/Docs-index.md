@@ -84,7 +84,7 @@
 │  ┌─────────────────────────────────────────┐                │
 │  │           TSS VALIDATION                 │                │
 │  │    • ECDSA secp256k1 signatures          │                │
-│  │    • Nonce-based replay protection       │                │
+│  │    • tx_id-based replay protection (ExecutedTx PDA) │    │
 │  │    • Message hash verification           │                │
 │  └─────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
@@ -107,9 +107,9 @@
 - [ ] Amount overflow checks
 
 ### Replay Protection
-- [ ] Nonce incrementation
-- [ ] tx_id uniqueness via init
+- [ ] ExecutedTx PDA creation (tx_id uniqueness via init)
 - [ ] Message hash integrity
+- [ ] No replay of tx_id (PDA exists check)
 
 ### CEA Security
 - [ ] PDA derivation correctness

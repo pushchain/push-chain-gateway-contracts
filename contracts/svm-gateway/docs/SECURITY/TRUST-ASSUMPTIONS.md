@@ -101,8 +101,8 @@
 
 | Threat | Attack Vector | Mitigation |
 |--------|---------------|------------|
-| **Replay attack** | Reuse valid signature | Nonce + ExecutedTx PDA |
-| **Front-running** | Execute before user tx | Nonce ordering |
+| **Replay attack** | Reuse valid signature | ExecutedTx PDA (per tx_id init constraint) |
+| **Front-running** | Execute TSS tx in different order | Each tx independently TSS-signed (no shared state) |
 | **Signature forgery** | Fake TSS signature | ECDSA verification |
 | **Amount manipulation** | Change amount in message | Message hash binding |
 | **Unauthorized withdrawal** | Withdraw without TSS | TSS signature required |

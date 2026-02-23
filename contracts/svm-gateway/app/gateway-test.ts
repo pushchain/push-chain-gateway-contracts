@@ -1904,6 +1904,8 @@ async function run() {
         const ceaBalBefore = await connection.getBalance(ceaAuthority);
         console.log(`CEA funded: ${ceaBalBefore} lamports`);
 
+        const { gasFee, rentFee } = await calculateSolExecuteFees(connection, BigInt(0));
+
         // Build ix_data: discriminator(send_universal_tx_via_cea) + borsh(SendUniversalTxViaCeaArgs)
         const discriminator = createHash("sha256")
             .update("global:send_universal_tx_via_cea")
@@ -1911,13 +1913,13 @@ async function run() {
             .slice(0, 8);
         const tokenBytes = Buffer.alloc(32, 0); // SOL = Pubkey::default()
         const amountBytes = Buffer.alloc(8);
-        amountBytes.writeBigUInt64LE(BigInt(0)); // 0 = withdraw full balance
+        // Outer execute moves rent_fee vault->CEA before self-withdraw; include it to drain CEA fully.
+        amountBytes.writeBigUInt64LE(BigInt(ceaBalBefore) + rentFee);
         const payloadLenBytes = Buffer.from([0, 0, 0, 0]); // empty Vec<u8>
         const ixData = Buffer.concat([discriminator, tokenBytes, amountBytes, payloadLenBytes]);
 
         const txId = anchor.web3.Keypair.generate().publicKey.toBytes();
         const universalTxId = generateUniversalTxId();
-        const { gasFee, rentFee } = await calculateSolExecuteFees(connection, BigInt(0));
         const chainId = (await (program.account as any).tssPda.fetch(tssPda)).chainId;
 
         const sig = await signTssMessage({

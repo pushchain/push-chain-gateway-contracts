@@ -20,9 +20,12 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
 7. Backend submits transaction to Solana network
 8. Gateway program verifies signature, then routes based on instructionId:
    - **Withdraw (1)**: vault→CEA→recipient (direct transfer)
-   - **Execute (2)**: vault→CEA→CPI to target program
+   - **Execute (2)**: vault→CEA→CPI to target program (or CEA self-withdraw if target == gateway)
    - **Revert (3/4)**: separate revert functions
-9. All successful outcomes emit `UniversalTxExecuted` (withdraw/execute) or `RevertUniversalTx` (revert)
+9. Events emitted:
+   - Normal withdraw/execute: `UniversalTxExecuted`
+   - CEA self-withdraw (execute with target == gateway): `UniversalTx` with `via_cea: true`
+   - Revert: `RevertUniversalTx`
 
 ### 1.2 Event Structure (Push Chain)
 
@@ -672,11 +675,14 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 ### 7.7 Event Verification
 
-1. After transaction confirmation, listen for Solana events (EVM parity: `UniversalTxExecuted` for both execute and withdraw):
-   - `UniversalTxExecuted` (for execute and withdraw) — field order: `tx_id`, `universal_tx_id`, `sender`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
-   - `RevertUniversalTx` (for revert)
+1. After transaction confirmation, listen for Solana events:
+   - **Normal execute/withdraw:** `UniversalTxExecuted` — field order: `tx_id`, `universal_tx_id`, `sender`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
+   - **CEA self-withdraw (target == gateway):** `UniversalTx` with `via_cea: true` — emitted by `send_universal_tx_via_cea`, NO `UniversalTxExecuted` event
+   - **Revert:** `RevertUniversalTx`
 2. Verify event fields match your transaction
 3. Mark transaction as completed
+
+**Important:** CEA→UEA path (execute with destinationProgram == gateway) emits `UniversalTx` and returns early, so `UniversalTxExecuted` is NOT emitted for this flow.
 
 ---
 
@@ -783,7 +789,9 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
      - SPL (if token): `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`
      - Remaining: decoded accounts from payload (same order, same isWritable flags)
 9. **Submit**: Sign with relayer keypair, send to Solana
-10. **Verify**: Wait for `UniversalTxExecuted` event (includes tx_id, universal_tx_id, sender, target, token, amount, payload)
+10. **Verify**: Wait for event:
+    - Normal execute: `UniversalTxExecuted` (includes tx_id, universal_tx_id, sender, target, token, amount, payload)
+    - CEA self-withdraw (destinationProgram == gateway): `UniversalTx` with `via_cea: true` (NO `UniversalTxExecuted`)
 
 ### Withdraw Flow (instruction_id=1):
 

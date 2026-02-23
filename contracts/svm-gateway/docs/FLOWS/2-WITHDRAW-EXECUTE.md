@@ -368,7 +368,7 @@ When destination_program == gateway_program_id, the gateway executes a special C
 ```rust
 struct SendUniversalTxViaCeaArgs {
     token: Pubkey,      // Must match derived token (Pubkey::default() for SOL, mint for SPL)
-    amount: u64,        // Amount to withdraw (0 = withdraw full balance)
+    amount: u64,        // Amount to withdraw (must be > 0, no auto-drain of full balance)
     payload: Vec<u8>,   // empty = Funds tx_type, non-empty = FundsAndPayload tx_type (via_cea=true)
     // NOTE: NO recipient field - recipient (UEA address) comes from withdraw_and_execute sender param
 }
@@ -427,18 +427,19 @@ const argsEncoded = serialize(schema, args);
 const ix_data = Buffer.concat([discr, Buffer.from(argsEncoded)]);
 
 // 4. Use in withdraw_and_execute with instruction_id=2
-// IMPORTANT: recipient (UEA) is the `sender` param, NOT from payload; via_cea=true in emitted event
+// IMPORTANT: recipient (UEA) comes from `sender` param (20-byte Push Chain address), NOT from .accounts()
+// Execute mode REQUIRES recipient: null in .accounts()
 await program.methods
   .withdrawAndExecute(
     2, // instruction_id: execute
-    // ... other params ...
+    // ... other params (amount, sender: [u8; 20], etc.) ...
     [], // writable_flags: empty for CEA self-withdraw
     ix_data, // [discriminator][borsh(token, amount, payload)]
     // ... signature params ...
   )
   .accounts({
     destinationProgram: gatewayProgramId, // Triggers CEA self-withdraw
-    recipient: finalRecipientPubkey, // ← Recipient comes from HERE, not payload
+    recipient: null, // ← Execute mode requires None; UEA comes from sender param
     // ... other accounts ...
   })
   .rpc();
