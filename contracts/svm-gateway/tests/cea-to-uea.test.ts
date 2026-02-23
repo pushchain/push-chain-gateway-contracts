@@ -74,7 +74,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             gatewayProgram.programId
         );
         [tssPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("tsspda")],
+            [Buffer.from("tsspda_v2")],
             gatewayProgram.programId
         );
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
