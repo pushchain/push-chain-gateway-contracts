@@ -29,7 +29,7 @@ interface IVault {
 
     /// @notice                 Universal tx finalized event
     /// @param subTxId      Gateway transaction identifier
-    /// @param universalsubTxId    Universal transaction identifier
+    /// @param universalTxId    Universal transaction identifier
     /// @param pushAccount      Push Chain account (UEA) this transaction is attributed to
     /// @param target           Target contract address to execute call
     /// @param token            Token address being sent
@@ -37,7 +37,7 @@ interface IVault {
     /// @param data             Calldata to be executed on target contract on external chain
     event VaultUniversalTxFinalized(
         bytes32 indexed subTxId,
-        bytes32 indexed universalsubTxId,
+        bytes32 indexed universalTxId,
         address indexed pushAccount,
         address target,
         address token,
@@ -47,13 +47,13 @@ interface IVault {
 
     /// @notice                 Universal tx reverted event
     /// @param subTxId      Gateway transaction identifier
-    /// @param universalsubTxId    Universal transaction identifier
+    /// @param universalTxId    Universal transaction identifier
     /// @param token            Token address being reverted
     /// @param amount           Amount of token being reverted
     /// @param revertInstruction revert instruction containing revertRecipient and revertMsg
     event VaultUniversalTxReverted(
         bytes32 indexed subTxId,
-        bytes32 indexed universalsubTxId,
+        bytes32 indexed universalTxId,
         address indexed token,
         uint256 amount,
         RevertInstructions revertInstruction
@@ -69,7 +69,7 @@ interface IVault {
      *                      - Non-empty payload: Execution path via CEA.executeUniversalTx()
      *                      Both paths use CEA (Chain Execution Account) as intermediary.
      * @param subTxId   Gateway transaction identifier
-     * @param universalsubTxId Universal transaction identifier from Push Chain
+     * @param universalTxId Universal transaction identifier from Push Chain
      * @param pushAccount   Push Chain account (UEA) this transaction is attributed to
      * @param token         Token address (address(0) for native)
      * @param target        Target address (recipient for withdrawal, contract for execution)
@@ -78,7 +78,7 @@ interface IVault {
      */
     function finalizeUniversalTx(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         address pushAccount,
         address token,
         address target,
@@ -90,14 +90,14 @@ interface IVault {
      * @notice              TSS-only refund path (e.g., failed outbound flow) to a designated recipient on external chains
      * @dev                 Moves token to gateway contract and then transfers to recipient or executes the payload.
      * @param subTxId       gateway transaction identifier (for replay protection)
-     * @param universalsubTxId     universal transaction identifier
+     * @param universalTxId     universal transaction identifier
      * @param token             ERC20 token to refund (must be supported) on external chain
      * @param amount            amount to refund on external chain
      * @param revertInstruction revert instruction containing revertRecipient and revertMsg
      */
     function revertUniversalTxToken(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction

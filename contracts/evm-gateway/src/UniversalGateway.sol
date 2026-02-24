@@ -566,7 +566,7 @@ contract UniversalGateway is
     /// @inheritdoc IUniversalGateway
     function revertUniversalTxToken(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
@@ -577,14 +577,14 @@ contract UniversalGateway is
         IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
 
         emit RevertUniversalTx(
-            subTxId, universalsubTxId, revertInstruction.revertRecipient, token, amount, revertInstruction
+            subTxId, universalTxId, revertInstruction.revertRecipient, token, amount, revertInstruction
         );
     }
 
     /// @inheritdoc IUniversalGateway
     function revertUniversalTx(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     ) external payable nonReentrant whenNotPaused onlyTSS {
@@ -598,7 +598,7 @@ contract UniversalGateway is
         if (!ok) revert Errors.WithdrawFailed();
 
         emit RevertUniversalTx(
-            subTxId, universalsubTxId, revertInstruction.revertRecipient, address(0), amount, revertInstruction
+            subTxId, universalTxId, revertInstruction.revertRecipient, address(0), amount, revertInstruction
         );
     }
 

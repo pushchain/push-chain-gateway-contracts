@@ -48,7 +48,7 @@ interface IUniversalGatewayV0 {
     /// @notice         Universal tx execution event
     event UniversalTxExecuted(
         bytes32 indexed subTxId,
-        bytes32 indexed universalsubTxId,
+        bytes32 indexed universalTxId,
         address indexed originCaller,
         address target,
         address token,
@@ -64,7 +64,7 @@ interface IUniversalGatewayV0 {
     /// @param revertInstruction    Revert settings configuration
     event RevertUniversalTx(
         bytes32 subTxId,
-        bytes32 indexed universalsubTxId,
+        bytes32 indexed universalTxId,
         address indexed to,
         address indexed token,
         uint256 amount,
@@ -154,7 +154,7 @@ interface IUniversalGatewayV0 {
     /// @param revertCFG    revert settings
     function revertUniversalTxToken(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertCFG
@@ -166,7 +166,7 @@ interface IUniversalGatewayV0 {
     /// @param revertCFG    revert settings
     function revertUniversalTx(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         uint256 amount,
         RevertInstructions calldata revertCFG
     ) external payable;

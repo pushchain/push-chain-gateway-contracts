@@ -590,7 +590,7 @@ contract UniversalGatewayV0 is
     //
     function revertUniversalTxToken(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
@@ -602,7 +602,7 @@ contract UniversalGatewayV0 is
 
         emit RevertUniversalTx(
             subTxId,
-            universalsubTxId,
+            universalTxId,
             revertInstruction.revertRecipient,
             token,
             amount,
@@ -614,7 +614,7 @@ contract UniversalGatewayV0 is
 
     function revertUniversalTx(
         bytes32 subTxId,
-        bytes32 universalsubTxId,
+        bytes32 universalTxId,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     ) external payable nonReentrant whenNotPaused onlyTSS {
@@ -629,7 +629,7 @@ contract UniversalGatewayV0 is
 
         emit RevertUniversalTx(
             subTxId,
-            universalsubTxId,
+            universalTxId,
             revertInstruction.revertRecipient,
             address(0),
             amount,

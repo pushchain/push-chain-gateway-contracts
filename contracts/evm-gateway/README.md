@@ -114,7 +114,7 @@ event UniversalTx(
 
 event RevertUniversalTx(
     bytes32 indexed subTxId,
-    bytes32 indexed universalsubTxId,
+    bytes32 indexed universalTxId,
     address indexed to,
     address token,
     uint256 amount,
@@ -179,8 +179,8 @@ Key functions:
 - `sendUniversalTx(UniversalTxRequest)` — native gas
 - `sendUniversalTx(UniversalTokenTxRequest)` — ERC-20 gas (swap to native)
 - `sendUniversalTxFromCEA(UniversalTxRequest)` — CEA-originated
-- `revertUniversalTxToken(subTxId, universalsubTxId, token, amount, revertCFG)` — ERC-20 revert (Vault only)
-- `revertUniversalTx(subTxId, universalsubTxId, amount, revertCFG)` — native revert (TSS only)
+- `revertUniversalTxToken(subTxId, universalTxId, token, amount, revertCFG)` — ERC-20 revert (Vault only)
+- `revertUniversalTx(subTxId, universalTxId, amount, revertCFG)` — native revert (TSS only)
 - `isSupportedToken(token)` — token support check
 - `getMinMaxValueForNative()` — current min/max native amounts
 - `currentTokenUsage(token)` — epoch usage query

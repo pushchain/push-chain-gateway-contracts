@@ -14,11 +14,11 @@ interface ICEA {
      *  - All withdrawals and executions use this single path.
      *
      * @param subTxId           Transaction ID of the UniversalTx to execute.
-     * @param universalsubTxId  Universal transaction identifier from gateway.
+     * @param universalTxId  Universal transaction identifier from gateway.
      * @param originCaller   UEA address on Push Chain (must match CEA's UEA).
      * @param payload        ABI-encoded Multicall[] execution steps.
      */
-    function executeUniversalTx(bytes32 subTxId, bytes32 universalsubTxId, address originCaller, bytes calldata payload)
+    function executeUniversalTx(bytes32 subTxId, bytes32 universalTxId, address originCaller, bytes calldata payload)
         external
         payable;
 }

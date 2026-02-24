@@ -49,7 +49,7 @@ contract GatewayExecuteUniversalTxTest is Test {
 
     event UniversalTxExecuted(
         bytes32 indexed subTxId,
-        bytes32 indexed universalsubTxId,
+        bytes32 indexed universalTxId,
         address indexed originCaller,
         address target,
         address token,

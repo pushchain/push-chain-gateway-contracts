@@ -41,7 +41,7 @@ contract VaultTest is Test {
     event TSSUpdated(address indexed oldTss, address indexed newTss);
     event VaultUniversalTxFinalized(
         bytes32 indexed subTxId,
-        bytes32 indexed universalsubTxId,
+        bytes32 indexed universalTxId,
         address indexed originCaller,
         address target,
         address token,
@@ -50,7 +50,7 @@ contract VaultTest is Test {
     );
     event VaultUniversalTxReverted(
         bytes32 indexed subTxId,
-        bytes32 indexed universalsubTxId,
+        bytes32 indexed universalTxId,
         address indexed token,
         uint256 amount,
         RevertInstructions revertInstruction
@@ -225,13 +225,13 @@ contract VaultTest is Test {
     function _assertCEAParams(
         address ceaAddr,
         bytes32 expectedsubTxId,
-        bytes32 expectedUniversalsubTxId,
+        bytes32 expecteduniversalTxId,
         address expectedUEA,
         bytes memory expectedPayload
     ) internal view {
         MockCEA cea = _getMockCEA(ceaAddr);
         assertEq(cea.lastsubTxId(), expectedsubTxId);
-        assertEq(cea.lastUniversalsubTxId(), expectedUniversalsubTxId);
+        assertEq(cea.lastuniversalTxId(), expecteduniversalTxId);
         assertEq(cea.lastUEA(), expectedUEA);
         assertEq(cea.lastPayload(), expectedPayload);
     }
@@ -2241,7 +2241,7 @@ contract VaultTest is Test {
     function test_RevertTx_AtomicFlowToRecipient() public {
         uint256 amount = 100e18;
         bytes32 subTxId = keccak256("revertRollback");
-        bytes32 universalsubTxId = keccak256("utxRevertRollback");
+        bytes32 universalTxId = keccak256("utxRevertRollback");
 
         uint256 vaultBalanceBefore = token.balanceOf(address(vault));
         uint256 user1BalanceBefore = token.balanceOf(user1);
@@ -2250,7 +2250,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vault.revertUniversalTxToken(
             subTxId,
-            universalsubTxId,
+            universalTxId,
             address(token),
             amount,
             RevertInstructions({ revertRecipient: user1, revertMsg: "Test revert" })
@@ -2328,7 +2328,7 @@ contract VaultTest is Test {
 
         // Baseline: normal revertUniversalTxToken works
         bytes32 subTxId = keccak256("reentrancyRevertTest");
-        bytes32 universalsubTxId = keccak256("utxReentrancyTest");
+        bytes32 universalTxId = keccak256("utxReentrancyTest");
         uint256 amount = 50e18;
 
         uint256 user1BalanceBefore = token.balanceOf(user1);
@@ -2336,7 +2336,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vault.revertUniversalTxToken(
             subTxId,
-            universalsubTxId,
+            universalTxId,
             address(token),
             amount,
             RevertInstructions({ revertRecipient: user1, revertMsg: "Normal revert" })
