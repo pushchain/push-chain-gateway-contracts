@@ -7,11 +7,13 @@ export interface GatewayAccountMeta {
 
 /**
  * execution-specific data:
+ * - targetProgram: Canonical destination program (source of truth) - REQUIRED
  * - accounts: Required for CPI execution
  * - ixData: Required for target program execution
  * - rentFee: Solana-specific, not in Push Chain event
  */
 export interface ExecutePayloadFields {
+    targetProgram: PublicKey; // REQUIRED - canonical destination (source of truth)
     accounts: GatewayAccountMeta[];
     ixData: Uint8Array;
     rentFee: bigint;
@@ -23,8 +25,8 @@ const SENDER_LEN = 20;
 
 /**
  * Encode optimized execute payload
- * 
- * Format:
+ *
+ * Format (new - with targetProgram):
  * [accounts_count: 4 bytes (u32 BE)]
  * [account[0].pubkey: 32 bytes]
  * [account[0].is_writable: 1 byte]
@@ -32,8 +34,9 @@ const SENDER_LEN = 20;
  * [ix_data_length: 4 bytes (u32 BE)]
  * [ix_data: N bytes]
  * [rent_fee: 8 bytes (u64 BE)]
- * 
- * Total size: 4 + (33 * accounts_count) + 4 + ix_data_length + 8
+ * [instruction_id: 1 byte (u8)]
+ * [target_program: 32 bytes] ← REQUIRED: Canonical destination
+ * Total size (new): 4 + (33 * accounts_count) + 4 + ix_data_length + 8 + 1 + 32
  * 
  * Note: Payload still contains full accounts (for Push Chain and backend).
  * Indices are used only in the Solana transaction (not in payload).
@@ -56,26 +59,27 @@ export function encodeExecutePayload(payload: ExecutePayloadFields): Buffer {
     const instructionIdBuf = Buffer.from([payload.instructionId ?? 2]);
 
     return Buffer.concat([
-        accountsLen,              // accounts_count (4 bytes)
-        ...accountBuffers,        // accounts (33 bytes each)
-        ixLen,                    // ix_data_length (4 bytes)
-        Buffer.from(payload.ixData), // ix_data (variable)
-        rentFeeBuf,               // rent_fee (8 bytes)
-        instructionIdBuf
+        accountsLen,                      // accounts_count (4 bytes)
+        ...accountBuffers,                // accounts (33 bytes each)
+        ixLen,                            // ix_data_length (4 bytes)
+        Buffer.from(payload.ixData),      // ix_data (variable)
+        rentFeeBuf,                       // rent_fee (8 bytes)
+        instructionIdBuf,                 // instruction_id (1 byte)
+        payload.targetProgram.toBuffer(), // target_program (32 bytes) - REQUIRED
     ]);
 }
 
 /**
  * Decode optimized execute payload
- * 
- * Format:
+ *
+ * Format (all fields required):
  * [accounts_count: 4 bytes (u32 BE)]
- * [account[0].pubkey: 32 bytes]
- * [account[0].is_writable: 1 byte]
- * ... (repeat for all accounts)
+ * [account[i].pubkey: 32 bytes] [account[i].is_writable: 1 byte] (for each account)
  * [ix_data_length: 4 bytes (u32 BE)]
  * [ix_data: N bytes]
  * [rent_fee: 8 bytes (u64 BE)]
+ * [instruction_id: 1 byte (u8)]
+ * [target_program: 32 bytes] ← REQUIRED - canonical destination
  */
 export function decodeExecutePayload(buf: Buffer): ExecutePayloadFields {
     let offset = 0;
@@ -106,12 +110,30 @@ export function decodeExecutePayload(buf: Buffer): ExecutePayloadFields {
     const instructionId = buf.readUInt8(offset);
     offset += 1;
 
+    // Decode targetProgram (REQUIRED - 32 bytes)
+    const remainingBytes = buf.length - offset;
+    if (remainingBytes !== 32) {
+        throw new Error(
+            `Payload decode error: expected 32 bytes for targetProgram, ` +
+            `but found ${remainingBytes} bytes (offset: ${offset}, buffer length: ${buf.length})`
+        );
+    }
+
+    let targetProgram: PublicKey;
+    try {
+        targetProgram = new PublicKey(buf.slice(offset, offset + 32));
+        offset += 32;
+    } catch (err) {
+        throw new Error(`Payload decode error: invalid targetProgram pubkey at offset ${offset}: ${err}`);
+    }
+
     // Validate we consumed all bytes
     if (offset !== buf.length) {
         throw new Error(`Payload decode error: consumed ${offset} bytes but buffer has ${buf.length} bytes`);
     }
 
     return {
+        targetProgram,
         accounts,
         ixData: new Uint8Array(ixData),
         rentFee,
@@ -144,6 +166,7 @@ export function accountsToWritableFlags(accounts: GatewayAccountMeta[]): Buffer 
  */
 export interface InstructionBuildParams {
     instruction: TransactionInstruction;
+    targetProgram: PublicKey; // REQUIRED - canonical destination program (source of truth)
     rentFee?: bigint; // Optional: rentFee to include in payload (Solana-specific)
     instructionId?: number;
 }
@@ -155,10 +178,10 @@ export function instructionToPayloadFields(params: InstructionBuildParams): Exec
     }));
 
     return {
+        targetProgram: params.targetProgram, // REQUIRED - canonical destination
         accounts,
         ixData: params.instruction.data,
         rentFee: params.rentFee ?? BigInt(0), // Default to 0 if not provided
         instructionId: params.instructionId ?? 2,
     };
 }
-
