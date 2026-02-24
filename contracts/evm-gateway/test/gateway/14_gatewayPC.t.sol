@@ -331,7 +331,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawSuccessWithCustomGasLimit() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 150_000;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Ensure user has enough balance
@@ -365,7 +364,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawEventEmission() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 150_000;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -387,7 +385,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawEventEmissionWithTxType() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 150_000;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
@@ -428,7 +425,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawSuccessWithDefaultGasLimit() public {
         uint256 amount = 1000 * 1e6; // 1000 USDC (6 decimals)
         uint256 gasLimit = 0; // Use default gas limit
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
@@ -454,7 +450,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawRevertZeroToken() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -473,7 +468,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawRevertZeroAmount() public {
         uint256 amount = 0; // Zero amount
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -492,7 +486,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawRevertInvalidRecipient() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = address(0); // Zero recipient
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -514,7 +507,6 @@ contract UniversalGatewayPCTest is Test {
 
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -533,7 +525,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawRevertInsufficientGasTokenBalance() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Calculate required gas fee
@@ -567,7 +558,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawRevertInsufficientGasTokenAllowance() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Remove gas token allowance
@@ -590,7 +580,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawRevertInsufficientPrc20Balance() public {
         uint256 amount = LARGE_AMOUNT + 1; // More than user has
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -613,7 +602,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteSuccessWithCustomGasLimit() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 200_000;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -640,7 +628,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteEventEmission() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 200_000;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -663,7 +650,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteEventEmissionWithTxType() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 200_000;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -705,7 +691,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteSuccessWithDefaultGasLimit() public {
         uint256 amount = 1000 * 1e6; // 1000 USDC (6 decimals)
         uint256 gasLimit = 0; // Use default gas limit
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -732,7 +717,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteSuccessWithEmptyPayload() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = bytes(""); // Empty payload
         address revertRecipient = user2;
 
@@ -759,7 +743,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteSuccessWithComplexPayload() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
 
         // Complex payload with multiple parameters
         bytes memory payload = abi.encodeWithSignature(
@@ -795,7 +778,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteRevertZeroToken() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -815,7 +797,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteRevertZeroAmount() public {
         uint256 amount = 0; // Zero amount
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -840,7 +821,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteRevertInvalidRecipient() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = address(0); // Zero recipient
 
@@ -863,7 +843,6 @@ contract UniversalGatewayPCTest is Test {
 
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -883,7 +862,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteRevertInsufficientGasTokenBalance() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -918,7 +896,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteRevertInsufficientGasTokenAllowance() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -942,7 +919,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteRevertInsufficientPrc20Balance() public {
         uint256 amount = LARGE_AMOUNT + 1; // More than user has
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -962,7 +938,6 @@ contract UniversalGatewayPCTest is Test {
     function testWithdrawAndExecuteDifferentPayloadSizes() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         uint256 initialBalance = prc20Token.balanceOf(user1);
@@ -1024,7 +999,6 @@ contract UniversalGatewayPCTest is Test {
     function testReentrancyProtection() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Create a contract that calls the gateway
@@ -1051,7 +1025,6 @@ contract UniversalGatewayPCTest is Test {
     function testReentrancyProtectionWithExecute() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -1079,7 +1052,6 @@ contract UniversalGatewayPCTest is Test {
     function testMaxGasLimit() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 1_000_000; // Large gas limit
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
@@ -1110,18 +1082,17 @@ contract UniversalGatewayPCTest is Test {
 
     function testGasFeeCalculationAccuracy() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Test specific gas limits individually
-        _testGasFeeForLimit(amount, to, revertRecipient, 50_000);
-        _testGasFeeForLimit(amount, to, revertRecipient, 100_000);
-        _testGasFeeForLimit(amount, to, revertRecipient, 200_000);
-        _testGasFeeForLimit(amount, to, revertRecipient, 500_000);
-        _testGasFeeForLimit(amount, to, revertRecipient, 1_000_000);
+        _testGasFeeForLimit(amount, revertRecipient, 50_000);
+        _testGasFeeForLimit(amount, revertRecipient, 100_000);
+        _testGasFeeForLimit(amount, revertRecipient, 200_000);
+        _testGasFeeForLimit(amount, revertRecipient, 500_000);
+        _testGasFeeForLimit(amount, revertRecipient, 1_000_000);
     }
 
-    function _testGasFeeForLimit(uint256 amount, bytes memory to, address revertRecipient, uint256 gasLimit) internal {
+    function _testGasFeeForLimit(uint256 amount, address revertRecipient, uint256 gasLimit) internal {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 
@@ -1155,7 +1126,6 @@ contract UniversalGatewayPCTest is Test {
     function testInvalidFeeQuoteZeroGasToken() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Create token with unconfigured chain ID (no gas token set for this chain)
@@ -1215,7 +1185,6 @@ contract UniversalGatewayPCTest is Test {
     function testInvalidFeeQuoteZeroGasFee() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Create token with a chain ID that has gas token but no gas price configured
@@ -1268,7 +1237,6 @@ contract UniversalGatewayPCTest is Test {
     function testTokenBurnFailure() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = DEFAULT_GAS_LIMIT;
-        bytes memory to = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Create failing token
@@ -1434,7 +1402,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_FUNDS_NoPayloadWithAmount() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -1474,7 +1441,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_FUNDS_AND_PAYLOAD_WithPayloadAndAmount() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
@@ -1515,7 +1481,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_GAS_AND_PAYLOAD_PayloadOnlyNoAmount() public {
         uint256 amount = 0; // No amount
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("someFunction()");
         address revertRecipient = user2;
 
@@ -1541,7 +1506,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_FUNDS_MinimalAmount() public {
         uint256 amount = 1; // Minimal non-zero amount
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -1564,7 +1528,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_FUNDS_MaximalAmount() public {
         uint256 amount = LARGE_AMOUNT; // Large amount
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -1586,7 +1549,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_GAS_AND_PAYLOAD_SingleBytePayload() public {
         uint256 amount = 0; // No amount
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = hex"01"; // Single byte payload
         address revertRecipient = user2;
 
@@ -1610,7 +1572,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_GAS_AND_PAYLOAD_LargePayload() public {
         uint256 amount = 0; // No amount
-        bytes memory target = abi.encodePacked(user2);
         // Create a large payload (10KB)
         bytes memory payload = new bytes(10240);
         for (uint256 i = 0; i < 10240; i++) {
@@ -1638,7 +1599,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_FUNDS_AND_PAYLOAD_MinimalPayload() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = hex"01"; // Minimal payload
         address revertRecipient = user2;
 
@@ -1679,7 +1639,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_FUNDS_AND_PAYLOAD_LargePayloadLargeAmount() public {
         uint256 amount = LARGE_AMOUNT;
-        bytes memory target = abi.encodePacked(user2);
         // Create a large payload (10KB)
         bytes memory payload = new bytes(10240);
         for (uint256 i = 0; i < 10240; i++) {
@@ -1706,7 +1665,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_AllZeros_ShouldBeFUNDS() public {
         uint256 amount = 0; // Zero amount
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = bytes(""); // Empty payload
         address revertRecipient = user2;
 
@@ -1726,7 +1684,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testFetchTxType_EmptyPayloadDifferentConstructions() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Test with bytes("")
@@ -1764,7 +1721,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testEventEmission_CorrectTxType_FUNDS() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -1804,7 +1760,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testEventEmission_CorrectTxType_GAS_AND_PAYLOAD() public {
         uint256 amount = 0; // No amount
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("execute()");
         address revertRecipient = user2;
 
@@ -1828,7 +1783,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testEventEmission_CorrectTxType_FUNDS_AND_PAYLOAD() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("execute()");
         address revertRecipient = user2;
 
@@ -1871,7 +1825,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testValidation_ZeroTokenRevertsBeforeTxType() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("execute()");
         address revertRecipient = user2;
 
@@ -1891,7 +1844,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testValidation_ZeroAmountWithPayload_NotAllowedOnPC() public {
         uint256 amount = 0; // Zero amount
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("execute()");
         address revertRecipient = user2;
 
@@ -1916,7 +1868,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testValidation_ZeroAmountNoPayload_RevertsInValidation() public {
         uint256 amount = 0; // Zero amount
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = bytes(""); // Empty payload
         address revertRecipient = user2;
 
@@ -1934,7 +1885,6 @@ contract UniversalGatewayPCTest is Test {
     function testGasFee_FUNDS_CorrectCalculation() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 250_000; // Custom gas limit
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -1958,7 +1908,6 @@ contract UniversalGatewayPCTest is Test {
     function testGasFee_GAS_AND_PAYLOAD_NotSupportedOnPC() public {
         uint256 amount = 0; // No amount
         uint256 gasLimit = 300_000; // Custom gas limit
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("execute()");
         address revertRecipient = user2;
 
@@ -1987,7 +1936,6 @@ contract UniversalGatewayPCTest is Test {
     function testGasFee_FUNDS_AND_PAYLOAD_CorrectCalculation() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 350_000; // Custom gas limit
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("execute()");
         address revertRecipient = user2;
 
@@ -2016,7 +1964,6 @@ contract UniversalGatewayPCTest is Test {
     function testStruct_AllFieldsPopulated() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 200_000;
-        bytes memory target = abi.encodePacked(user2);
         bytes memory payload = abi.encodeWithSignature("execute()");
         address revertRecipient = user2;
 
@@ -2041,7 +1988,6 @@ contract UniversalGatewayPCTest is Test {
     function testStruct_DefaultGasLimit() public {
         uint256 amount = 1000 * 1e6;
         uint256 gasLimit = 0; // Use default
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -2064,7 +2010,6 @@ contract UniversalGatewayPCTest is Test {
 
     function testStruct_EmptyPayloadBytes() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Test both bytes("") and new bytes(0) are treated the same
@@ -2097,47 +2042,9 @@ contract UniversalGatewayPCTest is Test {
         assertEq(prc20Token.balanceOf(user1), initialBalance2 - amount);
     }
 
-    function testStruct_LongTargetAddress() public {
-        uint256 amount = 1000 * 1e6;
-        // Create a target address longer than 20 bytes
-        bytes memory target = abi.encodePacked(user2, user2); // 40 bytes
-        address revertRecipient = user2;
-
-        UniversalOutboundTxRequest memory req = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
-        );
-
-        uint256 initialBalance = prc20Token.balanceOf(user1);
-
-        // Should succeed - bytes type allows any length
-        vm.prank(user1);
-        gateway.sendUniversalTxOutbound(req);
-
-        assertEq(prc20Token.balanceOf(user1), initialBalance - amount);
-    }
-
-    function testStruct_ShortTargetAddress() public {
-        uint256 amount = 1000 * 1e6;
-        // Create a target address shorter than 20 bytes
-        bytes memory target = hex"1234567890"; // 5 bytes
-        address revertRecipient = user2;
-
-        UniversalOutboundTxRequest memory req = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
-        );
-
-        uint256 initialBalance = prc20Token.balanceOf(user1);
-
-        // Should succeed - bytes type allows any length
-        vm.prank(user1);
-        gateway.sendUniversalTxOutbound(req);
-
-        assertEq(prc20Token.balanceOf(user1), initialBalance - amount);
-    }
 
     function testNonceIncrementAndUniquesubTxId() public {
         uint256 amount = 1000 * 1e6;
-        bytes memory target = abi.encodePacked(user2);
         address revertRecipient = user2;
 
         // Verify initial nonce is 0
