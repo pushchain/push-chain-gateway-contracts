@@ -493,10 +493,10 @@ contract GatewayAdminSettersTest is BaseTest {
 
         // TSS operations should be blocked
         bytes32 subTxId = bytes32(uint256(1));
-        bytes32 universalTxID = bytes32(uint256(1001));
+        bytes32 universalTxId = bytes32(uint256(1001));
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertUniversalTx(subTxId, universalTxID, 1, RevertInstructions(user2, ""));
+        gateway.revertUniversalTx(subTxId, universalTxId, 1, RevertInstructions(user2, ""));
     }
 
     // =========================

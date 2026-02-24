@@ -29,24 +29,26 @@ interface IUniversalGatewayV0 {
     /// @param token                Token address being sent
     /// @param amount               Amount of token being sent
     /// @param payload              Payload for arbitrary call on Push Chain: for funds-only tx, payload is empty.
-    /// @param revertInstruction    Revert settings configuration
+    /// @param revertRecipient      Address to receive funds if the tx is reverted on Push Chain.
     /// @param txType               Transaction type: TX_TYPE enum
     /// @param signatureData        Signature data: for signedVerification, signatureData is the signature of the sender.
+    /// @param fromCEA              True if the tx was initiated by a CEA contract.
     event UniversalTx(
         address indexed sender,
         address indexed recipient,
         address token,
         uint256 amount,
         bytes payload,
-        RevertInstructions revertInstruction,
+        address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData
+        bytes signatureData,
+        bool fromCEA
     );
 
     /// @notice         Universal tx execution event
     event UniversalTxExecuted(
         bytes32 indexed subTxId,
-        bytes32 indexed universalTxID,
+        bytes32 indexed universalTxId,
         address indexed originCaller,
         address target,
         address token,
@@ -62,12 +64,16 @@ interface IUniversalGatewayV0 {
     /// @param revertInstruction    Revert settings configuration
     event RevertUniversalTx(
         bytes32 subTxId,
-        bytes32 indexed universalTxID,
+        bytes32 indexed universalTxId,
         address indexed to,
         address indexed token,
         uint256 amount,
         RevertInstructions revertInstruction
     );
+
+    /// @notice Emitted when the Vault address is updated
+
+    event VaultUpdated(address indexed oldVault, address indexed newVault);
 
     // =========================
     //  UG_1: UNIVERSAL TRANSACTION
@@ -148,7 +154,7 @@ interface IUniversalGatewayV0 {
     /// @param revertCFG    revert settings
     function revertUniversalTxToken(
         bytes32 subTxId,
-        bytes32 universalTxID,
+        bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertCFG
@@ -160,73 +166,13 @@ interface IUniversalGatewayV0 {
     /// @param revertCFG    revert settings
     function revertUniversalTx(
         bytes32 subTxId,
-        bytes32 universalTxID,
+        bytes32 universalTxId,
         uint256 amount,
         RevertInstructions calldata revertCFG
     ) external payable;
 
     // =========================
-    //  UG_3: WITHDRAW AND PAYLOAD EXECUTION PATHS
-    // =========================
-
-    /// @notice             Withdraw native token from the gateway
-    /// @param subTxId         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param to           recipient address
-    /// @param amount       amount of native token to withdraw
-    function withdraw(bytes32 subTxId, bytes32 universalTxID, address originCaller, address to, uint256 amount)
-        external
-        payable;
-
-    /// @notice             Withdraw ERC20 token from the gateway
-    /// @param subTxId         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param token        token address (ERC20 token)
-    /// @param to           recipient address
-    /// @param amount       amount of token to withdraw
-    function withdrawTokens(
-        bytes32 subTxId,
-        bytes32 universalTxID,
-        address originCaller,
-        address token,
-        address to,
-        uint256 amount
-    ) external;
-
-    /// @notice             Executes a Universal Transaction on this chain triggered by Vault after validation on Push Chain.
-    /// @param subTxId         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param token        token address (ERC20 token)
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 subTxId,
-        bytes32 universalTxID,
-        address originCaller,
-        address token,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external;
-
-    /// @notice             Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
-    /// @param subTxId         unique transaction identifier
-    /// @param originCaller original caller/user on source chain
-    /// @param target       target contract address to execute call
-    /// @param amount       amount of native token to send along
-    /// @param payload      calldata to be executed on target
-    function executeUniversalTx(
-        bytes32 subTxId,
-        bytes32 universalTxID,
-        address originCaller,
-        address target,
-        uint256 amount,
-        bytes calldata payload
-    ) external payable;
-
-    // =========================
-    //  UG_4: PUBLIC HELPERS
+    //  UG_3: PUBLIC HELPERS
     // =========================
 
     ///@notice                     Checks if a token is supported by the gateway.

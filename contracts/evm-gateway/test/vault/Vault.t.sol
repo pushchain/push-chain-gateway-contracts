@@ -224,14 +224,14 @@ contract VaultTest is Test {
 
     function _assertCEAParams(
         address ceaAddr,
-        bytes32 expectedTxID,
-        bytes32 expectedUniversalTxID,
+        bytes32 expectedsubTxId,
+        bytes32 expecteduniversalTxId,
         address expectedUEA,
         bytes memory expectedPayload
     ) internal view {
         MockCEA cea = _getMockCEA(ceaAddr);
-        assertEq(cea.lastTxID(), expectedTxID);
-        assertEq(cea.lastUniversalTxID(), expectedUniversalTxID);
+        assertEq(cea.lastsubTxId(), expectedsubTxId);
+        assertEq(cea.lastuniversalTxId(), expecteduniversalTxId);
         assertEq(cea.lastUEA(), expectedUEA);
         assertEq(cea.lastPayload(), expectedPayload);
     }
@@ -1317,7 +1317,7 @@ contract VaultTest is Test {
 
         // CEA received correct params
         MockCEA mockCea = _getMockCEA(cea);
-        assertEq(mockCea.lastTxID(), _tx(331));
+        assertEq(mockCea.lastsubTxId(), _tx(331));
         assertEq(mockCea.lastUEA(), uea);
         //         assertEq(mockCea.lastToken(), address(token));
         //         assertEq(mockCea.lastAmount(), amount);
@@ -1344,7 +1344,7 @@ contract VaultTest is Test {
 
         // CEA received correct params
         MockCEA mockCea = _getMockCEA(cea);
-        assertEq(mockCea.lastTxID(), _tx(332));
+        assertEq(mockCea.lastsubTxId(), _tx(332));
         assertEq(mockCea.lastUEA(), uea);
         //         assertEq(mockCea.lastToken(), address(0));
         //         assertEq(mockCea.lastAmount(), amount);

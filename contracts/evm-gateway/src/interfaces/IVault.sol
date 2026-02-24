@@ -22,6 +22,11 @@ interface IVault {
     /// @param newTss       New TSS address
     event TSSUpdated(address indexed oldTss, address indexed newTss);
 
+    /// @notice                 CEAFactory updated event
+    /// @param oldCEAFactory    Previous CEAFactory address
+    /// @param newCEAFactory    New CEAFactory address
+    event CEAFactoryUpdated(address indexed oldCEAFactory, address indexed newCEAFactory);
+
     /// @notice                 Universal tx finalized event
     /// @param subTxId      Gateway transaction identifier
     /// @param universalTxId    Universal transaction identifier

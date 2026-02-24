@@ -15,8 +15,8 @@ contract MockCEA is ICEA {
     using SafeERC20 for IERC20;
 
     // Track last call parameters for assertions
-    bytes32 public lastTxID;
-    bytes32 public lastUniversalTxID;
+    bytes32 public lastsubTxId;
+    bytes32 public lastuniversalTxId;
     address public lastUEA;
     bytes public lastPayload;
 
@@ -49,7 +49,7 @@ contract MockCEA is ICEA {
      * @notice Executes a universal transaction using multicall payload
      * @dev Decodes and executes multicall for testing purposes
      */
-    function executeUniversalTx(bytes32 subTxId, bytes32 universalTxID, address originCaller, bytes calldata payload)
+    function executeUniversalTx(bytes32 subTxId, bytes32 universalTxId, address originCaller, bytes calldata payload)
         external
         payable
         override
@@ -69,8 +69,8 @@ contract MockCEA is ICEA {
         }
 
         // Store call parameters for test assertions
-        lastTxID = subTxId;
-        lastUniversalTxID = universalTxID;
+        lastsubTxId = subTxId;
+        lastuniversalTxId = universalTxId;
         lastUEA = originCaller;
         lastPayload = payload;
 

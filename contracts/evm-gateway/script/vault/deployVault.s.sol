@@ -41,10 +41,10 @@ contract DeployVault is Script {
 
     // Gateway address (can deploy Vault first, then set gateway later via setGateway())
     // Set to address(0) to deploy Vault before Gateway
-    address constant GATEWAY_ADDRESS = address(0); // TODO: Set after deploying Gateway OR leave as 0
+    address constant GATEWAY_ADDRESS = 0x4DCab975cDe839632db6695e2e936A29ce3e325E;
 
     // CEAFactory address (REQUIRED - must be deployed first)
-    address constant CEA_FACTORY_ADDRESS = address(0); // TODO: Set CEAFactory address
+    address constant CEA_FACTORY_ADDRESS = 0xE86655567d3682c0f141d0F924b9946999DC3381;
 
     // ========================================
     //         DEPLOYMENT STATE
@@ -164,19 +164,15 @@ contract DeployVault is Script {
         // Encode initialization call
         bytes memory initData = abi.encodeWithSelector(
             Vault.initialize.selector,
-            admin,                  // admin
-            pauser,                 // pauser
-            tss,                    // tss
-            GATEWAY_ADDRESS,        // gateway (can be address(0))
-            CEA_FACTORY_ADDRESS     // ceaFactory
+            admin, // admin
+            pauser, // pauser
+            tss, // tss
+            GATEWAY_ADDRESS, // gateway (can be address(0))
+            CEA_FACTORY_ADDRESS // ceaFactory
         );
 
         // Deploy proxy with implementation and initialization
-        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
-            vaultImplementation,
-            DEPLOYER,
-            initData
-        );
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(vaultImplementation, DEPLOYER, initData);
 
         vaultProxy = address(proxy);
         console.log("Proxy deployed at:", vaultProxy);

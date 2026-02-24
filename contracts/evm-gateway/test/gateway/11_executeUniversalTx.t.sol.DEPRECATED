@@ -49,7 +49,7 @@ contract GatewayExecuteUniversalTxTest is Test {
 
     event UniversalTxExecuted(
         bytes32 indexed subTxId,
-        bytes32 indexed universalTxID,
+        bytes32 indexed universalTxId,
         address indexed originCaller,
         address target,
         address token,
@@ -130,7 +130,7 @@ contract GatewayExecuteUniversalTxTest is Test {
     }
 
     // Input Validation Tests
-    function testExecuteUniversalTx_DuplicateTxID_Reverts() public {
+    function testExecuteUniversalTx_DuplicatesubTxId_Reverts() public {
         // Transfer tokens from Vault (test contract) to Gateway
         token.transfer(address(gateway), AMOUNT * 2);
 
@@ -645,22 +645,22 @@ contract GatewayExecuteUniversalTxTest is Test {
         assertEq(token.allowance(address(gateway), address(0x7)), 500e18);
     }
 
-    function testExecuteUniversalTx_MultipleExecutionsDifferentTxIDs() public {
-        bytes32 txId1 = keccak256("tx1");
-        bytes32 txId2 = keccak256("tx2");
+    function testExecuteUniversalTx_MultipleExecutionsDifferentsubTxIds() public {
+        bytes32 subTxId1 = keccak256("tx1");
+        bytes32 subTxId2 = keccak256("tx2");
 
         // Transfer tokens from Vault (test contract) to Gateway for first execution
         token.transfer(address(gateway), AMOUNT);
 
-        gateway.executeUniversalTx(txId1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
+        gateway.executeUniversalTx(subTxId1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
 
         // Transfer more tokens for second execution
         token.transfer(address(gateway), AMOUNT);
 
-        gateway.executeUniversalTx(txId2, bytes32(uint256(2002)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
+        gateway.executeUniversalTx(subTxId2, bytes32(uint256(2002)), ORIGIN_CALLER, address(token), address(target), AMOUNT, PAYLOAD);
 
-        assertTrue(gateway.isExecuted(txId1));
-        assertTrue(gateway.isExecuted(txId2));
+        assertTrue(gateway.isExecuted(subTxId1));
+        assertTrue(gateway.isExecuted(subTxId2));
     }
 
     function testIsExecutedMapping() public {
@@ -738,7 +738,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         gateway.executeUniversalTx{ value: 1 }(TX_ID, UNIVERSAL_TX_ID, ORIGIN_CALLER, address(target), 0, PAYLOAD);
     }
 
-    function testExecuteUniversalTx_NativePath_DuplicateTxID_Reverts() public {
+    function testExecuteUniversalTx_NativePath_DuplicatesubTxId_Reverts() public {
         vm.deal(address(this), AMOUNT * 2);
 
         // First execution succeeds
@@ -844,7 +844,7 @@ contract GatewayExecuteUniversalTxTest is Test {
         gateway.withdrawTokens(subTxId, bytes32(uint256(2000 + uint256(subTxId))), ORIGIN_CALLER, address(token), address(target), AMOUNT);
     }
 
-    function testWithdrawFunds_DuplicateTxID_Reverts() public {
+    function testWithdrawFunds_DuplicatesubTxId_Reverts() public {
         bytes32 subTxId = keccak256("withdraw-funds-4");
         token.transfer(address(gateway), AMOUNT * 2);
 
@@ -900,20 +900,20 @@ contract GatewayExecuteUniversalTxTest is Test {
     }
 
     function testWithdrawFunds_MultipleTokens_Success() public {
-        bytes32 txID1 = keccak256("withdraw-funds-10");
-        bytes32 txID2 = keccak256("withdraw-funds-11");
+        bytes32 subTxId1 = keccak256("withdraw-funds-10");
+        bytes32 subTxId2 = keccak256("withdraw-funds-11");
 
         // Transfer both tokens
         token.transfer(address(gateway), AMOUNT);
         usdtToken.transfer(address(gateway), 1000e6);
 
         // Withdraw tokenA
-        gateway.withdrawTokens(txID1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT);
-        assertTrue(gateway.isExecuted(txID1));
+        gateway.withdrawTokens(subTxId1, bytes32(uint256(2001)), ORIGIN_CALLER, address(token), address(target), AMOUNT);
+        assertTrue(gateway.isExecuted(subTxId1));
 
         // Withdraw USDT
-        gateway.withdrawTokens(txID2, bytes32(uint256(2002)), ORIGIN_CALLER, address(usdtToken), address(target), 1000e6);
-        assertTrue(gateway.isExecuted(txID2));
+        gateway.withdrawTokens(subTxId2, bytes32(uint256(2002)), ORIGIN_CALLER, address(usdtToken), address(target), 1000e6);
+        assertTrue(gateway.isExecuted(subTxId2));
     }
 
     function testWithdrawFunds_EventEmission_Complete() public {
