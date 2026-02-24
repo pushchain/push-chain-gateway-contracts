@@ -51,12 +51,12 @@ PRC20 tokens are wrapped representations of external chain tokens on Push Chain.
 Only `FUNDS` and `FUNDS_AND_PAYLOAD` are currently active for CEA→UEA routes.
 `GAS` and `GAS_AND_PAYLOAD` via CEA are not enabled.
 
-| `req.amount` | `req.payload` | TX_TYPE             | Route    |
-| ------------ | ------------- | ------------------- | -------- |
-| == 0, native value > 0 | empty  | `GAS` *(inactive)*  | Instant  |
-| == 0         | non-empty     | `GAS_AND_PAYLOAD` *(inactive)* | Instant |
-| > 0          | empty         | `FUNDS`             | Standard |
-| > 0          | non-empty     | `FUNDS_AND_PAYLOAD` | Standard |
+| `req.amount`           | `req.payload` | TX_TYPE                        | Route    |
+| ---------------------- | ------------- | ------------------------------ | -------- |
+| == 0, native value > 0 | empty         | `GAS` *(inactive)*             | Instant  |
+| == 0                   | non-empty     | `GAS_AND_PAYLOAD` *(inactive)* | Instant  |
+| > 0                    | empty         | `FUNDS`                        | Standard |
+| > 0                    | non-empty     | `FUNDS_AND_PAYLOAD`            | Standard |
 
 ### 1.5 Multicall Payload: The CEA Execution Engine
 
@@ -825,29 +825,6 @@ Push Chain credits BOB's UEA with ETH **and** executes `pushChainPayload` via UE
 
 ---
 
-### 4.6 FUNDS_AND_PAYLOAD Native — with gas batching (Case 2.2)
-
-**Scenario**: Same as 4.5 but BOB also wants to top up his UEA's gas. CEA sends
-`req.amount + gasTopUpAmount` as `msg.value`; the gateway splits the surplus.
-
-The gateway's `_sendTxWithFunds` (Case 2.2): `gasAmount = nativeValue - req.amount`. The gas
-leg emits `UniversalTx(txType=GAS, recipient=BOB_UEA, fromCEA=true)` and the funds+payload
-leg emits `UniversalTx(txType=FUNDS_AND_PAYLOAD, recipient=BOB_UEA, fromCEA=true)`. Both
-use `fromCEA=true` so Push Chain routes to BOB's UEA correctly.
-
-```solidity
-calls[0] = Multicall({
-    to:    UNIVERSAL_GATEWAY,
-    value: req.amount + gasTopUpAmount,   // total forwarded
-    data:  abi.encodeCall(IUniversalGateway.sendUniversalTxFromCEA, (UniversalTxRequest({
-        recipient: BOB_UEA, token: address(0), amount: req.amount,
-        payload: pushChainPayload, revertRecipient: BOB_PUSH_ADDRESS, signatureData: bytes("")
-    })))
-});
-```
-
----
-
 ### 4.7 FUNDS_AND_PAYLOAD Token — via BURN
 
 Same structure as 4.5 but with ERC20. The multicall includes an approve step before calling
@@ -861,29 +838,6 @@ calls[1] = Multicall({
     value: 0,
     data:  abi.encodeCall(IUniversalGateway.sendUniversalTxFromCEA, (UniversalTxRequest({
         recipient: BOB_UEA, token: TOKEN, amount: amount,
-        payload: pushChainPayload, revertRecipient: BOB_PUSH_ADDRESS, signatureData: bytes("")
-    })))
-});
-```
-
----
-
-### 4.8 FUNDS_AND_PAYLOAD Token — with gas batching (Case 2.3)
-
-**Scenario**: BOB bridges ERC20 tokens back AND top-ups his UEA's gas in the same CEA call.
-
-When `msg.value > 0` alongside an ERC20 token, the gateway's `_sendTxWithFunds` (Case 2.3)
-treats the native value as a gas leg. Two events are emitted: one `GAS` leg and one
-`FUNDS_AND_PAYLOAD` leg, both with `fromCEA=true` and `recipient=BOB_UEA`.
-
-```solidity
-Multicall[] memory calls = new Multicall[](2);
-calls[0] = Multicall({ to: TOKEN, value: 0, data: abi.encodeCall(IERC20.approve, (GATEWAY, tokenAmount)) });
-calls[1] = Multicall({
-    to:    UNIVERSAL_GATEWAY,
-    value: gasTopUpAmount,    // native → gas leg
-    data:  abi.encodeCall(IUniversalGateway.sendUniversalTxFromCEA, (UniversalTxRequest({
-        recipient: BOB_UEA, token: TOKEN, amount: tokenAmount,
         payload: pushChainPayload, revertRecipient: BOB_PUSH_ADDRESS, signatureData: bytes("")
     })))
 });
@@ -1048,11 +1002,11 @@ event VaultUniversalTxFinalized(
 
 #### External Chain — CEA→UEA (`UniversalGateway._fetchTxType` via `sendUniversalTxFromCEA`)
 
-| `req.amount` | `req.payload` | `msg.value` | TX_TYPE             | Active |
-| ------------ | ------------- | ----------- | ------------------- | ------ |
-| > 0          | empty         | == amount   | `FUNDS` (native)    | ✅     |
-| > 0          | empty         | 0           | `FUNDS` (ERC20)     | ✅     |
-| > 0          | non-empty     | any         | `FUNDS_AND_PAYLOAD` | ✅     |
+| `req.amount` | `req.payload` | `msg.value` | TX_TYPE             | Active       |
+| ------------ | ------------- | ----------- | ------------------- | ------------ |
+| > 0          | empty         | == amount   | `FUNDS` (native)    | ✅            |
+| > 0          | empty         | 0           | `FUNDS` (ERC20)     | ✅            |
+| > 0          | non-empty     | any         | `FUNDS_AND_PAYLOAD` | ✅            |
 | 0            | empty         | > 0         | `GAS`               | ❌ not active |
 | 0            | non-empty     | any         | `GAS_AND_PAYLOAD`   | ❌ not active |
 
@@ -1067,6 +1021,6 @@ event VaultUniversalTxFinalized(
 | Token support                 | `Vault.sol:199`                      | All tokens validated via `gateway.isSupportedToken()`     |
 | Reentrancy protection         | `nonReentrant` on all entry points   | Prevents re-entrant execution                             |
 | Pausable                      | `whenNotPaused` on all entry points  | Emergency halt for Vault, Gateway, GatewayPC              |
-| Self-call value block         | `CEA.sol:197`                   | CEA self-calls with `value != 0` are rejected             |
+| Self-call value block         | `CEA.sol:197`                        | CEA self-calls with `value != 0` are rejected             |
 | subTxId replay guard          | `CEA.isExecuted`                     | Each `subTxId` can only execute once                      |
 | `target` not used for routing | `Vault.sol:150` NatSpec              | `target` is metadata only; multicall payload routes funds |
