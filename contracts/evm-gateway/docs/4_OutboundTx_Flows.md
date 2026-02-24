@@ -73,7 +73,7 @@ struct Multicall {
 bytes memory payload = abi.encode(multicallArray);
 ```
 
-Key rules (`CEA_temp.sol:182-207`):
+Key rules (`CEA.sol:182-207`):
 - Calls execute sequentially; any revert fails the whole batch.
 - No strict `sum(call.value) == msg.value` — CEA may spend pre-existing balance alongside Vault-supplied value (enables hybrid flows).
 - Self-calls to CEA must have `value == 0`.
@@ -90,17 +90,21 @@ Users can either use 3 main routes for any outbound executions (Push Chain to So
 
 ## 2. Category 1 — Withdrawal Flows
 
-These flows deliver tokens to an address on the external chain. The TSS crafts a multicall
-with a simple transfer call so the CEA forwards tokens to the recipient.
+Withdrawal flows come in two distinct kinds depending on where the tokens land:
+
+- **Source-Chain Withdrawal**: tokens are delivered to an address on the external chain (EOA, contract, or any recipient). Push Chain burns PRC20 → Vault releases tokens → CEA transfers them to `recipientAddress`. The tokens never return to Push Chain.
+
+- **UEA Withdrawal**: tokens held in the CEA on the external chain are moved back to BOB's UEA on Push Chain. The CEA calls `sendUniversalTxFromCEA`, which bridges the funds back as inbound PRC20. No tokens were necessarily burned on Push Chain first.
 
 > **Note on `target`**: `Vault.finalizeUniversalTx`'s `target` parameter is backward-compat
 > metadata only — it does not control routing. The multicall payload determines where funds go.
 
 ---
 
-### 2.1 Native Withdrawal WITH BURN
+### 2.1 Source-Chain Native Withdrawal (WITH BURN)
 
-**Scenario**: BOB withdraws 1 ETH to `recipientAddress` on Ethereum by burning PRC20-ETH.
+**Scenario**: BOB burns PRC20-ETH on Push Chain and withdraws 1 ETH to `recipientAddress`
+on Ethereum. The ETH lands on the source chain — it does not return to Push Chain.
 
 **Push Chain call**:
 ```solidity
@@ -126,7 +130,7 @@ calls[0] = Multicall({ to: recipientAddress, value: 1 ether, data: bytes("") });
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: `recipientAddress` receives 1 ETH. BOB's PRC20-ETH reduced by `amount + gasFee`.
+**Result**: `recipientAddress` on Ethereum receives 1 ETH. BOB's PRC20-ETH reduced by `amount + gasFee`.
 
 ```mermaid
 sequenceDiagram
@@ -138,7 +142,7 @@ sequenceDiagram
     participant V as Vault (Ethereum)
     participant CF as CEAFactory (Ethereum)
     participant CEA as CEA (Ethereum)
-    participant R as recipientAddress
+    participant R as recipientAddress (Ethereum)
 
     BOB->>GPC: sendUniversalTxOutbound(token=PRC20_ETH, amount=1ETH, payload="")
     GPC->>VPC: collect gasFee from BOB
@@ -154,71 +158,10 @@ sequenceDiagram
 
 ---
 
-### 2.2 Native Withdrawal WITHOUT BURN
+### 2.2 Source-Chain Token Withdrawal (WITH BURN)
 
-**Scenario**: BOB's CEA already holds ETH. BOB retrieves it back to his UEA on Push Chain
-without burning any PRC20 — using a `GAS_AND_PAYLOAD` outbound where the multicall instructs
-the CEA to call `sendUniversalTxFromCEA`.
-
-**Push Chain call**: `amount=0`, `payload=<multicallCalldata>` → `TX_TYPE.GAS_AND_PAYLOAD`. No burn.
-
-**Multicall payload** (TSS-crafted):
-```solidity
-UniversalTxRequest memory req = UniversalTxRequest({
-    recipient:       BOB_UEA,       // fromCEA: must be mappedUEA
-    token:           address(0),
-    amount:          ceaEthAmount,
-    payload:         bytes(""),
-    revertRecipient: BOB_PUSH_ADDRESS,
-    signatureData:   bytes("")
-});
-Multicall[] memory calls = new Multicall[](1);
-calls[0] = Multicall({
-    to:    UNIVERSAL_GATEWAY,
-    value: ceaEthAmount,
-    data:  abi.encodeCall(IUniversalGateway.sendUniversalTxFromCEA, (req))
-});
-bytes memory data = abi.encode(calls);
-```
-
-**CEA execution**: Calls `sendUniversalTxFromCEA{value: ceaEthAmount}`. Gateway validates CEA
-identity and anti-spoof (`req.recipient == mappedUEA`), infers `TX_TYPE.FUNDS` (native,
-no payload), deposits ETH into Vault, emits `UniversalTx(fromCEA=true, recipient=BOB_UEA)`.
-
-**Result**: BOB's UEA receives PRC20-ETH (minted on Push Chain). No PRC20 burned.
-
-> **fromCEA semantics**: `recipient=BOB_UEA` and `fromCEA=true` are required so Push Chain
-> credits BOB's actual UEA rather than deploying a new UEA for the CEA's address.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant BOB as BOB (UEA on Push Chain)
-    participant GPC as UniversalGatewayPC (Push Chain)
-    participant VPC as VaultPC (Push Chain)
-    participant TSS as TSS (off-chain relayer)
-    participant V as Vault (Ethereum)
-    participant CEA as CEA (Ethereum)
-    participant GW as UniversalGateway (Ethereum)
-
-    BOB->>GPC: sendUniversalTxOutbound(amount=0, payload=multicallCalldata)
-    GPC->>VPC: collect gasFee from BOB
-    Note over GPC: No burn (amount == 0)
-    GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
-
-    TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, address(0), target, 0, data)
-    V->>CEA: executeUniversalTx{value:0}(data)
-    CEA->>GW: sendUniversalTxFromCEA{value:ceaEthAmount}(req{recipient=BOB_UEA, amount=ceaEthAmount})
-    GW->>GW: isCEA ✓, anti-spoof ✓ → TX_TYPE.FUNDS
-    GW-->>TSS: emit UniversalTx(sender=CEA, recipient=BOB_UEA, fromCEA=true)
-    Note over GW: Push Chain mints PRC20-ETH to BOB_UEA
-```
-
----
-
-### 2.3 Token Withdrawal WITH BURN
-
-**Scenario**: BOB withdraws 1000 USDC to `recipientAddress` on Ethereum by burning PRC20-USDC.
+**Scenario**: BOB burns PRC20-USDC on Push Chain and withdraws 1000 USDC to `recipientAddress`
+on Ethereum. The USDC lands on the source chain — it does not return to Push Chain.
 
 **Push Chain call**: `token=PRC20_USDC, amount=1000e6, payload=""` → `TX_TYPE.FUNDS`.
 
@@ -235,7 +178,7 @@ calls[0] = Multicall({
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: `recipientAddress` receives 1000 USDC.
+**Result**: `recipientAddress` on Ethereum receives 1000 USDC.
 
 ```mermaid
 sequenceDiagram
@@ -248,7 +191,7 @@ sequenceDiagram
     participant CF as CEAFactory (Ethereum)
     participant CEA as CEA (Ethereum)
     participant USDC as USDC Token (Ethereum)
-    participant R as recipientAddress
+    participant R as recipientAddress (Ethereum)
 
     BOB->>GPC: sendUniversalTxOutbound(token=PRC20_USDC, amount=1000e6, payload="")
     GPC->>VPC: collect gasFee from BOB
@@ -266,17 +209,87 @@ sequenceDiagram
 
 ---
 
-### 2.4 Token Withdrawal WITHOUT BURN
+### 2.3 UEA Withdrawal — Native ETH from CEA back to UEA (no burn, FUNDS)
 
-**Scenario**: BOB's CEA holds USDC. BOB bridges it back to his UEA on Push Chain as PRC20-USDC
-without burning anything on Push Chain.
+**Scenario**: BOB's CEA already holds ETH from a prior operation. BOB wants that ETH back
+as PRC20-ETH on his UEA on Push Chain — without burning any additional PRC20.
+
+The CEA calls `sendUniversalTxFromCEA` from within its multicall, which bridges the ETH
+back inbound. This is a **FUNDS** transaction on the external chain (`amount > 0`, no payload).
+
+**Push Chain call**: `amount=0`, `payload=<multicallCalldata>` → `TX_TYPE.GAS_AND_PAYLOAD`. No burn.
+
+> `amount=0` on Push Chain (no PRC20 burned). The actual funds being bridged back are the
+> CEA's pre-existing ETH balance — they move inbound via `sendUniversalTxFromCEA`.
+
+**Multicall payload** (TSS-crafted):
+```solidity
+Multicall[] memory calls = new Multicall[](1);
+calls[0] = Multicall({
+    to:    UNIVERSAL_GATEWAY,
+    value: ceaEthAmount,          // CEA spends its own ETH balance
+    data:  abi.encodeCall(IUniversalGateway.sendUniversalTxFromCEA, (UniversalTxRequest({
+        recipient:       BOB_UEA,   // fromCEA: must equal getUEAForCEA(CEA)
+        token:           address(0),
+        amount:          ceaEthAmount,
+        payload:         bytes(""),
+        revertRecipient: BOB_PUSH_ADDRESS,
+        signatureData:   bytes("")
+    })))
+});
+bytes memory data = abi.encode(calls);
+```
+
+**CEA execution**: Calls `sendUniversalTxFromCEA{value: ceaEthAmount}`. Gateway validates CEA
+identity and anti-spoof (`req.recipient == mappedUEA`), infers `TX_TYPE.FUNDS` (native,
+no payload), deposits ETH into Vault, emits `UniversalTx(fromCEA=true, recipient=BOB_UEA)`.
+
+**Result**: BOB's UEA on Push Chain receives PRC20-ETH (minted). No PRC20 burned.
+
+> **fromCEA semantics**: `recipient=BOB_UEA` and `fromCEA=true` are required so Push Chain
+> credits BOB's actual UEA rather than deploying a new UEA for the CEA's address.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant BOB as BOB (UEA on Push Chain)
+    participant GPC as UniversalGatewayPC (Push Chain)
+    participant VPC as VaultPC (Push Chain)
+    participant TSS as TSS (off-chain relayer)
+    participant V as Vault (Ethereum)
+    participant CEA as CEA (Ethereum)
+    participant GW as UniversalGateway (Ethereum)
+
+    Note over CEA: CEA holds ceaEthAmount ETH (pre-existing)
+    BOB->>GPC: sendUniversalTxOutbound(amount=0, payload=multicallCalldata)
+    GPC->>VPC: collect gasFee from BOB
+    Note over GPC: No burn (amount == 0)
+    GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
+
+    TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, address(0), target, 0, data)
+    V->>CEA: executeUniversalTx{value:0}(data)
+    CEA->>GW: sendUniversalTxFromCEA{value:ceaEthAmount}(req{recipient=BOB_UEA, amount=ceaEthAmount, payload=""})
+    GW->>GW: isCEA ✓, anti-spoof ✓ → TX_TYPE.FUNDS → deposit ETH to Vault
+    GW-->>TSS: emit UniversalTx(sender=CEA, recipient=BOB_UEA, fromCEA=true)
+    Note over GW: Push Chain mints PRC20-ETH to BOB_UEA
+```
+
+---
+
+### 2.4 UEA Withdrawal — USDC from CEA back to UEA (no burn, FUNDS)
+
+**Scenario**: BOB's CEA holds USDC from a prior operation. BOB retrieves it back to his UEA
+on Push Chain as PRC20-USDC — without burning any PRC20 on Push Chain first.
+
+The CEA approves the gateway, then calls `sendUniversalTxFromCEA` so the gateway pulls USDC
+from the CEA and bridges it back inbound as a **FUNDS** transaction (ERC20, no payload).
 
 **Push Chain call**: `amount=0`, `payload=<multicallCalldata>` → `TX_TYPE.GAS_AND_PAYLOAD`. No burn.
 
 **Multicall payload** (TSS-crafted):
 ```solidity
-// Step 1: CEA approves gateway to pull USDC
-// Step 2: CEA calls sendUniversalTxFromCEA — gateway pulls USDC via safeTransferFrom
+// Step 1: CEA approves gateway to pull USDC via safeTransferFrom
+// Step 2: CEA calls sendUniversalTxFromCEA — gateway pulls USDC into Vault
 Multicall[] memory calls = new Multicall[](2);
 calls[0] = Multicall({
     to:    USDC_ADDRESS,
@@ -298,7 +311,7 @@ calls[1] = Multicall({
 bytes memory data = abi.encode(calls);
 ```
 
-> For ERC20 self-calls, the CEA must approve the gateway before calling `sendUniversalTxFromCEA`.
+> For ERC20, the CEA must approve the gateway before calling `sendUniversalTxFromCEA`.
 > The gateway's `_handleDeposits` pulls USDC via `safeTransferFrom(CEA, Vault, amount)`.
 
 **Result**: Gateway infers `TX_TYPE.FUNDS`, pulls USDC from CEA, emits
@@ -316,6 +329,7 @@ sequenceDiagram
     participant GW as UniversalGateway (Ethereum)
     participant USDC as USDC Token (Ethereum)
 
+    Note over CEA: CEA holds ceaUsdcAmount USDC (pre-existing)
     BOB->>GPC: sendUniversalTxOutbound(amount=0, payload=multicallCalldata)
     GPC->>VPC: collect gasFee from BOB
     Note over GPC: No burn (amount == 0)
@@ -324,12 +338,80 @@ sequenceDiagram
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, address(0), target, 0, data)
     V->>CEA: executeUniversalTx{value:0}(data)
     CEA->>USDC: approve(UniversalGateway, ceaUsdcAmount)
-    CEA->>GW: sendUniversalTxFromCEA(req{recipient=BOB_UEA, token=USDC, amount=ceaUsdcAmount})
-    GW->>GW: isCEA ✓, anti-spoof ✓ → TX_TYPE.FUNDS
-    GW->>USDC: safeTransferFrom(CEA, Vault, ceaUsdcAmount)
+    CEA->>GW: sendUniversalTxFromCEA(req{recipient=BOB_UEA, token=USDC, amount=ceaUsdcAmount, payload=""})
+    GW->>GW: isCEA ✓, anti-spoof ✓ → TX_TYPE.FUNDS → safeTransferFrom(CEA, Vault, amount)
     GW-->>TSS: emit UniversalTx(sender=CEA, recipient=BOB_UEA, token=USDC, fromCEA=true)
     Note over GW: Push Chain mints PRC20-USDC to BOB_UEA
 ```
+
+---
+
+### 2.5 UEA Withdrawal — Native ETH from CEA to UEA WITH payload (FUNDS_AND_PAYLOAD)
+
+**Scenario**: BOB's CEA holds ETH. BOB retrieves it to his UEA on Push Chain **and** attaches
+a payload for the UEA to execute on Push Chain (e.g., stake the received ETH into a Push Chain
+protocol). This is a `FUNDS_AND_PAYLOAD` transaction on the external chain.
+
+**Push Chain call**: `amount=0`, `payload=<multicallCalldata>` → `TX_TYPE.GAS_AND_PAYLOAD`. No burn.
+
+**Multicall payload** (TSS-crafted):
+```solidity
+Multicall[] memory calls = new Multicall[](1);
+calls[0] = Multicall({
+    to:    UNIVERSAL_GATEWAY,
+    value: ceaEthAmount,
+    data:  abi.encodeCall(IUniversalGateway.sendUniversalTxFromCEA, (UniversalTxRequest({
+        recipient:       BOB_UEA,
+        token:           address(0),
+        amount:          ceaEthAmount,
+        payload:         pushChainPayload,   // non-empty → FUNDS_AND_PAYLOAD
+        revertRecipient: BOB_PUSH_ADDRESS,
+        signatureData:   bytes("")
+    })))
+});
+bytes memory data = abi.encode(calls);
+```
+
+**Gateway infers**: `TX_TYPE.FUNDS_AND_PAYLOAD` (native, `amount > 0`, `payload` non-empty).
+Epoch rate limit applies. Push Chain credits BOB's UEA with PRC20-ETH **and** executes
+`pushChainPayload` via the UEA.
+
+---
+
+### 2.6 UEA Withdrawal — USDC from CEA to UEA WITH payload (FUNDS_AND_PAYLOAD)
+
+**Scenario**: BOB's CEA holds USDC. BOB retrieves it to his UEA on Push Chain **and** attaches
+a payload for the UEA to execute on Push Chain.
+
+**Push Chain call**: `amount=0`, non-empty payload → `TX_TYPE.GAS_AND_PAYLOAD`. No burn.
+
+**Multicall payload** (TSS-crafted):
+```solidity
+Multicall[] memory calls = new Multicall[](2);
+// Step 1: approve gateway
+calls[0] = Multicall({
+    to:    USDC_ADDRESS,
+    value: 0,
+    data:  abi.encodeCall(IERC20.approve, (UNIVERSAL_GATEWAY, ceaUsdcAmount))
+});
+// Step 2: bridge USDC + carry Push Chain payload
+calls[1] = Multicall({
+    to:    UNIVERSAL_GATEWAY,
+    value: 0,
+    data:  abi.encodeCall(IUniversalGateway.sendUniversalTxFromCEA, (UniversalTxRequest({
+        recipient:       BOB_UEA,
+        token:           USDC_ADDRESS,
+        amount:          ceaUsdcAmount,
+        payload:         pushChainPayload,   // non-empty → FUNDS_AND_PAYLOAD
+        revertRecipient: BOB_PUSH_ADDRESS,
+        signatureData:   bytes("")
+    })))
+});
+bytes memory data = abi.encode(calls);
+```
+
+**Gateway infers**: `TX_TYPE.FUNDS_AND_PAYLOAD` (ERC20, `amount > 0`, `payload` non-empty).
+Push Chain credits BOB's UEA with PRC20-USDC **and** executes `pushChainPayload` via the UEA.
 
 ---
 
@@ -539,11 +621,18 @@ pre-existing balance.
 
 ---
 
-## 4. Category 3 — CEA Self-Call Flows (sendUniversalTxFromCEA)
+## 4. Category 3 — CEA Self-Call Flows with BURN (sendUniversalTxFromCEA + PRC20 burn)
 
-These flows occur when a CEA calls `UniversalGateway.sendUniversalTxFromCEA` to bridge tokens
-back to Push Chain on behalf of its UEA. Only `FUNDS` and `FUNDS_AND_PAYLOAD` are currently
-active for CEA→UEA routes.
+These flows combine a PRC20 burn on Push Chain **with** a CEA self-call that immediately
+bridges the released tokens back to the UEA. The distinguishing feature versus Category 1
+UEA Withdrawals (sections 2.3–2.6) is that here PRC20 **is** burned first — Vault supplies
+fresh tokens to the CEA, and the CEA's multicall then calls `sendUniversalTxFromCEA` to
+bridge them inbound in the same atomic execution.
+
+Use cases: round-trip token flows in automated strategies, bridging while simultaneously
+sending a Push Chain payload, and gas-batched bridging.
+
+Only `FUNDS` and `FUNDS_AND_PAYLOAD` are currently active for CEA→UEA routes.
 
 > **Anti-spoof invariant** (`UniversalGateway.sol:359`): `req.recipient` must equal
 > `CEAFactory.getUEAForCEA(msg.sender)`. The gateway enforces this unconditionally.
@@ -978,6 +1067,6 @@ event VaultUniversalTxFinalized(
 | Token support                 | `Vault.sol:199`                      | All tokens validated via `gateway.isSupportedToken()`     |
 | Reentrancy protection         | `nonReentrant` on all entry points   | Prevents re-entrant execution                             |
 | Pausable                      | `whenNotPaused` on all entry points  | Emergency halt for Vault, Gateway, GatewayPC              |
-| Self-call value block         | `CEA_temp.sol:197`                   | CEA self-calls with `value != 0` are rejected             |
+| Self-call value block         | `CEA.sol:197`                   | CEA self-calls with `value != 0` are rejected             |
 | subTxId replay guard          | `CEA.isExecuted`                     | Each `subTxId` can only execute once                      |
 | `target` not used for routing | `Vault.sol:150` NatSpec              | `target` is metadata only; multicall payload routes funds |
