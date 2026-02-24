@@ -24,7 +24,7 @@ Now, with CEAs and Vault in the mix, mentioned below is the current flow for eac
     - token = address(0),  amount = 100 ETH,  msg.value MUST equal amount
 2. Vault:
     - gets/deploys CEA
-    - calls **`CEA.executeUniversalTx{value: amount}(txId, pushAccount, target, amount, data)`**
+    - calls **`CEA.executeUniversalTx{value: amount}(subTxId, pushAccount, target, amount, data)`**
 3. CEA:
     - calls target.call{value: amount}(payload)
 
@@ -43,7 +43,7 @@ sequenceDiagram
     participant G as UniversalGateway
     participant T as Target Contract
 
-    TSS->>V: finalizeUniversalTx(txId, pushAccount, token=0, target=T, amount, data)\n(msg.value=amount)
+    TSS->>V: finalizeUniversalTx(subTxId, pushAccount, token=0, target=T, amount, data)\n(msg.value=amount)
     V->>G: isSupportedToken(address(0))?
     V->>F: getCEAForPushAccount(pushAccount)
     alt CEA not deployed
@@ -52,7 +52,7 @@ sequenceDiagram
     else CEA deployed
         F-->>V: ceaAddress
     end
-    V->>C: executeUniversalTx{value: amount}(txId, pushAccount, target=T, amount, data)
+    V->>C: executeUniversalTx{value: amount}(subTxId, pushAccount, target=T, amount, data)
     C->>T: call{value: amount}(data)\nmsg.sender = CEA
     Note over T,C: Target observes caller identity as the CEA
 ```
@@ -65,7 +65,7 @@ sequenceDiagram
 2. Vault:
     - gets CEA for pushAccount via CEAFactory.getCEAForPushAccount(), deploys if missing
     - **transfers USDC from Vault → CEA**
-    - calls **`CEA.executeUniversalTx(txId, pushAccount, token, target, amount, data)`**
+    - calls **`CEA.executeUniversalTx(subTxId, pushAccount, token, target, amount, data)`**
 3. CEA:
     - performs validations and executes
 
@@ -85,7 +85,7 @@ sequenceDiagram
     participant G as UniversalGateway
     participant T as Target Contract
 
-    TSS->>V: finalizeUniversalTx(txId, pushAccount, token=USDC, target=T, amount, data)\n(msg.value=0)
+    TSS->>V: finalizeUniversalTx(subTxId, pushAccount, token=USDC, target=T, amount, data)\n(msg.value=0)
     V->>G: isSupportedToken(USDC)?
     V->>F: getCEAForPushAccount(pushAccount)
     alt CEA not deployed
@@ -95,7 +95,7 @@ sequenceDiagram
         F-->>V: ceaAddress
     end
     V->>C: transfer USDC(amount)
-    V->>C: executeUniversalTx(txId, pushAccount, token=USDC, target=T, amount, data)
+    V->>C: executeUniversalTx(subTxId, pushAccount, token=USDC, target=T, amount, data)
     C->>T: call(data) (after approve)\nmsg.sender = CEA
     Note over T,C: Target observes caller identity as the CEA
 ```
@@ -111,10 +111,10 @@ sequenceDiagram
 
 **Case 2.1: withdrawTokens non-native**
 
-1. **Relayer/TSS calls Vault.withdraw(txId, pushAccount, token, to, amount)**
+1. **Relayer/TSS calls Vault.withdraw(subTxId, pushAccount, token, to, amount)**
 2. Vault.withdraw():
     - **transfers token from Vault → UniversalGateway**
-    - calls **gateway.withdrawTokens(txId, pushAccount, token, to, amount)**
+    - calls **gateway.withdrawTokens(subTxId, pushAccount, token, to, amount)**
 3. UniversalGateway.withdrawTokens():
     - checks VAULT_ROLE
     - marks tx executed
@@ -128,9 +128,9 @@ sequenceDiagram
     participant G as UniversalGateway
     participant U as User (EVM address)
 
-    TSS->>V: withdraw(txId, pushAccount, token=USDC, to=U, amount)
+    TSS->>V: withdraw(subTxId, pushAccount, token=USDC, to=U, amount)
     V->>G: transfer USDC(amount)
-    V->>G: withdrawTokens(txId, pushAccount, token=USDC, to=U, amount)\n(VAULT_ROLE)
+    V->>G: withdrawTokens(subTxId, pushAccount, token=USDC, to=U, amount)\n(VAULT_ROLE)
     G->>U: transfer USDC(amount)
 ```
 
@@ -139,7 +139,7 @@ sequenceDiagram
 
 > *Native withdrawal **does not go through Vault** (in your current contracts). It's gateway-only and TSS-only.*
 >
-1. **Relayer/TSS calls UniversalGateway.withdraw{value: amount}(txId, pushAccount, to, amount)**
+1. **Relayer/TSS calls UniversalGateway.withdraw{value: amount}(subTxId, pushAccount, to, amount)**
 2. UniversalGateway.withdraw():
     - requires onlyTSS
     - marks tx executed
@@ -156,7 +156,7 @@ sequenceDiagram
     participant G as UniversalGateway
     participant U as User (EVM address)
 
-    TSS->>G: withdraw{value: amount}(txId, pushAccount, to=U, amount)\n(onlyTSS)
+    TSS->>G: withdraw{value: amount}(subTxId, pushAccount, to=U, amount)\n(onlyTSS)
     G->>U: send ETH(amount)
 ```
 
@@ -171,10 +171,10 @@ sequenceDiagram
 
 **Case 3.1: revertUniversalTx non-native**
 
-1. **Relayer/TSS calls `Vault.revertUniversalTxToken(txId, universalTxId, token, amount, revertInstruction)`**
+1. **Relayer/TSS calls `Vault.revertUniversalTxToken(subTxId, universalTxId, token, amount, revertInstruction)`**
 2. Vault.revertUniversalTxToken():
     - **transfers token Vault → Gateway**
-    - calls **gateway.revertUniversalTxToken(txId, universalTxId, token, amount, revertInstruction)**
+    - calls **gateway.revertUniversalTxToken(subTxId, universalTxId, token, amount, revertInstruction)**
 3. UniversalGateway.revertUniversalTxToken():
     - onlyRole(VAULT_ROLE)
     - transfers token to revertInstruction.revertRecipient
@@ -187,16 +187,16 @@ sequenceDiagram
     participant G as UniversalGateway
     participant R as revertRecipient
 
-    TSS->>V: revertUniversalTxToken(txId, universalTxId, token=USDC, amount, revertInstruction)
+    TSS->>V: revertUniversalTxToken(subTxId, universalTxId, token=USDC, amount, revertInstruction)
     V->>G: transfer USDC(amount)
-    V->>G: revertUniversalTxToken(txId, universalTxId, token=USDC, amount, revertInstruction)\n(VAULT_ROLE)
+    V->>G: revertUniversalTxToken(subTxId, universalTxId, token=USDC, amount, revertInstruction)\n(VAULT_ROLE)
     G->>R: transfer USDC(amount)
 ```
 
 
 **Case 3.2: revertUniversalTx native**
 
-1. **Relayer/TSS calls `UniversalGateway.revertUniversalTx{value: amount}(txId, universalTxId, amount, revertInstruction)`**
+1. **Relayer/TSS calls `UniversalGateway.revertUniversalTx{value: amount}(subTxId, universalTxId, amount, revertInstruction)`**
 2. UniversalGateway.revertUniversalTx():
     - onlyTSS
     - marks tx executed
@@ -209,6 +209,6 @@ sequenceDiagram
     participant G as UniversalGateway
     participant R as revertRecipient
 
-    TSS->>G: revertUniversalTx{value: amount}(txId, universalTxId, amount, revertInstruction)\n(onlyTSS)
+    TSS->>G: revertUniversalTx{value: amount}(subTxId, universalTxId, amount, revertInstruction)\n(onlyTSS)
     G->>R: send ETH(amount)
 ```

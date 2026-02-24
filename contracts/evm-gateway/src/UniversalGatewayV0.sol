@@ -6,19 +6,19 @@ pragma solidity 0.8.26;
  * @notice Universal Gateway for EVM chains [TESTNETs Only]
  *         - Acts as a gateway for all supported external chains to bridge funds and payloads to Push Chain.
  *         - Users of external chains can deposit funds and payloads to Push Chain using the gateway.
- * 
+ *
  * @dev    - Transaction Types: 4 main types of transactions supported by gateway:
  *         -    1. GAS_TX: Allows users to fund their UEAs ( on Push Chain ) with gas deposits from source chains.
  *         -    2. GAS_AND_PAYLOAD_TX: Allows users to fund their UEAs with gas deposits from source chains and execute payloads through their UEAs on Push Chain.
  *         -    3. FUNDS_TX: Allows users to move large ticket-size funds from to any recipient address on Push Chain.
  *         -    4. FUNDS_AND_PAYLOAD_TX: Allows users to move large ticket-size funds from to any recipient address on Push Chain and execute payloads through their UEAs on Push Chain.
  *         - Note: Check the ./libraries/Types.sol file for more details on transaction types.
- *        
+ *
  * @dev    - TSS-controlled functionalities:
  *         -    1. TSS-controlled withdraw (native or ERC20).
  *         -    2. Token Support List: allowlist for ERC20 used as gas inputs on gas tx path.
  *         - Note: Fund management and access control is managed by TSS_ROLE.
- * 
+ *
  * @dev    - Rate-Limit Checks:
  *         -    Universal Gateway includes rate-limit checks for both Fee Abstraction & Universal Transaction Routes.
  *         -    For Fee Abstraction Route ( Low Block Confirmation Requirement ):
@@ -85,12 +85,12 @@ contract UniversalGatewayV0 is
     IUniswapV3Factory public uniV3Factory;
     ISwapRouterSepolia     public uniV3Router;
     address           public WETH;
-    uint24[3] public v3FeeOrder = [uint24(500), uint24(3000), uint24(10000)]; 
+    uint24[3] public v3FeeOrder = [uint24(500), uint24(3000), uint24(10000)];
 
     /// @notice Chainlink ETH/USD oracle config
-    AggregatorV3Interface public ethUsdFeed;          
-    uint8  public chainlinkEthUsdDecimals;            
-    uint256 public chainlinkStalePeriod;              
+    AggregatorV3Interface public ethUsdFeed;
+    uint8  public chainlinkEthUsdDecimals;
+    uint256 public chainlinkStalePeriod;
 
     /// @notice (Optional) Chainlink L2 Sequencer uptime feed & grace period for rollups
     AggregatorV3Interface public l2SequencerFeed;        // if set, enforce sequencer up + grace
@@ -98,7 +98,7 @@ contract UniversalGatewayV0 is
 
 
     /// @notice Default additional time window used when callers pass deadline = 0 (Uniswap v3 swaps)
-    uint256 public defaultSwapDeadlineSec; 
+    uint256 public defaultSwapDeadlineSec;
 
     /// @notice USDT token address for the old addFunds function
     address public USDT;
@@ -130,7 +130,7 @@ contract UniversalGatewayV0 is
      * @param tss              initial TSS address
      * @param minCapUsd        min USD cap (1e18 decimals)
      * @param maxCapUsd        max USD cap (1e18 decimals)
-     * @param factory          UniswapV3 factory 
+     * @param factory          UniswapV3 factory
      * @param router           UniswapV3 router
      * @param _wethAddress     WETH address
      * @param _usdtAddress     USDT address
@@ -150,8 +150,8 @@ contract UniversalGatewayV0 is
         address _usdtUsdPriceFeed,
         address _ethUsdPriceFeed
     ) external initializer {
-        if (admin == address(0) || 
-            pauser == address(0) || 
+        if (admin == address(0) ||
+            pauser == address(0) ||
             tss == address(0) ||
             _wethAddress == address(0)) revert Errors.ZeroAddress();
 
@@ -167,7 +167,7 @@ contract UniversalGatewayV0 is
         TSS_ADDRESS = tss;
         MIN_CAP_UNIVERSAL_TX_USD = minCapUsd;
         MAX_CAP_UNIVERSAL_TX_USD = maxCapUsd;
-        
+
         WETH = _wethAddress;
         if (factory != address(0) && router != address(0)) {
             uniV3Factory = IUniswapV3Factory(factory);
@@ -205,7 +205,7 @@ contract UniversalGatewayV0 is
     function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
         _unpause();
     }
-     
+
     /// @notice Allows the admin to set the TSS address
     /// @param newTSS The new TSS address
     function setTSSAddress(address newTSS) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -310,7 +310,7 @@ contract UniversalGatewayV0 is
         l2SequencerGracePeriodSec = gracePeriodSec;
     }
 
-   
+
     // =========================
     //  UG_2: UNIVERSAL TRANSACTION
     // =========================
@@ -388,7 +388,7 @@ contract UniversalGatewayV0 is
             }
             // Case 1.2: Token to bridge is ERC20 Token -> _req.token
             else {
-                if (nativeValue > 0) revert Errors.InvalidAmount(); 
+                if (nativeValue > 0) revert Errors.InvalidAmount();
                 tokenForFunds = _req.token;
             }
 
@@ -506,7 +506,7 @@ contract UniversalGatewayV0 is
 
     /// @inheritdoc IUniversalGatewayV0
     function revertUniversalTxToken(
-        bytes32 txID,
+        bytes32 subTxId,
         bytes32 universalTxID,
         address token,
         uint256 amount,
@@ -517,40 +517,40 @@ contract UniversalGatewayV0 is
         whenNotPaused
         onlyTSS
     {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted();
-        
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0) revert Errors.InvalidAmount();
-        
-        isExecuted[txID] = true;
+
+        isExecuted[subTxId] = true;
         IERC20(token).safeTransfer(revertInstruction.fundRecipient, amount);
-        
-        emit RevertUniversalTx(txID, universalTxID, revertInstruction.fundRecipient, token, amount, revertInstruction);
+
+        emit RevertUniversalTx(subTxId, universalTxID, revertInstruction.fundRecipient, token, amount, revertInstruction);
     }
 
     /// @inheritdoc IUniversalGatewayV0
     function revertUniversalTx(
-        bytes32 txID,
+        bytes32 subTxId,
         bytes32 universalTxID,
         uint256 amount,
         RevertInstructions calldata revertInstruction
     )
         external
-        payable 
+        payable
         nonReentrant
         whenNotPaused
         onlyTSS
     {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted();
-        
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+
         if (revertInstruction.fundRecipient == address(0)) revert Errors.InvalidRecipient();
         if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txID] = true;
+        isExecuted[subTxId] = true;
         (bool ok,) = payable(revertInstruction.fundRecipient).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
-        
-        emit RevertUniversalTx(txID, universalTxID, revertInstruction.fundRecipient, address(0), amount, revertInstruction);
+
+        emit RevertUniversalTx(subTxId, universalTxID, revertInstruction.fundRecipient, address(0), amount, revertInstruction);
     }
 
 
@@ -560,44 +560,44 @@ contract UniversalGatewayV0 is
 
     /// @inheritdoc IUniversalGatewayV0
     function withdraw(
-        bytes32 txID,
+        bytes32 subTxId,
         bytes32 universalTxID,
         address originCaller,
         address to,
         uint256 amount
     ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+
         if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
-        
-        isExecuted[txID] = true;
+
+        isExecuted[subTxId] = true;
         (bool ok,) = payable(to).call{ value: amount }("");
         if (!ok) revert Errors.WithdrawFailed();
-        
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, address(0), amount, bytes(""));
+
+        emit UniversalTxExecuted(subTxId, universalTxID, originCaller, to, address(0), amount, bytes(""));
     }
     //@inheritdocs IUniversalGatewayV0
     function withdrawTokens(
-        bytes32 txID,
+        bytes32 subTxId,
         bytes32 universalTxID,
         address originCaller,
         address token,
         address to,
         uint256 amount
     ) external nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+
         if (to == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (token == address(0)) revert Errors.InvalidInput();
-        
+
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        isExecuted[txID] = true;
+        isExecuted[subTxId] = true;
         IERC20(token).safeTransfer(to, amount);
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, to, token, amount, bytes(""));
+        emit UniversalTxExecuted(subTxId, universalTxID, originCaller, to, token, amount, bytes(""));
     }
 
     /// @notice                Executes a Universal Transaction on this chain triggered by TSS after validation on Push Chain.
@@ -605,14 +605,14 @@ contract UniversalGatewayV0 is
     ///                        - The tokens used for payload execution, are to be burnt on Push Chain.
     ///                        - approval and reset of approval is handled by the gateway.
     ///                        - tokens are transferred from Vault to Gateway before calling this function
-    /// @param txID            unique transaction identifier
+    /// @param subTxId            unique transaction identifier
     /// @param originCaller    original caller/user on source chain
     /// @param token           token address (ERC20 token)
     /// @param target          target contract address to execute call
     /// @param amount          amount of token to send along
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
-        bytes32 txID,
+        bytes32 subTxId,
         bytes32 universalTxID,
         address originCaller,
         address token,
@@ -620,50 +620,50 @@ contract UniversalGatewayV0 is
         uint256 amount,
         bytes calldata payload
     ) external nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (token == address(0)) revert Errors.InvalidInput(); // This function is for ERC20 tokens only
-        
+
         if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
 
-        isExecuted[txID] = true;
+        isExecuted[subTxId] = true;
 
         _resetApproval(token, target);             // reset approval to zero
         _safeApprove(token, target, amount);       // approve target to spend amount
         _executeCall(target, payload, 0);          // execute call with required amount
         _resetApproval(token, target);             // reset approval back to zero
-        
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, token, amount, payload);
+
+        emit UniversalTxExecuted(subTxId, universalTxID, originCaller, target, token, amount, payload);
     }
-    
+
     /// @notice                Executes a Universal Transaction with native tokens on this chain triggered by TSS after validation on Push Chain.
     /// @dev                   Allows outbound payload execution from Push Chain to external chains with native tokens.
-    /// @param txID            unique transaction identifier
+    /// @param subTxId            unique transaction identifier
     /// @param originCaller    original caller/user on source chain
     /// @param target          target contract address to execute call
     /// @param amount          amount of native token to send along
     /// @param payload         calldata to be executed on target
     function executeUniversalTx(
-        bytes32 txID,
+        bytes32 subTxId,
         bytes32 universalTxID,
         address originCaller,
         address target,
         uint256 amount,
         bytes calldata payload
     ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[txID]) revert Errors.PayloadExecuted(); 
-        
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+
         if (target == address(0) || originCaller == address(0)) revert Errors.InvalidInput();
         if (amount == 0) revert Errors.InvalidAmount();
         if (msg.value != amount) revert Errors.InvalidAmount();
 
-        isExecuted[txID] = true;
-        
+        isExecuted[subTxId] = true;
+
         _executeCall(target, payload, amount);
-        
-        emit UniversalTxExecuted(txID, universalTxID, originCaller, target, address(0), amount, payload);
+
+        emit UniversalTxExecuted(subTxId, universalTxID, originCaller, target, address(0), amount, payload);
     }
 
     // =========================
@@ -684,7 +684,7 @@ contract UniversalGatewayV0 is
     /// @return maxValue Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
     function getMinMaxValueForNative() public view returns (uint256 minValue, uint256 maxValue) {
         (uint256 ethUsdPrice, ) = getEthUsdPrice(); // ETH price in USD (1e18 scaled)
-        
+
         // Convert USD caps to ETH amounts
         // Formula: ETH_amount = (USD_cap * 1e18) / ETH_price_in_USD
         minValue = (MIN_CAP_UNIVERSAL_TX_USD * 1e18) / ethUsdPrice;
@@ -725,7 +725,7 @@ contract UniversalGatewayV0 is
             uint80 roundId,
             int256 priceInUSD,
             ,
-            uint256 updatedAt,  
+            uint256 updatedAt,
             uint80 answeredInRound
         ) = ethUsdFeed.latestRoundData();
 
@@ -737,7 +737,7 @@ contract UniversalGatewayV0 is
         }
 
         uint8 dec = chainlinkEthUsdDecimals;
-        
+
         // This can happen if the feed wasn't properly initialized or returns 0 decimals
         if (dec == 0) {
             try ethUsdFeed.decimals() returns (uint8 feedDecimals) {
@@ -747,7 +747,7 @@ contract UniversalGatewayV0 is
                 dec = 8;
             }
         }
-        
+
         // Scale priceInUSD (decimals = dec) to 1e18
         uint256 scale;
         unchecked {
@@ -777,7 +777,7 @@ contract UniversalGatewayV0 is
         // Note: amountWei is 1e18-based (wei), price is scaled to 1e18 above.
         usd1e18 = (amountWei * px1e18) / 1e18;
     }
-    
+
     /// @notice             Returns both the total token amount used and remaining in the current epoch.
     /// @param token        token address to query (use address(0) for native)
     /// @return used        amount already consumed in the current epoch (in token's natural units)
@@ -804,8 +804,8 @@ contract UniversalGatewayV0 is
     /// @dev Check if the amount is within the USD cap range
     ///      Cap Ranges are defined in the constructor or can be updated by the admin.
     /// @param amount Amount to check
-    function _checkUSDCaps(uint256 amount) public view { 
-        uint256 usdValue = quoteEthAmountInUsd1e18(amount);     
+    function _checkUSDCaps(uint256 amount) public view {
+        uint256 usdValue = quoteEthAmountInUsd1e18(amount);
         if (usdValue < MIN_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
         if (usdValue > MAX_CAP_UNIVERSAL_TX_USD) revert Errors.InvalidAmount();
     }
@@ -859,7 +859,7 @@ contract UniversalGatewayV0 is
     }
 
     /// @dev Unified helper to execute a low-level call to target
-    ///      Call can be executed with native value or ERC20 token. 
+    ///      Call can be executed with native value or ERC20 token.
     ///      Reverts with Errors.ExecutionFailed() if the call fails (no bubbling).
     function _executeCall(address target, bytes calldata payload, uint256 value) internal returns (bytes memory result) {
         (bool success, bytes memory ret) = target.call{value: value}(payload);
@@ -891,7 +891,7 @@ contract UniversalGatewayV0 is
         }
     }
 
-    /// @dev                Enforce and consume the per-token epoch rate limit. 
+    /// @dev                Enforce and consume the per-token epoch rate limit.
     ///                     For a token, if threshold is 0, it is unsupported.
     ///                     epoch.used is reset to 0 when a new epoch starts (no rollover).
     /// @param token        token address to consume rate limit
@@ -1014,7 +1014,7 @@ contract UniversalGatewayV0 is
         }
 
         // No direct pool found
-     
+
         revert Errors.InvalidInput();
     }
 
@@ -1060,7 +1060,7 @@ contract UniversalGatewayV0 is
         // For TX_TYPE.FUNDS: Case 1: Native Funds
         if (!hasPayload && hasFunds) {
             // Case 1.1: Native Funds Only.
-            // FUNDS (native) — must come with native value 
+            // FUNDS (native) — must come with native value
             if (fundsIsNative && hasNativeValue) {
                 return TX_TYPE.FUNDS;
             }

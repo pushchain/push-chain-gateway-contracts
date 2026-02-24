@@ -39,10 +39,24 @@ contract VaultTest is Test {
     // Events
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
-    event VaultUniversalTxFinalized(bytes32 indexed txId, bytes32 indexed universalTxId, address indexed originCaller, address target, address token, uint256 amount, bytes data);
-    event VaultUniversalTxReverted(bytes32 indexed txId, bytes32 indexed universalTxId, address indexed token, uint256 amount, RevertInstructions revertInstruction);
+    event VaultUniversalTxFinalized(
+        bytes32 indexed subTxId,
+        bytes32 indexed universalTxId,
+        address indexed originCaller,
+        address target,
+        address token,
+        uint256 amount,
+        bytes data
+    );
+    event VaultUniversalTxReverted(
+        bytes32 indexed subTxId,
+        bytes32 indexed universalTxId,
+        address indexed token,
+        uint256 amount,
+        RevertInstructions revertInstruction
+    );
 
-    bytes32 txId = bytes32(uint256(1));
+    bytes32 subTxId = bytes32(uint256(1));
 
     function _tx(uint256 id) internal pure returns (bytes32) {
         return bytes32(id);
@@ -77,8 +91,9 @@ contract VaultTest is Test {
 
         // Deploy Vault implementation and proxy
         vaultImpl = new Vault();
-        bytes memory vaultInitData =
-            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway), address(ceaFactory));
+        bytes memory vaultInitData = abi.encodeWithSelector(
+            Vault.initialize.selector, admin, pauser, tss, address(gateway), address(ceaFactory)
+        );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), vaultInitData);
         vault = Vault(address(vaultProxy));
 
@@ -160,32 +175,26 @@ contract VaultTest is Test {
     /// @notice Helper: encode single external call multicall
     function _externalCallPayload(address to, uint256 value, bytes memory data) internal pure returns (bytes memory) {
         Multicall[] memory calls = new Multicall[](1);
-        calls[0] = Multicall({
-            to: to,
-            value: value,
-            data: data
-        });
+        calls[0] = Multicall({ to: to, value: value, data: data });
         return abi.encode(calls);
     }
 
     /// @notice Helper: encode withdrawal multicall (direct transfer - simpler for basic tests)
     /// @dev For ERC20: encodes a transfer call to recipient from CEA
     /// @dev For native: encodes a direct send to recipient
-    function _withdrawalPayloadDirect(address token, address recipient, uint256 amount) internal pure returns (bytes memory) {
+    function _withdrawalPayloadDirect(address token, address recipient, uint256 amount)
+        internal
+        pure
+        returns (bytes memory)
+    {
         Multicall[] memory calls = new Multicall[](1);
         if (token == address(0)) {
             // Native: send ETH to recipient
-            calls[0] = Multicall({
-                to: recipient,
-                value: amount,
-                data: bytes("")
-            });
+            calls[0] = Multicall({ to: recipient, value: amount, data: bytes("") });
         } else {
             // ERC20: call token.transfer(recipient, amount) from CEA
             calls[0] = Multicall({
-                to: token,
-                value: 0,
-                data: abi.encodeWithSelector(IERC20.transfer.selector, recipient, amount)
+                to: token, value: 0, data: abi.encodeWithSelector(IERC20.transfer.selector, recipient, amount)
             });
         }
         return abi.encode(calls);
@@ -193,20 +202,19 @@ contract VaultTest is Test {
 
     /// @notice Helper: encode approve + external call multicall
     /// @dev For tests where external contract needs to call transferFrom on CEA's tokens
-    function _approveAndCallPayload(address token, address spender, uint256 amount, address target, bytes memory targetCalldata) internal pure returns (bytes memory) {
+    function _approveAndCallPayload(
+        address token,
+        address spender,
+        uint256 amount,
+        address target,
+        bytes memory targetCalldata
+    ) internal pure returns (bytes memory) {
         Multicall[] memory calls = new Multicall[](2);
         // Step 1: Approve spender to spend CEA's tokens
-        calls[0] = Multicall({
-            to: token,
-            value: 0,
-            data: abi.encodeWithSelector(IERC20.approve.selector, spender, amount)
-        });
+        calls[0] =
+            Multicall({ to: token, value: 0, data: abi.encodeWithSelector(IERC20.approve.selector, spender, amount) });
         // Step 2: Call the target contract
-        calls[1] = Multicall({
-            to: target,
-            value: 0,
-            data: targetCalldata
-        });
+        calls[1] = Multicall({ to: target, value: 0, data: targetCalldata });
         return abi.encode(calls);
     }
 
@@ -252,38 +260,43 @@ contract VaultTest is Test {
 
     function test_Initialization_RevertsOnZeroAdmin() public {
         Vault newImpl = new Vault();
-        bytes memory initData =
-            abi.encodeWithSelector(Vault.initialize.selector, address(0), pauser, tss, address(gateway), address(ceaFactory));
+        bytes memory initData = abi.encodeWithSelector(
+            Vault.initialize.selector, address(0), pauser, tss, address(gateway), address(ceaFactory)
+        );
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
 
     function test_Initialization_RevertsOnZeroPauser() public {
         Vault newImpl = new Vault();
-        bytes memory initData =
-            abi.encodeWithSelector(Vault.initialize.selector, admin, address(0), tss, address(gateway), address(ceaFactory));
+        bytes memory initData = abi.encodeWithSelector(
+            Vault.initialize.selector, admin, address(0), tss, address(gateway), address(ceaFactory)
+        );
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
 
     function test_Initialization_RevertsOnZeroTSS() public {
         Vault newImpl = new Vault();
-        bytes memory initData =
-            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, address(0), address(gateway), address(ceaFactory));
+        bytes memory initData = abi.encodeWithSelector(
+            Vault.initialize.selector, admin, pauser, address(0), address(gateway), address(ceaFactory)
+        );
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
 
     function test_Initialization_RevertsOnZeroGateway() public {
         Vault newImpl = new Vault();
-        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(0), address(ceaFactory));
+        bytes memory initData =
+            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(0), address(ceaFactory));
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
 
     function test_Initialization_RevertsOnZeroCEAFactory() public {
         Vault newImpl = new Vault();
-        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway), address(0));
+        bytes memory initData =
+            abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway), address(0));
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
@@ -402,7 +415,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
     }
 
     function test_SetTSS_NewTSSCanCallFunctions() public {
@@ -412,7 +433,15 @@ contract VaultTest is Test {
         vault.setTSS(newTSS);
 
         vm.prank(newTSS);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
         assertEq(token.balanceOf(user1), 100e18);
     }
 
@@ -439,13 +468,23 @@ contract VaultTest is Test {
     function test_Withdraw_OnlyTSSCanCall() public {
         vm.prank(user1);
         vm.expectRevert();
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
     }
 
     function test_RevertWithdraw_OnlyTSSCanCall() public {
         vm.prank(user1);
         vm.expectRevert();
-        vault.revertUniversalTxToken(_tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, "")
+        );
     }
 
     // ============================================================================
@@ -458,7 +497,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
     }
 
     function test_Pause_BlocksRevertWithdraw() public {
@@ -467,7 +514,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertUniversalTxToken(_tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, "")
+        );
     }
 
     function test_Pause_AllowsSetGateway() public {
@@ -509,7 +558,15 @@ contract VaultTest is Test {
         vault.unpause();
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
         assertEq(token.balanceOf(user1), 100e18);
     }
 
@@ -523,7 +580,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(unsupportedToken), user1, 100e18, _withdrawalPayloadDirect(address(unsupportedToken), user1, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(unsupportedToken),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(unsupportedToken), user1, 100e18)
+        );
     }
 
     function test_RevertWithdraw_UnsupportedTokenReverts() public {
@@ -532,13 +597,23 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.revertUniversalTxToken(_tx(2), bytes32(uint256(3000 + 2)), address(unsupportedToken), 100e18, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(2), bytes32(uint256(3000 + 2)), address(unsupportedToken), 100e18, RevertInstructions(user1, "")
+        );
     }
 
     function test_TokenSupport_TogglingReflectsImmediately() public {
         // Initially supported
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(1), bytes32(uint256(3000 + uint256(_tx(1)))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(1),
+            bytes32(uint256(3000 + uint256(_tx(1)))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
         assertEq(token.balanceOf(user1), 100e18);
 
         // Remove support
@@ -552,7 +627,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(_tx(2), bytes32(uint256(3000 + uint256(_tx(2)))), user2, address(token), user2, 100e18, _withdrawalPayloadDirect(address(token), user2, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(2),
+            bytes32(uint256(3000 + uint256(_tx(2)))),
+            user2,
+            address(token),
+            user2,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user2, 100e18)
+        );
 
         // Re-add support
         thresholds[0] = 1_000_000e18;
@@ -560,7 +643,15 @@ contract VaultTest is Test {
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(3), bytes32(uint256(3000 + uint256(_tx(3)))), user2, address(token), user2, 100e18, _withdrawalPayloadDirect(address(token), user2, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(3),
+            bytes32(uint256(3000 + uint256(_tx(3)))),
+            user2,
+            address(token),
+            user2,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user2, 100e18)
+        );
         assertEq(token.balanceOf(user2), 100e18);
     }
 
@@ -570,7 +661,9 @@ contract VaultTest is Test {
     function test_RevertWithdraw_ZeroTokenAddressReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.revertUniversalTxToken(_tx(3), bytes32(uint256(3000 + 3)), address(0), 100e18, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(3), bytes32(uint256(3000 + 3)), address(0), 100e18, RevertInstructions(user1, "")
+        );
     }
 
     // ============================================================================
@@ -581,7 +674,15 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, amount, _withdrawalPayloadDirect(address(token), user1, amount));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            amount,
+            _withdrawalPayloadDirect(address(token), user1, amount)
+        );
 
         assertEq(token.balanceOf(user1), amount);
     }
@@ -591,7 +692,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         // Event VaultWithdraw was removed - test now verifies withdraw executes successfully
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, amount, _withdrawalPayloadDirect(address(token), user1, amount));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            amount,
+            _withdrawalPayloadDirect(address(token), user1, amount)
+        );
         assertEq(token.balanceOf(user1), amount);
     }
 
@@ -599,14 +708,30 @@ contract VaultTest is Test {
         // Note: With multicall interface, amount=0 is now allowed (payload-only execution)
         // This test now verifies that amount=0 does NOT revert
         vm.prank(tss);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 0, _withdrawalPayloadDirect(address(token), user1, 0));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            0,
+            _withdrawalPayloadDirect(address(token), user1, 0)
+        );
         // If we reach here, amount=0 was allowed (expected behavior with multicall)
     }
 
     function test_Withdraw_ZeroRecipientReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), address(0), 100e18, _withdrawalPayloadDirect(address(token), address(0), 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            address(0),
+            100e18,
+            _withdrawalPayloadDirect(address(token), address(0), 100e18)
+        );
     }
 
     function test_Withdraw_InsufficientBalanceReverts() public {
@@ -614,15 +739,39 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, vaultBalance + 1, _withdrawalPayloadDirect(address(token), user1, vaultBalance + 1));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            vaultBalance + 1,
+            _withdrawalPayloadDirect(address(token), user1, vaultBalance + 1)
+        );
     }
 
     function test_Withdraw_MultipleRecipients() public {
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(1), bytes32(uint256(3000 + uint256(_tx(1)))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(1),
+            bytes32(uint256(3000 + uint256(_tx(1)))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(2), bytes32(uint256(3000 + uint256(_tx(2)))), user2, address(token), user2, 200e18, _withdrawalPayloadDirect(address(token), user2, 200e18));
+        vault.finalizeUniversalTx(
+            _tx(2),
+            bytes32(uint256(3000 + uint256(_tx(2)))),
+            user2,
+            address(token),
+            user2,
+            200e18,
+            _withdrawalPayloadDirect(address(token), user2, 200e18)
+        );
 
         assertEq(token.balanceOf(user1), 100e18);
         assertEq(token.balanceOf(user2), 200e18);
@@ -630,10 +779,26 @@ contract VaultTest is Test {
 
     function test_Withdraw_DifferentTokens() public {
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(1), bytes32(uint256(3000 + uint256(_tx(1)))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(1),
+            bytes32(uint256(3000 + uint256(_tx(1)))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(2), bytes32(uint256(3000 + uint256(_tx(2)))), user1, address(token2), user1, 50e6, _withdrawalPayloadDirect(address(token2), user1, 50e6));
+        vault.finalizeUniversalTx(
+            _tx(2),
+            bytes32(uint256(3000 + uint256(_tx(2)))),
+            user1,
+            address(token2),
+            user1,
+            50e6,
+            _withdrawalPayloadDirect(address(token2), user1, 50e6)
+        );
 
         assertEq(token.balanceOf(user1), 100e18);
         assertEq(token2.balanceOf(user1), 50e6);
@@ -647,7 +812,9 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
 
         vm.prank(tss);
-        vault.revertUniversalTxToken(_tx(4), bytes32(uint256(3000 + 4)), address(token), amount, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(4), bytes32(uint256(3000 + 4)), address(token), amount, RevertInstructions(user1, "")
+        );
 
         assertEq(token.balanceOf(user1), amount);
     }
@@ -669,13 +836,17 @@ contract VaultTest is Test {
     function test_RevertWithdraw_ZeroAmountReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertUniversalTxToken(_tx(6), bytes32(uint256(3000 + 6)), address(token), 0, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(6), bytes32(uint256(3000 + 6)), address(token), 0, RevertInstructions(user1, "")
+        );
     }
 
     function test_RevertWithdraw_ZeroRecipientReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        vault.revertUniversalTxToken(_tx(7), bytes32(uint256(3000 + 7)), address(token), 100e18, RevertInstructions(address(0), ""));
+        vault.revertUniversalTxToken(
+            _tx(7), bytes32(uint256(3000 + 7)), address(token), 100e18, RevertInstructions(address(0), "")
+        );
     }
 
     function test_RevertWithdraw_InsufficientBalanceReverts() public {
@@ -683,7 +854,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertUniversalTxToken(_tx(8), bytes32(uint256(3000 + 8)), address(token), vaultBalance + 1, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(8), bytes32(uint256(3000 + 8)), address(token), vaultBalance + 1, RevertInstructions(user1, "")
+        );
     }
 
     function test_RevertWithdraw_WhenPausedReverts() public {
@@ -692,7 +865,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertUniversalTxToken(_tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, "")
+        );
     }
 
     // ============================================================================
@@ -714,7 +889,9 @@ contract VaultTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        vault.finalizeUniversalTx(_tx(300), bytes32(uint256(3300)), user1, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(300), bytes32(uint256(3300)), user1, address(token), address(mockTarget), 100e18, data
+        );
     }
 
     function test_ExecuteUniversalTx_ERC20_RevertsWhenPaused() public {
@@ -725,7 +902,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.finalizeUniversalTx(_tx(301), bytes32(uint256(3301)), user1, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(301), bytes32(uint256(3301)), user1, address(token), address(mockTarget), 100e18, data
+        );
     }
 
     function test_ExecuteUniversalTx_Native_RevertsWhenPaused() public {
@@ -737,7 +916,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.finalizeUniversalTx{value: 1 ether}(_tx(302), bytes32(uint256(3302)), user1, address(0), address(mockTarget), 1 ether, data);
+        vault.finalizeUniversalTx{ value: 1 ether }(
+            _tx(302), bytes32(uint256(3302)), user1, address(0), address(mockTarget), 1 ether, data
+        );
     }
 
     // C. Parameter Validation (5 tests)
@@ -746,7 +927,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.finalizeUniversalTx(_tx(303), bytes32(uint256(3303)), address(0), address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(303), bytes32(uint256(3303)), address(0), address(token), address(mockTarget), 100e18, data
+        );
     }
 
     function test_ExecuteUniversalTx_ZeroTargetReverts() public {
@@ -763,7 +946,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx{value: 0.5 ether}(_tx(305), bytes32(uint256(3305)), user1, address(0), address(mockTarget), 1 ether, data);
+        vault.finalizeUniversalTx{ value: 0.5 ether }(
+            _tx(305), bytes32(uint256(3305)), user1, address(0), address(mockTarget), 1 ether, data
+        );
     }
 
     function test_ExecuteUniversalTx_Native_InvalidMsgValue_TooHigh() public {
@@ -772,7 +957,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx{value: 2 ether}(_tx(306), bytes32(uint256(3306)), user1, address(0), address(mockTarget), 1 ether, data);
+        vault.finalizeUniversalTx{ value: 2 ether }(
+            _tx(306), bytes32(uint256(3306)), user1, address(0), address(mockTarget), 1 ether, data
+        );
     }
 
     function test_ExecuteUniversalTx_ERC20_NonZeroMsgValueReverts() public {
@@ -781,7 +968,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx{value: 1 ether}(_tx(307), bytes32(uint256(3307)), user1, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx{ value: 1 ether }(
+            _tx(307), bytes32(uint256(3307)), user1, address(token), address(mockTarget), 100e18, data
+        );
     }
 
     // D. CEA Lifecycle (4 tests)
@@ -794,7 +983,9 @@ contract VaultTest is Test {
         assertFalse(deployed);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(308), bytes32(uint256(3308)), uea, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(308), bytes32(uint256(3308)), uea, address(token), address(mockTarget), 100e18, data
+        );
 
         // Verify CEA was deployed
         (address cea, bool nowDeployed) = _getCEA(uea);
@@ -808,14 +999,18 @@ contract VaultTest is Test {
 
         // First call - deploys CEA
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(309), bytes32(uint256(3309)), uea, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(309), bytes32(uint256(3309)), uea, address(token), address(mockTarget), 100e18, data
+        );
 
         (address cea1, bool deployed1) = _getCEA(uea);
         assertTrue(deployed1);
 
         // Second call - reuses CEA
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(310), bytes32(uint256(3310)), uea, address(token), address(mockTarget), 50e18, data);
+        vault.finalizeUniversalTx(
+            _tx(310), bytes32(uint256(3310)), uea, address(token), address(mockTarget), 50e18, data
+        );
 
         (address cea2, bool deployed2) = _getCEA(uea);
         assertTrue(deployed2);
@@ -827,19 +1022,16 @@ contract VaultTest is Test {
         uint256 amount = 100e18;
         bytes memory rawCalldata = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
         // Need approval since mockTarget will call transferFrom on CEA's tokens
-        bytes memory data = _approveAndCallPayload(address(token), address(mockTarget), amount, address(mockTarget), rawCalldata);
+        bytes memory data =
+            _approveAndCallPayload(address(token), address(mockTarget), amount, address(mockTarget), rawCalldata);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(311), bytes32(uint256(3311)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(311), bytes32(uint256(3311)), uea, address(token), address(mockTarget), amount, data
+        );
 
         (address cea,) = _getCEA(uea);
-        _assertCEAParams(
-            cea,
-            _tx(311),
-            bytes32(uint256(3311)),
-            uea,
-            data
-        );
+        _assertCEAParams(cea, _tx(311), bytes32(uint256(3311)), uea, data);
     }
 
     function test_ExecuteUniversalTx_CEAReceivesCorrectParameters_Native() public {
@@ -850,16 +1042,12 @@ contract VaultTest is Test {
         vm.deal(tss, amount);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(312), bytes32(uint256(3312)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(312), bytes32(uint256(3312)), uea, address(0), address(mockTarget), amount, data
+        );
 
         (address cea,) = _getCEA(uea);
-        _assertCEAParams(
-            cea,
-            _tx(312),
-            bytes32(uint256(3312)),
-            uea,
-            data
-        );
+        _assertCEAParams(cea, _tx(312), bytes32(uint256(3312)), uea, data);
     }
 
     // E. ERC20 Path (3 tests)
@@ -871,7 +1059,9 @@ contract VaultTest is Test {
         uint256 vaultBalanceBefore = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(313), bytes32(uint256(3313)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(313), bytes32(uint256(3313)), uea, address(token), address(mockTarget), amount, data
+        );
 
         (address cea,) = _getCEA(uea);
 
@@ -889,7 +1079,9 @@ contract VaultTest is Test {
         uint256 vaultBalanceBefore = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(314), bytes32(uint256(3314)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(314), bytes32(uint256(3314)), uea, address(token), address(mockTarget), amount, data
+        );
 
         uint256 vaultBalanceAfter = token.balanceOf(address(vault));
         assertEq(vaultBalanceBefore - amount, vaultBalanceAfter);
@@ -900,10 +1092,13 @@ contract VaultTest is Test {
         uint256 amount = 100e18;
         bytes memory rawCalldata = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
         // Need approval since mockTarget will call transferFrom on CEA's tokens
-        bytes memory data = _approveAndCallPayload(address(token), address(mockTarget), amount, address(mockTarget), rawCalldata);
+        bytes memory data =
+            _approveAndCallPayload(address(token), address(mockTarget), amount, address(mockTarget), rawCalldata);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(315), bytes32(uint256(3315)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(315), bytes32(uint256(3315)), uea, address(token), address(mockTarget), amount, data
+        );
 
         // Verify the CEA called the target (MockTarget records lastCaller)
         (address cea,) = _getCEA(uea);
@@ -921,16 +1116,20 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(_tx(316), bytes32(uint256(3316)), user1, address(unsupportedToken), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(316), bytes32(uint256(3316)), user1, address(unsupportedToken), address(mockTarget), 100e18, data
+        );
     }
-    
+
     function test_ExecuteUniversalTx_ERC20_InsufficientVaultBalanceReverts() public {
         uint256 vaultBalance = token.balanceOf(address(vault));
         bytes memory data = "";
 
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx(_tx(318), bytes32(uint256(3318)), user1, address(token), address(mockTarget), vaultBalance + 1, data);
+        vault.finalizeUniversalTx(
+            _tx(318), bytes32(uint256(3318)), user1, address(token), address(mockTarget), vaultBalance + 1, data
+        );
     }
 
     // D. CEA Lifecycle (continued - 1 test)
@@ -940,10 +1139,14 @@ contract VaultTest is Test {
         bytes memory data = "";
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(320), bytes32(uint256(3320)), uea1, address(token), address(mockTarget), 50e18, data);
+        vault.finalizeUniversalTx(
+            _tx(320), bytes32(uint256(3320)), uea1, address(token), address(mockTarget), 50e18, data
+        );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(321), bytes32(uint256(3321)), uea2, address(token), address(mockTarget), 50e18, data);
+        vault.finalizeUniversalTx(
+            _tx(321), bytes32(uint256(3321)), uea2, address(token), address(mockTarget), 50e18, data
+        );
 
         (address cea1,) = _getCEA(uea1);
         (address cea2,) = _getCEA(uea2);
@@ -958,11 +1161,15 @@ contract VaultTest is Test {
 
         // Test with 18-decimal token
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(322), bytes32(uint256(3322)), uea, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(322), bytes32(uint256(3322)), uea, address(token), address(mockTarget), 100e18, data
+        );
 
         // Test with 6-decimal token
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(323), bytes32(uint256(3323)), uea, address(token2), address(mockTarget), 50e6, data);
+        vault.finalizeUniversalTx(
+            _tx(323), bytes32(uint256(3323)), uea, address(token2), address(mockTarget), 50e6, data
+        );
 
         (address cea,) = _getCEA(uea);
         MockCEA mockCea = _getMockCEA(cea);
@@ -986,7 +1193,9 @@ contract VaultTest is Test {
         uint256 mockTargetBalanceBefore = address(mockTarget).balance;
 
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(324), bytes32(uint256(3324)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(324), bytes32(uint256(3324)), uea, address(0), address(mockTarget), amount, data
+        );
 
         // After execution, mockTarget should have received ETH via multicall
         assertGt(address(mockTarget).balance, mockTargetBalanceBefore);
@@ -1000,7 +1209,9 @@ contract VaultTest is Test {
         vm.deal(tss, amount);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(325), bytes32(uint256(3325)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(325), bytes32(uint256(3325)), uea, address(0), address(mockTarget), amount, data
+        );
 
         (address cea,) = _getCEA(uea);
         MockCEA mockCea = _getMockCEA(cea);
@@ -1021,7 +1232,9 @@ contract VaultTest is Test {
         vm.deal(tss, amount);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(326), bytes32(uint256(3326)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(326), bytes32(uint256(3326)), uea, address(0), address(mockTarget), amount, data
+        );
 
         (address cea, bool deployedAfter) = _getCEA(uea);
         assertTrue(deployedAfter);
@@ -1037,13 +1250,17 @@ contract VaultTest is Test {
 
         // First call
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(327), bytes32(uint256(3327)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(327), bytes32(uint256(3327)), uea, address(0), address(mockTarget), amount, data
+        );
 
         (address cea1,) = _getCEA(uea);
 
         // Second call
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(328), bytes32(uint256(3328)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(328), bytes32(uint256(3328)), uea, address(0), address(mockTarget), amount, data
+        );
 
         (address cea2,) = _getCEA(uea);
 
@@ -1057,14 +1274,18 @@ contract VaultTest is Test {
 
         // First ERC20
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(329), bytes32(uint256(3329)), uea, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(329), bytes32(uint256(3329)), uea, address(token), address(mockTarget), 100e18, data
+        );
 
         (address ceaAfterErc20,) = _getCEA(uea);
 
         // Then Native
         vm.deal(tss, 1 ether);
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: 1 ether}(_tx(330), bytes32(uint256(3330)), uea, address(0), address(mockTarget), 1 ether, data);
+        vault.finalizeUniversalTx{ value: 1 ether }(
+            _tx(330), bytes32(uint256(3330)), uea, address(0), address(mockTarget), 1 ether, data
+        );
 
         (address ceaAfterNative,) = _getCEA(uea);
 
@@ -1077,12 +1298,15 @@ contract VaultTest is Test {
         uint256 amount = 200e18;
         bytes memory rawCalldata = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), amount);
         // Need approval since mockTarget will call transferFrom on CEA's tokens
-        bytes memory data = _approveAndCallPayload(address(token), address(mockTarget), amount, address(mockTarget), rawCalldata);
+        bytes memory data =
+            _approveAndCallPayload(address(token), address(mockTarget), amount, address(mockTarget), rawCalldata);
 
         uint256 vaultBalanceBefore = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(331), bytes32(uint256(3331)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(331), bytes32(uint256(3331)), uea, address(token), address(mockTarget), amount, data
+        );
 
         // Verify all expected outcomes
         (address cea, bool deployed) = _getCEA(uea);
@@ -1110,7 +1334,9 @@ contract VaultTest is Test {
         vm.deal(tss, amount);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(332), bytes32(uint256(3332)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(332), bytes32(uint256(3332)), uea, address(0), address(mockTarget), amount, data
+        );
 
         // Verify all expected outcomes
         (address cea, bool deployed) = _getCEA(uea);
@@ -1135,7 +1361,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.finalizeUniversalTx(_tx(333), bytes32(uint256(3333)), uea, address(token), address(mockRevertingTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(333), bytes32(uint256(3333)), uea, address(token), address(mockRevertingTarget), amount, data
+        );
     }
 
     function test_ExecuteUniversalTx_TargetReverts_Native() public {
@@ -1149,7 +1377,9 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.finalizeUniversalTx{value: amount}(_tx(334), bytes32(uint256(3334)), uea, address(0), address(mockRevertingTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(334), bytes32(uint256(3334)), uea, address(0), address(mockRevertingTarget), amount, data
+        );
     }
 
     // I. Event Emissions (4 tests)
@@ -1160,10 +1390,14 @@ contract VaultTest is Test {
         bytes memory data = _externalCallPayload(address(mockTarget), 0, rawCalldata);
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(_tx(335), bytes32(uint256(3335)), uea, address(mockTarget), address(token), amount, data);
+        emit VaultUniversalTxFinalized(
+            _tx(335), bytes32(uint256(3335)), uea, address(mockTarget), address(token), amount, data
+        );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(335), bytes32(uint256(3335)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(335), bytes32(uint256(3335)), uea, address(token), address(mockTarget), amount, data
+        );
     }
 
     function test_ExecuteUniversalTx_Native_EmitsEvent() public {
@@ -1175,10 +1409,14 @@ contract VaultTest is Test {
         vm.deal(tss, amount);
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(_tx(336), bytes32(uint256(3336)), uea, address(mockTarget), address(0), amount, data);
+        emit VaultUniversalTxFinalized(
+            _tx(336), bytes32(uint256(3336)), uea, address(mockTarget), address(0), amount, data
+        );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(336), bytes32(uint256(3336)), uea, address(0), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(336), bytes32(uint256(3336)), uea, address(0), address(mockTarget), amount, data
+        );
     }
 
     function test_ExecuteUniversalTx_EmitsEvent_WithEmptyPayload() public {
@@ -1187,10 +1425,14 @@ contract VaultTest is Test {
         bytes memory data = "";
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(_tx(337), bytes32(uint256(3337)), uea, address(mockTarget), address(token), amount, data);
+        emit VaultUniversalTxFinalized(
+            _tx(337), bytes32(uint256(3337)), uea, address(mockTarget), address(token), amount, data
+        );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(337), bytes32(uint256(3337)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(337), bytes32(uint256(3337)), uea, address(token), address(mockTarget), amount, data
+        );
     }
 
     function test_ExecuteUniversalTx_EmitsEvent_WithComplexPayload() public {
@@ -1200,10 +1442,14 @@ contract VaultTest is Test {
         bytes memory data = _externalCallPayload(address(mockTarget), 0, rawCalldata);
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(_tx(338), bytes32(uint256(3338)), uea, address(mockTarget), address(token), amount, data);
+        emit VaultUniversalTxFinalized(
+            _tx(338), bytes32(uint256(3338)), uea, address(mockTarget), address(token), amount, data
+        );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(338), bytes32(uint256(3338)), uea, address(token), address(mockTarget), amount, data);
+        vault.finalizeUniversalTx(
+            _tx(338), bytes32(uint256(3338)), uea, address(token), address(mockTarget), amount, data
+        );
     }
 
     // ============================================================================
@@ -1278,7 +1524,16 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         (bool success,) = address(vault).call{ value: 1 ether }(
-            abi.encodeWithSelector(vault.finalizeUniversalTx.selector, txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 100e18, _emptyMulticallPayload())
+            abi.encodeWithSelector(
+                vault.finalizeUniversalTx.selector,
+                subTxId,
+                bytes32(uint256(3000 + uint256(subTxId))),
+                user1,
+                address(token),
+                user1,
+                100e18,
+                _emptyMulticallPayload()
+            )
         );
         assertFalse(success);
     }
@@ -1291,21 +1546,27 @@ contract VaultTest is Test {
         vm.deal(tss, 2 ether);
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx{value: 0.5 ether}(_tx(500), bytes32(uint256(3500)), user1, address(0), user1, 1 ether, _emptyMulticallPayload());
+        vault.finalizeUniversalTx{ value: 0.5 ether }(
+            _tx(500), bytes32(uint256(3500)), user1, address(0), user1, 1 ether, _emptyMulticallPayload()
+        );
     }
 
     function test_Withdraw_Native_MsgValueMismatch_TooHigh() public {
         vm.deal(tss, 3 ether);
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx{value: 2 ether}(_tx(501), bytes32(uint256(3501)), user1, address(0), user1, 1 ether, _emptyMulticallPayload());
+        vault.finalizeUniversalTx{ value: 2 ether }(
+            _tx(501), bytes32(uint256(3501)), user1, address(0), user1, 1 ether, _emptyMulticallPayload()
+        );
     }
 
     function test_Withdraw_ERC20_NonZeroMsgValueReverts() public {
         vm.deal(tss, 1 ether);
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.finalizeUniversalTx{value: 1 ether}(_tx(502), bytes32(uint256(3502)), user1, address(token), user1, 100e18, _emptyMulticallPayload());
+        vault.finalizeUniversalTx{ value: 1 ether }(
+            _tx(502), bytes32(uint256(3502)), user1, address(token), user1, 100e18, _emptyMulticallPayload()
+        );
     }
 
     function test_Withdraw_NativeUnsupportedReverts() public {
@@ -1320,7 +1581,9 @@ contract VaultTest is Test {
         vm.deal(tss, 1 ether);
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx{value: 1 ether}(_tx(503), bytes32(uint256(3503)), user1, address(0), user1, 1 ether, _emptyMulticallPayload());
+        vault.finalizeUniversalTx{ value: 1 ether }(
+            _tx(503), bytes32(uint256(3503)), user1, address(0), user1, 1 ether, _emptyMulticallPayload()
+        );
     }
 
     // ============================================================================
@@ -1331,7 +1594,9 @@ contract VaultTest is Test {
         uint256 vaultBalance = variantToken.balanceOf(address(vault));
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertUniversalTxToken(_tx(504), bytes32(uint256(3504)), address(variantToken), vaultBalance + 1, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(504), bytes32(uint256(3504)), address(variantToken), vaultBalance + 1, RevertInstructions(user1, "")
+        );
     }
 
     function test_RevertWithdraw_BalanceDeltaCheck() public {
@@ -1339,7 +1604,9 @@ contract VaultTest is Test {
         uint256 vaultBalanceBefore = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.revertUniversalTxToken(_tx(505), bytes32(uint256(3505)), address(token), amount, RevertInstructions(user1, ""));
+        vault.revertUniversalTxToken(
+            _tx(505), bytes32(uint256(3505)), address(token), amount, RevertInstructions(user1, "")
+        );
 
         // Vault sent tokens to gateway, gateway forwarded to recipient
         assertEq(token.balanceOf(address(vault)), vaultBalanceBefore - amount);
@@ -1358,7 +1625,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.finalizeUniversalTx(_tx(506), bytes32(uint256(3506)), uea, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(506),
+            bytes32(uint256(3506)),
+            uea,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
     }
 
     function test_CEA_WithdrawThenExecute_ReusesSameCEA() public {
@@ -1366,15 +1641,26 @@ contract VaultTest is Test {
 
         // Step 1: Withdraw (empty data) — deploys CEA
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(507), bytes32(uint256(3507)), uea, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(507),
+            bytes32(uint256(3507)),
+            uea,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
         (address ceaAfterWithdraw,) = _getCEA(uea);
 
         // Step 2: Execute (non-empty data) — must reuse same CEA
         bytes memory rawCalldata = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 50e18);
         // Need approval since mockTarget will call transferFrom on CEA's tokens
-        bytes memory data = _approveAndCallPayload(address(token), address(mockTarget), 50e18, address(mockTarget), rawCalldata);
+        bytes memory data =
+            _approveAndCallPayload(address(token), address(mockTarget), 50e18, address(mockTarget), rawCalldata);
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(508), bytes32(uint256(3508)), uea, address(token), address(mockTarget), 50e18, data);
+        vault.finalizeUniversalTx(
+            _tx(508), bytes32(uint256(3508)), uea, address(token), address(mockTarget), 50e18, data
+        );
         (address ceaAfterExecute,) = _getCEA(uea);
 
         assertEq(ceaAfterWithdraw, ceaAfterExecute);
@@ -1388,7 +1674,15 @@ contract VaultTest is Test {
         address uea = makeAddr("withdrawRoutingUea");
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(509), bytes32(uint256(3509)), uea, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(509),
+            bytes32(uint256(3509)),
+            uea,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
 
         (address cea,) = _getCEA(uea);
         MockCEA mockCea = _getMockCEA(cea);
@@ -1402,10 +1696,13 @@ contract VaultTest is Test {
         address uea = makeAddr("executeRoutingUea");
         bytes memory rawCalldata = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 100e18);
         // Need approval since mockTarget will call transferFrom on CEA's tokens
-        bytes memory data = _approveAndCallPayload(address(token), address(mockTarget), 100e18, address(mockTarget), rawCalldata);
+        bytes memory data =
+            _approveAndCallPayload(address(token), address(mockTarget), 100e18, address(mockTarget), rawCalldata);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(510), bytes32(uint256(3510)), uea, address(token), address(mockTarget), 100e18, data);
+        vault.finalizeUniversalTx(
+            _tx(510), bytes32(uint256(3510)), uea, address(token), address(mockTarget), 100e18, data
+        );
 
         (address cea,) = _getCEA(uea);
         MockCEA mockCea = _getMockCEA(cea);
@@ -1422,7 +1719,15 @@ contract VaultTest is Test {
         uint256 userBalanceBefore = user1.balance;
 
         vm.prank(tss);
-        vault.finalizeUniversalTx{value: amount}(_tx(511), bytes32(uint256(3511)), uea, address(0), user1, amount, _withdrawalPayloadDirect(address(0), user1, amount));
+        vault.finalizeUniversalTx{ value: amount }(
+            _tx(511),
+            bytes32(uint256(3511)),
+            uea,
+            address(0),
+            user1,
+            amount,
+            _withdrawalPayloadDirect(address(0), user1, amount)
+        );
 
         (address cea,) = _getCEA(uea);
         MockCEA mockCea = _getMockCEA(cea);
@@ -1461,7 +1766,15 @@ contract VaultTest is Test {
 
         // Pre-deploy CEA via initial withdraw
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(513), bytes32(uint256(3513)), uea, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(513),
+            bytes32(uint256(3513)),
+            uea,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
 
         (address cea,) = _getCEA(uea);
         MockCEA mockCea = _getMockCEA(cea);
@@ -1469,13 +1782,27 @@ contract VaultTest is Test {
         // Configure CEA to attempt reentrancy during withdrawTo
         bytes memory reentrantCall = abi.encodeWithSelector(
             vault.finalizeUniversalTx.selector,
-            _tx(514), bytes32(uint256(3514)), uea, address(token), user1, 50e18, _emptyMulticallPayload()
+            _tx(514),
+            bytes32(uint256(3514)),
+            uea,
+            address(token),
+            user1,
+            50e18,
+            _emptyMulticallPayload()
         );
         mockCea.setReentrant(address(vault), reentrantCall);
 
         // Outer call: CEA will attempt to reenter vault during withdrawTo
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(515), bytes32(uint256(3515)), uea, address(token), user1, 50e18, _withdrawalPayloadDirect(address(token), user1, 50e18));
+        vault.finalizeUniversalTx(
+            _tx(515),
+            bytes32(uint256(3515)),
+            uea,
+            address(token),
+            user1,
+            50e18,
+            _withdrawalPayloadDirect(address(token), user1, 50e18)
+        );
 
         // Reentrancy was blocked by nonReentrant guard
         assertFalse(mockCea.reentrantCallSucceeded());
@@ -1486,7 +1813,15 @@ contract VaultTest is Test {
 
         // Pre-deploy CEA via initial withdraw
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(516), bytes32(uint256(3516)), uea, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(516),
+            bytes32(uint256(3516)),
+            uea,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
 
         (address cea,) = _getCEA(uea);
         MockCEA mockCea = _getMockCEA(cea);
@@ -1494,16 +1829,25 @@ contract VaultTest is Test {
         // Configure CEA to attempt reentrancy during finalizeUniversalTx
         bytes memory reentrantCall = abi.encodeWithSelector(
             vault.finalizeUniversalTx.selector,
-            _tx(517), bytes32(uint256(3517)), uea, address(token), user1, 50e18, _emptyMulticallPayload()
+            _tx(517),
+            bytes32(uint256(3517)),
+            uea,
+            address(token),
+            user1,
+            50e18,
+            _emptyMulticallPayload()
         );
         mockCea.setReentrant(address(vault), reentrantCall);
 
         // Outer call (execute path): CEA will attempt to reenter vault
         bytes memory rawCalldata = abi.encodeWithSignature("receiveToken(address,uint256)", address(token), 50e18);
         // Need approval since mockTarget will call transferFrom on CEA's tokens
-        bytes memory data = _approveAndCallPayload(address(token), address(mockTarget), 50e18, address(mockTarget), rawCalldata);
+        bytes memory data =
+            _approveAndCallPayload(address(token), address(mockTarget), 50e18, address(mockTarget), rawCalldata);
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(518), bytes32(uint256(3518)), uea, address(token), address(mockTarget), 50e18, data);
+        vault.finalizeUniversalTx(
+            _tx(518), bytes32(uint256(3518)), uea, address(token), address(mockTarget), 50e18, data
+        );
 
         // Reentrancy was blocked by nonReentrant guard
         assertFalse(mockCea.reentrantCallSucceeded());
@@ -1531,7 +1875,15 @@ contract VaultTest is Test {
         assertTrue(gateway.isSupportedToken(address(token)));
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
         assertEq(token.balanceOf(user1), 100e18);
 
         // Create new gateway that doesn't support token
@@ -1547,7 +1899,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user2, 100e18, _withdrawalPayloadDirect(address(token), user2, 100e18));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user2,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user2, 100e18)
+        );
     }
 
     function test_GatewayChange_ReenableSupport() public {
@@ -1564,7 +1924,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(_tx(100), bytes32(uint256(3000 + uint256(_tx(100)))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(100),
+            bytes32(uint256(3000 + uint256(_tx(100)))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
 
         // Re-enable support in new gateway
         address[] memory tokens = new address[](1);
@@ -1576,7 +1944,15 @@ contract VaultTest is Test {
         newGateway.setTokenLimitThresholds(tokens, thresholds);
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(_tx(101), bytes32(uint256(3000 + uint256(_tx(101)))), user1, address(token), user1, 100e18, _withdrawalPayloadDirect(address(token), user1, 100e18));
+        vault.finalizeUniversalTx(
+            _tx(101),
+            bytes32(uint256(3000 + uint256(_tx(101)))),
+            user1,
+            address(token),
+            user1,
+            100e18,
+            _withdrawalPayloadDirect(address(token), user1, 100e18)
+        );
         assertEq(token.balanceOf(user1), 100e18);
     }
 
@@ -1612,7 +1988,15 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         // Event VaultWithdraw was removed - test now verifies withdraw functionality
-        vault.finalizeUniversalTx(txId, bytes32(uint256(3000 + uint256(txId))), user1, address(token), user1, amount, _withdrawalPayloadDirect(address(token), user1, amount));
+        vault.finalizeUniversalTx(
+            subTxId,
+            bytes32(uint256(3000 + uint256(subTxId))),
+            user1,
+            address(token),
+            user1,
+            amount,
+            _withdrawalPayloadDirect(address(token), user1, amount)
+        );
         assertEq(token.balanceOf(user1), amount);
     }
 
@@ -1634,7 +2018,9 @@ contract VaultTest is Test {
         Vault newImpl = new Vault();
         MockCEAFactory newCeaFactory = new MockCEAFactory();
 
-        bytes memory initData = abi.encodeWithSelector(Vault.initialize.selector, admin, pauser, tss, address(gateway), address(newCeaFactory));
+        bytes memory initData = abi.encodeWithSelector(
+            Vault.initialize.selector, admin, pauser, tss, address(gateway), address(newCeaFactory)
+        );
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(newImpl), initData);
 
@@ -1717,7 +2103,7 @@ contract VaultTest is Test {
         // Attempt finalizeUniversalTx - should revert completely
         vm.prank(tss);
         vm.expectRevert("CEA native execution failed");
-        vault.finalizeUniversalTx{value: amount}(
+        vault.finalizeUniversalTx{ value: amount }(
             _tx(601),
             bytes32(uint256(3601)),
             uea,
@@ -1798,9 +2184,10 @@ contract VaultTest is Test {
 
         // Verify NO VaultUniversalTxFinalized event was emitted
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint i = 0; i < logs.length; i++) {
+        for (uint256 i = 0; i < logs.length; i++) {
             // VaultUniversalTxFinalized signature
-            bytes32 eventSignature = keccak256("VaultUniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
+            bytes32 eventSignature =
+                keccak256("VaultUniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
             assertFalse(logs[i].topics[0] == eventSignature, "VaultUniversalTxFinalized should not emit on revert");
         }
     }
@@ -1826,7 +2213,7 @@ contract VaultTest is Test {
         // Attempt finalizeUniversalTx - should revert
         vm.prank(tss);
         vm.expectRevert("Fail native event test");
-        vault.finalizeUniversalTx{value: amount}(
+        vault.finalizeUniversalTx{ value: amount }(
             _tx(604),
             bytes32(uint256(3604)),
             uea,
@@ -1838,8 +2225,9 @@ contract VaultTest is Test {
 
         // Verify NO VaultUniversalTxFinalized event was emitted
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint i = 0; i < logs.length; i++) {
-            bytes32 eventSignature = keccak256("VaultUniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
+        for (uint256 i = 0; i < logs.length; i++) {
+            bytes32 eventSignature =
+                keccak256("VaultUniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
             assertFalse(logs[i].topics[0] == eventSignature, "VaultUniversalTxFinalized should not emit on revert");
         }
     }
@@ -1852,7 +2240,7 @@ contract VaultTest is Test {
     /// @dev Verifies vault→gateway→recipient atomic flow in revertUniversalTxToken
     function test_RevertTx_AtomicFlowToRecipient() public {
         uint256 amount = 100e18;
-        bytes32 txId = keccak256("revertRollback");
+        bytes32 subTxId = keccak256("revertRollback");
         bytes32 universalTxId = keccak256("utxRevertRollback");
 
         uint256 vaultBalanceBefore = token.balanceOf(address(vault));
@@ -1861,11 +2249,11 @@ contract VaultTest is Test {
         // Execute revert withdraw - tokens flow: vault → gateway → user1 (atomically)
         vm.prank(tss);
         vault.revertUniversalTxToken(
-            txId,
+            subTxId,
             universalTxId,
             address(token),
             amount,
-            RevertInstructions({revertRecipient: user1, revertMsg: "Test revert"})
+            RevertInstructions({ revertRecipient: user1, revertMsg: "Test revert" })
         );
 
         // Verify expected behavior: vault decreased, recipient (user1) increased
@@ -1891,13 +2279,7 @@ contract VaultTest is Test {
         vm.prank(tss);
         vm.expectRevert(); // Will revert when CEA tries to decode
         vault.finalizeUniversalTx(
-            _tx(605),
-            bytes32(uint256(3605)),
-            uea,
-            address(token),
-            address(mockTarget),
-            amount,
-            malformedPayload
+            _tx(605), bytes32(uint256(3605)), uea, address(token), address(mockTarget), amount, malformedPayload
         );
     }
 
@@ -1945,7 +2327,7 @@ contract VaultTest is Test {
         // A full reentrancy test would require a malicious gateway that attempts re-entry
 
         // Baseline: normal revertUniversalTxToken works
-        bytes32 txId = keccak256("reentrancyRevertTest");
+        bytes32 subTxId = keccak256("reentrancyRevertTest");
         bytes32 universalTxId = keccak256("utxReentrancyTest");
         uint256 amount = 50e18;
 
@@ -1953,11 +2335,11 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vault.revertUniversalTxToken(
-            txId,
+            subTxId,
             universalTxId,
             address(token),
             amount,
-            RevertInstructions({revertRecipient: user1, revertMsg: "Normal revert"})
+            RevertInstructions({ revertRecipient: user1, revertMsg: "Normal revert" })
         );
 
         // Verify success: recipient received tokens

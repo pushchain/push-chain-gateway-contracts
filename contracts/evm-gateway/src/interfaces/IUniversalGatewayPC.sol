@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {RevertInstructions, TX_TYPE, UniversalOutboundTxRequest} from "../libraries/Types.sol";
+import { RevertInstructions, TX_TYPE, UniversalOutboundTxRequest } from "../libraries/Types.sol";
 
 /**
  * @title   IUniversalGatewayPC
@@ -23,7 +23,7 @@ interface IUniversalGatewayPC {
     /// @param payload          Optional payload for arbitrary call on origin chain (empty for funds-only) on external chain
     /// @param protocolFee      Flat protocol fee portion (as defined by PRC20), included inside gasFee on external chain
     event UniversalTxOutbound(
-        bytes32 indexed txID,
+        bytes32 indexed subTxId,
         address indexed sender,
         string chainNamespace,
         address indexed token,
