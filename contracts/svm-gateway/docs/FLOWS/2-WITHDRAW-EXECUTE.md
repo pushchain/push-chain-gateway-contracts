@@ -14,6 +14,14 @@ The unified outbound entrypoint supports two modes:
 
 Both modes use TSS signature verification for authorization and CEA as signing authority.
 
+**IMPORTANT - Execute Mode Destination:**
+- The **decoded execute payload is the canonical source of truth** for the destination program
+- The `targetProgram` field in the payload establishes the destination
+- The `destination_program` account parameter must match the decoded `targetProgram` value
+- The TSS signature includes the `targetProgram` from the payload in `additional_data`
+- On-chain Rust program logic remains unchanged (still receives `destination_program` account)
+- This pattern ensures the destination cannot be tampered with after TSS signing
+
 ---
 
 ## 🎯 Entry Point
@@ -51,6 +59,8 @@ TSS Request
   │    ├─ Derive target:
   │    │    ├─ Mode 1 (withdraw): target = recipient
   │    │    └─ Mode 2 (execute): target = destination_program
+  │    │         (NOTE: destination_program must match targetProgram from decoded payload)
+  │    │         (The payload is the canonical source of truth for the destination)
   │    └─ Validate mode-specific params
   │
   ├─ Phase 2: TSS Validation

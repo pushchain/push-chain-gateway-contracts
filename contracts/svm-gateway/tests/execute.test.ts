@@ -1000,12 +1000,12 @@ describe("Universal Gateway - Execute Tests", () => {
             // Calculate fees dynamically for SOL execute (before encoding payload)
             const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
 
-            // Encode payload with only execution data (accounts, ixData, rentFee)
+            // Encode payload with execution data (accounts, ixData, rentFee, targetProgram)
             const payloadFields = instructionToPayloadFields({
                 instruction: counterIx,
+                targetProgram: counterProgram.programId, // Canonical destination (source of truth)
                 rentFee, // Include rentFee in payload
                 instructionId: 2
-
             });
 
             const encoded = encodeExecutePayload(payloadFields);
@@ -1016,9 +1016,10 @@ describe("Universal Gateway - Execute Tests", () => {
             expect(decoded.rentFee).to.equal(rentFee); // Verify rentFee is decoded correctly
             expect(decoded.accounts.length).to.equal(accounts.length);
             expect(decoded.instructionId).to.equal(2);
+            expect(decoded.targetProgram.toString()).to.equal(counterProgram.programId.toString()); // Verify targetProgram is decoded correctly
 
-            // Get other fields from their proper sources (not from payload)
-            const targetProgram = counterProgram.programId;
+            // Get destination from decoded payload (canonical source of truth)
+            const targetProgram = decoded.targetProgram;
             const amount = BigInt(0);
             const chainId = tssAccount.chainId;
 
@@ -1127,9 +1128,10 @@ describe("Universal Gateway - Execute Tests", () => {
             const ceaAtaExistedBeforeDecodeSpl = await ceaAtaExists(provider.connection, ceaAtaForDecodeSpl);
             const { gasFee, rentFee } = await calculateSplExecuteFees(provider.connection, ceaAtaForDecodeSpl);
 
-            // Encode payload with only execution data (accounts, ixData, rentFee)
+            // Encode payload with execution data (accounts, ixData, rentFee, targetProgram)
             const payloadFields = instructionToPayloadFields({
                 instruction: counterIx,
+                targetProgram: counterProgram.programId, // Canonical destination (source of truth)
                 rentFee, // Include rentFee in payload
                 instructionId: 2
             });
@@ -1149,9 +1151,10 @@ describe("Universal Gateway - Execute Tests", () => {
             expect(decoded.rentFee).to.equal(rentFee);
             expect(decoded.accounts.length).to.equal(counterIx.keys.length);
             expect(decoded.instructionId).to.equal(2);
+            expect(decoded.targetProgram.toString()).to.equal(counterProgram.programId.toString()); // Verify targetProgram is decoded correctly
 
-            // Get other fields from their proper sources (not from decoded payload)
-            const targetProgram = counterProgram.programId;
+            // Get destination from decoded payload (canonical source of truth)
+            const targetProgram = decoded.targetProgram;
             const amountValue = BigInt(amount.toString());
             const chainId = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
             const sig = await signTssMessage({
@@ -2047,6 +2050,113 @@ describe("Universal Gateway - Execute Tests", () => {
                             .rpc();
                     },
                     "MessageHashMismatch" // Correct error - message hash includes target_program
+                );
+            });
+
+            it("should reject tampered destinationProgram when using decoded payload target", async () => {
+                // This test demonstrates that the decoded payload is the canonical source of truth for targetProgram
+                const txId = generateTxId();
+                const universalTxId = generateUniversalTxId();
+                const sender = generateSender();
+
+                const counterIx = await counterProgram.methods
+                    .increment(new anchor.BN(1))
+                    .accounts({
+                        counter: counterPda,
+                        authority: counterAuthority.publicKey,
+                    })
+                    .instruction();
+
+                const remainingAccounts = instructionAccountsToRemaining(counterIx);
+                const accounts = remainingAccounts.map((acc) => ({
+                    pubkey: acc.pubkey,
+                    isWritable: acc.isWritable,
+                }));
+
+                // Calculate fees dynamically
+                const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
+
+                // Build payload with canonical targetProgram (counterProgram)
+                const payloadFields = instructionToPayloadFields({
+                    instruction: counterIx,
+                    targetProgram: counterProgram.programId, // Canonical destination
+                    rentFee,
+                    instructionId: 2
+                });
+
+                const encoded = encodeExecutePayload(payloadFields);
+                const decoded = decodeExecutePayload(encoded);
+
+                // Verify targetProgram was encoded and decoded correctly
+                expect(decoded.targetProgram.toString()).to.equal(counterProgram.programId.toString());
+
+                // Sign with targetProgram from decoded payload (canonical source of truth)
+                const targetProgramFromPayload = decoded.targetProgram;
+                const sig = await signTssMessage({
+                    instruction: TssInstruction.Execute,
+                    amount: BigInt(0),
+                    chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                    additional: buildExecuteAdditionalData(
+                        new Uint8Array(universalTxId),
+                        new Uint8Array(txId),
+                        targetProgramFromPayload, // From decoded payload
+                        new Uint8Array(sender),
+                        decoded.accounts,
+                        decoded.ixData,
+                        gasFee,
+                        rentFee
+                    ),
+                });
+
+                // ATTACK: Tamper with destinationProgram after decoding
+                // Even though signature was built with targetProgramFromPayload (counterProgram),
+                // attacker tries to redirect execution to differentProgram
+                const differentProgram = Keypair.generate().publicKey;
+
+                const targetMismatchWritableFlags = accountsToWritableFlagsOnly(decoded.accounts);
+                await expectExecuteRevert(
+                    "Tampered destinationProgram (payload targetProgram is canonical)",
+                    async () => {
+                        return await gatewayProgram.methods
+                            .withdrawAndExecute(
+                                decoded.instructionId,
+                                Array.from(txId),
+                                Array.from(universalTxId),
+                                new anchor.BN(0),
+                                Array.from(sender),
+                                targetMismatchWritableFlags,
+                                Buffer.from(decoded.ixData),
+                                new anchor.BN(Number(gasFee)),
+                                new anchor.BN(Number(rentFee)),
+                                Array.from(sig.signature),
+                                sig.recoveryId,
+                                Array.from(sig.messageHash),
+                            )
+                            .accounts({
+                                caller: admin.publicKey,
+                                config: configPda,
+                                vaultSol: vaultPda,
+                                ceaAuthority: getCeaAuthorityPda(sender),
+                                tssPda,
+                                executedTx: getExecutedTxPda(txId),
+                                rateLimitConfig: null,
+                                tokenRateLimit: null,
+                                destinationProgram: differentProgram, // TAMPERED - not from payload
+                                recipient: null,
+                                vaultAta: null,
+                                ceaAta: null,
+                                mint: null,
+                                tokenProgram: null,
+                                rent: null,
+                                associatedTokenProgram: null,
+                                recipientAta: null,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .remainingAccounts(remainingAccounts)
+                            .signers([admin])
+                            .rpc();
+                    },
+                    "MessageHashMismatch" // Payload targetProgram is canonical - tampering detected
                 );
             });
         });

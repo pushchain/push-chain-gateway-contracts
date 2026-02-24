@@ -139,13 +139,16 @@ export interface GatewayAccountMeta {
 /**
  * Build execute message additional_data buffers (accounts and ix_data with length prefixes)
  *
+ * IMPORTANT: targetProgramFromPayload MUST come from decoded payload, NOT external metadata.
+ * The decoded payload is the canonical source of truth for the destination program.
+ *
  * New format (common fields first):
  * 1. tx_id (32 bytes) - common
  * 2. universal_tx_id (32 bytes) - common
  * 3. sender (20 bytes) - common
  * 4. token (32 bytes) - common
  * 5. gas_fee (u64 BE) - common
- * 6. target_program (32 bytes) - execute specific
+ * 6. target_program (32 bytes) - execute specific, MUST match decoded payload
  * 7. accounts_buf (variable) - execute specific
  * 8. ix_data_buf (variable) - execute specific
  * 9. rent_fee (u64 BE) - execute specific
@@ -153,7 +156,7 @@ export interface GatewayAccountMeta {
 export function buildExecuteAdditionalData(
     universalTxId: Uint8Array,
     txId: Uint8Array,
-    targetProgram: PublicKey,
+    targetProgramFromPayload: PublicKey, // ← MUST come from decoded payload
     sender: Uint8Array,
     accounts: GatewayAccountMeta[],
     ixData: Uint8Array,
@@ -189,14 +192,14 @@ export function buildExecuteAdditionalData(
     rentFeeBuf.writeBigUInt64BE(rentFeeBigInt, 0);
 
     return [
-        txId,                    // tx_id (32 bytes) - common
-        universalTxId,           // universal_tx_id (32 bytes) - common
-        sender,                  // sender (20 bytes) - common
-        token.toBuffer(),        // token (32 bytes) - common
-        gasFeeBuf,               // gas_fee (8 bytes, u64 BE) - common
-        targetProgram.toBuffer(), // target_program (32 bytes) - execute specific
-        accountsBuf,              // accounts with length prefix - execute specific
-        ixDataBuf,               // ix_data with length prefix - execute specific
-        rentFeeBuf,              // rent_fee (8 bytes, u64 BE) - execute specific
+        txId,                              // tx_id (32 bytes) - common
+        universalTxId,                     // universal_tx_id (32 bytes) - common
+        sender,                            // sender (20 bytes) - common
+        token.toBuffer(),                  // token (32 bytes) - common
+        gasFeeBuf,                         // gas_fee (8 bytes, u64 BE) - common
+        targetProgramFromPayload.toBuffer(), // target_program (32 bytes) - execute specific, from decoded payload
+        accountsBuf,                       // accounts with length prefix - execute specific
+        ixDataBuf,                         // ix_data with length prefix - execute specific
+        rentFeeBuf,                        // rent_fee (8 bytes, u64 BE) - execute specific
     ];
 }

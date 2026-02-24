@@ -1605,17 +1605,18 @@ async function run() {
         // Calculate fees dynamically for SOL execute (before encoding payload)
         const { gasFee, rentFee } = await calculateSolExecuteFees(connection);
 
-        // Encode payload with only execution data (accounts, ixData, rentFee)
+        // Encode payload with execution data (accounts, ixData, rentFee, targetProgram)
         const payloadFields = instructionToPayloadFields({
             instruction: incrementIx,
+            targetProgram: counterProgram.programId, // Canonical destination (source of truth)
             rentFee, // Include rentFee in payload
         });
 
         const encoded = encodeExecutePayload(payloadFields);
         const decoded = decodeExecutePayload(encoded);
 
-        // Get other fields from their proper sources (not from payload)
-        const targetProgram = counterProgram.programId;
+        // Get destination from decoded payload (canonical source of truth)
+        const targetProgram = decoded.targetProgram;
         const amount = BigInt(0);
         const chainId = tssAccount.chainId;
 
@@ -1758,17 +1759,18 @@ async function run() {
         // Check CEA ATA existence BEFORE calculating fees (ceaAtaForSpl already calculated above)
         const { gasFee, rentFee } = await calculateSplExecuteFees(connection, ceaAtaForSpl);
 
-        // Encode payload with only execution data (accounts, ixData, rentFee)
+        // Encode payload with execution data (accounts, ixData, rentFee, targetProgram)
         const payloadFields = instructionToPayloadFields({
             instruction: receiveSplIx,
+            targetProgram: counterProgram.programId, // Canonical destination (source of truth)
             rentFee, // Include rentFee in payload
         });
 
         const encoded = encodeExecutePayload(payloadFields);
         const decoded = decodeExecutePayload(encoded);
 
-        // Get other fields from their proper sources (not from payload)
-        const targetProgram = counterProgram.programId;
+        // Get destination from decoded payload (canonical source of truth)
+        const targetProgram = decoded.targetProgram;
         const amount = BigInt(executeAmount.toString());
         const chainId = tssAfterSol.chainId;
 
@@ -2042,9 +2044,12 @@ async function run() {
     const { gasFee: gasFee1, rentFee: rentFee1 } = await calculateSolExecuteFees(connection);
     const correctPayloadFields = instructionToPayloadFields({
         instruction: securityCounterIx,
+        targetProgram: counterProgram.programId,
         rentFee: rentFee1,
     });
-    const correctAccounts = correctPayloadFields.accounts;
+    const encoded1 = encodeExecutePayload(correctPayloadFields);
+    const decoded1 = decodeExecutePayload(encoded1);
+    const correctAccounts = decoded1.accounts;
     const universalTxId1 = generateUniversalTxId();
 
     const securitySig1 = await signTssMessage({
@@ -2054,10 +2059,10 @@ async function run() {
         additional: buildExecuteAdditionalData(
             universalTxId1,
             securityTxId1,
-            counterProgram.programId,
+            decoded1.targetProgram, // From decoded payload (canonical)
             securitySender1,
             correctAccounts,
-            securityCounterIx.data,
+            decoded1.ixData,
             gasFee1,
             rentFee1
         ),
@@ -2133,9 +2138,12 @@ async function run() {
     const { gasFee: gasFee2, rentFee: rentFee2 } = await calculateSolExecuteFees(connection);
     const securityPayloadFields2 = instructionToPayloadFields({
         instruction: securityCounterIx2,
+        targetProgram: counterProgram.programId,
         rentFee: rentFee2,
     });
-    const securityAccounts2 = securityPayloadFields2.accounts;
+    const encoded2 = encodeExecutePayload(securityPayloadFields2);
+    const decoded2 = decodeExecutePayload(encoded2);
+    const securityAccounts2 = decoded2.accounts;
     const universalTxId2 = generateUniversalTxId();
 
     const securitySig2 = await signTssMessage({
@@ -2145,10 +2153,10 @@ async function run() {
         additional: buildExecuteAdditionalData(
             universalTxId2,
             securityTxId2,
-            counterProgram.programId,
+            decoded2.targetProgram, // From decoded payload (canonical)
             securitySender2,
             securityAccounts2,
-            securityCounterIx2.data,
+            decoded2.ixData,
             gasFee2,
             rentFee2
         ),
@@ -2225,9 +2233,12 @@ async function run() {
     const { gasFee: gasFee4, rentFee: rentFee4 } = await calculateSolExecuteFees(connection);
     const securityPayloadFields4 = instructionToPayloadFields({
         instruction: securityCounterIx4,
+        targetProgram: counterProgram.programId,
         rentFee: rentFee4,
     });
-    const securityAccounts4 = securityPayloadFields4.accounts;
+    const encoded4 = encodeExecutePayload(securityPayloadFields4);
+    const decoded4 = decodeExecutePayload(encoded4);
+    const securityAccounts4 = decoded4.accounts;
     const universalTxId4 = generateUniversalTxId();
 
     const securitySig4 = await signTssMessage({
@@ -2237,10 +2248,10 @@ async function run() {
         additional: buildExecuteAdditionalData(
             universalTxId4,
             securityTxId4,
-            counterProgram.programId,
+            decoded4.targetProgram, // From decoded payload (canonical)
             securitySender4,
             securityAccounts4,
-            securityCounterIx4.data,
+            decoded4.ixData,
             gasFee4,
             rentFee4
         ),
@@ -2342,9 +2353,12 @@ async function run() {
         const { gasFee, rentFee } = await calculateSolExecuteFees(connection);
         const payloadFields = instructionToPayloadFields({
             instruction: batchIx,
+            targetProgram: counterProgram.programId,
             rentFee: rentFee,
         });
-        const accounts = payloadFields.accounts;
+        const encodedPayload = encodeExecutePayload(payloadFields);
+        const decodedPayload = decodeExecutePayload(encodedPayload);
+        const accounts = decodedPayload.accounts;
         const actualTargetAccounts = accounts.length;
         const fullIxDataSize = batchIx.data.length;
 
@@ -2361,10 +2375,10 @@ async function run() {
             additional: buildExecuteAdditionalData(
                 universalTxId,
                 testTxId,
-                counterProgram.programId,
+                decodedPayload.targetProgram, // From decoded payload (canonical)
                 testSender,
                 accounts,
-                batchIx.data,
+                decodedPayload.ixData,
                 gasFee,
                 rentFee,
                 isSpl ? mint : PublicKey.default
@@ -2634,10 +2648,13 @@ async function run() {
     const { gasFee: gasFeeHeavy, rentFee: rentFeeHeavy } = await calculateSolExecuteFees(connection);
     const heavyPayloadFields = instructionToPayloadFields({
         instruction: batchIx,
+        targetProgram: counterProgram.programId,
         rentFee: rentFeeHeavy,
     });
+    const encodedHeavy = encodeExecutePayload(heavyPayloadFields);
+    const decodedHeavy = decodeExecutePayload(encodedHeavy);
     // Use the actual writable flags from the instruction (authentic)
-    const heavyAccounts = heavyPayloadFields.accounts;
+    const heavyAccounts = decodedHeavy.accounts;
     const universalTxIdHeavy = generateUniversalTxId();
 
     const heavySig = await signTssMessage({
@@ -2647,10 +2664,10 @@ async function run() {
         additional: buildExecuteAdditionalData(
             universalTxIdHeavy,
             heavyTxId,
-            counterProgram.programId,
+            decodedHeavy.targetProgram, // From decoded payload (canonical)
             heavySender,
             heavyAccounts,
-            batchIx.data,
+            decodedHeavy.ixData,
             gasFeeHeavy,
             rentFeeHeavy
         ),
@@ -2752,9 +2769,12 @@ async function run() {
     const { gasFee: gasFeeHeavySpl, rentFee: rentFeeHeavySpl } = await calculateSolExecuteFees(connection);
     const heavyPayloadFieldsSpl = instructionToPayloadFields({
         instruction: batchIxSpl,
+        targetProgram: counterProgram.programId,
         rentFee: rentFeeHeavySpl,
     });
-    const heavyAccountsSpl = heavyPayloadFieldsSpl.accounts;
+    const encodedHeavySpl = encodeExecutePayload(heavyPayloadFieldsSpl);
+    const decodedHeavySpl = decodeExecutePayload(encodedHeavySpl);
+    const heavyAccountsSpl = decodedHeavySpl.accounts;
     const universalTxIdHeavySpl = generateUniversalTxId();
 
     const heavySigSpl = await signTssMessage({
@@ -2764,10 +2784,10 @@ async function run() {
         additional: buildExecuteAdditionalData(
             universalTxIdHeavySpl,
             heavyTxIdSpl,
-            counterProgram.programId,
+            decodedHeavySpl.targetProgram, // From decoded payload (canonical)
             heavySenderSpl,
             heavyAccountsSpl,
-            batchIxSpl.data,
+            decodedHeavySpl.ixData,
             gasFeeHeavySpl,
             rentFeeHeavySpl,
             mint

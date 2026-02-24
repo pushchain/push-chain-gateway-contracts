@@ -70,14 +70,17 @@ event UniversalTxOutbound(
    - `1` = Withdraw mode (vault→CEA→recipient, direct transfer)
    - `2` = Execute mode (vault→CEA→CPI to target program)
 
-2. **No target parameter**: The target is derived from mode-specific accounts:
+2. **No target parameter**: Target source is mode-specific:
    - Withdraw (1): Target derived from `recipient` account key
-   - Execute (2): Target derived from `destination_program` account key
+   - Execute (2): Canonical target comes from decoded payload `targetProgram`
+     - **IMPORTANT**: `destination_program` account must match decoded `targetProgram`
+     - The decoded payload is the canonical source of truth for execute destination
+     - On-chain Rust validation remains unchanged (uses `destination_program` account for execution)
 
 3. **Mode-specific account enforcement**:
    - `destination_program` is ALWAYS required (non-optional account)
      - Withdraw mode: Pass `SystemProgram.programId` (used as sentinel, target comes from recipient)
-     - Execute mode: Pass target program pubkey (must be executable)
+     - Execute mode: Pass target program pubkey (must match decoded payload's `targetProgram`, must be executable)
    - `recipient` is optional:
      - Withdraw mode: Must be provided (contains recipient pubkey)
      - Execute mode: Must be None/null
@@ -113,13 +116,20 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 [ix_data: N bytes]
 [rent_fee: 8 bytes (u64 big-endian)]
 [instruction_id: 1 byte (u8)]
+[target_program: 32 bytes] ← REQUIRED - canonical destination (source of truth)
 ```
 
-**Total size**: `4 + (33 * accounts_count) + 4 + ix_data_length + 8 + 1`
+**Total size**: `4 + (33 * accounts_count) + 4 + ix_data_length + 8 + 1 + 32`
 
 **Instruction ID values**:
 - `1` = Withdraw (SOL or SPL; vault→CEA→recipient)
 - `2` = Execute (SOL or SPL; vault→CEA→CPI to target program)
+
+**Target Program Field**:
+- **REQUIRED** for all execute payloads
+- Establishes the canonical destination for execution
+- Must match the `destination_program` account passed to withdraw_and_execute
+- TSS signature includes this value, preventing tampering
 
 ### 2.2 Decoding Payload
 
@@ -130,6 +140,7 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 - `ixData`: Raw instruction data bytes
 - `rentFee`: u64 big-endian
 - `instructionId`: u8 (1 = withdraw, 2 = execute)
+- `targetProgram`: 32-byte pubkey (canonical execute destination)
 
 **Algorithm**:
 1. Read first 4 bytes → `accounts_count` (u32 BE)
@@ -139,12 +150,16 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 3. Read next 4 bytes → `ix_data_length` (u32 BE)
 4. Read `ix_data_length` bytes → `ix_data`
 5. Read next 8 bytes → `rent_fee` (u64 BE)
-6. Read last 1 byte → `instruction_id` (u8)
-7. Validate: total bytes consumed == payload length
+6. Read next 1 byte → `instruction_id` (u8)
+7. Read next 32 bytes → `target_program` (canonical destination pubkey) - REQUIRED
+   - **IMPORTANT**: This is the source of truth for the destination program
+   - The `destination_program` account must match this value
+   - Payload decoding will fail if this field is missing
+8. Validate: total bytes consumed == payload length
 
 ### 2.3 Encoding Payload (For Testing/Validation)
 
-**Input**: `accounts[]`, `ixData`, `rentFee`, `instructionId`
+**Input**: `accounts[]`, `ixData`, `rentFee`, `instructionId`, `targetProgram`
 
 **Algorithm**:
 1. Write `accounts.length` as u32 BE (4 bytes)
@@ -153,6 +168,11 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 4. Write `ixData` bytes
 5. Write `rentFee` as u64 BE (8 bytes)
 6. Write `instructionId` as u8 (1 byte)
+7. Write `targetProgram` as 32 bytes (canonical destination pubkey) - REQUIRED
+   - **IMPORTANT**: This establishes the canonical destination for the execution
+   - The TSS signature must include this same targetProgram value
+   - On-chain validation will verify destination_program account matches this value
+   - Encoding will fail if targetProgram is not provided
 
 **Reference**: `contracts/svm-gateway/app/execute-payload.ts`
 
@@ -407,9 +427,9 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `recovery_id`: u8 - signature recovery ID (0 or 1)
 - `message_hash`: [u8; 32] - keccak256 hash of TSS message
 
-**IMPORTANT - No `target` parameter**: The target is derived from mode-specific optional accounts:
-- **Withdraw (instruction_id=1)**: Derived from `recipient` account key
-- **Execute (instruction_id=2)**: Derived from `destination_program` account key
+**IMPORTANT - No `target` parameter**:
+- **Withdraw (instruction_id=1)**: Target is derived from `recipient` account key
+- **Execute (instruction_id=2)**: Canonical target comes from decoded payload `targetProgram`; `destination_program` must match it
 
 **Required Accounts** (all cases):
 - `caller`: Relayer keypair (signer, payer)
@@ -423,7 +443,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 **Mode-Specific Accounts**:
 - `destination_program`: UncheckedAccount (ALWAYS REQUIRED, non-optional)
   - **Withdraw mode**: Pass `SystemProgram.programId` (sentinel value, actual target from recipient)
-  - **Execute mode**: Pass target program pubkey (must be executable)
+  - **Execute mode**: Pass decoded payload `targetProgram` (must be executable and match payload)
 - `recipient`: Option<UncheckedAccount> - Mode-dependent (optional account)
   - **Withdraw mode**: Must be provided (mut)
   - **Execute mode**: Must be None
@@ -474,7 +494,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 
 **Key requirements**:
 - `instruction_id = 2`
-- `destination_program`: Target program pubkey (must be executable)
+- `destination_program`: Decoded payload `targetProgram` (must be executable and match payload)
 - `recipient`: Must be None
 - `remaining_accounts`: Decoded accounts from payload
 - `writable_flags`: Bitpacked flags matching accounts
@@ -648,11 +668,11 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 1. Derive all required PDAs (section 5)
 2. Determine mode-specific accounts based on instruction_id:
    - **Withdraw (1)**: Set `recipient` account, `destination_program` = SystemProgram.programId, `remaining_accounts` = []
-   - **Execute (2)**: Set `destination_program` account (target program), `recipient` = None, `remaining_accounts` = decoded accounts
+   - **Execute (2)**: Decode payload first, then set `destination_program = decoded.targetProgram`, `recipient` = None, `remaining_accounts` = decoded accounts
 3. Build instruction using Anchor client or raw instruction:
    - Function: `withdraw_and_execute`
    - Parameters: `instruction_id`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
-   - **IMPORTANT**: No `target` parameter - target is derived from optional accounts
+   - **IMPORTANT**: No `target` parameter - execute target comes from decoded payload `targetProgram`, and `destination_program` must match it
    - Accounts: Required accounts + mode-specific optional accounts + SPL accounts (if token) + remaining_accounts (if execute)
 4. For execute mode: convert accounts to writable_flags (bitpacked, see section 3.4)
 5. Add instruction to transaction
@@ -692,15 +712,15 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 **CRITICAL - No target parameter**:
 - The `withdraw_and_execute` function does **NOT** take a `target` parameter
-- Target is derived from mode-specific accounts:
+- Target source by mode:
   - Withdraw (1): From `recipient` account key
-  - Execute (2): From `destination_program` account key
+  - Execute (2): From decoded payload `targetProgram`; `destination_program` must match it
 - **Backend must pass correct accounts**: Passing wrong accounts will cause validation failure
 
 **Mode-specific account enforcement**:
 - `destination_program` is ALWAYS required (non-optional):
   - Withdraw mode: Pass `SystemProgram.programId` (sentinel, actual target from recipient)
-  - Execute mode: Pass target program pubkey (must be executable)
+  - Execute mode: Pass decoded payload `targetProgram` (must be executable and match payload)
 - `recipient` is optional (mode-dependent):
   - Withdraw mode: Must be provided (contains recipient pubkey)
   - Execute mode: Must be None
@@ -763,9 +783,9 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 ### Execute Flow (instruction_id=2):
 
 1. **Event received**: `UniversalTxOutbound` with `target`, `amount`, `payload`, `gasFee`, `sender`
-2. **Decode payload**: Extract `accounts[]`, `ixData`, `rentFee`, `instructionId`
+2. **Decode payload**: Extract `accounts[]`, `ixData`, `rentFee`, `instructionId`, `targetProgram`
    - Verify `instructionId == 2` (execute mode)
-   - Validate: `rentFee <= gasFee`, accounts and ixData present
+   - Validate: `rentFee <= gasFee`, accounts and ixData present, `targetProgram` present
 3. **Derive PDAs**: CEA authority, executed_tx, config, vault, tss_pda
 4. **Fetch TSS state**: Get `chain_id` from TSS PDA (`["tsspda_v2"]`)
 5. **Build writable flags**: Convert `accounts[]` to bitpacked `writable_flags` (1 bit per account, MSB first)
@@ -782,10 +802,10 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 8. **Build Solana transaction**:
    - Function: `withdraw_and_execute`
    - Parameters: `instruction_id=2`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
-   - **IMPORTANT - No target parameter**: Target derived from `destination_program` account
+   - **IMPORTANT - No target parameter**: Execute target comes from decoded payload `targetProgram`
    - Accounts:
      - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`
-     - Mode-specific: `destination_program` (target program pubkey), `recipient` = None
+     - Mode-specific: `destination_program` = decoded `targetProgram`, `recipient` = None
      - SPL (if token): `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`
      - Remaining: decoded accounts from payload (same order, same isWritable flags)
 9. **Submit**: Sign with relayer keypair, send to Solana
@@ -857,8 +877,8 @@ Before production:
 **File**: `contracts/svm-gateway/app/execute-payload.ts`
 
 **Key Functions**:
-- `encodeExecutePayload()` - Encodes accounts + ixData + rentFee + instructionId into payload bytes
-- `decodeExecutePayload()` - Decodes payload bytes back to accounts + ixData + rentFee + instructionId
+- `encodeExecutePayload()` - Encodes accounts + ixData + rentFee + instructionId + targetProgram into payload bytes
+- `decodeExecutePayload()` - Decodes payload bytes back to accounts + ixData + rentFee + instructionId + targetProgram
 - `accountsToWritableFlags()` - Converts accounts array to bitpacked writable flags
 
 **Usage**: See test file `contracts/svm-gateway/tests/execute.test.ts` (search for `encodeExecutePayload`)
