@@ -82,7 +82,6 @@ struct UniversalTokenTxRequest {
 
 /// @notice         Universal outbound transaction request for Push Chain
 struct UniversalOutboundTxRequest {
-    bytes   target;                         // raw destination address on origin chain
     address token;                          // PRC20 token address on Push Chain
     uint256 amount;                         // amount to withdraw (burn on Push, unlock at origin)
     uint256 gasLimit;                       // gas limit to use for fee quote; if 0, uses default BASE_GAS_LIMIT

@@ -147,13 +147,11 @@ contract Vault is
     // =========================
     /// @inheritdoc IVault
     /// @dev All execution now routes through CEA.executeUniversalTx with multicall payload
-    ///      target parameter kept for backwards compatibility / metadata but not used for routing
     function finalizeUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address pushAccount,
         address token,
-        address target,
         uint256 amount,
         bytes calldata data
     ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
@@ -164,10 +162,10 @@ contract Vault is
         }
 
         // Single execution path for all operations
-        _finalizeUniversalTx(subTxId, universalTxId, pushAccount, token, target, amount, data, cea);
+        _finalizeUniversalTx(subTxId, universalTxId, pushAccount, token, amount, data, cea);
 
         // Emit event
-        emit VaultUniversalTxFinalized(subTxId, universalTxId, pushAccount, target, token, amount, data);
+        emit VaultUniversalTxFinalized(subTxId, universalTxId, pushAccount, token, amount, data);
     }
 
     /// @inheritdoc IVault
@@ -199,9 +197,8 @@ contract Vault is
         if (!gateway.isSupportedToken(token)) revert Errors.NotSupported();
     }
 
-    function _validateParams(address pushAccount, address token, address target, uint256 amount) internal view {
+    function _validateParams(address pushAccount, address token, uint256 amount) internal view {
         if (pushAccount == address(0)) revert Errors.ZeroAddress();
-        if (target == address(0)) revert Errors.ZeroAddress();
         _enforceSupported(token);
 
         // Invariant on (token, msg.value):
@@ -217,11 +214,10 @@ contract Vault is
     /**
      * @dev Unified execution handler - all operations route through CEA.executeUniversalTx
      * @notice data parameter is now a multicall payload (abi.encode(Multicall[]))
-     * @param subTxId   Gateway transaction ID
+     * @param subTxId       Gateway transaction ID
      * @param universalTxId Universal transaction ID
      * @param pushAccount   Push Chain account (UEA) this transaction is attributed to
      * @param token         Token address (address(0) for native)
-     * @param target        Target contract (kept for backward compatibility, not used for routing)
      * @param amount        Amount of tokens to fund CEA with
      * @param data          Multicall payload (abi.encode(Multicall[]))
      * @param cea           CEA address (already deployed or newly created)
@@ -231,13 +227,12 @@ contract Vault is
         bytes32 universalTxId,
         address pushAccount,
         address token,
-        address target,
         uint256 amount,
         bytes calldata data,
         address cea
     ) private {
         // Validations
-        _validateParams(pushAccount, token, target, amount);
+        _validateParams(pushAccount, token, amount);
 
         // Fund CEA and forward multicall payload
         if (token != address(0)) {

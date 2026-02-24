@@ -32,9 +32,8 @@ contract MockReentrantContract {
     // UniversalGatewayPC Reentrancy Functions
     // ============================================================================
 
-    function attemptReentrancy(bytes calldata to, uint256 amount, uint256 gasLimit, address revertRecipient) external {
+    function attemptReentrancy(uint256 amount, uint256 gasLimit, address revertRecipient) external {
         UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
-            target: to,
             token: prc20Token,
             amount: amount,
             gasLimit: gasLimit,
@@ -45,14 +44,12 @@ contract MockReentrantContract {
     }
 
     function attemptReentrancyWithExecute(
-        bytes calldata target,
         uint256 amount,
         bytes calldata payload,
         uint256 gasLimit,
         address revertRecipient
     ) external {
         UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
-            target: target,
             token: prc20Token,
             amount: amount,
             gasLimit: gasLimit,

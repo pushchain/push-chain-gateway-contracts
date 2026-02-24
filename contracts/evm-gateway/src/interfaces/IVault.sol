@@ -31,7 +31,6 @@ interface IVault {
     /// @param subTxId      Gateway transaction identifier
     /// @param universalTxId    Universal transaction identifier
     /// @param pushAccount      Push Chain account (UEA) this transaction is attributed to
-    /// @param target           Target contract address to execute call
     /// @param token            Token address being sent
     /// @param amount           Amount of token being sent
     /// @param data             Calldata to be executed on target contract on external chain
@@ -39,7 +38,6 @@ interface IVault {
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed pushAccount,
-        address target,
         address token,
         uint256 amount,
         bytes data
@@ -68,11 +66,10 @@ interface IVault {
      *                      - Empty payload (data.length == 0): Withdrawal path via CEA.withdrawTo()
      *                      - Non-empty payload: Execution path via CEA.executeUniversalTx()
      *                      Both paths use CEA (Chain Execution Account) as intermediary.
-     * @param subTxId   Gateway transaction identifier
+     * @param subTxId       Gateway transaction identifier
      * @param universalTxId Universal transaction identifier from Push Chain
      * @param pushAccount   Push Chain account (UEA) this transaction is attributed to
      * @param token         Token address (address(0) for native)
-     * @param target        Target address (recipient for withdrawal, contract for execution)
      * @param amount        Amount of token/native
      * @param data          Calldata (empty for withdrawal, non-empty for execution)
      */
@@ -81,7 +78,6 @@ interface IVault {
         bytes32 universalTxId,
         address pushAccount,
         address token,
-        address target,
         uint256 amount,
         bytes calldata data
     ) external payable;

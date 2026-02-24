@@ -161,7 +161,7 @@ contract VaultWithdrawalTest is Test {
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxFinalized(
-            subTxId, universalTxId, originCaller, recipient, address(usdc), amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(usdc), amount, expectedPayload
         );
 
         // TSS calls vault.finalizeUniversalTx with withdrawal payload
@@ -171,7 +171,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc), // token
-            recipient, // target (recipient)
             amount,
             expectedPayload
         );
@@ -202,7 +201,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount) // Withdrawal multicall
         );
@@ -230,7 +228,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            recipient,
             excessiveAmount,
             _withdrawalPayloadDirect(address(usdc), recipient, excessiveAmount)
         );
@@ -251,7 +248,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             unsupportedToken,
-            recipient,
             amount,
             _withdrawalPayloadDirect(unsupportedToken, recipient, amount)
         );
@@ -272,7 +268,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            recipient,
             0, // Zero amount
             _withdrawalPayloadDirect(address(usdc), recipient, 0)
         );
@@ -281,25 +276,6 @@ contract VaultWithdrawalTest is Test {
         assertEq(usdc.balanceOf(recipient), initialBalance, "Recipient balance unchanged");
     }
 
-    /// @notice Test ERC20 withdrawal with zero target address - should revert
-    function testWithdraw_ERC20_TargetZero_Reverts() public {
-        bytes32 subTxId = keccak256("tx6");
-        bytes32 universalTxId = keccak256("utx6");
-        address originCaller = user1;
-        uint256 amount = 100e6;
-
-        vm.prank(tss);
-        vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
-        vault.finalizeUniversalTx(
-            subTxId,
-            universalTxId,
-            originCaller,
-            address(usdc),
-            address(0), // Zero recipient
-            amount,
-            _withdrawalPayloadDirect(address(usdc), address(0), amount)
-        );
-    }
 
     /// @notice Test ERC20 withdrawal with non-zero msg.value - should revert
     function testWithdraw_ERC20_MsgValueNonZero_Reverts() public {
@@ -316,7 +292,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
@@ -344,7 +319,7 @@ contract VaultWithdrawalTest is Test {
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(0), recipient, amount);
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxFinalized(
-            subTxId, universalTxId, originCaller, recipient, address(0), amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(0), amount, expectedPayload
         );
 
         // Fund TSS with ETH to send
@@ -357,7 +332,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(0), // token = address(0) for native
-            recipient,
             amount,
             expectedPayload
         );
@@ -391,7 +365,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(0),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(0), recipient, amount)
         );
@@ -422,7 +395,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(0),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(0), recipient, amount)
         );
@@ -443,7 +415,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(0),
-            recipient,
             0, // Zero amount
             _withdrawalPayloadDirect(address(0), recipient, 0)
         );
@@ -452,28 +423,6 @@ contract VaultWithdrawalTest is Test {
         assertEq(recipient.balance, initialBalance, "Recipient balance unchanged");
     }
 
-    /// @notice Test native withdrawal with zero target - should revert
-    function testWithdraw_Native_TargetZero_Reverts() public {
-        bytes32 subTxId = keccak256("tx14");
-        bytes32 universalTxId = keccak256("utx14");
-        address originCaller = user1;
-        uint256 amount = 1 ether;
-
-        // Fund TSS with ETH to send
-        vm.deal(tss, amount);
-
-        vm.prank(tss);
-        vm.expectRevert(abi.encodeWithSelector(Errors.ZeroAddress.selector));
-        vault.finalizeUniversalTx{ value: amount }(
-            subTxId,
-            universalTxId,
-            originCaller,
-            address(0),
-            address(0), // Zero target
-            amount,
-            _withdrawalPayloadDirect(address(0), address(0), amount)
-        );
-    }
 
     // =========================
     //  3. PAYLOAD EXECUTION TESTS (Unchanged - should still work)
@@ -503,7 +452,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            mockTarget, // target contract
             amount,
             payload // Multicall-wrapped payload
         );
@@ -537,7 +485,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(0), // native
-            mockTarget,
             amount,
             payload // Multicall-wrapped payload
         );
@@ -573,7 +520,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            cea, // target = CEA address (parking)
             amount,
             _withdrawalPayloadDirect(address(usdc), cea, amount)
         );
@@ -609,7 +555,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(0),
-            cea, // Parking in CEA
             amount,
             _withdrawalPayloadDirect(address(0), cea, amount)
         );
@@ -633,12 +578,12 @@ contract VaultWithdrawalTest is Test {
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxFinalized(
-            subTxId, universalTxId, originCaller, recipient, address(usdc), amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(usdc), amount, expectedPayload
         );
 
         vm.prank(tss);
         vault.finalizeUniversalTx(
-            subTxId, universalTxId, originCaller, address(usdc), recipient, amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(usdc), amount, expectedPayload
         );
     }
 
@@ -663,14 +608,13 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
-            mockTarget,
             address(usdc),
             amount,
             payload // Multicall-wrapped payload
         );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(subTxId, universalTxId, originCaller, address(usdc), mockTarget, amount, payload);
+        vault.finalizeUniversalTx(subTxId, universalTxId, originCaller, address(usdc), amount, payload);
     }
 
     // =========================
@@ -694,7 +638,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
@@ -729,7 +672,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(0),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(0), recipient, amount)
         );
@@ -756,7 +698,6 @@ contract VaultWithdrawalTest is Test {
             keccak256("utx60"),
             originCaller,
             address(usdc),
-            recipient,
             amount1,
             _withdrawalPayloadDirect(address(usdc), recipient, amount1)
         );
@@ -768,7 +709,6 @@ contract VaultWithdrawalTest is Test {
             keccak256("utx61"),
             originCaller,
             address(usdc),
-            recipient,
             amount2,
             _withdrawalPayloadDirect(address(usdc), recipient, amount2)
         );
@@ -801,7 +741,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
@@ -822,7 +761,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            recipient,
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
         );
@@ -848,7 +786,6 @@ contract VaultWithdrawalTest is Test {
             universalTxId,
             originCaller,
             address(usdc),
-            smartWallet,
             amount,
             _withdrawalPayloadDirect(address(usdc), smartWallet, amount)
         );

@@ -83,7 +83,7 @@ contract UniversalGatewayPC is
     }
 
     function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external whenNotPaused nonReentrant {
-        _validateCommon(req.target, req.token, req.revertRecipient);
+        _validateCommon(req.token, req.revertRecipient);
 
         // Determine TX_TYPE based on user input (rejects empty transactions internally)
         TX_TYPE txType = _fetchTxType(req);
@@ -112,7 +112,6 @@ contract UniversalGatewayPC is
             msg.sender,
             chainNamespace,
             req.token,
-            req.target,
             req.amount,
             gasToken,
             gasFee,
@@ -160,13 +159,11 @@ contract UniversalGatewayPC is
     }
 
     /// @notice                 Validates the common parameters.
-    /// @dev                    Validates target, token, and revertRecipient addresses.
+    /// @dev                    Validates token and revertRecipient addresses.
     ///                         Amount validation is handled in sendUniversalTxOutbound() to support payload-only transactions.
-    /// @param rawTarget        raw destination address on origin chain.
     /// @param token            PRC20 token address on Push Chain.
     /// @param revertRecipient  address to receive funds in case of revert.
-    function _validateCommon(bytes calldata rawTarget, address token, address revertRecipient) internal pure {
-        if (rawTarget.length == 0) revert Errors.InvalidInput();
+    function _validateCommon(address token, address revertRecipient) internal pure {
         if (token == address(0)) revert Errors.ZeroAddress();
         if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
     }
