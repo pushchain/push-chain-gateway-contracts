@@ -12,7 +12,7 @@ use spl_token::state::Account as SplAccount;
 
 /// Revert withdraw for SOL (TSS-verified)
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32])]
+#[instruction(sub_tx_id: [u8; 32])]
 pub struct RevertUniversalTx<'info> {
     #[account(
         seeds = [CONFIG_SEED],
@@ -36,17 +36,17 @@ pub struct RevertUniversalTx<'info> {
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
 
-    /// Executed transaction tracker (EVM parity: isExecuted[txID])
+    /// Executed transaction tracker (EVM parity: isExecuted[subTxID])
     #[account(
         init,
         payer = caller,
-        space = ExecutedTx::LEN,
-        seeds = [EXECUTED_TX_SEED, &tx_id],
+        space = ExecutedSubTx::LEN,
+        seeds = [EXECUTED_SUB_TX_SEED, &sub_tx_id],
         bump
     )]
-    pub executed_tx: Account<'info, ExecutedTx>,
+    pub executed_sub_tx: Account<'info, ExecutedSubTx>,
 
-    /// The caller/relayer who pays for the transaction (including executed_tx account creation)
+    /// The caller/relayer who pays for the transaction (including executed_sub_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
 
@@ -55,7 +55,7 @@ pub struct RevertUniversalTx<'info> {
 
 pub fn revert_universal_tx(
     ctx: Context<RevertUniversalTx>,
-    tx_id: [u8; 32],
+    sub_tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     amount: u64,
     revert_instruction: RevertInstructions,
@@ -80,7 +80,7 @@ pub fn revert_universal_tx(
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
     let additional: [&[u8]; 4] = [
         &universal_tx_id[..],
-        &tx_id[..],
+        &sub_tx_id[..],
         &recipient_bytes[..],
         &gas_fee_buf,
     ];
@@ -111,7 +111,7 @@ pub fn revert_universal_tx(
 
     emit!(crate::state::RevertUniversalTx {
         universal_tx_id,
-        tx_id,
+        sub_tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: Pubkey::default(),
         amount,
@@ -132,7 +132,7 @@ pub fn revert_universal_tx(
 
 /// Revert withdraw for SPL tokens (TSS-verified)
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32])]
+#[instruction(sub_tx_id: [u8; 32])]
 pub struct RevertUniversalTxToken<'info> {
     #[account(
         seeds = [CONFIG_SEED],
@@ -162,17 +162,17 @@ pub struct RevertUniversalTxToken<'info> {
 
     pub token_mint: Account<'info, Mint>,
 
-    /// Executed transaction tracker (EVM parity: isExecuted[txID])
+    /// Executed transaction tracker (EVM parity: isExecuted[subTxID])
     #[account(
         init,
         payer = caller,
-        space = ExecutedTx::LEN,
-        seeds = [EXECUTED_TX_SEED, &tx_id],
+        space = ExecutedSubTx::LEN,
+        seeds = [EXECUTED_SUB_TX_SEED, &sub_tx_id],
         bump
     )]
-    pub executed_tx: Account<'info, ExecutedTx>,
+    pub executed_sub_tx: Account<'info, ExecutedSubTx>,
 
-    /// The caller/relayer who pays for the transaction (including executed_tx account creation)
+    /// The caller/relayer who pays for the transaction (including executed_sub_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
 
@@ -190,7 +190,7 @@ pub struct RevertUniversalTxToken<'info> {
 
 pub fn revert_universal_tx_token(
     ctx: Context<RevertUniversalTxToken>,
-    tx_id: [u8; 32],
+    sub_tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     amount: u64,
     revert_instruction: RevertInstructions,
@@ -221,7 +221,7 @@ pub fn revert_universal_tx_token(
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
     let additional: [&[u8]; 5] = [
         &universal_tx_id[..],
-        &tx_id[..],
+        &sub_tx_id[..],
         &mint_bytes[..],
         &recipient_bytes[..],
         &gas_fee_buf,
@@ -264,7 +264,7 @@ pub fn revert_universal_tx_token(
 
     emit!(crate::state::RevertUniversalTx {
         universal_tx_id,
-        tx_id,
+        sub_tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: ctx.accounts.token_mint.key(),
         amount,

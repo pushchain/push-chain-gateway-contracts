@@ -265,7 +265,7 @@ pub fn validate_remaining_accounts(
 // =========================
 
 /// Transfer gas fee from vault to caller (relayer reimbursement)
-/// Used by withdraw_and_execute and revert functions
+/// Used by finalize_universal_tx and revert functions
 pub fn transfer_gas_fee_to_caller<'info>(
     vault_sol: &AccountInfo<'info>,
     caller: &AccountInfo<'info>,

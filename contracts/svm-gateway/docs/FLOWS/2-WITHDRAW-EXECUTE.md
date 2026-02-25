@@ -1,6 +1,6 @@
 # WITHDRAW & EXECUTE Flow (Outbound)
 
-**Function:** `withdraw_and_execute`
+**Function:** `finalize_universal_tx`
 **Direction:** Vault → User/Program (Push Chain → Solana)
 **Authorization:** TSS signature (ECDSA secp256k1)
 
@@ -27,13 +27,13 @@ Both modes use TSS signature verification for authorization and CEA as signing a
 ## 🎯 Entry Point
 
 ```rust
-pub fn withdraw_and_execute(
-    ctx: Context<WithdrawAndExecute>,
+pub fn finalize_universal_tx(
+    ctx: Context<FinalizeUniversalTx>,
     instruction_id: u8,            // 1=withdraw, 2=execute
-    tx_id: [u8; 32],               // Unique transaction ID
+    sub_tx_id: [u8; 32],               // Unique transaction ID
     universal_tx_id: [u8; 32],     // Cross-chain transaction ID
     amount: u64,                   // Transfer amount
-    sender: [u8; 20],              // Push Chain sender (20-byte address)
+    push_account: [u8; 20],              // push_account (20-byte address)
     writable_flags: Vec<u8>,       // Bitmap of writable accounts (execute mode)
     ix_data: Vec<u8>,              // Instruction data (execute mode)
     gas_fee: u64,                  // Relayer reimbursement
@@ -70,7 +70,7 @@ TSS Request
   │    └─ Validate remaining_accounts (execute mode only)
   │
   ├─ Phase 3: Transfers
-  │    ├─ Create executed_tx PDA (replay protection)
+  │    ├─ Create executed_sub_tx PDA (replay protection)
   │    ├─ If rent_fee > 0:
   │    │    └─ Transfer: Vault → CEA (rent_fee)
   │    ├─ If amount > 0:
@@ -94,7 +94,7 @@ TSS Request
   │         │    └─ data = ix_data
   │         └─ invoke_signed(cpi_ix, &[cea_seeds])
   │
-  └─ Emit: UniversalTxExecuted event (except CEA withdrawal: emits UniversalTx only, via_cea=true)
+  └─ Emit: UniversalTxFinalized event (except CEA withdrawal: emits UniversalTx only, from_cea=true)
 ```
 
 ---
@@ -115,9 +115,9 @@ hash = keccak256(message)
 ### Withdraw Mode (instruction_id=1) Additional Data:
 ```rust
 [
-    tx_id[32],           // 0 - common
+    sub_tx_id[32],           // 0 - common
     universal_tx_id[32], // 1 - common
-    sender[20],          // 2 - common
+    push_account[20],          // 2 - common
     token[32],           // 3 - common
     gas_fee_be[8],       // 4 - common
     target[32],          // 5 - withdraw specific (recipient pubkey)
@@ -127,9 +127,9 @@ hash = keccak256(message)
 ### Execute Mode (instruction_id=2) Additional Data:
 ```rust
 [
-    tx_id[32],               // 0 - common
+    sub_tx_id[32],               // 0 - common
     universal_tx_id[32],     // 1 - common
-    sender[20],              // 2 - common
+    push_account[20],              // 2 - common
     token[32],               // 3 - common
     gas_fee_be[8],           // 4 - common
     target_program[32],      // 5 - execute specific
@@ -207,7 +207,7 @@ if is_execute {
 ```rust
 // Withdraw mode
 require!(amount > 0, ...);
-require!(sender != [0u8; 20], ...);
+require!(push_account != [0u8; 20], ...);
 require!(writable_flags.is_empty(), ...);
 require!(ix_data.is_empty(), ...);
 require!(rent_fee == 0, ...);
@@ -231,16 +231,16 @@ require!(address == tss_pda.tss_eth_address, GatewayError::TssAuthFailed);
 
 ### 7. Replay Protection
 ```rust
-// ExecutedTx PDA creation with init constraint
-// If tx_id was already used, init will fail
+// ExecutedSubTx PDA creation with init constraint
+// If sub_tx_id was already used, init will fail
 #[account(
     init,
     payer = caller,
-    space = ExecutedTx::LEN,
-    seeds = [EXECUTED_TX_SEED, tx_id.as_ref()],
+    space = ExecutedSubTx::LEN,
+    seeds = [EXECUTED_SUB_TX_SEED, sub_tx_id.as_ref()],
     bump
 )]
-pub executed_tx: Account<'info, ExecutedTx>,
+pub executed_sub_tx: Account<'info, ExecutedSubTx>,
 ```
 
 ### 8. Remaining Accounts Validation (Execute Mode)
@@ -285,7 +285,7 @@ require!(
 
 ### PDA Derivation
 ```rust
-seeds = [b"push_identity", sender[20], bump]
+seeds = [b"push_identity", push_account[20], bump]
 ```
 
 ### Role
@@ -296,7 +296,7 @@ seeds = [b"push_identity", sender[20], bump]
 
 ### Example CPI with CEA as Signer
 ```rust
-let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
+let cea_seeds: &[&[u8]] = &[CEA_SEED, push_account.as_ref(), &[cea_bump]];
 
 invoke_signed(
     &instruction,
@@ -309,13 +309,13 @@ invoke_signed(
 
 ## 📤 Events Emitted
 
-### UniversalTxExecuted Event
+### UniversalTxFinalized Event
 ```rust
 #[event]
-pub struct UniversalTxExecuted {
-    pub tx_id: [u8; 32],
+pub struct UniversalTxFinalized {
+    pub sub_tx_id: [u8; 32],
     pub universal_tx_id: [u8; 32],
-    pub sender: [u8; 20],
+    pub push_account: [u8; 20],
     pub target: Pubkey,              // Recipient or program
     pub token: Pubkey,
     pub amount: u64,
@@ -324,7 +324,7 @@ pub struct UniversalTxExecuted {
 ```
 
 **When Emitted:** After successful withdraw (mode 1) or execute (mode 2) where target != gateway program
-**NOT emitted for CEA withdrawal** (target == gateway): emits `UniversalTx` only (via `send_universal_tx_via_cea`, `via_cea=true`)
+**NOT emitted for CEA withdrawal** (target == gateway): emits `UniversalTx` only (via `send_universal_tx_to_uea`, `from_cea=true`)
 
 ---
 
@@ -346,7 +346,7 @@ pub struct UniversalTxExecuted {
 - **SPL:** `recipient_ata.amount += amount`
 
 ### Replay Protection
-- **ExecutedTx:** New PDA created with discriminator only
+- **ExecutedSubTx:** New PDA created with discriminator only
 
 ---
 
@@ -370,30 +370,30 @@ When destination_program == gateway_program_id, the gateway executes a special C
 
 **Payload Structure (execute.rs:451-463):**
 ```
-[discriminator: 8 bytes]  // hash(b"global:send_universal_tx_via_cea").to_bytes()[..8]
-[borsh_args: variable]    // SendUniversalTxViaCeaArgs (Borsh-encoded)
+[discriminator: 8 bytes]  // hash(b"global:send_universal_tx_to_uea").to_bytes()[..8]
+[borsh_args: variable]    // SendUniversalTxToUEAArgs (Borsh-encoded)
 ```
 
-**SendUniversalTxViaCeaArgs:** (execute.rs:429-433)
+**SendUniversalTxToUEAArgs:** (execute.rs:429-433)
 ```rust
-struct SendUniversalTxViaCeaArgs {
+struct SendUniversalTxToUEAArgs {
     token: Pubkey,      // Must match derived token (Pubkey::default() for SOL, mint for SPL)
     amount: u64,        // Amount to withdraw (must be > 0, no auto-drain of full balance)
-    payload: Vec<u8>,   // empty = Funds tx_type, non-empty = FundsAndPayload tx_type (via_cea=true)
-    // NOTE: NO recipient field - recipient (UEA address) comes from withdraw_and_execute sender param
+    payload: Vec<u8>,   // empty = Funds tx_type, non-empty = FundsAndPayload tx_type (from_cea=true)
+    // NOTE: NO recipient field - recipient (UEA address) comes from finalize_universal_tx push_account param
 }
 ```
 
 **Emitted UniversalTx event:**
-- `via_cea: true` — Push Chain UE module uses `recipient` directly as existing UEA (no new UEA derivation)
+- `from_cea: true` — Push Chain UE module uses `recipient` directly as existing UEA (no new UEA derivation)
 - `tx_type: Funds` if payload empty, `FundsAndPayload` if payload non-empty
 
 **Validation:**
 1. ix_data must be >= 8 bytes
-2. First 8 bytes must match hash(b"global:send_universal_tx_via_cea")[..8]
-3. Remaining bytes must deserialize as SendUniversalTxViaCeaArgs (token + amount + payload)
+2. First 8 bytes must match hash(b"global:send_universal_tx_to_uea")[..8]
+3. Remaining bytes must deserialize as SendUniversalTxToUEAArgs (token + amount + payload)
 4. args.token must match derived token (Pubkey::default() for SOL, mint for SPL)
-5. Recipient (UEA) comes from the `sender` param in withdraw_and_execute, NOT from payload
+5. Recipient (UEA) comes from the `push_account` param in finalize_universal_tx, NOT from payload
 
 **Integration Example:**
 ```typescript
@@ -401,11 +401,11 @@ import { sha256 } from "js-sha3";
 import { serialize } from "borsh";
 
 // 1. Compute discriminator
-const discr = Buffer.from(sha256("global:send_universal_tx_via_cea"), "hex").slice(0, 8);
+const discr = Buffer.from(sha256("global:send_universal_tx_to_uea"), "hex").slice(0, 8);
 
-// 2. Manually Borsh-encode SendUniversalTxViaCeaArgs (token + amount + payload)
-// NOTE: There is NO sendUniversalTxViaCea instruction in lib.rs, so we use raw Borsh encoding
-class SendUniversalTxViaCeaArgs {
+// 2. Manually Borsh-encode SendUniversalTxToUEAArgs (token + amount + payload)
+// NOTE: There is NO sendUniversalTxToUEA instruction in lib.rs, so we use raw Borsh encoding
+class SendUniversalTxToUEAArgs {
   token: Uint8Array; // 32 bytes
   amount: bigint;    // u64
   payload: Uint8Array; // Vec<u8>
@@ -425,7 +425,7 @@ const schema = {
   }
 };
 
-const args = new SendUniversalTxViaCeaArgs(
+const args = new SendUniversalTxToUEAArgs(
   mintPubkey.toBytes(), // or new PublicKey(0).toBytes() for SOL
   BigInt(amount),
   new Uint8Array([])    // empty = Funds, non-empty = FundsAndPayload
@@ -436,20 +436,20 @@ const argsEncoded = serialize(schema, args);
 // 3. Combine discriminator + borsh args
 const ix_data = Buffer.concat([discr, Buffer.from(argsEncoded)]);
 
-// 4. Use in withdraw_and_execute with instruction_id=2
-// IMPORTANT: recipient (UEA) comes from `sender` param (20-byte Push Chain address), NOT from .accounts()
+// 4. Use in finalize_universal_tx with instruction_id=2
+// IMPORTANT: recipient (UEA) comes from `push_account` param (20-byte Push Chain address), NOT from .accounts()
 // Execute mode REQUIRES recipient: null in .accounts()
 await program.methods
-  .withdrawAndExecute(
+  .finalizeUniversalTx(
     2, // instruction_id: execute
-    // ... other params (amount, sender: [u8; 20], etc.) ...
+    // ... other params (amount, push_account: [u8; 20], etc.) ...
     [], // writable_flags: empty for CEA self-withdraw
     ix_data, // [discriminator][borsh(token, amount, payload)]
     // ... signature params ...
   )
   .accounts({
     destinationProgram: gatewayProgramId, // Triggers CEA self-withdraw
-    recipient: null, // ← Execute mode requires None; UEA comes from sender param
+    recipient: null, // ← Execute mode requires None; UEA comes from push_account
     // ... other accounts ...
   })
   .rpc();
@@ -491,7 +491,7 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 |-------|-------|----------|
 | `MessageHashMismatch` | TSS message reconstruction failed | Check message format |
 | `TssAuthFailed` | Signature invalid or wrong TSS address | Verify TSS key |
-| Anchor Init Error | tx_id already used (PDA exists) | Use unique tx_id - replay protection via init failure |
+| Anchor Init Error | sub_tx_id already used (PDA exists) | Use unique sub_tx_id - replay protection via init failure |
 | `AccountListLengthMismatch` | remaining_accounts count wrong | Check accounts array |
 | `AccountPubkeyMismatch` | Account at position doesn't match | Verify account order |
 | `UnexpectedOuterSigner` | Account in remaining has is_signer=true | Remove signer flag |
@@ -504,8 +504,8 @@ relayer_fee = gas_fee - rent_fee: Vault → Caller
 
 1. **Replay Protection:**
    ```
-   Each tx_id can execute exactly once
-   ExecutedTx PDA exists <=> tx executed
+   Each sub_tx_id can execute exactly once
+   ExecutedSubTx PDA exists <=> tx executed
    Transactions can execute in any order (no global nonce)
    ```
 

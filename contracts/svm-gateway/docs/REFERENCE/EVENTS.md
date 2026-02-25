@@ -10,7 +10,7 @@ All events emitted by the gateway for monitoring and cross-chain coordination.
 ```rust
 #[event]
 pub struct UniversalTx {
-    pub sender: Pubkey,                // User who deposited (or CEA for via_cea=true)
+    pub sender: Pubkey,                // User who deposited (or CEA for from_cea=true)
     pub recipient: [u8; 20],           // Push Chain destination ([0; 20] = UEA)
     pub token: Pubkey,                 // Token (Pubkey::default() = SOL)
     pub amount: u64,                   // Bridge amount
@@ -18,7 +18,7 @@ pub struct UniversalTx {
     pub revert_instruction: RevertInstructions,
     pub tx_type: TxType,               // Gas/GasAndPayload/Funds/FundsAndPayload
     pub signature_data: Vec<u8>,       // User signature data
-    pub via_cea: bool,                 // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as existing UEA
+    pub from_cea: bool,                 // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as existing UEA
 }
 ```
 
@@ -33,13 +33,13 @@ pub struct UniversalTx {
 
 ## Outbound Events
 
-### UniversalTxExecuted
+### UniversalTxFinalized
 ```rust
 #[event]
-pub struct UniversalTxExecuted {
-    pub tx_id: [u8; 32],               // Unique transaction ID
+pub struct UniversalTxFinalized {
+    pub sub_tx_id: [u8; 32],               // Unique transaction ID
     pub universal_tx_id: [u8; 32],     // Cross-chain ID
-    pub sender: [u8; 20],              // Push Chain sender
+    pub push_account: [u8; 20],              // Push Chain sender
     pub target: Pubkey,                // Recipient or program
     pub token: Pubkey,                 // Token transferred
     pub amount: u64,                   // Amount transferred
@@ -48,7 +48,7 @@ pub struct UniversalTxExecuted {
 ```
 
 **Emitted:** After successful withdraw (mode 1) or execute (mode 2) where target != gateway program
-**NOT emitted for CEA withdrawal** (target == gateway): `UniversalTx` is emitted instead (via `send_universal_tx_via_cea`)
+**NOT emitted for CEA withdrawal** (target == gateway): `UniversalTx` is emitted instead (via `send_universal_tx_to_uea`)
 **Purpose:** Confirm execution on Solana
 
 ---
@@ -58,7 +58,7 @@ pub struct UniversalTxExecuted {
 #[event]
 pub struct RevertUniversalTx {
     pub universal_tx_id: [u8; 32],     // Cross-chain ID
-    pub tx_id: [u8; 32],               // Transaction ID
+    pub sub_tx_id: [u8; 32],               // Transaction ID
     pub fund_recipient: Pubkey,        // Who received reverted funds
     pub token: Pubkey,                 // Token (Pubkey::default() = SOL)
     pub amount: u64,                   // Reverted amount
@@ -166,14 +166,14 @@ send_universal_tx()
 
 ### Withdraw Flow
 ```
-withdraw_and_execute(instruction_id=1)
-  → UniversalTxExecuted emitted
+finalize_universal_tx(instruction_id=1)
+  → UniversalTxFinalized emitted
 ```
 
 ### Execute Flow
 ```
-withdraw_and_execute(instruction_id=2)
-  → UniversalTxExecuted emitted
+finalize_universal_tx(instruction_id=2)
+  → UniversalTxFinalized emitted
   → (Target program may emit its own events)
 ```
 
@@ -185,15 +185,15 @@ revert_universal_tx() or revert_universal_tx_token()
 
 ### CEA Withdrawal Flow
 ```
-withdraw_and_execute(target=gateway)
-  → UniversalTx emitted (Funds or FundsAndPayload, via_cea=true)
+finalize_universal_tx(target=gateway)
+  → UniversalTx emitted (Funds or FundsAndPayload, from_cea=true)
 ```
 
 ---
 
 ## Monitoring Best Practices
 
-1. **Index by tx_id** - Track transaction lifecycle
+1. **Index by sub_tx_id** - Track transaction lifecycle
 2. **Monitor TxType** - Distinguish gas vs funds
 3. **Track sender→recipient** - User flow analysis
 4. **Watch revert events** - Failure monitoring

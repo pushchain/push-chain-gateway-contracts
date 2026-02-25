@@ -16,7 +16,7 @@ import idl from "../target/idl/universal_gateway.json";
 import fs from "fs";
 
 /**
- * Create Token-Specific ALT for withdraw_and_execute
+ * Create Token-Specific ALT for finalize_universal_tx
  *
  * This ALT contains ONLY token-specific accounts:
  * - mint (unique per token)
@@ -256,7 +256,7 @@ async function main() {
   const tokensDir = "./tokens";
   const tokens = loadTokenConfigs(tokensDir);
 
-  console.log("🔧 Creating Token-Specific ALTs for withdraw_and_execute");
+  console.log("🔧 Creating Token-Specific ALTs for finalize_universal_tx");
   console.log(`Network: ${isDevnet ? "Devnet" : "Mainnet"}`);
   console.log(`Token source: ${tokensDir}`);
   console.log(`Tokens to process: ${tokens.length}`);

@@ -6,7 +6,7 @@ pub const VAULT_SEED: &[u8] = b"vault";
 pub const TSS_SEED: &[u8] = b"tsspda_v2";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
-pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
+pub const EXECUTED_SUB_TX_SEED: &[u8] = b"executed_sub_tx";
 pub const CEA_SEED: &[u8] = b"push_identity";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
@@ -141,13 +141,13 @@ impl TssPda {
     pub const LEN: usize = 8 + 20 + 4 + 64 + 32 + 1;
 }
 
-/// Executed transaction tracker (parity with EVM `isExecuted[txID]` mapping).
-/// PDA: `[b"executed_tx", tx_id]`.
+/// Executed transaction tracker (parity with EVM `isExecuted[subTxID]` mapping).
+/// PDA: `[b"executed_sub_tx", sub_tx_id]`.
 /// Account existence = transaction executed (replay protection via `init` constraint).
 #[account]
-pub struct ExecutedTx {}
+pub struct ExecutedSubTx {}
 
-impl ExecutedTx {
+impl ExecutedSubTx {
     // discriminator (8) only - account existence is the flag
     pub const LEN: usize = 8;
 }
@@ -164,12 +164,12 @@ pub struct GatewayAccountMeta {
     pub is_writable: bool,
 }
 
-/// Execute event (parity with EVM `UniversalTxExecuted`).
+/// Execute event (parity with EVM `UniversalTxFinalized`).
 #[event]
-pub struct UniversalTxExecuted {
-    pub tx_id: [u8; 32],
+pub struct UniversalTxFinalized {
+    pub sub_tx_id: [u8; 32],
     pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
-    pub sender: [u8; 20],          // EVM address (same as origin_caller in EVM)
+    pub push_account: [u8; 20],    // EVM address
     pub target: Pubkey,            // Target program
     pub token: Pubkey,             // Token (Pubkey::default() for SOL)
     pub amount: u64,
@@ -188,14 +188,14 @@ pub struct UniversalTx {
     pub revert_instruction: RevertInstructions,
     pub tx_type: TxType,
     pub signature_data: Vec<u8>,
-    pub via_cea: bool, // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as UEA
+    pub from_cea: bool, // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as UEA
 }
 
 /// Revert withdraw event (parity with EVM `RevertUniversalTx`).
 #[event]
 pub struct RevertUniversalTx {
     pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
-    pub tx_id: [u8; 32],           // Transaction ID
+    pub sub_tx_id: [u8; 32],       // Transaction ID
     pub fund_recipient: Pubkey,    // Recipient of reverted funds
     pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
     pub amount: u64,               // Amount

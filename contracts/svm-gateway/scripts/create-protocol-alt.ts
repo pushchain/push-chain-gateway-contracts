@@ -12,7 +12,7 @@ import idl from "../target/idl/universal_gateway.json";
 import fs from "fs";
 
 /**
- * Create Protocol Static ALT for withdraw_and_execute
+ * Create Protocol Static ALT for finalize_universal_tx
  *
  * This ALT contains accounts that NEVER change across ANY transaction:
  * - gateway_config
@@ -49,7 +49,7 @@ async function main() {
 
   const program = new Program(idl as any, provider) as Program<UniversalGateway>;
 
-  console.log("🔧 Creating Protocol Static ALT for withdraw_and_execute...\n");
+  console.log("🔧 Creating Protocol Static ALT for finalize_universal_tx...\n");
 
   // Derive PDAs
   const [configPda] = PublicKey.findProgramAddressSync(
@@ -168,7 +168,7 @@ async function main() {
 
   console.log("💾 ALT config saved to:", outputPath);
   console.log();
-  console.log("🎉 Done! Use this ALT for ALL withdraw_and_execute transactions.");
+  console.log("🎉 Done! Use this ALT for ALL finalize_universal_tx transactions.");
   console.log("   Savings: 185 bytes per transaction (7×32 - ALT overhead of 32+7)");
 }
 

@@ -101,7 +101,7 @@
 
 | Threat | Attack Vector | Mitigation |
 |--------|---------------|------------|
-| **Replay attack** | Reuse valid signature | ExecutedTx PDA (per tx_id init constraint) |
+| **Replay attack** | Reuse valid signature | ExecutedSubTx PDA (per sub_tx_id init constraint) |
 | **Front-running** | Execute TSS tx in different order | Each tx independently TSS-signed (no shared state) |
 | **Signature forgery** | Fake TSS signature | ECDSA verification |
 | **Amount manipulation** | Change amount in message | Message hash binding |
@@ -209,7 +209,7 @@
 ### Guaranteed (Unconditional)
 1. **Balance conservation:** No minting/burning
 2. **Access control:** Only admin/TSS can execute privileged ops
-3. **Replay protection:** Each tx_id executes once
+3. **Replay protection:** Each sub_tx_id executes once
 4. **PDA security:** Only gateway controls CEA signing
 
 ### Guaranteed (Conditional on Assumptions)

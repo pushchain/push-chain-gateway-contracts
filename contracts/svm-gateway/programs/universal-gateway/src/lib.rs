@@ -126,17 +126,17 @@ pub mod universal_gateway {
     }
 
     // =========================
-    //    WITHDRAW & EXECUTE
+    //    FINALIZE UNIVERSAL TX
     // =========================
     /// @notice Unified outbound entrypoint: withdraw (mode 1) or execute (mode 2)
     /// @param instruction_id 1=withdraw (vault→CEA→recipient), 2=execute (vault→CEA→CPI)
-    pub fn withdraw_and_execute(
-        ctx: Context<WithdrawAndExecute>,
+    pub fn finalize_universal_tx(
+        ctx: Context<FinalizeUniversalTx>,
         instruction_id: u8,
-        tx_id: [u8; 32],
+        sub_tx_id: [u8; 32],
         universal_tx_id: [u8; 32],
         amount: u64,
-        sender: [u8; 20],
+        push_account: [u8; 20],
         writable_flags: Vec<u8>,
         ix_data: Vec<u8>,
         gas_fee: u64,
@@ -145,13 +145,13 @@ pub mod universal_gateway {
         recovery_id: u8,
         message_hash: [u8; 32],
     ) -> Result<()> {
-        instructions::execute::withdraw_and_execute(
+        instructions::execute::finalize_universal_tx(
             ctx,
             instruction_id,
-            tx_id,
+            sub_tx_id,
             universal_tx_id,
             amount,
-            sender,
+            push_account,
             writable_flags,
             ix_data,
             gas_fee,
@@ -168,7 +168,7 @@ pub mod universal_gateway {
     /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
     pub fn revert_universal_tx(
         ctx: Context<RevertUniversalTx>,
-        tx_id: [u8; 32],
+        sub_tx_id: [u8; 32],
         universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
@@ -179,7 +179,7 @@ pub mod universal_gateway {
     ) -> Result<()> {
         instructions::revert::revert_universal_tx(
             ctx,
-            tx_id,
+            sub_tx_id,
             universal_tx_id,
             amount,
             revert_instruction,
@@ -193,7 +193,7 @@ pub mod universal_gateway {
     /// @notice TSS-verified revert withdraw for SPL tokens (EVM parity: `revertUniversalTxToken`)
     pub fn revert_universal_tx_token(
         ctx: Context<RevertUniversalTxToken>,
-        tx_id: [u8; 32],
+        sub_tx_id: [u8; 32],
         universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
@@ -204,7 +204,7 @@ pub mod universal_gateway {
     ) -> Result<()> {
         instructions::revert::revert_universal_tx_token(
             ctx,
-            tx_id,
+            sub_tx_id,
             universal_tx_id,
             amount,
             revert_instruction,
@@ -235,7 +235,7 @@ pub use instructions::admin::{
     AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
-pub use instructions::execute::WithdrawAndExecute;
+pub use instructions::execute::FinalizeUniversalTx;
 pub use instructions::initialize::Initialize;
 pub use instructions::revert::{
     RevertUniversalTx, RevertUniversalTxToken,
@@ -246,18 +246,18 @@ pub use state::{
     // Events
     CapsUpdated,
     Config,
-    ExecutedTx,
+    ExecutedSubTx,
     GatewayAccountMeta,
     RevertInstructions,
     TSSAddressUpdated,
     TxType,
     UniversalPayload,
     UniversalTx,
-    UniversalTxExecuted,
+    UniversalTxFinalized,
     UniversalTxRequest,
     VerificationType,
     CONFIG_SEED,
-    EXECUTED_TX_SEED,
+    EXECUTED_SUB_TX_SEED,
     FEED_ID,
     VAULT_SEED,
 };

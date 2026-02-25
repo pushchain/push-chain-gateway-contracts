@@ -11,8 +11,8 @@ Quick reference for all account types in the gateway.
 | **Config** | `[b"config"]` | 279 bytes | Gateway configuration (admin, caps, oracle) |
 | **Vault** | `[b"vault"]` | System | Native SOL custody (no data) |
 | **TssPda** | `[b"tsspda_v2"]` | 129 bytes | TSS address, chain ID |
-| **CEA** | `[b"push_identity", sender[20]]` | System | Per-user execution authority |
-| **ExecutedTx** | `[b"executed_tx", tx_id[32]]` | 8 bytes | Replay protection (discriminator only) |
+| **CEA** | `[b"push_identity", push_account[20]]` | System | Per-user execution authority |
+| **ExecutedSubTx** | `[b"executed_sub_tx", sub_tx_id[32]]` | 8 bytes | Replay protection (discriminator only) |
 | **RateLimitConfig** | `[b"rate_limit_config"]` | 157 bytes | Global rate limit settings |
 | **TokenRateLimit** | `[b"rate_limit", token_mint]` | 181 bytes | Per-token epoch limits |
 
@@ -52,7 +52,7 @@ pub struct TssPda {
 ```
 
 **Authority:** Admin-only for updates
-**Replay protection:** Per-tx via `ExecutedTx` PDA (seeded by `tx_id`), not a global nonce
+**Replay protection:** Per-tx via `ExecutedSubTx` PDA (seeded by `sub_tx_id`), not a global nonce
 
 ---
 
@@ -95,10 +95,10 @@ pub struct EpochUsage {
 
 ---
 
-## ExecutedTx Account
+## ExecutedSubTx Account
 
 ```rust
-pub struct ExecutedTx {}  // Empty, discriminator only
+pub struct ExecutedSubTx {}  // Empty, discriminator only
 ```
 
 **Purpose:** Replay protection via account existence
@@ -141,7 +141,7 @@ Not PDAs of gateway, but validated:
 - TokenRateLimit (epoch tracking)
 
 ### Init (One-Time)
-- ExecutedTx (per tx_id)
+- ExecutedSubTx (per sub_tx_id)
 - CEA (auto-created by Solana on first transfer)
 
 ---

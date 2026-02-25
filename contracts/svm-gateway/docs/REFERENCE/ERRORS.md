@@ -93,7 +93,7 @@ Complete list of custom errors with causes and solutions.
 
 | Error | Code | Cause | Solution |
 |-------|------|-------|----------|
-| **PayloadExecuted** | 6028 | tx_id already used | Use unique tx_id |
+| **PayloadExecuted** | 6028 | sub_tx_id already used | Use unique sub_tx_id |
 
 ---
 
@@ -163,15 +163,15 @@ Complete list of custom errors with causes and solutions.
 **Status:** DEFINED BUT NOT USED IN PRACTICE
 
 **Actual Behavior:**
-- Duplicate tx_id detection relies on Anchor's PDA init constraint (execute.rs:65, revert.rs:41)
-- Code: `#[account(init, seeds=[EXECUTED_TX_SEED, tx_id], ...)]`
-- Reused tx_id causes Anchor "account already initialized" error, NOT this error code
+- Duplicate sub_tx_id detection relies on Anchor's PDA init constraint (execute.rs:65, revert.rs:41)
+- Code: `#[account(init, seeds=[EXECUTED_SUB_TX_SEED, sub_tx_id], ...)]`
+- Reused sub_tx_id causes Anchor "account already initialized" error, NOT this error code
 - This error code (6028) exists but is never explicitly thrown
 
 **Solution:**
-1. tx_id must be globally unique
-2. If duplicate tx_id: Anchor constraint error (not PayloadExecuted error)
-3. Use fresh tx_id for each transaction
+1. sub_tx_id must be globally unique
+2. If duplicate sub_tx_id: Anchor constraint error (not PayloadExecuted error)
+3. Use fresh sub_tx_id for each transaction
 
 ### Unused Error Codes
 

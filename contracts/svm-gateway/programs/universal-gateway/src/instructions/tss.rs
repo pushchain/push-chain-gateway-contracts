@@ -71,7 +71,7 @@ pub fn update_tss(
 
 /// Common validator: verify hash and ECDSA secp256k1 signature recovers stored ETH address.
 /// Used by withdraw, revert, and execute functions - single standard for all TSS-signed messages.
-/// Replay protection is ensured per-tx by the ExecutedTx PDA (seeded by tx_id).
+/// Replay protection is ensured per-tx by the ExecutedSubTx PDA (seeded by sub_tx_id).
 pub fn validate_message(
     tss: &mut Account<TssPda>,
     instruction_id: u8,

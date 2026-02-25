@@ -27,7 +27,7 @@ import { signTssMessage, buildWithdrawAdditionalData, TssInstruction, generateUn
 /**
  * ALT Integration Test Script
  *
- * This script demonstrates and validates ALT usage for withdraw_and_execute on devnet.
+ * This script demonstrates and validates ALT usage for finalize_universal_tx on devnet.
  *
  * Prerequisites:
  * - ALTs must be created via scripts/create-protocol-alt.ts and scripts/create-token-alt.ts
@@ -48,7 +48,7 @@ const CONFIG_SEED = Buffer.from("config");
 const TSS_SEED = Buffer.from("tsspda_v2");
 const VAULT_SEED = Buffer.from("vault");
 const CEA_SEED = Buffer.from("push_identity");
-const EXECUTED_TX_SEED = Buffer.from("executed_tx");
+const EXECUTED_SUB_TX_SEED = Buffer.from("executed_sub_tx");
 
 // Load keypairs
 const adminKeypair = Keypair.fromSecretKey(
@@ -142,23 +142,23 @@ for (const token of selectedTokenConfigs) {
 }
 
 // PDA helpers
-function getCeaAuthorityPda(sender: Uint8Array | number[]): PublicKey {
+function getCeaAuthorityPda(pushAccount: Uint8Array | number[]): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [CEA_SEED, Buffer.from(sender)],
+    [CEA_SEED, Buffer.from(pushAccount)],
     PROGRAM_ID
   )[0];
 }
 
 function getExecutedTxPda(txIdBytes: Uint8Array): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [EXECUTED_TX_SEED, Buffer.from(txIdBytes)],
+    [EXECUTED_SUB_TX_SEED, Buffer.from(txIdBytes)],
     PROGRAM_ID
   )[0];
 }
 
 async function main() {
   console.log("\n🔍 ALT Integration Test - Devnet\n");
-  console.log("=" .repeat(60));
+  console.log("=".repeat(60));
 
   // Test 1: Verify Protocol ALT
   console.log("\n📋 Test 1: Verify Protocol ALT");
@@ -261,7 +261,7 @@ async function main() {
   const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
   const program = new Program(idl as anchor.Idl, provider);
 
-  const sender: number[] = Array(20).fill(1);
+  const pushAccount: number[] = Array(20).fill(1);
   const amountBn = new anchor.BN(0.001 * LAMPORTS_PER_SOL);
   const gasFeeBn = new anchor.BN(0.001 * LAMPORTS_PER_SOL);
   const amountBig = BigInt(amountBn.toString());
@@ -269,7 +269,7 @@ async function main() {
   const recipient = provider.wallet.publicKey; // withdraw back to admin
 
   const [ceaAuthority] = PublicKey.findProgramAddressSync(
-    [CEA_SEED, Buffer.from(sender)],
+    [CEA_SEED, Buffer.from(pushAccount)],
     PROGRAM_ID
   );
 
@@ -282,14 +282,14 @@ async function main() {
     const freshTxId = Array.from(Keypair.generate().publicKey.toBytes());
     const freshUniversalTxId = Array.from(Keypair.generate().publicKey.toBytes());
     const [freshExecutedTx] = PublicKey.findProgramAddressSync(
-      [EXECUTED_TX_SEED, Buffer.from(freshTxId)],
+      [EXECUTED_SUB_TX_SEED, Buffer.from(freshTxId)],
       PROGRAM_ID
     );
 
     const additional = buildWithdrawAdditionalData(
       Buffer.from(freshUniversalTxId),
       Buffer.from(freshTxId),
-      Buffer.from(sender),
+      Buffer.from(pushAccount),
       PublicKey.default, // SOL
       recipient,
       gasFeeBig
@@ -303,12 +303,12 @@ async function main() {
     });
 
     const ix = await program.methods
-      .withdrawAndExecute(
+      .finalizeUniversalTx(
         1,
         Array.from(freshTxId),
         Array.from(freshUniversalTxId),
         amountBn,
-        sender,
+        pushAccount,
         Buffer.alloc(0),
         Buffer.alloc(0),
         gasFeeBn,
@@ -323,7 +323,7 @@ async function main() {
         vaultSol,
         ceaAuthority,
         tssPda,
-        executedTx: freshExecutedTx,
+        executedSubTx: freshExecutedTx,
         systemProgram: SystemProgram.programId,
         destinationProgram: SystemProgram.programId,
         recipient,
@@ -423,126 +423,126 @@ async function main() {
       console.warn("   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com npx ts-node scripts/create-token-alt.ts");
     } else {
       const mintPubkey = new PublicKey(tokenInfo.mint);
-    const vaultAta = getAssociatedTokenAddressSync(mintPubkey, vaultSol, true);
-    const ceaAta = getAssociatedTokenAddressSync(mintPubkey, ceaAuthority, true);
-    const recipientAta = getAssociatedTokenAddressSync(mintPubkey, recipient, true);
+      const vaultAta = getAssociatedTokenAddressSync(mintPubkey, vaultSol, true);
+      const ceaAta = getAssociatedTokenAddressSync(mintPubkey, ceaAuthority, true);
+      const recipientAta = getAssociatedTokenAddressSync(mintPubkey, recipient, true);
 
-    const tokenAltAddress = tokenAlts.get(tokenInfo.mint);
-    const tokenAlt = tokenAltAddress
-      ? (await connection.getAddressLookupTable(tokenAltAddress)).value
-      : null;
+      const tokenAltAddress = tokenAlts.get(tokenInfo.mint);
+      const tokenAlt = tokenAltAddress
+        ? (await connection.getAddressLookupTable(tokenAltAddress)).value
+        : null;
 
-    const buildSplInstruction = async () => {
-      const freshTxId = Array.from(Keypair.generate().publicKey.toBytes());
-      const freshUniversalTxId = Array.from(Keypair.generate().publicKey.toBytes());
-      const freshExecutedTx = getExecutedTxPda(Buffer.from(freshTxId));
+      const buildSplInstruction = async () => {
+        const freshTxId = Array.from(Keypair.generate().publicKey.toBytes());
+        const freshUniversalTxId = Array.from(Keypair.generate().publicKey.toBytes());
+        const freshExecutedTx = getExecutedTxPda(Buffer.from(freshTxId));
 
-      const splAdditional = buildWithdrawAdditionalData(
-        Buffer.from(freshUniversalTxId),
-        Buffer.from(freshTxId),
-        Buffer.from(sender),
-        mintPubkey,
-        recipient,
-        gasFeeBig
-      );
-
-      const splSig = await signTssMessage({
-        instruction: TssInstruction.Withdraw,
-        amount: amountBig,
-        additional: splAdditional,
-        chainId: tssChainId,
-      });
-
-      return program.methods
-        .withdrawAndExecute(
-          1,
-          Array.from(freshTxId),
-          Array.from(freshUniversalTxId),
-          amountBn,
-          sender,
-          Buffer.alloc(0),
-          Buffer.alloc(0),
-          gasFeeBn,
-          new anchor.BN(0),
-          Array.from(splSig.signature),
-          splSig.recoveryId,
-          Array.from(splSig.messageHash),
-        )
-        .accounts({
-          caller: provider.wallet.publicKey,
-          config: configPda,
-          vaultSol,
-          ceaAuthority,
-          tssPda,
-          executedTx: freshExecutedTx,
-          systemProgram: SystemProgram.programId,
-          destinationProgram: SystemProgram.programId,
+        const splAdditional = buildWithdrawAdditionalData(
+          Buffer.from(freshUniversalTxId),
+          Buffer.from(freshTxId),
+          Buffer.from(pushAccount),
+          mintPubkey,
           recipient,
-          vaultAta,
-          ceaAta,
-          mint: mintPubkey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          recipientAta,
-          rateLimitConfig: null,
-          tokenRateLimit: null,
-        })
-        .instruction();
-    };
+          gasFeeBig
+        );
 
-    let splNoAltSize = 0;
-    let splAltSize = 0;
+        const splSig = await signTssMessage({
+          instruction: TssInstruction.Withdraw,
+          amount: amountBig,
+          additional: splAdditional,
+          chainId: tssChainId,
+        });
 
-    // Submit WITHOUT ALT
-    {
-      const ix = await buildSplInstruction();
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+        return program.methods
+          .finalizeUniversalTx(
+            1,
+            Array.from(freshTxId),
+            Array.from(freshUniversalTxId),
+            amountBn,
+            pushAccount,
+            Buffer.alloc(0),
+            Buffer.alloc(0),
+            gasFeeBn,
+            new anchor.BN(0),
+            Array.from(splSig.signature),
+            splSig.recoveryId,
+            Array.from(splSig.messageHash),
+          )
+          .accounts({
+            caller: provider.wallet.publicKey,
+            config: configPda,
+            vaultSol,
+            ceaAuthority,
+            tssPda,
+            executedSubTx: freshExecutedTx,
+            systemProgram: SystemProgram.programId,
+            destinationProgram: SystemProgram.programId,
+            recipient,
+            vaultAta,
+            ceaAta,
+            mint: mintPubkey,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            recipientAta,
+            rateLimitConfig: null,
+            tokenRateLimit: null,
+          })
+          .instruction();
+      };
 
-      const messageV0 = new TransactionMessage({
-        payerKey: provider.wallet.publicKey,
-        recentBlockhash: blockhash,
-        instructions: [ix],
-      }).compileToV0Message([]);
+      let splNoAltSize = 0;
+      let splAltSize = 0;
 
-      const versionedTx = new VersionedTransaction(messageV0);
-      versionedTx.sign([adminKeypair]);
-      splNoAltSize = versionedTx.serialize().length;
+      // Submit WITHOUT ALT
+      {
+        const ix = await buildSplInstruction();
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
-      const txSig = await connection.sendTransaction(versionedTx);
-      await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
+        const messageV0 = new TransactionMessage({
+          payerKey: provider.wallet.publicKey,
+          recentBlockhash: blockhash,
+          instructions: [ix],
+        }).compileToV0Message([]);
 
-      console.log(`\n✅ SPL Withdraw WITHOUT ALT confirmed: ${txSig}`);
-      console.log(`   Serialized size: ${splNoAltSize} bytes`);
-    }
+        const versionedTx = new VersionedTransaction(messageV0);
+        versionedTx.sign([adminKeypair]);
+        splNoAltSize = versionedTx.serialize().length;
 
-    // Submit WITH Protocol ALT + Token ALT
-    {
-      const ix = await buildSplInstruction();
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+        const txSig = await connection.sendTransaction(versionedTx);
+        await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
 
-      const alts = tokenAlt ? [protocolAlt.value, tokenAlt] : [protocolAlt.value];
+        console.log(`\n✅ SPL Withdraw WITHOUT ALT confirmed: ${txSig}`);
+        console.log(`   Serialized size: ${splNoAltSize} bytes`);
+      }
 
-      const messageV0 = new TransactionMessage({
-        payerKey: provider.wallet.publicKey,
-        recentBlockhash: blockhash,
-        instructions: [ix],
-      }).compileToV0Message(alts);
+      // Submit WITH Protocol ALT + Token ALT
+      {
+        const ix = await buildSplInstruction();
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
-      const versionedTx = new VersionedTransaction(messageV0);
-      versionedTx.sign([adminKeypair]);
-      splAltSize = versionedTx.serialize().length;
+        const alts = tokenAlt ? [protocolAlt.value, tokenAlt] : [protocolAlt.value];
 
-      const txSig = await connection.sendTransaction(versionedTx);
-      await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
+        const messageV0 = new TransactionMessage({
+          payerKey: provider.wallet.publicKey,
+          recentBlockhash: blockhash,
+          instructions: [ix],
+        }).compileToV0Message(alts);
 
-      console.log(`\n✅ SPL Withdraw WITH ALT confirmed: ${txSig}`);
-      console.log(`   Serialized size: ${splAltSize} bytes`);
-      console.log(`   ALTs used: ${alts.length}`);
-    }
+        const versionedTx = new VersionedTransaction(messageV0);
+        versionedTx.sign([adminKeypair]);
+        splAltSize = versionedTx.serialize().length;
 
-    const splSavings = splNoAltSize - splAltSize;
-    console.log(`\n📊 SPL Withdraw savings: ${splSavings} bytes (${((splSavings / splNoAltSize) * 100).toFixed(1)}%)`);
+        const txSig = await connection.sendTransaction(versionedTx);
+        await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
+
+        console.log(`\n✅ SPL Withdraw WITH ALT confirmed: ${txSig}`);
+        console.log(`   Serialized size: ${splAltSize} bytes`);
+        console.log(`   ALTs used: ${alts.length}`);
+      }
+
+      const splSavings = splNoAltSize - splAltSize;
+      console.log(`\n📊 SPL Withdraw savings: ${splSavings} bytes (${((splSavings / splNoAltSize) * 100).toFixed(1)}%)`);
     }
   }
 

@@ -20,7 +20,7 @@ Revert allows TSS to return deposited funds when cross-chain transaction fails o
 TSS Request
   │
   ├─ Validate TSS signature (message hash, ECDSA)
-  ├─ Create executed_tx PDA (replay protection)
+  ├─ Create executed_sub_tx PDA (replay protection)
   ├─ Transfer: Vault → Recipient (amount)
   ├─ Emit: RevertUniversalTx event  ← **EMITTED AFTER funds transfer, BEFORE gas transfer (revert.rs:114, 269)**
   └─ Transfer: Vault → Caller (gas_fee, relayer reimbursement)
@@ -37,7 +37,7 @@ message = PREFIX
         || chain_id (string bytes)
         || amount (8 bytes BE)
         || universal_tx_id[32]
-        || tx_id[32]
+        || sub_tx_id[32]
         || recipient_pubkey[32]
         || gas_fee_be[8]
 
@@ -51,7 +51,7 @@ message = PREFIX
         || chain_id (string bytes)
         || amount (8 bytes BE)
         || universal_tx_id[32]
-        || tx_id[32]
+        || sub_tx_id[32]
         || mint_pubkey[32]
         || recipient_pubkey[32]
         || gas_fee_be[8]
@@ -70,7 +70,7 @@ hash = keccak256(message)
 | **Recipient** | `require!(recipient != Pubkey::default())` |
 | **Recipient match** | `require!(recipient == revert_instruction.fund_recipient)` |
 | **TSS signature** | ECDSA secp256k1 recovery + address match |
-| **Replay** | ExecutedTx PDA init (fails if tx_id reused) |
+| **Replay** | ExecutedSubTx PDA init (fails if sub_tx_id reused) |
 | **SPL ATA** | Owner == vault, Mint == token_mint |
 | **SPL recipient** | ATA owner == recipient, mint == token_mint |
 
@@ -86,7 +86,7 @@ hash = keccak256(message)
 - **SOL:** `vault.lamports -= gas_fee`
 
 ### Replay Protection
-- **ExecutedTx PDA created** for tx_id
+- **ExecutedSubTx PDA created** for sub_tx_id
 
 ---
 
@@ -96,7 +96,7 @@ hash = keccak256(message)
 #[event]
 pub struct RevertUniversalTx {
     pub universal_tx_id: [u8; 32],
-    pub tx_id: [u8; 32],
+    pub sub_tx_id: [u8; 32],
     pub fund_recipient: Pubkey,
     pub token: Pubkey,              // Pubkey::default() for SOL
     pub amount: u64,
@@ -114,13 +114,13 @@ pub struct RevertUniversalTx {
 | **CEA involved** | Yes (as intermediary) | No (direct vault → recipient) |
 | **instruction_id** | 1 (withdraw), 2 (execute) | 3 (SOL), 4 (SPL) |
 | **Message format** | Different additional_data | Different additional_data |
-| **Event** | UniversalTxExecuted | RevertUniversalTx |
+| **Event** | UniversalTxFinalized | RevertUniversalTx |
 
 ---
 
 ## 🔍 Key Invariants
 
-1. **One revert per tx_id:** ExecutedTx PDA ensures uniqueness
+1. **One revert per sub_tx_id:** ExecutedSubTx PDA ensures uniqueness
 2. **TSS authorization only:** No user can trigger revert
 3. **Amount validation:** Code only validates `amount > 0` (revert.rs:68, 205) - NO enforcement that amount matches original deposit
    - **Note:** "Exact amount" revert is a business-layer expectation, not an on-chain invariant

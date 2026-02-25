@@ -16,7 +16,7 @@ import {
     getExecutedTxRent, calculateSolExecuteFees,
     instructionAccountsToGatewayMetas, instructionAccountsToRemaining, accountsToWritableFlagsOnly,
 } from "./helpers/test-utils";
-import { makeWithdrawAndExecuteBuilder, WithdrawAndExecuteArgs } from "./helpers/builders";
+import { makeFinalizeUniversalTxBuilder, FinalizeUniversalTxArgs } from "./helpers/builders";
 
 describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -37,11 +37,11 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
     let vaultPda: PublicKey;
     let tssPda: PublicKey;
 
-    let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
+    let finalizeUniversalTx: ReturnType<typeof makeFinalizeUniversalTxBuilder>;
 
     const generateTxId = makeTxIdGenerator();
-    const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, gatewayProgram.programId);
-    const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, gatewayProgram.programId);
+    const getExecutedTxPda = (subTxId: number[]) => _getExecutedTxPda(subTxId, gatewayProgram.programId);
+    const getCeaAuthorityPda = (pushAccount: number[]) => _getCeaAuthorityPda(pushAccount, gatewayProgram.programId);
 
     before(async () => {
         admin = sharedState.getAdmin();
@@ -114,15 +114,15 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         );
         await provider.sendAndConfirm(vaultTx, [admin]);
 
-        withdrawAndExecute = makeWithdrawAndExecuteBuilder(gatewayProgram, configPda, vaultPda, tssPda);
+        finalizeUniversalTx = makeFinalizeUniversalTxBuilder(gatewayProgram, configPda, vaultPda, tssPda);
     });
 
     describe("Heavy batch_operation tests", () => {
         it("should execute batch_operation with 10 accounts and 100 bytes data", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
+            const pushAccount = generateSender();
+            const cea = getCeaAuthorityPda(pushAccount);
 
             // Create 10 dummy accounts (keypairs)
             const dummyAccounts = Array.from({ length: 10 }, () => Keypair.generate());
@@ -161,9 +161,9 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
                     new Uint8Array(universalTxId),
-                    new Uint8Array(txId),
+                    new Uint8Array(subTxId),
                     counterProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     accounts,
                     ixData,
                     gasFee,
@@ -177,12 +177,12 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId,
+                subTxId,
                 universalTxId,
                 amount: new anchor.BN(0),
-                sender,
+                pushAccount,
                 writableFlags,
                 ixData,
                 gasFee: new anchor.BN(Number(gasFee)),
@@ -202,10 +202,10 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         });
 
         it("should execute batch_operation with 8 accounts and 150 bytes data", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
+            const pushAccount = generateSender();
+            const cea = getCeaAuthorityPda(pushAccount);
 
             const dummyAccounts = Array.from({ length: 8 }, () => Keypair.generate()); // Reduced from 12 to 8
             const operationId = 54321;
@@ -240,9 +240,9 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
                     new Uint8Array(universalTxId),
-                    new Uint8Array(txId),
+                    new Uint8Array(subTxId),
                     counterProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     accounts,
                     ixData,
                     gasFee,
@@ -263,12 +263,12 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId,
+                subTxId,
                 universalTxId,
                 amount: new anchor.BN(0),
-                sender,
+                pushAccount,
                 writableFlags,
                 ixData,
                 gasFee: new anchor.BN(Number(gasFee)),
@@ -288,10 +288,10 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         });
 
         it("should execute batch_operation with 10 accounts and 100 bytes data (near limit)", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
+            const pushAccount = generateSender();
+            const cea = getCeaAuthorityPda(pushAccount);
 
             const dummyAccounts = Array.from({ length: 10 }, () => Keypair.generate()); // Reduced from 15 to 10
             const operationId = 99999;
@@ -326,9 +326,9 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
                     new Uint8Array(universalTxId),
-                    new Uint8Array(txId),
+                    new Uint8Array(subTxId),
                     counterProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     accounts,
                     ixData,
                     gasFee,
@@ -349,12 +349,12 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
             const counterBefore = await counterProgram.account.counter.fetch(counterPda);
             const writableFlags = accountsToWritableFlagsOnly(accounts);
 
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId,
+                subTxId,
                 universalTxId,
                 amount: new anchor.BN(0),
-                sender,
+                pushAccount,
                 writableFlags,
                 ixData,
                 gasFee: new anchor.BN(Number(gasFee)),
@@ -374,10 +374,10 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
         });
 
         it("should fail when transaction exceeds 1232 bytes limit (18 accounts + 400 bytes)", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
+            const pushAccount = generateSender();
+            const cea = getCeaAuthorityPda(pushAccount);
 
             // Try to create a transaction that exceeds the limit
             const dummyAccounts = Array.from({ length: 18 }, () => Keypair.generate());
@@ -413,9 +413,9 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
                 chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
                 additional: buildExecuteAdditionalData(
                     new Uint8Array(universalTxId),
-                    new Uint8Array(txId),
+                    new Uint8Array(subTxId),
                     counterProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     accounts,
                     ixData,
                     gasFee,
@@ -427,12 +427,12 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
             // This should fail with transaction size error
             try {
-                await withdrawAndExecute({
+                await finalizeUniversalTx({
                     instructionId: 2,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(0),
-                    sender,
+                    pushAccount,
                     writableFlags,
                     ixData,
                     gasFee: new anchor.BN(Number(gasFee)),

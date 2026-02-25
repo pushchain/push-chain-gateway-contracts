@@ -75,7 +75,7 @@
 3. Relayer submits to Solana
 4. Gateway validates TSS signature
 5. Funds released: Vault → CEA → Target
-6. UniversalTxExecuted event emitted
+6. UniversalTxFinalized event emitted
 7. Push Chain confirms
 ```
 
@@ -92,7 +92,7 @@
 ### 2. CEA (Chain Executor Account)
 - **Type:** Per-user PDA
 - **Purpose:** Persistent identity + signing authority
-- **Derivation:** `[b"push_identity", sender[20]]`
+- **Derivation:** `[b"push_identity", push_account[20]]`
 - **Role:** Signs for target programs via invoke_signed
 
 ### 3. Config (System Parameters)
@@ -110,7 +110,7 @@
 - **TokenRateLimit:** Per-token epoch tracking
 - **Purpose:** DoS protection, economic security
 
-### 6. ExecutedTx (Replay Protection)
+### 6. ExecutedSubTx (Replay Protection)
 - **Type:** Per-transaction PDA
 - **Contains:** Only discriminator (8 bytes)
 - **Purpose:** Account existence = transaction executed
@@ -123,7 +123,7 @@
 - `send_universal_tx` - Deposit with routing
 
 ### TSS Instructions (Outbound)
-- `withdraw_and_execute` - Unified outbound (withdraw or execute)
+- `finalize_universal_tx` - Unified outbound (withdraw or execute)
 - `revert_universal_tx` - Revert SOL
 - `revert_universal_tx_token` - Revert SPL
 
@@ -159,7 +159,7 @@
 
 ### Layer 3: Validation
 - TSS ECDSA signature verification
-- Per-tx replay protection via `ExecutedTx` PDA (seeded by `tx_id`)
+- Per-tx replay protection via `ExecutedSubTx` PDA (seeded by `sub_tx_id`)
 - Account ownership validation
 - Amount/balance checks
 
@@ -185,13 +185,13 @@ User Wallet [100 SOL]
 
 ### Withdraw (Native SOL)
 ```
-TSS signs withdrawal [50 SOL, tx_id=0xABC]
+TSS signs withdrawal [50 SOL, sub_tx_id=0xABC]
     │
     ├─ Validate signature (ECDSA)
-    ├─ Create ExecutedTx PDA for tx_id (replay protection)
+    ├─ Create ExecutedSubTx PDA for sub_tx_id (replay protection)
     ├─ Transfer: Vault → CEA [50 SOL]
     ├─ Transfer: CEA → Recipient [50 SOL]
-    └─ Emit: UniversalTxExecuted event
+    └─ Emit: UniversalTxFinalized event
 ```
 
 ### Execute (Program Call)
@@ -203,7 +203,7 @@ TSS signs execute [amount=10, target=DeFi_Program]
     ├─ CEA invokes target program (invoke_signed)
     │    └─ Target sees CEA as signer
     ├─ Program executes logic
-    └─ Emit: UniversalTxExecuted event
+    └─ Emit: UniversalTxFinalized event
 ```
 
 ---
@@ -260,7 +260,7 @@ TSS signs execute [amount=10, target=DeFi_Program]
 - Isolated blast radius
 - Program compatibility (expects user signer)
 
-### Why Unified `withdraw_and_execute`?
+### Why Unified `finalize_universal_tx`?
 - Code reuse (TSS validation, transfers)
 - Smaller program size
 - Single audit surface
@@ -273,7 +273,7 @@ TSS signs execute [amount=10, target=DeFi_Program]
 |----------|-------|-----------|
 | **Gas deposit USD** | Configurable (set via set_caps_usd) | Fee abstraction cap (not fixed) |
 | **Chain ID length** | 64 bytes | Cluster pubkey max |
-| **tx_id uniqueness** | Global | Replay protection |
+| **sub_tx_id uniqueness** | Global | Replay protection |
 | **Block USD cap** | Configurable | DoS protection |
 | **Token epoch limit** | Per-token | Economic security |
 

@@ -1,8 +1,8 @@
 use crate::errors::GatewayError;
 use crate::instructions::tss::validate_message;
 use crate::state::{
-    Config, ExecutedTx, GatewayAccountMeta, RateLimitConfig, TokenRateLimit, TssPda, TxType,
-    UniversalTx, UniversalTxExecuted, CEA_SEED, EXECUTED_TX_SEED, RATE_LIMIT_CONFIG_SEED,
+    Config, ExecutedSubTx, GatewayAccountMeta, RateLimitConfig, TokenRateLimit, TssPda, TxType,
+    UniversalTx, UniversalTxFinalized, CEA_SEED, EXECUTED_SUB_TX_SEED, RATE_LIMIT_CONFIG_SEED,
     TSS_SEED, VAULT_SEED,
 };
 use crate::utils::{validate_remaining_accounts, validate_token_and_consume_rate_limit};
@@ -20,12 +20,12 @@ use anchor_spl::token::{spl_token, Mint, Token};
 use spl_token::state::Account as SplAccount;
 
 // =========================
-//  UNIFIED WITHDRAW_AND_EXECUTE
+//  UNIFIED FINALIZE_UNIVERSAL_TX
 // =========================
 
 #[derive(Accounts)]
-#[instruction(instruction_id: u8, tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, sender: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32])]
-pub struct WithdrawAndExecute<'info> {
+#[instruction(instruction_id: u8, sub_tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, push_account: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32])]
+pub struct FinalizeUniversalTx<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
@@ -48,7 +48,7 @@ pub struct WithdrawAndExecute<'info> {
     /// Auto-created by Solana on first transfer, persists across transactions
     #[account(
         mut,
-        seeds = [CEA_SEED, sender.as_ref()],
+        seeds = [CEA_SEED, push_account.as_ref()],
         bump,
     )]
     pub cea_authority: SystemAccount<'info>,
@@ -65,11 +65,11 @@ pub struct WithdrawAndExecute<'info> {
     #[account(
         init,
         payer = caller,
-        space = ExecutedTx::LEN,
-        seeds = [EXECUTED_TX_SEED, tx_id.as_ref()],
+        space = ExecutedSubTx::LEN,
+        seeds = [EXECUTED_SUB_TX_SEED, sub_tx_id.as_ref()],
         bump
     )]
-    pub executed_tx: Account<'info, ExecutedTx>,
+    pub executed_sub_tx: Account<'info, ExecutedSubTx>,
 
     pub system_program: Program<'info, System>,
     /// CHECK: Target program for execute mode
@@ -116,13 +116,13 @@ pub struct WithdrawAndExecute<'info> {
     pub token_rate_limit: Option<Account<'info, TokenRateLimit>>,
 }
 
-pub fn withdraw_and_execute(
-    mut ctx: Context<WithdrawAndExecute>,
+pub fn finalize_universal_tx(
+    mut ctx: Context<FinalizeUniversalTx>,
     instruction_id: u8,
-    tx_id: [u8; 32],
+    sub_tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     amount: u64,
-    sender: [u8; 20],
+    push_account: [u8; 20],
     writable_flags: Vec<u8>,
     ix_data: Vec<u8>,
     gas_fee: u64,
@@ -144,7 +144,7 @@ pub fn withdraw_and_execute(
         is_withdraw,
         is_native,
         amount,
-        sender,
+        push_account,
         &writable_flags,
         &ix_data,
         rent_fee,
@@ -157,8 +157,8 @@ pub fn withdraw_and_execute(
         build_and_validate_tss_withdraw(
             &mut ctx.accounts.tss_pda,
             universal_tx_id,
-            tx_id,
-            sender,
+            sub_tx_id,
+            push_account,
             token,
             target,
             gas_fee,
@@ -173,8 +173,8 @@ pub fn withdraw_and_execute(
             &mut ctx.accounts.tss_pda,
             ctx.remaining_accounts,
             universal_tx_id,
-            tx_id,
-            sender,
+            sub_tx_id,
+            push_account,
             target,
             token,
             &writable_flags,
@@ -259,7 +259,7 @@ pub fn withdraw_and_execute(
 
     // Branch: withdraw vs execute
     let cea_bump = ctx.bumps.cea_authority;
-    let cea_seeds: &[&[u8]] = &[CEA_SEED, sender.as_ref(), &[cea_bump]];
+    let cea_seeds: &[&[u8]] = &[CEA_SEED, push_account.as_ref(), &[cea_bump]];
 
     if is_withdraw {
         // Withdraw: CEA → target (SOL) or CEA ATA → recipient ATA (SPL)
@@ -271,11 +271,11 @@ pub fn withdraw_and_execute(
 
         // Check if target is gateway itself (CEA → UEA inbound route)
         if target == *ctx.program_id {
-            return send_universal_tx_via_cea(
+            return send_universal_tx_to_uea(
                 &mut ctx,
-                tx_id,
+                sub_tx_id,
                 universal_tx_id,
-                sender,
+                push_account,
                 &ix_data,
                 cea_seeds,
             );
@@ -304,10 +304,10 @@ pub fn withdraw_and_execute(
     }
 
     // Emit execution event
-    emit!(UniversalTxExecuted {
-        tx_id,
+    emit!(UniversalTxFinalized {
+        sub_tx_id,
         universal_tx_id,
-        sender,
+        push_account,
         target,
         token,
         amount,
@@ -325,7 +325,7 @@ pub fn withdraw_and_execute(
 /// SOL: system_instruction::transfer CEA → target
 /// SPL: spl_token::transfer CEA ATA → recipient ATA
 fn internal_withdraw(
-    ctx: &Context<WithdrawAndExecute>,
+    ctx: &Context<FinalizeUniversalTx>,
     amount: u64,
     token: Pubkey,
     cea_seeds: &[&[u8]],
@@ -430,9 +430,9 @@ fn internal_withdraw(
 // ============================================
 
 /// Args for the CEA → UEA inbound route (target_program == gateway itself).
-/// Layout: [8-byte discriminator][borsh(SendUniversalTxViaCeaArgs)].
+/// Layout: [8-byte discriminator][borsh(SendUniversalTxToUEAArgs)].
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct SendUniversalTxViaCeaArgs {
+pub struct SendUniversalTxToUEAArgs {
     pub token: Pubkey,    // Pubkey::default() for SOL; mint for SPL
     pub amount: u64,      // must be > 0
     pub payload: Vec<u8>, // empty = Funds, non-empty = FundsAndPayload
@@ -440,11 +440,11 @@ pub struct SendUniversalTxViaCeaArgs {
 
 /// CEA → UEA inbound route: mirrors the inbound FUNDS deposit flow.
 /// Called when target_program == gateway itself (instruction_id=2, destination_program=gateway).
-fn send_universal_tx_via_cea(
-    ctx: &mut Context<WithdrawAndExecute>,
-    _tx_id: [u8; 32],
+fn send_universal_tx_to_uea(
+    ctx: &mut Context<FinalizeUniversalTx>,
+    _sub_tx_id: [u8; 32],
     _universal_tx_id: [u8; 32],
-    sender: [u8; 20],
+    push_account: [u8; 20],
     ix_data: &[u8],
     cea_seeds: &[&[u8]],
 ) -> Result<()> {
@@ -458,13 +458,13 @@ fn send_universal_tx_via_cea(
     // ix_data must be at least 8 bytes for the Anchor-style discriminator
     require!(ix_data.len() >= 8, GatewayError::InvalidInput);
 
-    // First 8 bytes = discriminator for "global:send_universal_tx_via_cea"
+    // First 8 bytes = discriminator for "global:send_universal_tx_to_uea"
     let discr = &ix_data[..8];
-    let expected = hash(b"global:send_universal_tx_via_cea").to_bytes();
+    let expected = hash(b"global:send_universal_tx_to_uea").to_bytes();
     require!(discr == &expected[..8], GatewayError::InvalidInput);
 
     // Remaining bytes are Borsh-encoded args
-    let args = SendUniversalTxViaCeaArgs::try_from_slice(&ix_data[8..])
+    let args = SendUniversalTxToUEAArgs::try_from_slice(&ix_data[8..])
         .map_err(|_| error!(GatewayError::InvalidInput))?;
 
     // Validate args.token matches derived token
@@ -570,7 +570,7 @@ fn send_universal_tx_via_cea(
 
     emit!(UniversalTx {
         sender: ctx.accounts.cea_authority.key(),
-        recipient: sender,
+        recipient: push_account,
         token,
         amount: withdraw_amount,
         payload: args.payload,
@@ -580,7 +580,7 @@ fn send_universal_tx_via_cea(
         },
         tx_type,
         signature_data: vec![],
-        via_cea: true,
+        from_cea: true,
     });
 
     Ok(())
@@ -600,7 +600,7 @@ fn validate_instruction_id(instruction_id: u8) -> Result<bool> {
 }
 
 /// Derive token from mint account and determine if native SOL
-fn derive_token_and_mode(ctx: &Context<WithdrawAndExecute>) -> Result<(Pubkey, bool)> {
+fn derive_token_and_mode(ctx: &Context<FinalizeUniversalTx>) -> Result<(Pubkey, bool)> {
     let is_native = ctx.accounts.mint.is_none();
     let token = if is_native {
         Pubkey::default()
@@ -611,7 +611,7 @@ fn derive_token_and_mode(ctx: &Context<WithdrawAndExecute>) -> Result<(Pubkey, b
 }
 
 /// Enforce SPL/SOL account presence based on token type
-fn validate_account_presence(ctx: &Context<WithdrawAndExecute>, is_native: bool) -> Result<()> {
+fn validate_account_presence(ctx: &Context<FinalizeUniversalTx>, is_native: bool) -> Result<()> {
     if is_native {
         require!(
             ctx.accounts.vault_ata.is_none()
@@ -638,7 +638,7 @@ fn validate_account_presence(ctx: &Context<WithdrawAndExecute>, is_native: bool)
 
 /// Validate mode-specific accounts and derive target
 fn validate_mode_accounts_and_derive_target(
-    ctx: &Context<WithdrawAndExecute>,
+    ctx: &Context<FinalizeUniversalTx>,
     is_withdraw: bool,
 ) -> Result<Pubkey> {
     if is_withdraw {
@@ -658,11 +658,11 @@ fn validate_mode_accounts_and_derive_target(
 
 /// Validate mode-specific parameters
 fn validate_mode_specific_params(
-    ctx: &Context<WithdrawAndExecute>,
+    ctx: &Context<FinalizeUniversalTx>,
     is_withdraw: bool,
     is_native: bool,
     amount: u64,
-    sender: [u8; 20],
+    push_account: [u8; 20],
     writable_flags: &[u8],
     ix_data: &[u8],
     rent_fee: u64,
@@ -671,7 +671,7 @@ fn validate_mode_specific_params(
     if is_withdraw {
         // Withdraw mode validations
         require!(amount > 0, GatewayError::InvalidAmount);
-        require!(sender != [0u8; 20], GatewayError::InvalidInput);
+        require!(push_account != [0u8; 20], GatewayError::InvalidInput);
         require!(writable_flags.is_empty(), GatewayError::InvalidInput);
         require!(ix_data.is_empty(), GatewayError::InvalidInput);
         require!(rent_fee == 0, GatewayError::InvalidInput);
@@ -735,17 +735,17 @@ fn reconstruct_accounts_from_flags<'info>(
 /// Build and validate TSS signature for withdraw mode (instruction_id=1)
 ///
 /// TSS Message Format (common fields first):
-/// 1. tx_id (32 bytes)
+/// 1. sub_tx_id (32 bytes)
 /// 2. universal_tx_id (32 bytes)
-/// 3. sender (20 bytes)
+/// 3. push_account (20 bytes)
 /// 4. token (32 bytes)
 /// 5. gas_fee (u64 BE)
 /// 6. target (32 bytes) - withdraw specific
 fn build_and_validate_tss_withdraw(
     tss_pda: &mut Account<TssPda>,
     universal_tx_id: [u8; 32],
-    tx_id: [u8; 32],
-    sender: [u8; 20],
+    sub_tx_id: [u8; 32],
+    push_account: [u8; 20],
     token: Pubkey,
     target: Pubkey,
     gas_fee: u64,
@@ -761,9 +761,9 @@ fn build_and_validate_tss_withdraw(
 
     // Common fields first, then mode-specific
     let additional: [&[u8]; 6] = [
-        &tx_id[..],           // 0 - common (matches function param order)
+        &sub_tx_id[..],       // 0 - common (matches function param order)
         &universal_tx_id[..], // 1 - common
-        &sender[..],          // 2 - common
+        &push_account[..],    // 2 - common
         &token_bytes[..],     // 3 - common
         &gas_fee_buf,         // 4 - common
         &target_bytes[..],    // 5 - withdraw specific (recipient)
@@ -783,9 +783,9 @@ fn build_and_validate_tss_withdraw(
 /// Build and validate TSS signature for execute mode (instruction_id=2)
 ///
 /// TSS Message Format (common fields first):
-/// 1. tx_id (32 bytes)
+/// 1. sub_tx_id (32 bytes)
 /// 2. universal_tx_id (32 bytes)
-/// 3. sender (20 bytes)
+/// 3. push_account (20 bytes)
 /// 4. token (32 bytes)
 /// 5. gas_fee (u64 BE)
 /// 6. target_program (32 bytes) - execute specific
@@ -796,8 +796,8 @@ fn build_and_validate_tss_execute<'info>(
     tss_pda: &mut Account<TssPda>,
     remaining_accounts: &[AccountInfo<'info>],
     universal_tx_id: [u8; 32],
-    tx_id: [u8; 32],
-    sender: [u8; 20],
+    sub_tx_id: [u8; 32],
+    push_account: [u8; 20],
     target: Pubkey,
     token: Pubkey,
     writable_flags: &[u8],
@@ -839,9 +839,9 @@ fn build_and_validate_tss_execute<'info>(
     // New ordering: common fields first, then mode-specific
     // This matches withdraw format for common fields
     let additional: [&[u8]; 9] = [
-        &tx_id[..],           // 0 - common (matches function param order)
+        &sub_tx_id[..],       // 0 - common (matches function param order)
         &universal_tx_id[..], // 1 - common
-        &sender[..],          // 2 - common
+        &push_account[..],    // 2 - common
         &token_bytes,         // 3 - common
         &gas_fee_buf,         // 4 - common
         &target.to_bytes(),   // 5 - execute specific (target program)
@@ -869,7 +869,7 @@ fn build_and_validate_tss_execute<'info>(
 
 /// Validate and process SPL token transfer from vault to CEA
 fn process_spl_vault_to_cea_transfer<'info>(
-    ctx: &Context<WithdrawAndExecute<'info>>,
+    ctx: &Context<FinalizeUniversalTx<'info>>,
     token: Pubkey,
     amount: u64,
     vault_seeds: &[&[&[u8]]],

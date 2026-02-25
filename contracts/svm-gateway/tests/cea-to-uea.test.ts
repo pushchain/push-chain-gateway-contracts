@@ -19,7 +19,7 @@ import {
     calculateSolExecuteFees, calculateSplExecuteFees, calculateRentFeeForAccountSize,
     instructionAccountsToGatewayMetas, instructionAccountsToRemaining, accountsToWritableFlagsOnly,
 } from "./helpers/test-utils";
-import { makeWithdrawAndExecuteBuilder, WithdrawAndExecuteArgs } from "./helpers/builders";
+import { makeFinalizeUniversalTxBuilder, FinalizeUniversalTxArgs } from "./helpers/builders";
 
 describe("Universal Gateway - CEA to UEA Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -46,12 +46,12 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
     let counterPda: PublicKey;
     let counterAuthority: Keypair;
 
-    let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
+    let finalizeUniversalTx: ReturnType<typeof makeFinalizeUniversalTxBuilder>;
 
     const generateTxId = makeTxIdGenerator();
-    const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, gatewayProgram.programId);
-    const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, gatewayProgram.programId);
-    const getCeaAta = (sender: number[], mint: PublicKey) => _getCeaAta(sender, mint, gatewayProgram.programId);
+    const getExecutedTxPda = (subTxId: number[]) => _getExecutedTxPda(subTxId, gatewayProgram.programId);
+    const getCeaAuthorityPda = (pushAccount: number[]) => _getCeaAuthorityPda(pushAccount, gatewayProgram.programId);
+    const getCeaAta = (pushAccount: number[], mint: PublicKey) => _getCeaAta(pushAccount, mint, gatewayProgram.programId);
 
     before(async () => {
         admin = sharedState.getAdmin();
@@ -169,13 +169,13 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             // Already initialized — fine
         }
 
-        withdrawAndExecute = makeWithdrawAndExecuteBuilder(gatewayProgram, configPda, vaultPda, tssPda);
+        finalizeUniversalTx = makeFinalizeUniversalTxBuilder(gatewayProgram, configPda, vaultPda, tssPda);
     });
 
     describe("CEA → UEA: SOL", () => {
         it("should allow gateway self-call to withdraw SOL from CEA", async () => {
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
+            const pushAccount = generateSender();
+            const cea = getCeaAuthorityPda(pushAccount);
 
             // 1) Fund CEA via execute (amount > 0, target = counterProgram)
             const txIdFund = generateTxId();
@@ -203,7 +203,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     new Uint8Array(universalTxIdFund),
                     new Uint8Array(txIdFund),
                     counterProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     fundAccounts,
                     counterIx.data,
                     gasFeeFund,
@@ -212,12 +212,12 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             });
 
             const fundWritableFlags = accountsToWritableFlagsOnly(fundAccounts);
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId: txIdFund,
+                subTxId: txIdFund,
                 universalTxId: universalTxIdFund,
                 amount: fundAmount,
-                sender,
+                pushAccount,
                 writableFlags: fundWritableFlags,
                 ixData: Buffer.from(counterIx.data),
                 gasFee: new anchor.BN(Number(gasFeeFund)),
@@ -236,10 +236,10 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             // 2) Withdraw all SOL from CEA via gateway self-call (target = gateway)
             const txIdWithdraw = generateTxId();
             const universalTxIdWithdraw = generateUniversalTxId();
-            const withdrawDiscr = computeDiscriminator("global:send_universal_tx_via_cea");
+            const withdrawDiscr = computeDiscriminator("global:send_universal_tx_to_uea");
 
             // Calculate fees before building args so we can compute the exact drain amount.
-            // Before send_universal_tx_via_cea runs, the outer execute adds (0 + rentFeeWithdraw)
+            // Before send_universal_tx_to_uea runs, the outer execute adds (0 + rentFeeWithdraw)
             // to CEA. So CEA balance at that point = ceaBalBefore + rentFeeWithdraw.
             // Setting args.amount = ceaBalBefore + rentFeeWithdraw drains CEA to exactly 0.
             const { gasFee: gasFeeWithdraw, rentFee: rentFeeWithdraw } = await calculateSolExecuteFees(provider.connection);
@@ -264,7 +264,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     new Uint8Array(universalTxIdWithdraw),
                     new Uint8Array(txIdWithdraw),
                     gatewayProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     [],
                     withdrawIxData,
                     gasFeeWithdraw,
@@ -274,12 +274,12 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const callerBalanceBeforeWithdraw = await provider.connection.getBalance(admin.publicKey);
             const withdrawWritableFlags = accountsToWritableFlagsOnly([]);
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId: txIdWithdraw,
+                subTxId: txIdWithdraw,
                 universalTxId: universalTxIdWithdraw,
                 amount: new anchor.BN(0),
-                sender,
+                pushAccount,
                 writableFlags: withdrawWritableFlags,
                 ixData: withdrawIxData,
                 gasFee: new anchor.BN(Number(gasFeeWithdraw)),
@@ -296,11 +296,11 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             const callerBalanceAfterWithdraw = await provider.connection.getBalance(admin.publicKey);
             const actualBalanceChangeWithdraw = callerBalanceAfterWithdraw - callerBalanceBeforeWithdraw;
             // Balance flow (Option 1: relayer pays gateway costs, gets relayer_fee reimbursement):
-            // 1. Caller PAYS for executed_tx account creation: -890k (replay protection account)
+            // 1. Caller PAYS for executed_sub_tx account creation: -890k (replay protection account)
             // 2. Caller PAYS transaction fees: ~-10-20k (Solana network compute fees)
             // 3. Vault TRANSFERS relayer_fee to caller: relayer_fee = gas_fee - rent_fee (reimbursement for gateway costs)
-            // relayer_fee = (rent_fee + executed_tx_rent + compute_buffer) - rent_fee = executed_tx_rent + compute_buffer
-            // Net expected: -executed_tx_rent - tx_fees + (executed_tx_rent + compute_buffer) ≈ +compute_buffer - tx_fees
+            // relayer_fee = (rent_fee + executed_sub_tx_rent + compute_buffer) - rent_fee = executed_sub_tx_rent + compute_buffer
+            // Net expected: -executed_sub_tx_rent - tx_fees + (executed_sub_tx_rent + compute_buffer) ≈ +compute_buffer - tx_fees
             // Note: CEA is a PDA - caller doesn't pay for its creation (auto-created by Solana on first transfer)
             const actualRentForExecutedTx = await getExecutedTxRent(provider.connection);
             const relayerFeeWithdraw = Number(gasFeeWithdraw - rentFeeWithdraw);
@@ -312,9 +312,9 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             expect(ceaBalAfter).to.equal(0);
         });
 
-        it("should emit FundsAndPayload + via_cea when CEA withdrawal has non-empty payload", async () => {
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
+        it("should emit FundsAndPayload + from_cea when CEA withdrawal has non-empty payload", async () => {
+            const pushAccount = generateSender();
+            const cea = getCeaAuthorityPda(pushAccount);
 
             // 1) Fund CEA via execute
             const txIdFund = generateTxId();
@@ -340,7 +340,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     new Uint8Array(universalTxIdFund),
                     new Uint8Array(txIdFund),
                     counterProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     fundAccounts,
                     counterIx.data,
                     gasFeeFund,
@@ -348,12 +348,12 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                 ),
             });
 
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId: txIdFund,
+                subTxId: txIdFund,
                 universalTxId: universalTxIdFund,
                 amount: fundAmount,
-                sender,
+                pushAccount,
                 writableFlags: accountsToWritableFlagsOnly(fundAccounts),
                 ixData: Buffer.from(counterIx.data),
                 gasFee: new anchor.BN(Number(gasFeeFund)),
@@ -366,10 +366,10 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                 .signers([admin])
                 .rpc();
 
-            // 2) Withdraw from CEA with a non-empty payload → FundsAndPayload + via_cea
+            // 2) Withdraw from CEA with a non-empty payload → FundsAndPayload + from_cea
             const txIdWithdraw = generateTxId();
             const universalTxIdWithdraw = generateUniversalTxId();
-            const withdrawDiscr = computeDiscriminator("global:send_universal_tx_via_cea");
+            const withdrawDiscr = computeDiscriminator("global:send_universal_tx_to_uea");
             const ceaPayload = Buffer.from([0x42, 0x00, 0x01]); // arbitrary non-empty payload
 
             // Read CEA balance and calculate fees before building args.
@@ -401,7 +401,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     new Uint8Array(universalTxIdWithdraw),
                     new Uint8Array(txIdWithdraw),
                     gatewayProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     [],
                     withdrawIxData,
                     gasFeeWithdraw,
@@ -409,12 +409,12 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                 ),
             });
 
-            const tx = await withdrawAndExecute({
+            const tx = await finalizeUniversalTx({
                 instructionId: 2,
-                txId: txIdWithdraw,
+                subTxId: txIdWithdraw,
                 universalTxId: universalTxIdWithdraw,
                 amount: new anchor.BN(0),
-                sender,
+                pushAccount,
                 writableFlags: accountsToWritableFlagsOnly([]),
                 ixData: withdrawIxData,
                 gasFee: new anchor.BN(Number(gasFeeWithdraw)),
@@ -449,27 +449,27 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                 })
                 .filter((e) => e !== null);
 
-            // UniversalTx: FundsAndPayload + via_cea
+            // UniversalTx: FundsAndPayload + from_cea
             // Note: Anchor TS IDL converts PascalCase event names to camelCase (UniversalTx → universalTx)
             const universalTxEvent = events.find((e) => e.name === "universalTx");
             expect(universalTxEvent, "UniversalTx event not found").to.exist;
             expect(universalTxEvent.data.txType.fundsAndPayload !== undefined, "txType should be FundsAndPayload").to.be.true;
-            expect(universalTxEvent.data.viaCea, "via_cea should be true").to.be.true;
+            expect(universalTxEvent.data.fromCea, "from_cea should be true").to.be.true;
             expect(Buffer.from(universalTxEvent.data.payload).toString("hex")).to.equal(ceaPayload.toString("hex"));
 
-            // UniversalTxExecuted should NOT be emitted for CEA withdrawal
-            const executedEvent = events.find((e) => e.name === "universalTxExecuted");
-            expect(executedEvent, "UniversalTxExecuted should not be emitted for CEA withdrawal").to.be.undefined;
+            // UniversalTxFinalized should NOT be emitted for CEA withdrawal
+            const executedEvent = events.find((e) => e.name === "universalTxFinalized");
+            expect(executedEvent, "UniversalTxFinalized should not be emitted for CEA withdrawal").to.be.undefined;
 
-            console.log("✅ FundsAndPayload + via_cea=true emitted for CEA withdrawal with payload");
+            console.log("✅ FundsAndPayload + from_cea=true emitted for CEA withdrawal with payload");
         });
     });
 
     describe("CEA → UEA: SPL", () => {
         it("should allow gateway self-call to withdraw SPL from CEA", async () => {
-            const sender = generateSender();
-            const cea = getCeaAuthorityPda(sender);
-            const ceaAta = await getCeaAta(sender, mockUSDT.mint.publicKey);
+            const pushAccount = generateSender();
+            const cea = getCeaAuthorityPda(pushAccount);
+            const ceaAta = await getCeaAta(pushAccount, mockUSDT.mint.publicKey);
 
             // Fund CEA ATA via execute (amount > 0, target = counterProgram)
             const txIdFund = generateTxId();
@@ -499,7 +499,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     new Uint8Array(universalTxIdFund),
                     new Uint8Array(txIdFund),
                     counterProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     fundAccounts,
                     counterIx.data,
                     gasFeeLamports,
@@ -510,12 +510,12 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const callerBalanceBeforeFund = await provider.connection.getBalance(admin.publicKey);
             const fundWritableFlagsSpl = accountsToWritableFlagsOnly(fundAccounts);
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId: txIdFund,
+                subTxId: txIdFund,
                 universalTxId: universalTxIdFund,
                 amount: fundAmount,
-                sender,
+                pushAccount,
                 writableFlags: fundWritableFlagsSpl,
                 ixData: Buffer.from(counterIx.data),
                 gasFee: gasFeeBn,
@@ -533,20 +533,20 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                 .remainingAccounts(instructionAccountsToRemaining(counterIx))
                 .signers([admin])
                 .rpc();
-console.log("withdrawAndExecute (execute SPL) succeeded");
+            console.log("finalizeUniversalTx (execute SPL) succeeded");
             // Verify caller received relayer_fee reimbursement
             const callerBalanceAfterFund = await provider.connection.getBalance(admin.publicKey);
             const callerBalanceChangeFund = callerBalanceAfterFund - callerBalanceBeforeFund;
             // Option 1: Relayer pays gateway costs, gets relayer_fee reimbursement
             // Caller pays for:
-            // 1. executed_tx account rent (~890k)
+            // 1. executed_sub_tx account rent (~890k)
             // 2. CEA ATA rent (if it doesn't exist - caller is payer per line 465 in execute.rs) (~2M)
             // 3. Transaction fees (varies by transaction size)
             // Caller receives: relayer_fee = gas_fee - rent_fee as reimbursement
             const actualRentForExecutedTx = await getExecutedTxRent(provider.connection);
             const actualRentForCeaAta = ceaAtaExistedBefore ? 0 : await getTokenAccountRent(provider.connection);
             const relayerFeeFund = Number(gasFeeLamports - rentFeeLamports);
-            // Expected: -executed_tx_rent - cea_ata_rent (if created) + relayer_fee - transaction_fees
+            // Expected: -executed_sub_tx_rent - cea_ata_rent (if created) + relayer_fee - transaction_fees
             const expectedBalanceChangeFund = -actualRentForExecutedTx - actualRentForCeaAta + relayerFeeFund;
             expect(callerBalanceChangeFund).to.be.closeTo(expectedBalanceChangeFund, 100000); // Allow for transaction fees (SPL txs are larger)
 
@@ -556,7 +556,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             // Withdraw all SPL from CEA via gateway self-call (target = gateway)
             const txIdWithdraw = generateTxId();
             const universalTxIdWithdraw = generateUniversalTxId();
-            const withdrawDiscr = computeDiscriminator("global:send_universal_tx_via_cea");
+            const withdrawDiscr = computeDiscriminator("global:send_universal_tx_to_uea");
             const withdrawArgs = Buffer.concat([
                 mockUSDT.mint.publicKey.toBuffer(),
                 (() => {
@@ -579,7 +579,7 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
                     new Uint8Array(universalTxIdWithdraw),
                     new Uint8Array(txIdWithdraw),
                     gatewayProgram.programId,
-                    new Uint8Array(sender),
+                    new Uint8Array(pushAccount),
                     [],
                     withdrawIxData,
                     gasFeeWithdrawSpl,
@@ -590,13 +590,13 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
 
             const callerBalanceBeforeWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
             const withdrawWritableFlagsSpl = accountsToWritableFlagsOnly([]);
-            console.log("withdrawAndExecute (execute SPL) start");
-            await withdrawAndExecute({
+            console.log("finalizeUniversalTx (execute SPL) start");
+            await finalizeUniversalTx({
                 instructionId: 2,
-                txId: txIdWithdraw,
+                subTxId: txIdWithdraw,
                 universalTxId: universalTxIdWithdraw,
                 amount: new anchor.BN(0),
-                sender,
+                pushAccount,
                 writableFlags: withdrawWritableFlagsSpl,
                 ixData: withdrawIxData,
                 gasFee: new anchor.BN(Number(gasFeeWithdrawSpl)),
@@ -615,19 +615,19 @@ console.log("withdrawAndExecute (execute SPL) succeeded");
             })
                 .signers([admin])
                 .rpc();
-console.log("withdrawAndExecute (execute SPL) succeeded");
+            console.log("finalizeUniversalTx (execute SPL) succeeded");
             // Verify caller received relayer_fee reimbursement (self-withdraw should also pay the caller)
             const callerBalanceAfterWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
             const callerBalanceChangeWithdrawSpl = callerBalanceAfterWithdrawSpl - callerBalanceBeforeWithdrawSpl;
             // Option 1: Relayer pays gateway costs, gets relayer_fee reimbursement
             // Caller pays for:
-            // 1. executed_tx account rent (~890k)
+            // 1. executed_sub_tx account rent (~890k)
             // 2. Transaction fees (varies by transaction size)
             // Caller receives: relayer_fee = gas_fee - rent_fee (reimbursement for gateway costs)
-            // relayer_fee = (rent_fee + executed_tx_rent + compute_buffer) - rent_fee = executed_tx_rent + compute_buffer
+            // relayer_fee = (rent_fee + executed_sub_tx_rent + compute_buffer) - rent_fee = executed_sub_tx_rent + compute_buffer
             // Reuse actualRentForExecutedTx from above (same test scope)
             const relayerFeeWithdrawSpl = Number(gasFeeWithdrawSpl - rentFeeWithdrawSpl);
-            // Expected: -executed_tx_rent + relayer_fee - transaction_fees
+            // Expected: -executed_sub_tx_rent + relayer_fee - transaction_fees
             const expectedBalanceChangeWithdrawSpl = -actualRentForExecutedTx + relayerFeeWithdrawSpl;
             expect(callerBalanceChangeWithdrawSpl).to.be.closeTo(expectedBalanceChangeWithdrawSpl, 15000); // Allow for transaction fees
 
