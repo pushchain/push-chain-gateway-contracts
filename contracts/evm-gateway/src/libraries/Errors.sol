@@ -28,4 +28,5 @@ library Errors {
     error GasFeeTransferFailed(address token, address from, uint256 amount);
     error InsufficientBalance();
     error Unauthorized();
+    error InsufficientProtocolFee();
 }

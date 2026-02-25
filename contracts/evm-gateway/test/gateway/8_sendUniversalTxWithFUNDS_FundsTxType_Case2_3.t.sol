@@ -406,7 +406,9 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
             bytes("") // Empty payload
         );
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        // ERC20 with empty payload and msg.value > PROTOCOL_FEE: _fetchTxType returns FUNDS,
+        // then _sendTxWithFunds Case 1.2 reverts with InvalidAmount (post-fee nativeValue > 0).
+        vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: msgValue }(req);
     }

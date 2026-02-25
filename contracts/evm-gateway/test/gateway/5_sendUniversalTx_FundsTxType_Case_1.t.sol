@@ -411,9 +411,11 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             bytes("")
         );
 
-        vm.expectRevert(Errors.InvalidInput.selector); // _fetchTxType throws InvalidInput for invalid combinations
+        // With fee support, ERC20 FUNDS with msg.value > 0 passes _fetchTxType but fails in
+        // _sendTxWithFunds Case 1.2 (post-fee nativeValue > 0) with InvalidAmount.
+        vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 1 ether }(req); // msg.value > 0 not allowed for ERC20
+        gatewayTemp.sendUniversalTx{ value: 1 ether }(req); // msg.value > PROTOCOL_FEE not allowed for ERC20
     }
 
     /// @notice Test FUNDS with ERC20 - unsupported token reverts

@@ -1192,7 +1192,9 @@ contract SendUniversalTxViaCEATest is BaseTest {
             address(tokenA), 100 ether, bytes("")
         );
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        // ERC20 FUNDS with msg.value > PROTOCOL_FEE passes _fetchTxType but reverts in
+        // _sendTxWithFunds Case 1.2 with InvalidAmount (post-fee nativeValue > 0).
+        vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(address(cea));
         gateway.sendUniversalTxFromCEA{ value: 0.001 ether }(req);
     }

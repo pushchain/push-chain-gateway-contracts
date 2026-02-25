@@ -108,6 +108,12 @@ contract UniversalGateway is
     /// @notice CEAFactory address for validating CEA identity in fromCEA paths
     address public CEA_FACTORY;
 
+    /// @notice Flat protocol fee in native token (wei). 0 = disabled.
+    uint256 public PROTOCOL_FEE;
+
+    /// @notice Running total of protocol fees collected (native, in wei).
+    uint256 public totalProtocolFeesCollected;
+
     /**
      * @notice                  Initialize the UniversalGateway contract
      * @param admin             DEFAULT_ADMIN_ROLE holder
@@ -302,6 +308,13 @@ contract UniversalGateway is
         CEA_FACTORY = newFactory;
     }
 
+    /// @notice         Set the flat protocol fee (in wei). Set to 0 to disable.
+    /// @param fee      New protocol fee in wei
+    function setProtocolFee(uint256 fee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        PROTOCOL_FEE = fee;
+        emit ProtocolFeeUpdated(fee);
+    }
+
     // =========================
     //  UG_2: UNIVERSAL TRANSACTION
     // =========================
@@ -415,11 +428,14 @@ contract UniversalGateway is
         if (txType == TX_TYPE.FUNDS) {
             address tokenForFunds;
             // Case 1.1: Token to bridge is Native Token -> address(0)
+            // req.amount = desired bridge amount (fee is additive: msg.value = req.amount + PROTOCOL_FEE).
+            // nativeValue is post-fee (= msg.value - PROTOCOL_FEE = req.amount).
             if (_req.token == address(0)) {
                 if (_req.amount != nativeValue) revert Errors.InvalidAmount();
                 tokenForFunds = address(0);
             }
             // Case 1.2: Token to bridge is ERC20 Token -> _req.token
+            // nativeValue must be 0 post-fee (user sent exactly PROTOCOL_FEE or 0 if fee disabled)
             else {
                 if (nativeValue > 0) revert Errors.InvalidAmount();
                 tokenForFunds = _req.token;
@@ -913,8 +929,9 @@ contract UniversalGateway is
                 return TX_TYPE.FUNDS;
             }
             // Case 1.2: ERC-20 Funds Only.
-            // FUNDS (ERC-20) — must NOT come with native value - Case 1.2
-            if (!fundsIsNative && !hasNativeValue) {
+            // FUNDS (ERC-20) — native value may be 0 (no fee) or equal to PROTOCOL_FEE
+            // The exact native amount is validated post-fee-extraction in _sendTxWithFunds
+            if (!fundsIsNative) {
                 return TX_TYPE.FUNDS;
             }
             revert Errors.InvalidInput();
@@ -923,21 +940,42 @@ contract UniversalGateway is
         // For TX_TYPE.FUNDS_AND_PAYLOAD: Case 2: (Native/ERC20 Funds) + Payload
         if (hasPayload && hasFunds) {
             // Case 2.1: No batching (ERC-20 funds, user already has UEA gas)
-            if (!fundsIsNative && !hasNativeValue) {
+            // Native value may be 0 (no fee) or equal to PROTOCOL_FEE; resolved post-fee in _sendTxWithFunds
+            if (!fundsIsNative) {
                 return TX_TYPE.FUNDS_AND_PAYLOAD;
             }
             // Case 2.2: Batching: native funds + native gas (later we enforce nativeValue >= amount)
             if (fundsIsNative && hasNativeValue) {
                 return TX_TYPE.FUNDS_AND_PAYLOAD;
             }
-            // Case 2.3: Batching: ERC-20 funds + native gas
-            if (!fundsIsNative && hasNativeValue) {
-                return TX_TYPE.FUNDS_AND_PAYLOAD;
-            }
             revert Errors.InvalidInput();
         }
 
         revert Errors.InvalidInput();
+    }
+
+    /// @dev                    Extract the protocol fee from the native value and forward it to TSS.
+    ///                         Called before routing so all downstream functions see the post-fee native value.
+    ///                         For ERC20 FUNDS/FUNDS_AND_PAYLOAD (no native bridging), nativeValue must equal
+    ///                         PROTOCOL_FEE; after extraction it will be 0.
+    /// @param nativeValue      Raw native value received with the transaction
+    /// @return adjustedNative  nativeValue minus the collected fee
+    /// @return feeCollected    Amount forwarded to TSS as the protocol fee
+    function _collectProtocolFee(uint256 nativeValue, address, TX_TYPE)
+        private
+        returns (uint256 adjustedNative, uint256 feeCollected)
+    {
+        uint256 fee = PROTOCOL_FEE;
+        if (fee == 0) return (nativeValue, 0);
+
+        // Every tx must supply at least PROTOCOL_FEE in native
+        if (nativeValue < fee) revert Errors.InsufficientProtocolFee();
+
+        // Forward fee to TSS
+        (bool ok,) = payable(TSS_ADDRESS).call{ value: fee }("");
+        if (!ok) revert Errors.DepositFailed();
+
+        return (nativeValue - fee, fee);
     }
 
     /// @dev               Internal router that dispatches to the appropriate handler based on TX_TYPE
@@ -957,6 +995,11 @@ contract UniversalGateway is
         if (req.revertRecipient == address(0)) {
             revert Errors.InvalidRecipient();
         }
+
+        // Collect protocol fee before routing; nativeValue is adjusted post-fee
+        uint256 feeCollected;
+        (nativeValue, feeCollected) = _collectProtocolFee(nativeValue, req.token, txType);
+        totalProtocolFeesCollected += feeCollected;
 
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {

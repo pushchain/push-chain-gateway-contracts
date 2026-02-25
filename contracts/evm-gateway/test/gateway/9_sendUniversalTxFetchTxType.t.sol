@@ -381,7 +381,9 @@ contract GatewayFetchTxTypeTest is BaseTest {
     function test_FUNDS_erc20_withNativeValue_revert() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 1000 ether, erc20A);
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        // ERC20 FUNDS with msg.value > PROTOCOL_FEE passes _fetchTxType but reverts in
+        // _sendTxWithFunds Case 1.2 with InvalidAmount (post-fee nativeValue > 0).
+        vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 1 ether }(req);
     }
@@ -536,7 +538,9 @@ contract GatewayFetchTxTypeTest is BaseTest {
     function test_Invalid_erc20Funds_withNoPayload_andNativeValue() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 1000 ether, erc20A);
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        // ERC20 FUNDS with msg.value > PROTOCOL_FEE passes _fetchTxType but reverts in
+        // _sendTxWithFunds Case 1.2 with InvalidAmount (post-fee nativeValue > 0).
+        vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: 1 ether }(req);
     }
