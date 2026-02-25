@@ -1,4 +1,4 @@
-# Outbound Transaction Flows v2
+# Outbound Transaction Flows
 
 This document describes all valid outbound transaction flows in the CEA-mediated architecture.
 "Outbound" means: a user on Push Chain initiates a transaction that results in execution on an
@@ -983,10 +983,10 @@ sequenceDiagram
 
 ### 7.4 Error Conditions
 
-| Condition | Error |
-|-----------|-------|
-| `msg.value > 0` sent with migration payload | `CEAErrors.InvalidInput()` |
-| `factory.CEA_MIGRATION_CONTRACT() == address(0)` | `CEAErrors.InvalidCall()` |
-| `delegatecall` to migration contract fails | `CEAErrors.ExecutionFailed()` |
-| CEA not yet deployed (BOB has no CEA) | Vault deploys CEA first; migration then runs |
-| Multicall payload accidentally sent instead of migration selector | Routes to `_handleMulticall`, not migration |
+| Condition                                                         | Error                                        |
+| ----------------------------------------------------------------- | -------------------------------------------- |
+| `msg.value > 0` sent with migration payload                       | `CEAErrors.InvalidInput()`                   |
+| `factory.CEA_MIGRATION_CONTRACT() == address(0)`                  | `CEAErrors.InvalidCall()`                    |
+| `delegatecall` to migration contract fails                        | `CEAErrors.ExecutionFailed()`                |
+| CEA not yet deployed (BOB has no CEA)                             | Vault deploys CEA first; migration then runs |
+| Multicall payload accidentally sent instead of migration selector | Routes to `_handleMulticall`, not migration  |
