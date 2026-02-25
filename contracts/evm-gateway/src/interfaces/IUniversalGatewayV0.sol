@@ -72,8 +72,11 @@ interface IUniversalGatewayV0 {
     );
 
     /// @notice Emitted when the Vault address is updated
-
     event VaultUpdated(address indexed oldVault, address indexed newVault);
+
+    /// @notice                      Protocol fee updated event
+    /// @param newFee                New protocol fee in wei
+    event ProtocolFeeUpdated(uint256 newFee);
 
     // =========================
     //  UG_1: UNIVERSAL TRANSACTION
@@ -179,4 +182,14 @@ interface IUniversalGatewayV0 {
     ///@param token                Token address to check
     ///@return                     True if the token is supported, false otherwise
     function isSupportedToken(address token) external view returns (bool);
+
+    ///@notice             Flat protocol fee in native token (wei). 0 = disabled.
+    function PROTOCOL_FEE() external view returns (uint256);
+
+    ///@notice             Running total of protocol fees collected (native, in wei).
+    function totalProtocolFeesCollected() external view returns (uint256);
+
+    /// @notice            Set the flat protocol fee (in wei). Set to 0 to disable.
+    /// @param fee         New protocol fee in wei
+    function setProtocolFee(uint256 fee) external;
 }
