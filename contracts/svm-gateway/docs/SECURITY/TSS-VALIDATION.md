@@ -2,7 +2,7 @@
 
 **Purpose:** Verify TSS authorization for all outbound operations
 **Algorithm:** ECDSA secp256k1 (Ethereum-compatible)
-**Replay Protection:** Per-tx `ExecutedTx` PDA (seeded by `tx_id`)
+**Replay Protection:** Per-tx `ExecutedSubTx` PDA (seeded by `sub_tx_id`)
 
 ---
 
@@ -44,9 +44,9 @@ Solana cluster identifier as string:
 ### 1. Withdraw (instruction_id = 1)
 ```rust
 additional_data = [
-    tx_id[32],
+    sub_tx_id[32],
     universal_tx_id[32],
-    sender[20],
+    push_account[20],
     token[32],
     gas_fee_be[8],
     target[32],  // recipient pubkey
@@ -56,9 +56,9 @@ additional_data = [
 ### 2. Execute (instruction_id = 2)
 ```rust
 additional_data = [
-    tx_id[32],
+    sub_tx_id[32],
     universal_tx_id[32],
-    sender[20],
+    push_account[20],
     token[32],
     gas_fee_be[8],
     target_program[32],
@@ -72,7 +72,7 @@ additional_data = [
 ```rust
 additional_data = [
     universal_tx_id[32],
-    tx_id[32],
+    sub_tx_id[32],
     recipient[32],
     gas_fee_be[8],
 ]
@@ -82,7 +82,7 @@ additional_data = [
 ```rust
 additional_data = [
     universal_tx_id[32],
-    tx_id[32],
+    sub_tx_id[32],
     mint[32],
     recipient[32],
     gas_fee_be[8],
@@ -148,12 +148,12 @@ require!(
 
 ### 1. Replay Protection
 ```
-Transaction A with tx_id=0xABC executes
-  → ExecutedTx PDA created at [b"executed_tx", 0xABC]
+Transaction A with sub_tx_id=0xABC executes
+  → ExecutedSubTx PDA created at [b"executed_sub_tx", 0xABC]
     → Replay of A fails (Anchor init constraint: account already exists)
 ```
 
-**Invariant:** Each tx_id used exactly once — no global ordering required
+**Invariant:** Each sub_tx_id used exactly once — no global ordering required
 
 ### 2. Message Integrity
 ```
@@ -178,8 +178,8 @@ Only TSS private key can produce valid signature
 ### 4. Ordering
 ```
 No global nonce → transactions can execute in any order
-tx_id is included in the signed message → cannot reuse signature with different tx_id
-ExecutedTx PDA uniqueness → each tx_id executes exactly once
+sub_tx_id is included in the signed message → cannot reuse signature with different sub_tx_id
+ExecutedSubTx PDA uniqueness → each sub_tx_id executes exactly once
 ```
 
 **Invariant:** No ordering constraint; each tx executes at most once
@@ -191,8 +191,8 @@ ExecutedTx PDA uniqueness → each tx_id executes exactly once
 ### 1. Replay Attack
 **Attack:** Reuse valid signature for same transaction
 **Mitigation:**
-- ExecutedTx PDA prevents duplicate tx_id (init constraint fails if PDA exists)
-- tx_id is included in TSS-signed message (cannot reuse signature with different tx_id)
+- ExecutedSubTx PDA prevents duplicate sub_tx_id (init constraint fails if PDA exists)
+- sub_tx_id is included in TSS-signed message (cannot reuse signature with different sub_tx_id)
 
 ### 2. Message Tampering
 **Attack:** Modify amount/recipient but keep signature
@@ -212,11 +212,11 @@ ExecutedTx PDA uniqueness → each tx_id executes exactly once
 - Recovered address must match tss_pda.tss_eth_address
 - Only admin can update TSS address
 
-### 5. tx_id Collision
-**Attack:** Reuse a tx_id to re-execute a transaction
+### 5. sub_tx_id Collision
+**Attack:** Reuse a sub_tx_id to re-execute a transaction
 **Mitigation:**
-- ExecutedTx PDA init constraint fails if account already exists
-- tx_id is included in the TSS-signed message — cannot forge a different tx_id with same signature
+- ExecutedSubTx PDA init constraint fails if account already exists
+- sub_tx_id is included in the TSS-signed message — cannot forge a different sub_tx_id with same signature
 
 ---
 
@@ -260,7 +260,7 @@ pub fn update_tss(
 
 1. **Per-tx uniqueness:**
    ```
-   Each tx_id can execute exactly once (ExecutedTx PDA init)
+   Each sub_tx_id can execute exactly once (ExecutedSubTx PDA init)
    ```
 
 2. **Signature uniqueness:**
@@ -275,7 +275,7 @@ pub fn update_tss(
 
 4. **Message binding:**
    ```
-   Signature binds to exact message content including tx_id
+   Signature binds to exact message content including sub_tx_id
    Any modification → invalid signature
    ```
 

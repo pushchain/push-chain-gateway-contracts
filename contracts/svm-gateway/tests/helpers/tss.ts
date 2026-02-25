@@ -99,17 +99,17 @@ export function generateUniversalTxId(): Uint8Array {
  * Build withdraw message additional_data
  *
  * New format (common fields first):
- * 1. tx_id (32 bytes) - common
+ * 1. sub_tx_id (32 bytes) - common
  * 2. universal_tx_id (32 bytes) - common
- * 3. sender (20 bytes) - common
+ * 3. push_account (20 bytes) - common
  * 4. token (32 bytes) - common
  * 5. gas_fee (u64 BE) - common
  * 6. target (32 bytes) - withdraw specific
  */
 export function buildWithdrawAdditionalData(
     universalTxId: Uint8Array,
-    txId: Uint8Array,
-    sender: Uint8Array,
+    subTxId: Uint8Array,
+    pushAccount: Uint8Array,
     token: PublicKey,
     target: PublicKey,
     gasFee: bigint = BigInt(0),
@@ -118,9 +118,9 @@ export function buildWithdrawAdditionalData(
     gasFeeBuf.writeBigUInt64BE(gasFee, 0);
 
     return [
-        txId,                    // tx_id (32 bytes) - common
+        subTxId,                 // sub_tx_id (32 bytes) - common
         universalTxId,           // universal_tx_id (32 bytes) - common
-        sender,                  // sender/origin_caller (20 bytes) - common
+        pushAccount,             // push_account (20 bytes) - common
         token.toBuffer(),        // token (32 bytes) - common
         gasFeeBuf,               // gas_fee (8 bytes, u64 BE) - common
         target.toBuffer(),       // target/recipient (32 bytes) - withdraw specific
@@ -143,9 +143,9 @@ export interface GatewayAccountMeta {
  * The decoded payload is the canonical source of truth for the destination program.
  *
  * New format (common fields first):
- * 1. tx_id (32 bytes) - common
+ * 1. sub_tx_id (32 bytes) - common
  * 2. universal_tx_id (32 bytes) - common
- * 3. sender (20 bytes) - common
+ * 3. push_account (20 bytes) - common
  * 4. token (32 bytes) - common
  * 5. gas_fee (u64 BE) - common
  * 6. target_program (32 bytes) - execute specific, MUST match decoded payload
@@ -155,9 +155,9 @@ export interface GatewayAccountMeta {
  */
 export function buildExecuteAdditionalData(
     universalTxId: Uint8Array,
-    txId: Uint8Array,
+    subTxId: Uint8Array,
     targetProgramFromPayload: PublicKey, // ← MUST come from decoded payload
-    sender: Uint8Array,
+    pushAccount: Uint8Array,
     accounts: GatewayAccountMeta[],
     ixData: Uint8Array,
     gasFee: bigint = BigInt(0),
@@ -192,9 +192,9 @@ export function buildExecuteAdditionalData(
     rentFeeBuf.writeBigUInt64BE(rentFeeBigInt, 0);
 
     return [
-        txId,                              // tx_id (32 bytes) - common
+        subTxId,                           // sub_tx_id (32 bytes) - common
         universalTxId,                     // universal_tx_id (32 bytes) - common
-        sender,                            // sender (20 bytes) - common
+        pushAccount,                       // push_account (20 bytes) - common
         token.toBuffer(),                  // token (32 bytes) - common
         gasFeeBuf,                         // gas_fee (8 bytes, u64 BE) - common
         targetProgramFromPayload.toBuffer(), // target_program (32 bytes) - execute specific, from decoded payload

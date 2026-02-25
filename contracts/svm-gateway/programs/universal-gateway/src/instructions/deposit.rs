@@ -142,7 +142,7 @@ fn send_tx_with_gas_route(
             revert_instruction: revert_instruction.clone(),
             tx_type,
             signature_data: signature_data.to_vec(),
-            via_cea: false,
+            from_cea: false,
         });
 
         return Ok(());
@@ -181,7 +181,7 @@ fn send_tx_with_gas_route(
         revert_instruction: revert_instruction.clone(),
         tx_type,
         signature_data: signature_data.to_vec(),
-        via_cea: false,
+        from_cea: false,
     });
 
     Ok(())
@@ -314,7 +314,7 @@ fn send_tx_with_funds_route(
         revert_instruction: req.revert_instruction,
         tx_type,
         signature_data: req.signature_data,
-        via_cea: false,
+        from_cea: false,
     });
 
     Ok(())

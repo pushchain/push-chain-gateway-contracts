@@ -162,7 +162,7 @@ Each Push Chain user has unique CEA PDA
 
 ### Setup
 ```rust
-sender = 0x1234...5678 (20-byte Push Chain address)
+push_account = 0x1234...5678 (20-byte Push Chain address)
 target_program = Token2022Program
 instruction = "transfer 100 USDC from CEA to Alice"
 ```
@@ -204,7 +204,7 @@ invoke_signed(&ix, &remaining_accounts, &[cea_seeds])?;
 
 ### Inflow (Vault → CEA)
 ```rust
-// During withdraw_and_execute:
+// During finalize_universal_tx:
 vault.lamports -= (amount + rent_fee);
 cea.lamports += (amount + rent_fee);
 ```
@@ -270,7 +270,7 @@ if cea_ata.data_is_empty() {
 
 ## 🔍 Invariants
 
-1. **Unique per sender:**
+1. **Unique per push_account:**
    ```
    ∀ sender₁ ≠ sender₂: CEA(sender₁) ≠ CEA(sender₂)
    ```

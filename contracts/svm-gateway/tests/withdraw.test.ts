@@ -14,7 +14,7 @@ import {
     getExecutedTxPda as _getExecutedTxPda, getCeaAuthorityPda as _getCeaAuthorityPda,
     getTokenRateLimitPda as _getTokenRateLimitPda,
 } from "./helpers/test-utils";
-import { makeWithdrawAndExecuteBuilder, WithdrawAndExecuteArgs } from "./helpers/builders";
+import { makeFinalizeUniversalTxBuilder, FinalizeUniversalTxArgs } from "./helpers/builders";
 
 // Gas fee constants (in lamports)
 const DEFAULT_GAS_FEE = BigInt(5000); // 0.000005 SOL for relayer
@@ -55,12 +55,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
     let vaultUsdtAccount: PublicKey;
     let recipientUsdtAccount: PublicKey;
 
-    let withdrawAndExecute: ReturnType<typeof makeWithdrawAndExecuteBuilder>;
+    let finalizeUniversalTx: ReturnType<typeof makeFinalizeUniversalTxBuilder>;
 
     const generateTxId = makeTxIdGenerator();
-    const generateOriginCaller = generateSender; // same function, aliased for readability
-    const getExecutedTxPda = (txId: number[]) => _getExecutedTxPda(txId, program.programId);
-    const getCeaAuthorityPda = (sender: number[]) => _getCeaAuthorityPda(sender, program.programId);
+    const generatePushAccount = generateSender; // same function, aliased for readability
+    const getExecutedTxPda = (subTxId: number[]) => _getExecutedTxPda(subTxId, program.programId);
+    const getCeaAuthorityPda = (pushAccount: number[]) => _getCeaAuthorityPda(pushAccount, program.programId);
     const getTokenRateLimitPda = (tokenMint: PublicKey) => _getTokenRateLimitPda(tokenMint, program.programId);
 
     const signTssMessageWithChainId = async (params: {
@@ -293,22 +293,22 @@ describe("Universal Gateway - Withdraw Tests", () => {
             );
         }
 
-        withdrawAndExecute = makeWithdrawAndExecuteBuilder(program, configPda, vaultPda, tssPda);
+        finalizeUniversalTx = makeFinalizeUniversalTxBuilder(program, configPda, vaultPda, tssPda);
     });
 
     describe("withdraw", () => {
         it("transfers SOL with a valid signature", async () => {
             const withdrawLamports = 2 * anchor.web3.LAMPORTS_PER_SOL;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,           // token (SOL = default)
                 recipient.publicKey,         // target (recipient for withdraw)
                 DEFAULT_GAS_FEE              // gas_fee
@@ -324,12 +324,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const initialRecipient = await provider.connection.getBalance(recipient.publicKey);
             const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 1,
-                txId,
+                subTxId,
                 universalTxId,
                 amount: new anchor.BN(withdrawLamports),
-                sender: originCaller,
+                pushAccount: pushAccount,
                 gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                 sig: signature,
                 caller: relayer.publicKey,
@@ -344,25 +344,25 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             expect(finalVault).to.equal(initialVault - withdrawLamports - Number(DEFAULT_GAS_FEE)); // Vault pays withdraw amount + gas fee
             expect(finalRecipient).to.equal(initialRecipient + withdrawLamports);
-            // Caller should receive gas_fee (minus rent for executed_tx account creation)
+            // Caller should receive gas_fee (minus rent for executed_sub_tx account creation)
             const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
-            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
-            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
+            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedSubTx account
+            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_sub_tx
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
         });
 
         it("rejects tampered signatures", async () => {
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -378,12 +378,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             corrupted[0] ^= 0xff;
 
             await expectRejection(
-                withdrawAndExecute({
+                finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(withdrawLamports),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash },
                     caller: relayer.publicKey,
@@ -404,15 +404,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -425,12 +425,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             await expectRejection(
-                withdrawAndExecute({
+                finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(withdrawLamports),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: signature,
                     caller: relayer.publicKey,
@@ -452,15 +452,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const vaultLamports = await provider.connection.getBalance(vaultPda);
             const excessive = vaultLamports + anchor.web3.LAMPORTS_PER_SOL;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -473,12 +473,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             await expectRejection(
-                withdrawAndExecute({
+                finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(excessive),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: signature,
                     caller: relayer.publicKey,
@@ -496,17 +496,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const withdrawTokens = 1_000;
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
-            const ceaAuthority = getCeaAuthorityPda(originCaller);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
             const ceaAta = getAssociatedTokenAddressSync(mockUSDT.mint.publicKey, ceaAuthority, true);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 mockUSDT.mint.publicKey,     // token (SPL = mint pubkey)
                 recipient.publicKey,         // target (the SOL wallet, NOT the ATA)
                 DEFAULT_GAS_FEE
@@ -524,12 +524,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             const ceaAtaBefore = await provider.connection.getAccountInfo(ceaAta);
 
-            const sig = await withdrawAndExecute({
+            const sig = await finalizeUniversalTx({
                 instructionId: 1,
-                txId,
+                subTxId,
                 universalTxId,
                 amount: new anchor.BN(Number(withdrawRaw)),
-                sender: originCaller,
+                pushAccount: pushAccount,
                 gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                 sig: signature,
                 caller: relayer.publicKey,
@@ -551,7 +551,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             expect(finalVault).to.equal(initialVault - withdrawTokens);
             expect(finalRecipient).to.equal(initialRecipient + withdrawTokens);
-            // Caller should receive gas_fee minus executed_tx rent, optional CEA ATA rent, and tx fee
+            // Caller should receive gas_fee minus executed_sub_tx rent, optional CEA ATA rent, and tx fee
             const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
             await provider.connection.confirmTransaction(sig, "confirmed");
             let tx = null as anchor.web3.TransactionResponse | null;
@@ -586,17 +586,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const withdrawTokens = 200;
             const withdrawRaw = BigInt(withdrawTokens) * TOKEN_MULTIPLIER;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
-            const ceaAuthority = getCeaAuthorityPda(originCaller);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
             const ceaAta = getAssociatedTokenAddressSync(mockUSDT.mint.publicKey, ceaAuthority, true);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 mockUSDT.mint.publicKey,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -612,12 +612,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             corrupted[0] ^= 0xff;
 
             await expectRejection(
-                withdrawAndExecute({
+                finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(Number(withdrawRaw)),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: { signature: corrupted, recoveryId: signature.recoveryId, messageHash: signature.messageHash },
                     caller: relayer.publicKey,
@@ -641,20 +641,20 @@ describe("Universal Gateway - Withdraw Tests", () => {
         it("reverts a SOL withdrawal with a valid signature", async () => {
             const revertAmount = anchor.web3.LAMPORTS_PER_SOL;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const revertInstruction = {
                 fundRecipient: recipient.publicKey,
                 revertMsg: Buffer.from("revert SOL"),
             };
 
-            // Include universalTxId, txId, recipient, and gas_fee in additional array
+            // Include universalTxId, subTxId, recipient, and gas_fee in additional array
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
                 amount: BigInt(revertAmount),
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             const initialRecipient = await provider.connection.getBalance(recipient.publicKey);
@@ -662,7 +662,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             await program.methods
                 .revertUniversalTx(
-                    txId,
+                    subTxId,
                     universalTxId,
                     new anchor.BN(revertAmount),
                     revertInstruction,
@@ -676,7 +676,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     vault: vaultPda,
                     tssPda,
                     recipient: recipient.publicKey,
-                    executedTx: executedTxPda,
+                    executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
@@ -686,10 +686,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const finalRecipient = await provider.connection.getBalance(recipient.publicKey);
             const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
             expect(finalRecipient).to.equal(initialRecipient + revertAmount);
-            // Caller should receive gas_fee (minus rent for executed_tx account creation)
+            // Caller should receive gas_fee (minus rent for executed_sub_tx account creation)
             const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
-            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
-            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
+            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedSubTx account
+            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_sub_tx
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
         });
 
@@ -697,9 +697,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const revertTokens = 500;
             const revertRaw = BigInt(revertTokens) * TOKEN_MULTIPLIER;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const revertInstruction = {
                 fundRecipient: recipient.publicKey,
@@ -709,18 +709,18 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Create recipient account first (needed for message hash)
             const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
 
-            // Include universalTxId, txId, mint, fund_recipient, and gas_fee in additional array
+            // Include universalTxId, subTxId, mint, fund_recipient, and gas_fee in additional array
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
                 amount: revertRaw,
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
             const initialRecipientBalance = await mockUSDT.getBalance(recipientRevertAccount);
             const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
             await program.methods
                 .revertUniversalTxToken(
-                    txId,
+                    subTxId,
                     universalTxId,
                     new anchor.BN(Number(revertRaw)),
                     revertInstruction,
@@ -736,7 +736,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
-                    executedTx: executedTxPda,
+                    executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -747,25 +747,25 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const finalRecipientBalance = await mockUSDT.getBalance(recipientRevertAccount);
             const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
             expect(finalRecipientBalance).to.equal(initialRecipientBalance + revertTokens);
-            // Caller should receive gas_fee (minus rent for executed_tx account creation)
+            // Caller should receive gas_fee (minus rent for executed_sub_tx account creation)
             const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
-            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedTx account
-            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_tx
+            const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedSubTx account
+            const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_sub_tx
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
         });
     });
 
     describe("error conditions", () => {
         it("rejects zero-amount withdrawals", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -778,12 +778,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             await expectRejection(
-                withdrawAndExecute({
+                finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(0),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: signature,
                     caller: relayer.publicKey,
@@ -795,24 +795,24 @@ describe("Universal Gateway - Withdraw Tests", () => {
             );
         });
 
-        it("rejects withdrawals with zero originCaller", async () => {
-            const txId = generateTxId();
-            const universalTxId = generateUniversalTxId(); // Unique tx_id for this test
-            const zeroOriginCaller = Array.from(Buffer.alloc(20, 0)); // All zeros
-            const executedTxPda = getExecutedTxPda(txId);
+        it("rejects withdrawals with zero pushAccount", async () => {
+            const subTxId = generateTxId();
+            const universalTxId = generateUniversalTxId(); // Unique sub_tx_id for this test
+            const zeroPushAccount = Array.from(Buffer.alloc(20, 0)); // All zeros
+            const executedTxPda = getExecutedTxPda(subTxId);
 
-            // Verify executed_tx doesn't exist before (should be unique tx_id)
+            // Verify executed_sub_tx doesn't exist before (should be unique sub_tx_id)
             try {
-                await program.account.executedTx.fetch(executedTxPda);
-                expect.fail("executed_tx should not exist for new tx_id");
+                await program.account.executedSubTx.fetch(executedTxPda);
+                expect.fail("executed_sub_tx should not exist for new sub_tx_id");
             } catch {
                 // Expected - account doesn't exist
             }
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(zeroOriginCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(zeroPushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -825,12 +825,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             try {
-                await withdrawAndExecute({
+                await finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
-                    sender: zeroOriginCaller,
+                    pushAccount: zeroPushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: signature,
                     caller: relayer.publicKey,
@@ -844,26 +844,26 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 expect(errorStr.includes("InvalidInput")).to.be.true;
             }
 
-            // Verify executed_tx was NOT created (validation failed before execution, atomic rollback)
+            // Verify executed_sub_tx was NOT created (validation failed before execution, atomic rollback)
             try {
-                await program.account.executedTx.fetch(executedTxPda);
-                expect.fail("executed_tx should not exist - transaction failed atomically");
+                await program.account.executedSubTx.fetch(executedTxPda);
+                expect.fail("executed_sub_tx should not exist - transaction failed atomically");
             } catch {
                 // Expected - account doesn't exist (atomic transaction rollback)
             }
         });
 
         it("rejects withdrawals with zero recipient", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
             const zeroRecipient = PublicKey.default;
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 zeroRecipient,
                 DEFAULT_GAS_FEE
@@ -878,12 +878,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Anchor throws account validation error for zero recipient
             // Our program also validates this, but Anchor might catch it first
             try {
-                await withdrawAndExecute({
+                await finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(anchor.web3.LAMPORTS_PER_SOL),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: signature,
                     caller: relayer.publicKey,
@@ -903,18 +903,18 @@ describe("Universal Gateway - Withdraw Tests", () => {
             }
         });
 
-        it("rejects duplicate txID (replay protection)", async () => {
+        it("rejects duplicate subTxId (replay protection)", async () => {
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -928,12 +928,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // First withdrawal should succeed
             const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 1,
-                txId,
+                subTxId,
                 universalTxId,
                 amount: new anchor.BN(withdrawLamports),
-                sender: originCaller,
+                pushAccount: pushAccount,
                 gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                 sig: signature,
                 caller: relayer.publicKey,
@@ -945,22 +945,22 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Verify caller received gas fee
             const callerBalanceAfter = await provider.connection.getBalance(relayer.publicKey);
             const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
-            // Caller pays for executed_tx account rent, receives gas_fee (transaction fees vary, so we use tolerance)
+            // Caller pays for executed_sub_tx account rent, receives gas_fee (transaction fees vary, so we use tolerance)
             const actualRentForExecutedTx = await provider.connection.getMinimumBalanceForRentExemption(8);
             const expectedCallerGain = -actualRentForExecutedTx + Number(DEFAULT_GAS_FEE);
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 15000); // Allow for transaction fees
 
-            // Verify executed_tx account exists after success
-            // The account is a PDA derived from [b"executed_tx", tx_id], so existence = tx_id was executed
-            // Since ExecutedTx is an empty struct {}, we only verify account existence
-            const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
+            // Verify executed_sub_tx account exists after success
+            // The account is a PDA derived from [b"executed_sub_tx", sub_tx_id], so existence = sub_tx_id was executed
+            // Since ExecutedSubTx is an empty struct {}, we only verify account existence
+            const executedTxAfter = await program.account.executedSubTx.fetch(executedTxPda);
             expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
-            // Second withdrawal with same txID should fail
+            // Second withdrawal with same subTxId should fail
             const tssAdditional2 = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -973,12 +973,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
             });
 
             try {
-                await withdrawAndExecute({
+                await finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(withdrawLamports),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: signature2,
                     caller: relayer.publicKey,
@@ -988,7 +988,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc();
                 expect.fail("Should have thrown PayloadExecuted error");
             } catch (error: any) {
-                // With `init`, duplicate txID fails at system program level (account already exists)
+                // With `init`, duplicate subTxId fails at system program level (account already exists)
                 // The error comes from Solana system program: "Allocate: account ... already in use"
                 const errorStr = error.toString();
                 const errorLogs = error.logs || [];
@@ -1008,15 +1008,15 @@ describe("Universal Gateway - Withdraw Tests", () => {
         it("does NOT set executed=true on failed withdrawal (griefing protection)", async () => {
             const withdrawLamports = anchor.web3.LAMPORTS_PER_SOL;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const originCaller = generateOriginCaller();
-            const executedTxPda = getExecutedTxPda(txId);
+            const pushAccount = generatePushAccount();
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const tssAdditional = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -1034,12 +1034,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // Attempt withdrawal with corrupted signature (should fail)
             try {
-                await withdrawAndExecute({
+                await finalizeUniversalTx({
                     instructionId: 1,
-                    txId,
+                    subTxId,
                     universalTxId,
                     amount: new anchor.BN(withdrawLamports),
-                    sender: originCaller,
+                    pushAccount: pushAccount,
                     gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                     sig: { signature: corrupted, recoveryId: valid.recoveryId, messageHash: valid.messageHash },
                     caller: relayer.publicKey,
@@ -1052,19 +1052,19 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 expect(error.toString().includes("TssAuthFailed")).to.be.true;
             }
 
-            // Verify failed call didn't create executed_tx account (atomic rollback)
+            // Verify failed call didn't create executed_sub_tx account (atomic rollback)
             try {
-                await program.account.executedTx.fetch(executedTxPda);
-                expect.fail("executed_tx should not exist - transaction failed atomically");
+                await program.account.executedSubTx.fetch(executedTxPda);
+                expect.fail("executed_sub_tx should not exist - transaction failed atomically");
             } catch {
                 // Expected - account doesn't exist (atomic transaction rollback)
             }
 
-            // Now try with VALID signature - should succeed (proves tx_id wasn't bricked)
+            // Now try with VALID signature - should succeed (proves sub_tx_id wasn't bricked)
             const tssAdditional2 = buildWithdrawAdditionalData(
                 new Uint8Array(universalTxId),
-                new Uint8Array(txId),
-                new Uint8Array(originCaller),
+                new Uint8Array(subTxId),
+                new Uint8Array(pushAccount),
                 PublicKey.default,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -1076,12 +1076,12 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 additional: tssAdditional2,
             });
 
-            await withdrawAndExecute({
+            await finalizeUniversalTx({
                 instructionId: 1,
-                txId,
+                subTxId,
                 universalTxId,
                 amount: new anchor.BN(withdrawLamports),
-                sender: originCaller,
+                pushAccount: pushAccount,
                 gasFee: new anchor.BN(Number(DEFAULT_GAS_FEE)),
                 sig: validSig,
                 caller: relayer.publicKey,
@@ -1090,17 +1090,17 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .signers([relayer])
                 .rpc();
 
-            // Verify executed_tx account exists after success (account existence = executed)
-            const executedTx = await program.account.executedTx.fetch(executedTxPda);
-            expect(executedTx).to.exist; // Account existence = transaction executed
+            // Verify executed_sub_tx account exists after success (account existence = executed)
+            const ExecutedSubTx = await program.account.executedSubTx.fetch(executedTxPda);
+            expect(ExecutedSubTx).to.exist; // Account existence = transaction executed
         });
     });
 
     describe("revert error conditions", () => {
         it("rejects revert with zero amount", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const revertInstruction = {
                 fundRecipient: recipient.publicKey,
@@ -1110,13 +1110,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
                 amount: BigInt(0),
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             await expectRejection(
                 program.methods
                     .revertUniversalTx(
-                        txId,
+                        subTxId,
                         universalTxId,
                         new anchor.BN(0),
                         revertInstruction,
@@ -1130,7 +1130,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         vault: vaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
-                        executedTx: executedTxPda,
+                        executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                     })
@@ -1141,9 +1141,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
         });
 
         it("rejects revert with zero fundRecipient", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
             const revertAmount = anchor.web3.LAMPORTS_PER_SOL;
 
             const revertInstruction = {
@@ -1154,7 +1154,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
                 amount: BigInt(revertAmount),
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             // Our program validates fundRecipient != Pubkey::default()
@@ -1162,7 +1162,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             try {
                 await program.methods
                     .revertUniversalTx(
-                        txId,
+                        subTxId,
                         universalTxId,
                         new anchor.BN(revertAmount),
                         revertInstruction,
@@ -1176,7 +1176,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         vault: vaultPda,
                         tssPda,
                         recipient: recipient.publicKey, // Use valid recipient for account validation
-                        executedTx: executedTxPda,
+                        executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                     })
@@ -1193,7 +1193,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             }
         });
 
-        it("rejects duplicate revert txID (replay protection)", async () => {
+        it("rejects duplicate revert subTxId (replay protection)", async () => {
             const revertAmount = anchor.web3.LAMPORTS_PER_SOL;
 
             // Fund vault before revert (needed for the transfer)
@@ -1206,9 +1206,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const revertInstruction = {
                 fundRecipient: recipient.publicKey,
@@ -1218,13 +1218,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
                 amount: BigInt(revertAmount),
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             // First revert should succeed
             await program.methods
                 .revertUniversalTx(
-                    txId,
+                    subTxId,
                     universalTxId,
                     new anchor.BN(revertAmount),
                     revertInstruction,
@@ -1238,30 +1238,30 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     vault: vaultPda,
                     tssPda,
                     recipient: recipient.publicKey,
-                    executedTx: executedTxPda,
+                    executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                 })
                 .signers([relayer])
                 .rpc();
 
-            // Verify executed_tx account exists after success
-            // The account is a PDA derived from [b"executed_tx", tx_id], so existence = tx_id was executed
-            // Since ExecutedTx is an empty struct {}, we only verify account existence
-            const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
+            // Verify executed_sub_tx account exists after success
+            // The account is a PDA derived from [b"executed_sub_tx", sub_tx_id], so existence = sub_tx_id was executed
+            // Since ExecutedSubTx is an empty struct {}, we only verify account existence
+            const executedTxAfter = await program.account.executedSubTx.fetch(executedTxPda);
             expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
-            // Second revert with same txID should fail
+            // Second revert with same subTxId should fail
             const signature2 = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSol,
                 amount: BigInt(revertAmount),
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             try {
                 await program.methods
                     .revertUniversalTx(
-                        txId,
+                        subTxId,
                         universalTxId,
                         new anchor.BN(revertAmount),
                         revertInstruction,
@@ -1275,7 +1275,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         vault: vaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
-                        executedTx: executedTxPda,
+                        executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                     })
@@ -1283,7 +1283,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc();
                 expect.fail("Should have thrown PayloadExecuted error");
             } catch (error: any) {
-                // With `init`, duplicate txID fails at system program level (account already exists)
+                // With `init`, duplicate subTxId fails at system program level (account already exists)
                 // The error comes from Solana system program: "Allocate: account ... already in use"
                 const errorStr = error.toString();
                 const errorLogs = error.logs || [];
@@ -1301,9 +1301,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
         });
 
         it("rejects SPL revert with zero amount", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const revertInstruction = {
                 fundRecipient: recipient.publicKey,
@@ -1315,13 +1315,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
                 amount: BigInt(0),
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             await expectRejection(
                 program.methods
                     .revertUniversalTxToken(
-                        txId,
+                        subTxId,
                         universalTxId,
                         new anchor.BN(0),
                         revertInstruction,
@@ -1337,7 +1337,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         tssPda,
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
-                        executedTx: executedTxPda,
+                        executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -1349,9 +1349,9 @@ describe("Universal Gateway - Withdraw Tests", () => {
         });
 
         it("rejects SPL revert with zero fundRecipient", async () => {
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
             const revertTokens = 500;
             const revertRaw = BigInt(revertTokens) * TOKEN_MULTIPLIER;
 
@@ -1365,13 +1365,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
                 amount: revertRaw,
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(mockUSDT.mint.publicKey), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             await expectRejection(
                 program.methods
                     .revertUniversalTxToken(
-                        txId,
+                        subTxId,
                         universalTxId,
                         new anchor.BN(Number(revertRaw)),
                         revertInstruction,
@@ -1387,7 +1387,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         tssPda,
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
-                        executedTx: executedTxPda,
+                        executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -1398,13 +1398,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
             );
         });
 
-        it("rejects SPL revert duplicate txID (replay protection)", async () => {
+        it("rejects SPL revert duplicate subTxId (replay protection)", async () => {
             const revertTokens = 500;
             const revertRaw = BigInt(revertTokens) * TOKEN_MULTIPLIER;
 
-            const txId = generateTxId();
+            const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
-            const executedTxPda = getExecutedTxPda(txId);
+            const executedTxPda = getExecutedTxPda(subTxId);
 
             const revertInstruction = {
                 fundRecipient: recipient.publicKey,
@@ -1416,13 +1416,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
                 amount: revertRaw,
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             // First revert should succeed
             await program.methods
                 .revertUniversalTxToken(
-                    txId,
+                    subTxId,
                     universalTxId,
                     new anchor.BN(Number(revertRaw)),
                     revertInstruction,
@@ -1438,7 +1438,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     tssPda,
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
-                    executedTx: executedTxPda,
+                    executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
                     tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
@@ -1446,23 +1446,23 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .signers([relayer])
                 .rpc();
 
-            // Verify executed_tx account exists after success
-            // The account is a PDA derived from [b"executed_tx", tx_id], so existence = tx_id was executed
-            // Since ExecutedTx is an empty struct {}, we only verify account existence
-            const executedTxAfter = await program.account.executedTx.fetch(executedTxPda);
+            // Verify executed_sub_tx account exists after success
+            // The account is a PDA derived from [b"executed_sub_tx", sub_tx_id], so existence = sub_tx_id was executed
+            // Since ExecutedSubTx is an empty struct {}, we only verify account existence
+            const executedTxAfter = await program.account.executedSubTx.fetch(executedTxPda);
             expect(executedTxAfter).to.not.be.null; // Account existence = transaction executed
 
-            // Second revert with same txID should fail
+            // Second revert with same subTxId should fail
             const signature2 = await signTssMessageWithChainId({
                 instruction: TssInstruction.RevertWithdrawSpl,
                 amount: revertRaw,
-                additional: [new Uint8Array(universalTxId), new Uint8Array(txId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                additional: [new Uint8Array(universalTxId), new Uint8Array(subTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             try {
                 await program.methods
                     .revertUniversalTxToken(
-                        txId,
+                        subTxId,
                         universalTxId,
                         new anchor.BN(Number(revertRaw)),
                         revertInstruction,
@@ -1478,7 +1478,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         tssPda,
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
-                        executedTx: executedTxPda,
+                        executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
@@ -1487,7 +1487,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .rpc();
                 expect.fail("Should have thrown PayloadExecuted error");
             } catch (error: any) {
-                // With `init`, duplicate txID fails at system program level (account already exists)
+                // With `init`, duplicate subTxId fails at system program level (account already exists)
                 // The error comes from Solana system program: "Allocate: account ... already in use"
                 const errorStr = error.toString();
                 const errorLogs = error.logs || [];

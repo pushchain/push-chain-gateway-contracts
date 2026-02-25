@@ -30,7 +30,7 @@
 
 ### Critical Security Areas
 1. **TSS Signature Validation** - See [TSS-VALIDATION.md](./SECURITY/TSS-VALIDATION.md)
-   - Replay protection via `ExecutedTx` PDA (per tx_id)
+   - Replay protection via `ExecutedSubTx` PDA (per sub_tx_id)
    - Message hash construction
    - ECDSA secp256k1 recovery
 
@@ -84,7 +84,7 @@
 │  ┌─────────────────────────────────────────┐                │
 │  │           TSS VALIDATION                 │                │
 │  │    • ECDSA secp256k1 signatures          │                │
-│  │    • tx_id-based replay protection (ExecutedTx PDA) │    │
+│  │    • sub_tx_id-based replay protection (ExecutedSubTx PDA) │    │
 │  │    • Message hash verification           │                │
 │  └─────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
@@ -107,9 +107,9 @@
 - [ ] Amount overflow checks
 
 ### Replay Protection
-- [ ] ExecutedTx PDA creation (tx_id uniqueness via init)
+- [ ] ExecutedSubTx PDA creation (sub_tx_id uniqueness via init)
 - [ ] Message hash integrity
-- [ ] No replay of tx_id (PDA exists check)
+- [ ] No replay of sub_tx_id (PDA exists check)
 
 ### CEA Security
 - [ ] PDA derivation correctness
@@ -130,7 +130,7 @@
 | Metric | Value |
 |--------|-------|
 | **Total Instructions** | 17 public functions |
-| **PDA Types** | 7 (Config, Vault, TssPda, CEA, ExecutedTx, RateLimitConfig, TokenRateLimit) |
+| **PDA Types** | 7 (Config, Vault, TssPda, CEA, ExecutedSubTx, RateLimitConfig, TokenRateLimit) |
 | **Event Types** | 8 (1 defined but never emitted: TSSAddressUpdated) |
 | **Error Codes** | 32 (6000-6031) |
 | **LOC (Rust)** | ~1,836 lines |
@@ -149,16 +149,16 @@ User → Event (emit UniversalTx)
 WITHDRAW/EXECUTE:
 TSS → Config (check paused)
 TSS → TssPda (validate signature)
-TSS → ExecutedTx (init - replay protection)
+TSS → ExecutedSubTx (init - replay protection)
 TSS → Vault → CEA (transfer amount)
 TSS → Vault → Caller (transfer gas fee)
 TSS → CEA → Target (execute if mode=2, transfer if mode=1)
-TSS → Event (emit UniversalTxExecuted)
+TSS → Event (emit UniversalTxFinalized)
 
 REVERT:
 TSS → Config (check paused)
 TSS → TssPda (validate signature)
-TSS → ExecutedTx (init - replay protection)
+TSS → ExecutedSubTx (init - replay protection)
 TSS → Vault → Recipient (transfer amount)
 TSS → Vault → Caller (transfer gas fee)
 TSS → Event (emit RevertUniversalTx)
@@ -170,7 +170,7 @@ TSS → Event (emit RevertUniversalTx)
 
 Recommended test areas:
 1. ✅ TSS signature validation (valid/invalid)
-2. ✅ Replay protection (duplicate tx_id)
+2. ✅ Replay protection (duplicate sub_tx_id)
 3. ✅ Rate limiting (block cap, epoch limit)
 4. ✅ CEA execution (program invocation)
 5. ✅ Token transfers (SOL, SPL)

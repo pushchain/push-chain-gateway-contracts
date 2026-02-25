@@ -22,7 +22,7 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
   - Pyth oracle price validation for USD caps
 
 ### Outbound (Withdrawals & Executions)
-- **`withdraw_and_execute`** - Unified entrypoint for Push Chain → Solana operations
+- **`finalize_universal_tx`** - Unified entrypoint for Push Chain → Solana operations
   - **instruction_id = 1:** Withdraw (direct transfer to recipient)
   - **instruction_id = 2:** Execute (CPI to target program with CEA as signer)
   - TSS signature verification (ECDSA secp256k1)
@@ -49,9 +49,9 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 ## Key Concepts
 
 ### CEA (Cross-chain Execution Account)
-- PDA derived from user's EVM address: `[b"push_identity", sender[20]]`
+- PDA derived from user's EVM address: `[b"push_identity", push_account[20]]`
 - Persistent identity across all user transactions
-- Vault → CEA → Recipient flow ensures recipient sees CEA as sender
+- Vault → CEA → Recipient flow ensures recipient sees CEA as push_account
 - CEA signs CPIs in execute mode (cross-chain program interactions)
 
 ### Rate Limiting (Not Whitelist)
@@ -62,12 +62,12 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 
 ### TSS Signature Verification
 - TSS signs message hash with ECDSA secp256k1
-- Per-tx replay protection via `ExecutedTx` PDA (seeded by `tx_id`) — no global nonce
-- Message format: `PREFIX | instruction_id | chain_id | amount | tx_id | universal_tx_id | sender | token | gas_fee | [mode-specific]`
+- Per-tx replay protection via `ExecutedSubTx` PDA (seeded by `sub_tx_id`) — no global nonce
+- Message format: `PREFIX | instruction_id | chain_id | amount | sub_tx_id | universal_tx_id | push_account | token | gas_fee | [mode-specific]`
 - **Common fields** (same order for both withdraw and execute):
-  1. `tx_id` (32 bytes) - matches function parameter order
+  1. `sub_tx_id` (32 bytes) - matches function parameter order
   2. `universal_tx_id` (32 bytes)
-  3. `sender` (20 bytes, EVM address)
+  3. `push_account` (20 bytes, EVM address)
   4. `token` (32 bytes, Pubkey)
   5. `gas_fee` (u64 BE)
 - **Withdraw-specific**: `recipient` (32 bytes)
@@ -80,8 +80,8 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 config          → [b"config"]                    // Gateway config, authorities, caps
 vault_sol       → [b"vault"]                     // SOL vault (also ATA authority)
 tss_pda         → [b"tsspda_v2"]                 // TSS state (eth_address, chain_id, authority, bump)
-cea_authority   → [b"push_identity", sender]     // User's CEA (sender = 20-byte EVM address)
-executed_tx     → [b"executed_tx", tx_id]        // Replay protection (32-byte tx_id)
+cea_authority   → [b"push_identity", push_account]     // User's CEA (push_account = 20-byte EVM address)
+executed_sub_tx     → [b"executed_sub_tx", sub_tx_id]        // Replay protection (32-byte sub_tx_id)
 rate_limit_config → [b"rate_limit_config"]       // Rate limit global config
 token_rate_limit  → [b"rate_limit", mint]        // Per-token rate limit state
 ```
@@ -148,11 +148,11 @@ const [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], pr
 const [vaultSol] = PublicKey.findProgramAddressSync([Buffer.from("vault")], programId);
 const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda_v2")], programId);
 const [ceaAuthority] = PublicKey.findProgramAddressSync(
-  [Buffer.from("push_identity"), Buffer.from(sender)], // sender = 20-byte EVM address
+  [Buffer.from("push_identity"), Buffer.from(push_account)], // push_account = 20-byte EVM address
   programId
 );
-const [executedTx] = PublicKey.findProgramAddressSync(
-  [Buffer.from("executed_tx"), txId], // txId = 32 bytes
+const [executedSubTx] = PublicKey.findProgramAddressSync(
+  [Buffer.from("executed_sub_tx"), subTxId], // subTxId = 32 bytes
   programId
 );
 
@@ -163,8 +163,8 @@ const { chainId } = tssAccount;
 // 3. Build TSS message (withdraw)
 const additional = buildWithdrawAdditionalData(
   universalTxId,
-  txId,
-  Buffer.from(sender),   // 20-byte EVM address
+  subTxId,
+  Buffer.from(push_account),   // 20-byte EVM address
   tokenMint,             // Pubkey::default() for SOL
   recipient,
   BigInt(gasFee)
@@ -179,12 +179,12 @@ const { signature, recoveryId, messageHash } = await signTssMessage({
 
 // 4. Submit withdraw transaction
 await program.methods
-  .withdrawAndExecute(
+  .finalizeUniversalTx(
     1,                        // instruction_id (withdraw)
-    txId,                     // [u8; 32] - tx_id
+    subTxId,                     // [u8; 32] - sub_tx_id
     Array.from(universalTxId), // [u8; 32] - universal_tx_id
     new anchor.BN(amount),    // u64 - amount
-    sender,                   // [u8; 20] - sender (EVM address)
+    push_account,                   // [u8; 20] - push_account (EVM address)
     Buffer.from([]),          // Vec<u8> - writable_flags (empty for withdraw)
     Buffer.from([]),          // Vec<u8> - ix_data (empty for withdraw)
     new anchor.BN(gasFee),    // u64 - gas_fee
@@ -199,7 +199,7 @@ await program.methods
     vaultSol,
     ceaAuthority,
     tssPda,
-    executedTx,
+    executedSubTx,
     systemProgram: SystemProgram.programId,
     destinationProgram: SystemProgram.programId, // Required: SystemProgram for withdraw mode
     recipient: recipientPubkey,                  // Required for withdraw mode
@@ -237,9 +237,9 @@ import {
 // Build TSS message (execute)
 const additional = buildExecuteAdditionalData(
   universalTxId,
-  txId,
+  subTxId,
   targetProgramId,
-  sender,
+  push_account,
   accountsForTarget,  // AccountMeta[]
   ixData,
   gasFee,
@@ -255,12 +255,12 @@ const { signature, recoveryId, messageHash } = await signTssMessage({
 });
 
 await program.methods
-  .withdrawAndExecute(
+  .finalizeUniversalTx(
     2,                        // instruction_id (execute)
-    txId,                     // [u8; 32] - tx_id
+    subTxId,                     // [u8; 32] - sub_tx_id
     Array.from(universalTxId), // [u8; 32] - universal_tx_id
     new anchor.BN(amount),    // u64 - amount
-    sender,                   // [u8; 20] - sender (EVM address)
+    push_account,                   // [u8; 20] - push_account (EVM address)
     writableFlags,            // Vec<u8> - Bitpacked: ceil(accounts/8) bytes
     ixData,                   // Vec<u8> - Target program instruction data
     new anchor.BN(gasFee),    // u64 - gas_fee
@@ -275,7 +275,7 @@ await program.methods
     vaultSol,
     ceaAuthority,
     tssPda,
-    executedTx,
+    executedSubTx,
     systemProgram: SystemProgram.programId,
     destinationProgram: targetProgramId,  // Required: target program for execute mode
     recipient: null,                      // Must be null for execute mode
@@ -305,23 +305,23 @@ import {
 } from "./tests/helpers/tss";
 
 // For withdraw (instruction_id = 1)
-// Returns: [tx_id, universal_tx_id, sender, token, gas_fee, recipient]
+// Returns: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, recipient]
 const withdrawAdditional = buildWithdrawAdditionalData(
   universalTxId,  // 32 bytes
-  txId,           // 32 bytes
-  sender,         // 20 bytes (EVM address)
+  subTxId,           // 32 bytes
+  push_account,         // 20 bytes (EVM address)
   tokenMint,      // Pubkey (Pubkey::default() for SOL)
   recipient,      // Pubkey
   gasFee          // bigint
 );
 
 // For execute (instruction_id = 2)
-// Returns: [tx_id, universal_tx_id, sender, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
+// Returns: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
 const executeAdditional = buildExecuteAdditionalData(
   universalTxId,
-  txId,
+  subTxId,
   targetProgram,
-  sender,
+  push_account,
   accountsForTarget,  // GatewayAccountMeta[] = {pubkey, isWritable}[]
   ixData,             // Uint8Array
   gasFee,
@@ -338,7 +338,7 @@ const { signature, recoveryId, messageHash } = await signTssMessage({
 });
 ```
 
-**Note**: Common fields (tx_id, universal_tx_id, sender, token, gas_fee) are in the same order for both modes, making the system easier to maintain and understand.
+**Note**: Common fields (sub_tx_id, universal_tx_id, push_account, token, gas_fee) are in the same order for both modes, making the system easier to maintain and understand.
 
 ### Deposit (Solana → Push Chain)
 
@@ -405,7 +405,7 @@ See [ALT Integration Guide](../../INTEGRATION_GUIDE.md#12-address-lookup-tables-
 ## Security Features
 
 - **TSS Signature Verification** - ECDSA secp256k1 with ETH address recovery
-- **Per-tx Replay Protection** - `executed_tx` PDA (seeded by `tx_id`) prevents double-execution without global nonce
+- **Per-tx Replay Protection** - `executed_sub_tx` PDA (seeded by `sub_tx_id`) prevents double-execution without global nonce
 - **Pause Functionality** - Emergency stop for all user operations
 - **Rate Limiting** - Dynamic thresholds per token (inbound only), configurable by admin
 - **USD Caps** - Pyth oracle price validation (configurable min/max caps via set_caps_usd)
@@ -420,7 +420,7 @@ See [ALT Integration Guide](../../INTEGRATION_GUIDE.md#12-address-lookup-tables-
 | `MessageHashMismatch` | Wrong TSS message construction | Verify field order and endianness (see tss.ts) |
 | `InvalidAccount` | Account derivation error | Check PDA seeds and ATA derivation |
 | `RateLimitExceeded` | Token threshold reached | Wait for rate limit reset or increase threshold |
-| `ExecutedTx` | Transaction already executed | tx_id must be unique (check executed_tx PDA) |
+| `ExecutedSubTx` | Transaction already executed | sub_tx_id must be unique (check executed_sub_tx PDA) |
 | `Paused` | Gateway is paused | Wait for unpause or check pause status |
 | `InsufficientBalance` | User/vault low balance | Verify balances (1:1 backing guarantees vault) |
 | `InvalidProgram` | Target program not executable | Ensure destination_program.executable == true |
@@ -458,7 +458,7 @@ contracts/svm-gateway/
 │           ├── lib.rs                    # Program entrypoint
 │           ├── instructions/
 │           │   ├── deposit.rs            # send_universal_tx (inbound)
-│           │   ├── execute.rs            # withdraw_and_execute (outbound)
+│           │   ├── execute.rs            # finalize_universal_tx (outbound)
 │           │   ├── revert.rs             # revert functions
 │           │   ├── tss.rs                # TSS signature validation
 │           │   ├── admin.rs              # Admin functions

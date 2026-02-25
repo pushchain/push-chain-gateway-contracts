@@ -11,20 +11,20 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
 ```
 
 **Step-by-step:**
-1. User calls `UniversalGatewayPC.withdrawAndExecute()` on Push Chain
+1. User calls `UniversalGatewayPC.FinalizeUniversalTx()` on Push Chain
 2. Push Chain burns tokens, emits `UniversalTxOutbound` event
 3. Backend service watches events, extracts event data
 4. Backend decodes payload to get `instructionId` (1=withdraw, 2=execute) + accounts + ixData + rentFee
 5. Backend builds mode-specific TSS message hash (format varies by instructionId), signs with ECDSA secp256k1
-6. Backend constructs Solana transaction calling unified `withdraw_and_execute` function
+6. Backend constructs Solana transaction calling unified `finalize_universal_tx` function
 7. Backend submits transaction to Solana network
 8. Gateway program verifies signature, then routes based on instructionId:
    - **Withdraw (1)**: vault→CEA→recipient (direct transfer)
    - **Execute (2)**: vault→CEA→CPI to target program (or CEA self-withdraw if target == gateway)
    - **Revert (3/4)**: separate revert functions
 9. Events emitted:
-   - Normal withdraw/execute: `UniversalTxExecuted`
-   - CEA self-withdraw (execute with target == gateway): `UniversalTx` with `via_cea: true`
+   - Normal withdraw/execute: `UniversalTxFinalized`
+   - CEA self-withdraw (execute with target == gateway): `UniversalTx` with `from_cea: true`
    - Revert: `RevertUniversalTx`
 
 ### 1.2 Event Structure (Push Chain)
@@ -32,7 +32,7 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
 **Event**: `UniversalTxOutbound`
 ```solidity
 event UniversalTxOutbound(
-    address indexed sender,        // EVM address (20 bytes)
+    address indexed push_account,        // EVM address (20 bytes)
     string chainId,                // Source chain ID
     address token,                 // PRC20 token address
     bytes target,                  // Target program/contract address (32 bytes for Solana)
@@ -48,7 +48,7 @@ event UniversalTxOutbound(
 ```
 
 **Fields you need:**
-- `sender` → Convert to 20-byte array for `sender` parameter
+- `push_account` → Convert to 20-byte array for `push_account` parameter
 - `target` → 32-byte Solana program pubkey
 - `amount` → u64 amount (reject if > u64::MAX, events are uint256)
 - `payload` → Decode to get accounts, ixData, rentFee
@@ -57,13 +57,13 @@ event UniversalTxOutbound(
 
 **Missing fields (you must provide):**
 - `universal_tx_id`: 32 bytes from source chain (EVM transaction hash)
-- `tx_id`: 32 bytes - **MUST be deterministic and stable across retries** (no random generation)
+- `sub_tx_id`: 32 bytes - **MUST be deterministic and stable across retries** (no random generation)
   - **Recommended**: Use source transaction hash or hash of event fields (e.g., `keccak256(event_tx_hash || log_index)`)
-  - **Critical**: Same `tx_id` must be used for all retry attempts of the same transaction
+  - **Critical**: Same `sub_tx_id` must be used for all retry attempts of the same transaction
 
 ### 1.3 Unified Entrypoint Architecture
 
-**Key Concept**: The gateway uses a **single unified function** `withdraw_and_execute` for both withdraw and execute operations.
+**Key Concept**: The gateway uses a **single unified function** `finalize_universal_tx` for both withdraw and execute operations.
 
 **How it works**:
 1. **instruction_id parameter** determines the operation mode:
@@ -128,7 +128,7 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 **Target Program Field**:
 - **REQUIRED** for all execute payloads
 - Establishes the canonical destination for execution
-- Must match the `destination_program` account passed to withdraw_and_execute
+- Must match the `destination_program` account passed to finalize_universal_tx
 - TSS signature includes this value, preventing tampering
 
 ### 2.2 Decoding Payload
@@ -238,9 +238,9 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 
 **Common Fields (same for Execute and Withdraw):**
 ```
-tx_id (32 bytes)           // First parameter in function signature
+sub_tx_id (32 bytes)           // First parameter in function signature
 universal_tx_id (32 bytes) // Second parameter in function signature
-sender (20 bytes, EVM address)
+push_account (20 bytes, EVM address)
 token (32 bytes)           // Pubkey::default() for SOL, mint pubkey for SPL
 gas_fee (u64 BE)
 ```
@@ -267,7 +267,7 @@ target (32 bytes, recipient pubkey) // Withdraw-specific: recipient address
 **For Revert SOL (3):**
 ```
 universal_tx_id (32 bytes)
-tx_id (32 bytes)
+sub_tx_id (32 bytes)
 recipient_pubkey (32 bytes)
 gas_fee (u64 BE)
 ```
@@ -275,13 +275,13 @@ gas_fee (u64 BE)
 **For Revert SPL (4):**
 ```
 universal_tx_id (32 bytes)
-tx_id (32 bytes)
+sub_tx_id (32 bytes)
 mint_pubkey (32 bytes)
 recipient_pubkey (32 bytes)
 gas_fee (u64 BE)
 ```
 
-**IMPORTANT**: All fields listed above (including `universal_tx_id`, `tx_id`, `sender`) **must** be included in the `additional` array when calling `signTssMessage()`. The helper function does **not** auto-inject these fields.
+**IMPORTANT**: All fields listed above (including `universal_tx_id`, `sub_tx_id`, `push_account`) **must** be included in the `additional` array when calling `signTssMessage()`. The helper function does **not** auto-inject these fields.
 
 ### 3.3 Accounts and Instruction Data Buffers (Execute Only)
 
@@ -409,16 +409,16 @@ Final: [0xAC, 0x80] (2 bytes)
 
 ### 4.1 Unified Withdraw & Execute Function
 
-**Function**: `withdraw_and_execute`
+**Function**: `finalize_universal_tx`
 
 This single entrypoint handles both withdraw (instruction_id=1) and execute (instruction_id=2) operations.
 
 **Parameters**:
 - `instruction_id`: u8 (`1` for withdraw, `2` for execute)
-- `tx_id`: [u8; 32] - deterministic transaction identifier
+- `sub_tx_id`: [u8; 32] - deterministic transaction identifier
 - `universal_tx_id`: [u8; 32] - source chain transaction hash
 - `amount`: u64 - amount to transfer
-- `sender`: [u8; 20] - EVM address (Push Chain user)
+- `push_account`: [u8; 20] - EVM address (Push Chain user)
 - `writable_flags`: Vec<u8> - bitpacked writable flags (empty for withdraw, see 3.4 for execute)
 - `ix_data`: Vec<u8> - CPI instruction data (empty for withdraw, from decoded payload for execute)
 - `gas_fee`: u64 - total gas fee (includes relayer reimbursement)
@@ -435,9 +435,9 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `caller`: Relayer keypair (signer, payer)
 - `config`: PDA `["config"]`
 - `vault_sol`: PDA `["vault"]` (uses config.vault_bump)
-- `cea_authority`: PDA `["push_identity", sender]`
+- `cea_authority`: PDA `["push_identity", push_account]`
 - `tss_pda`: PDA `["tsspda_v2"]`
-- `executed_tx`: PDA `["executed_tx", tx_id]` (will be created)
+- `executed_sub_tx`: PDA `["executed_sub_tx", sub_tx_id]` (will be created)
 - `system_program`: System program
 
 **Mode-Specific Accounts**:
@@ -482,7 +482,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 | `amount` | must be > 0 | any (can be 0) |
 | `recipient_ata` | SPL only | must be None |
 
-**Reference**: See `WithdrawAndExecute` struct in `contracts/svm-gateway/programs/universal-gateway/src/instructions/execute.rs`
+**Reference**: See `FinalizeUniversalTx` struct in `contracts/svm-gateway/programs/universal-gateway/src/instructions/execute.rs`
 
 **CEA ATA Derivation**:
 - Use standard ATA derivation: `[authority (CEA), token_program_id, mint]`
@@ -526,7 +526,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 **Function**: `revert_universal_tx`
 
 **Parameters**:
-- `tx_id`: [u8; 32]
+- `sub_tx_id`: [u8; 32]
 - `universal_tx_id`: [u8; 32]
 - `amount`: u64
 - `revert_instruction`: Struct `{ fund_recipient: Pubkey, revert_msg: Vec<u8> }`
@@ -557,8 +557,8 @@ All PDAs use `findProgramAddressSync` with gateway program ID.
 - `config`: `["config"]`
 - `vault`: `["vault"]` (bump stored in config)
 - `tss_pda`: `["tsspda_v2"]`
-- `cea_authority`: `["push_identity", sender]` (sender = 20-byte EVM address)
-- `executed_tx`: `["executed_tx", tx_id]` (tx_id = 32 bytes)
+- `cea_authority`: `["push_identity", push_account]` (push_account = 20-byte EVM address)
+- `executed_sub_tx`: `["executed_sub_tx", sub_tx_id]` (sub_tx_id = 32 bytes)
 - `rate_limit_config`: `["rate_limit_config"]`
 - `token_rate_limit`: `["rate_limit", token_mint]`
 
@@ -578,19 +578,19 @@ All PDAs use `findProgramAddressSync` with gateway program ID.
 
 **For SOL Execute**:
 ```
-gas_fee = rent_fee + executed_tx_rent + compute_buffer
+gas_fee = rent_fee + executed_sub_tx_rent + compute_buffer
 ```
 
 **For SPL Execute**:
 ```
-gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buffer
+gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_buffer
 ```
 
 **Components**:
 - `rent_fee`: For target program account creation (transferred to CEA, used by target program if needed)
-  - **Note**: This is ONLY for target program rent. Gateway account rent (executed_tx, cea_ata) is covered by validator and reimbursed via `gas_fee`
+  - **Note**: This is ONLY for target program rent. Gateway account rent (executed_sub_tx, cea_ata) is covered by validator and reimbursed via `gas_fee`
   - **Precheck**: Must be `<= gas_fee` (reject if `rent_fee > gas_fee`)
-- `executed_tx_rent`: ~890,880 lamports (8-byte account, paid by relayer, reimbursed via gas_fee)
+- `executed_sub_tx_rent`: ~890,880 lamports (8-byte account, paid by relayer, reimbursed via gas_fee)
   - **Backend SHOULD compute**: Use `getMinimumBalanceForRentExemption(8)` for exact value
 - `cea_ata_rent`: ~2,039,280 lamports (165-byte token account, only if CEA ATA doesn't exist, paid by relayer, reimbursed via gas_fee)
   - **Backend SHOULD compute**: Use `getMinimumBalanceForRentExemption(165)` for exact value
@@ -612,7 +612,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 - Use `getMinimumBalanceForRentExemption(size)` RPC call for exact values
 - Add buffer for safety (~10-20%)
 
-**Important**: `rent_fee` is ONLY for target program account creation (transferred to CEA). Gateway account rent (executed_tx, cea_ata) is covered by validator and reimbursed via `gas_fee`.
+**Important**: `rent_fee` is ONLY for target program account creation (transferred to CEA). Gateway account rent (executed_sub_tx, cea_ata) is covered by validator and reimbursed via `gas_fee`.
 
 ---
 
@@ -651,9 +651,9 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - Read account: get `chain_id` (string)
 3. Build message hash based on instruction_id (common fields first):
    - **Withdraw (1)**:
-     `PREFIX | 0x01 | chain_id | amount | tx_id | universal_tx_id | sender | token | gas_fee | target`
+     `PREFIX | 0x01 | chain_id | amount | sub_tx_id | universal_tx_id | push_account | token | gas_fee | target`
    - **Execute (2)**:
-     `PREFIX | 0x02 | chain_id | amount | tx_id | universal_tx_id | sender | token | gas_fee | target_program | accounts_buf | ix_data_buf | rent_fee`
+     `PREFIX | 0x02 | chain_id | amount | sub_tx_id | universal_tx_id | push_account | token | gas_fee | target_program | accounts_buf | ix_data_buf | rent_fee`
 4. For execute: build `accounts_buf` and `ix_data_buf` with length prefixes (section 3.3)
 
 ### 7.4 TSS Signing
@@ -670,8 +670,8 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - **Withdraw (1)**: Set `recipient` account, `destination_program` = SystemProgram.programId, `remaining_accounts` = []
    - **Execute (2)**: Decode payload first, then set `destination_program = decoded.targetProgram`, `recipient` = None, `remaining_accounts` = decoded accounts
 3. Build instruction using Anchor client or raw instruction:
-   - Function: `withdraw_and_execute`
-   - Parameters: `instruction_id`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
+   - Function: `finalize_universal_tx`
+   - Parameters: `instruction_id`, `sub_tx_id`, `universal_tx_id`, `amount`, `push_account`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT**: No `target` parameter - execute target comes from decoded payload `targetProgram`, and `destination_program` must match it
    - Accounts: Required accounts + mode-specific optional accounts + SPL accounts (if token) + remaining_accounts (if execute)
 4. For execute mode: convert accounts to writable_flags (bitpacked, see section 3.4)
@@ -696,13 +696,13 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 ### 7.7 Event Verification
 
 1. After transaction confirmation, listen for Solana events:
-   - **Normal execute/withdraw:** `UniversalTxExecuted` — field order: `tx_id`, `universal_tx_id`, `sender`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
-   - **CEA self-withdraw (target == gateway):** `UniversalTx` with `via_cea: true` — emitted by `send_universal_tx_via_cea`, NO `UniversalTxExecuted` event
+   - **Normal execute/withdraw:** `UniversalTxFinalized` — field order: `sub_tx_id`, `universal_tx_id`, `push_account`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
+   - **CEA self-withdraw (target == gateway):** `UniversalTx` with `from_cea: true` — emitted by `send_universal_tx_to_uea`, NO `UniversalTxFinalized` event
    - **Revert:** `RevertUniversalTx`
 2. Verify event fields match your transaction
 3. Mark transaction as completed
 
-**Important:** CEA→UEA path (execute with destinationProgram == gateway) emits `UniversalTx` and returns early, so `UniversalTxExecuted` is NOT emitted for this flow.
+**Important:** CEA→UEA path (execute with destinationProgram == gateway) emits `UniversalTx` and returns early, so `UniversalTxFinalized` is NOT emitted for this flow.
 
 ---
 
@@ -711,7 +711,7 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 ### 8.0 Unified Entrypoint Rules (NEW)
 
 **CRITICAL - No target parameter**:
-- The `withdraw_and_execute` function does **NOT** take a `target` parameter
+- The `finalize_universal_tx` function does **NOT** take a `target` parameter
 - Target source by mode:
   - Withdraw (1): From `recipient` account key
   - Execute (2): From decoded payload `targetProgram`; `destination_program` must match it
@@ -766,8 +766,8 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 ### 8.4 Replay Protection
 
-- Each transaction uses a unique `tx_id` (32 bytes) — must be deterministic and stable across retries
-- The `executed_tx` PDA (seeded by `["executed_tx", tx_id]`) is created on first execution; Anchor's `init` constraint rejects reuse
+- Each transaction uses a unique `sub_tx_id` (32 bytes) — must be deterministic and stable across retries
+- The `executed_sub_tx` PDA (seeded by `["executed_sub_tx", sub_tx_id]`) is created on first execution; Anchor's `init` constraint rejects reuse
 - No global nonce — transactions can be submitted in any order without blocking each other
 
 ### 8.5 Transaction Size Limits
@@ -782,36 +782,36 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 
 ### Execute Flow (instruction_id=2):
 
-1. **Event received**: `UniversalTxOutbound` with `target`, `amount`, `payload`, `gasFee`, `sender`
+1. **Event received**: `UniversalTxOutbound` with `target`, `amount`, `payload`, `gasFee`, `push_account`
 2. **Decode payload**: Extract `accounts[]`, `ixData`, `rentFee`, `instructionId`, `targetProgram`
    - Verify `instructionId == 2` (execute mode)
    - Validate: `rentFee <= gasFee`, accounts and ixData present, `targetProgram` present
-3. **Derive PDAs**: CEA authority, executed_tx, config, vault, tss_pda
+3. **Derive PDAs**: CEA authority, executed_sub_tx, config, vault, tss_pda
 4. **Fetch TSS state**: Get `chain_id` from TSS PDA (`["tsspda_v2"]`)
 5. **Build writable flags**: Convert `accounts[]` to bitpacked `writable_flags` (1 bit per account, MSB first)
 6. **Build TSS message**:
    - Use `buildExecuteAdditionalData()` helper (see `tests/helpers/tss.ts`)
    - instruction_id = 2
-   - additional_data = [tx_id, universal_tx_id, sender, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
-   - **Common fields first**: tx_id, universal_tx_id, sender, token, gas_fee
+   - additional_data = [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
+   - **Common fields first**: sub_tx_id, universal_tx_id, push_account, token, gas_fee
    - **Execute-specific**: target_program, accounts_buf, ix_data_buf, rent_fee
    - `accounts_buf` = length-prefixed serialized accounts (u32 BE count + accounts with pubkeys + isWritable)
    - `ix_data_buf` = length-prefixed instruction data (u32 BE length + data)
    - `token` = `Pubkey::default()` for SOL, mint pubkey for SPL
 7. **Sign**: Call `signTssMessage()` → Keccak-256 hash → secp256k1 sign → signature + recovery_id
 8. **Build Solana transaction**:
-   - Function: `withdraw_and_execute`
-   - Parameters: `instruction_id=2`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
+   - Function: `finalize_universal_tx`
+   - Parameters: `instruction_id=2`, `sub_tx_id`, `universal_tx_id`, `amount`, `push_account`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT - No target parameter**: Execute target comes from decoded payload `targetProgram`
    - Accounts:
-     - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`
+     - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_sub_tx`, `system_program`
      - Mode-specific: `destination_program` = decoded `targetProgram`, `recipient` = None
      - SPL (if token): `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`
      - Remaining: decoded accounts from payload (same order, same isWritable flags)
 9. **Submit**: Sign with relayer keypair, send to Solana
 10. **Verify**: Wait for event:
-    - Normal execute: `UniversalTxExecuted` (includes tx_id, universal_tx_id, sender, target, token, amount, payload)
-    - CEA self-withdraw (destinationProgram == gateway): `UniversalTx` with `via_cea: true` (NO `UniversalTxExecuted`)
+    - Normal execute: `UniversalTxFinalized` (includes sub_tx_id, universal_tx_id, push_account, target, token, amount, payload)
+    - CEA self-withdraw (destinationProgram == gateway): `UniversalTx` with `from_cea: true` (NO `UniversalTxFinalized`)
 
 ### Withdraw Flow (instruction_id=1):
 
@@ -824,22 +824,22 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
 5. **Build TSS message**:
    - Use `buildWithdrawAdditionalData()` helper (see `tests/helpers/tss.ts`)
    - instruction_id = 1
-   - additional_data = [tx_id, universal_tx_id, sender, token, gas_fee, target]
-   - **Common fields first**: tx_id, universal_tx_id, sender, token, gas_fee
+   - additional_data = [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target]
+   - **Common fields first**: sub_tx_id, universal_tx_id, push_account, token, gas_fee
    - **Withdraw-specific**: target (recipient)
      - **SOL**: `token` = `Pubkey::default()`, `target` = SOL recipient pubkey
      - **SPL**: `token` = mint pubkey, `target` = recipient owner pubkey (recipient ATA derived on-chain)
 6. **Sign**: Call `signTssMessage()` → Keccak-256 hash → secp256k1 sign → signature + recovery_id
 7. **Build Solana transaction**:
-   - Function: `withdraw_and_execute`
-   - Parameters: `instruction_id=1`, `tx_id`, `universal_tx_id`, `amount`, `sender`, `writable_flags=[]`, `ix_data=[]`, `gas_fee`, `rent_fee=0`, `signature`, `recovery_id`, `message_hash`
+   - Function: `finalize_universal_tx`
+   - Parameters: `instruction_id=1`, `sub_tx_id`, `universal_tx_id`, `amount`, `push_account`, `writable_flags=[]`, `ix_data=[]`, `gas_fee`, `rent_fee=0`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT - No target parameter**: Target derived from `recipient` account
    - Accounts:
-     - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`
+     - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_sub_tx`, `system_program`
      - Mode-specific: `recipient` (recipient pubkey), `destination_program` = SystemProgram.programId
      - SPL (if token): `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`, `recipient_ata`
      - Remaining: must be empty
-8. **Submit and verify**: Sign with relayer, send to Solana, wait for `UniversalTxExecuted` event
+8. **Submit and verify**: Sign with relayer, send to Solana, wait for `UniversalTxFinalized` event
 
 ### Revert Flow:
 
@@ -848,9 +848,9 @@ gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if created) + compute_buff
    - instruction_id = 3 (SOL) or 4 (SPL)
    - Call `signTssMessage()` with:
      - `additional`:
-       - SOL: `[universal_tx_id, tx_id, recipient_pubkey, gas_fee_buf]`
-       - SPL: `[universal_tx_id, tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
-   - **Note**: `signTssMessage()` does **not** auto-include `universal_tx_id` / `tx_id`. Include them in `additional` as specified.
+       - SOL: `[universal_tx_id, sub_tx_id, recipient_pubkey, gas_fee_buf]`
+       - SPL: `[universal_tx_id, sub_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
+   - **Note**: `signTssMessage()` does **not** auto-include `universal_tx_id` / `sub_tx_id`. Include them in `additional` as specified.
 3. **Sign and submit**: 
    - `signTssMessage()` returns signature, recovery_id, message_hash
    - See account structs: `RevertUniversalTx` or `RevertUniversalTxToken` in `revert.rs`
@@ -892,10 +892,10 @@ Before production:
   - Takes: `{ instruction, amount, additional, chainId }`
   - Returns: `{ signature, recoveryId, messageHash }`
 - `buildExecuteAdditionalData()` - Constructs additional fields for execute (instruction_id=2)
-  - Format: [tx_id, universal_tx_id, sender, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
+  - Format: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
   - **Common fields first**, then execute-specific
 - `buildWithdrawAdditionalData()` - Constructs additional fields for withdraw (instruction_id=1)
-  - Format: [tx_id, universal_tx_id, sender, token, gas_fee, target]
+  - Format: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target]
   - **Common fields first**, then withdraw-specific (target)
 
 **Instruction IDs** (TssInstruction enum):
@@ -910,8 +910,8 @@ Before production:
 
 **Execute Functions**:
 - `contracts/svm-gateway/programs/universal-gateway/src/instructions/execute.rs`
-  - `withdraw_and_execute()` - unified withdraw + execute handler
-  - `WithdrawAndExecute` struct - unified account struct for SOL/SPL execute + withdraw
+  - `finalize_universal_tx()` - unified withdraw + execute handler
+  - `FinalizeUniversalTx` struct - unified account struct for SOL/SPL execute + withdraw
 
 **Withdraw / Revert Functions**:
 - `contracts/svm-gateway/programs/universal-gateway/src/instructions/revert.rs`
@@ -953,8 +953,8 @@ Before production:
 ### 11.5 Account Structures (Rust)
 
 **Unified Execute/Withdraw Struct** (see `execute.rs`):
-- `WithdrawAndExecute` - Required + optional accounts for unified execute + withdraw operations
-  - **Required accounts** (all modes): `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_tx`, `system_program`, `destination_program`
+- `FinalizeUniversalTx` - Required + optional accounts for unified execute + withdraw operations
+  - **Required accounts** (all modes): `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_sub_tx`, `system_program`, `destination_program`
   - **Mode-specific accounts**:
     - `destination_program: UncheckedAccount` - ALWAYS required (non-optional)
       - Withdraw mode: SystemProgram.programId (sentinel)
@@ -977,7 +977,7 @@ Before production:
 - `GatewayAccountMeta` - Account metadata (pubkey + is_writable)
 - `Config` - Gateway configuration (min/max caps, paused state, etc.)
 - `TssPda` - TSS state (chain_id, tss_eth_address, authority, bump)
-- `ExecutedTx` - Replay protection tracker (8-byte discriminator only)
+- `ExecutedSubTx` - Replay protection tracker (8-byte discriminator only)
 
 ---
 
@@ -988,7 +988,7 @@ Before production:
 **For SOL transaction:**
 ```typescript
 const instruction = await program.methods
-  .withdrawAndExecute(/* ... params ... */)
+  .FinalizeUniversalTx(/* ... params ... */)
   .accounts(/* ... */)
   .instruction();
 
@@ -1009,7 +1009,7 @@ const signature = await connection.sendTransaction(tx);
 const usdcMint = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 
 const instruction = await program.methods
-  .withdrawAndExecute(/* ... params ... */)
+  .FinalizeUniversalTx(/* ... params ... */)
   .accounts({
     /* ... */
     mint: usdcMint,

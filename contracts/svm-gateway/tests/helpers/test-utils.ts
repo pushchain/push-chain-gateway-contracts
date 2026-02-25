@@ -33,7 +33,7 @@ export const computeDiscriminator = (name: string): Buffer =>
 // =============================================================================
 
 /**
- * Returns a tx_id generator with its own local counter.
+ * Returns a sub_tx_id generator with its own local counter.
  * Each test file should call `makeTxIdGenerator()` once and use the returned function.
  * The local counter + Date.now() + 24 random bytes guarantees uniqueness within a run.
  */
@@ -63,7 +63,7 @@ export const generateSender = (): number[] => {
 
 export const getExecutedTxPda = (txId: number[], programId: PublicKey): PublicKey => {
     const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("executed_tx"), Buffer.from(txId)],
+        [Buffer.from("executed_sub_tx"), Buffer.from(txId)],
         programId
     );
     return pda;
@@ -94,7 +94,7 @@ export const getCeaAta = async (sender: number[], mint: PublicKey, programId: Pu
 // Fee helpers
 // =============================================================================
 
-/** Minimum lamports to keep ExecutedTx account (8-byte discriminator only) rent-exempt */
+/** Minimum lamports to keep ExecutedSubTx account (8-byte discriminator only) rent-exempt */
 export const getExecutedTxRent = async (connection: anchor.web3.Connection): Promise<number> =>
     connection.getMinimumBalanceForRentExemption(8);
 
@@ -110,7 +110,7 @@ export const ceaAtaExists = async (connection: anchor.web3.Connection, ceaAta: P
 
 /**
  * Calculate gas_fee and rent_fee for SOL execute operations.
- * gas_fee = rent_fee + executed_tx_rent + COMPUTE_BUFFER
+ * gas_fee = rent_fee + executed_sub_tx_rent + COMPUTE_BUFFER
  */
 export const calculateSolExecuteFees = async (
     connection: anchor.web3.Connection,
@@ -122,7 +122,7 @@ export const calculateSolExecuteFees = async (
 
 /**
  * Calculate gas_fee and rent_fee for SPL execute operations.
- * gas_fee = rent_fee + executed_tx_rent + cea_ata_rent (if not yet created) + COMPUTE_BUFFER
+ * gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if not yet created) + COMPUTE_BUFFER
  */
 export const calculateSplExecuteFees = async (
     connection: anchor.web3.Connection,

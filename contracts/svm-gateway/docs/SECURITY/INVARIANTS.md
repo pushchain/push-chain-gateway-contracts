@@ -39,7 +39,7 @@ set_caps() ⟹ signer == config.admin
 
 ### 5. TSS Authorization
 ```
-withdraw_and_execute() succeeds ⟹ valid TSS signature
+finalize_universal_tx() succeeds ⟹ valid TSS signature
 revert() succeeds ⟹ valid TSS signature
 ```
 **Enforcement:** `validate_message()` in every outbound function
@@ -73,9 +73,9 @@ config.vault_bump never changes after initialization
 
 ### 10. Transaction Uniqueness
 ```
-∀ tx_id: executed_tx(tx_id) exists ⟹ transaction executed
+∀ sub_tx_id: executed_sub_tx(sub_tx_id) exists ⟹ transaction executed
 ```
-**Enforcement:** init constraint on ExecutedTx PDA
+**Enforcement:** init constraint on ExecutedSubTx PDA
 
 ---
 
@@ -219,10 +219,10 @@ deposit succeeds ⟹ exactly 1 or 2 UniversalTx events emitted
 
 ### 27. Execute Event
 ```
-withdraw_and_execute succeeds (target != gateway) ⟹ exactly 1 UniversalTxExecuted event
-withdraw_and_execute succeeds (target == gateway, CEA withdrawal) ⟹ exactly 1 UniversalTx event (via_cea=true)
+finalize_universal_tx succeeds (target != gateway) ⟹ exactly 1 UniversalTxFinalized event
+finalize_universal_tx succeeds (target == gateway, CEA withdrawal) ⟹ exactly 1 UniversalTx event (from_cea=true)
 ```
-**Enforcement:** emit! inside send_universal_tx_via_cea for CEA path
+**Enforcement:** emit! inside send_universal_tx_to_uea for CEA path
 
 ### 28. Revert Event
 ```
@@ -270,7 +270,7 @@ Amounts stored/transferred in native units:
 ```
 Config::LEN == actual serialized size
 TssPda::LEN == actual serialized size
-ExecutedTx::LEN == 8 (discriminator only)
+ExecutedSubTx::LEN == 8 (discriminator only)
 ```
 **Enforcement:** Space allocation in init constraints
 

@@ -5,15 +5,15 @@ import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { getCeaAuthorityPda, getExecutedTxPda } from "./test-utils";
 
 // =============================================================================
-// WithdrawAndExecute builder
+// FinalizeUniversalTx builder
 // =============================================================================
 
-export interface WithdrawAndExecuteArgs {
+export interface FinalizeUniversalTxArgs {
     instructionId: number;
-    txId: number[];
+    subTxId: number[];
     universalTxId: number[] | Uint8Array;
     amount: anchor.BN;
-    sender: number[];
+    pushAccount: number[];
     writableFlags?: Buffer;
     ixData?: Buffer;
     gasFee: anchor.BN;
@@ -38,26 +38,26 @@ export interface WithdrawAndExecuteArgs {
 }
 
 /**
- * Returns a `withdrawAndExecute` builder bound to the given program and PDAs.
+ * Returns a `finalizeUniversalTx` builder bound to the given program and PDAs.
  *
  * Usage (call once in before(), assign to a `let` variable):
- *   withdrawAndExecute = makeWithdrawAndExecuteBuilder(gatewayProgram, configPda, vaultPda, tssPda);
+ *   finalizeUniversalTx = makeFinalizeUniversalTxBuilder(gatewayProgram, configPda, vaultPda, tssPda);
  *
  * The returned function collapses the 13-arg method call + 15-field accounts block.
  * Call sites still chain .signers([...]).rpc() — and .remainingAccounts([...]) for execute.
  * All test assertions remain in the test body unchanged.
  */
-export const makeWithdrawAndExecuteBuilder = (
+export const makeFinalizeUniversalTxBuilder = (
     program: Program<UniversalGateway>,
     configPda: PublicKey,
     vaultPda: PublicKey,
     tssPda: PublicKey,
 ) => ({
     instructionId,
-    txId,
+    subTxId,
     universalTxId,
     amount,
-    sender,
+    pushAccount,
     writableFlags = Buffer.alloc(0),
     ixData = Buffer.from([]),
     gasFee,
@@ -75,14 +75,14 @@ export const makeWithdrawAndExecuteBuilder = (
     recipientAta = null,
     rateLimitConfig = null,
     tokenRateLimit = null,
-}: WithdrawAndExecuteArgs) =>
+}: FinalizeUniversalTxArgs) =>
     program.methods
-        .withdrawAndExecute(
+        .finalizeUniversalTx(
             instructionId,
-            Array.from(txId),
+            Array.from(subTxId),
             Array.from(universalTxId),
             amount,
-            Array.from(sender),
+            Array.from(pushAccount),
             writableFlags,
             ixData,
             gasFee,
@@ -95,9 +95,9 @@ export const makeWithdrawAndExecuteBuilder = (
             caller,
             config: configPda,
             vaultSol: vaultPda,
-            ceaAuthority: getCeaAuthorityPda(Array.from(sender), program.programId),
+            ceaAuthority: getCeaAuthorityPda(Array.from(pushAccount), program.programId),
             tssPda,
-            executedTx: getExecutedTxPda(Array.from(txId), program.programId),
+            executedSubTx: getExecutedTxPda(Array.from(subTxId), program.programId),
             destinationProgram: destinationProgram ?? SystemProgram.programId,
             recipient,
             vaultAta,
