@@ -21,6 +21,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
     let user1: Keypair;
     let configPda: PublicKey;
     let vaultPda: PublicKey;
+    let feeVaultPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
     let mockPriceFeed: PublicKey;
     let solPrice: number;
@@ -51,33 +52,27 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
         [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
+        [feeVaultPda] = PublicKey.findProgramAddressSync([Buffer.from("fee_vault")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
 
         mockPriceFeed = sharedState.getMockPriceFeed();
         solPrice = await getSolPrice(mockPriceFeed);
         mockUSDT = sharedState.getMockUSDT();
 
-        // Initialize token rate limit accounts (required for universal gateway)
+        // Normalize native token rate limit so this suite starts from a supported token state.
         const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // 1 sextillion (effectively unlimited)
         const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-        try {
-            await program.account.tokenRateLimit.fetch(nativeSolTokenRateLimitPda);
-        } catch {
-            // Not initialized, create it
-            await program.methods
-                .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenMint: PublicKey.default,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
+        await program.methods
+            .setTokenRateLimit(veryLargeThreshold)
+            .accounts({
+                admin: admin.publicKey,
+                config: configPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenMint: PublicKey.default,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([admin])
+            .rpc();
     });
 
     describe("Block USD Cap Enforcement", () => {
@@ -119,6 +114,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -157,6 +153,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -269,6 +266,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -294,6 +292,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -366,6 +365,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -384,6 +384,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -421,7 +422,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
                     tokenMint: PublicKey.default,
                     systemProgram: SystemProgram.programId,
@@ -445,6 +445,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -472,6 +473,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -501,6 +503,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -534,7 +537,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: usdtTokenRateLimitPda,
                     tokenMint: mockUSDT.mint.publicKey,
                     systemProgram: SystemProgram.programId,
@@ -558,6 +560,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: userTokenAccount,
                     gatewayTokenAccount: gatewayTokenAccount,
                     user: user1.publicKey,
@@ -585,6 +588,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: userTokenAccount,
                     gatewayTokenAccount: gatewayTokenAccount,
                     user: user1.publicKey,
@@ -614,6 +618,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         userTokenAccount: userTokenAccount,
                         gatewayTokenAccount: gatewayTokenAccount,
                         user: user1.publicKey,
@@ -641,7 +646,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
                     tokenMint: PublicKey.default,
                     systemProgram: SystemProgram.programId,
@@ -666,6 +670,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -706,7 +711,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
                     tokenMint: PublicKey.default,
                     systemProgram: SystemProgram.programId,
@@ -733,6 +737,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -769,7 +774,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
                     tokenMint: PublicKey.default,
                     systemProgram: SystemProgram.programId,
@@ -799,6 +803,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda,
                     gatewayTokenAccount: vaultPda,
                     user: user1.publicKey,
@@ -827,6 +832,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         userTokenAccount: vaultPda,
                         gatewayTokenAccount: vaultPda,
                         user: user1.publicKey,
@@ -881,7 +887,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
                     tokenMint: PublicKey.default,
                     systemProgram: SystemProgram.programId,
@@ -893,4 +898,3 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
         }
     });
 });
-

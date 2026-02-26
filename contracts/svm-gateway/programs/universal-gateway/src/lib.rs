@@ -68,6 +68,12 @@ pub mod universal_gateway {
         instructions::admin::set_caps_usd(ctx, min_cap, max_cap)
     }
 
+    /// @notice Set flat protocol fee (lamports) for inbound send_universal_tx.
+    /// Not gated by `!config.paused` so the admin can disable fees during an emergency pause.
+    pub fn set_protocol_fee(ctx: Context<FeeVaultAdminAction>, fee_lamports: u64) -> Result<()> {
+        instructions::admin::set_protocol_fee(ctx, fee_lamports)
+    }
+
     /// @notice Set Pyth price feed
     pub fn set_pyth_price_feed(ctx: Context<AdminAction>, price_feed: Pubkey) -> Result<()> {
         instructions::admin::set_pyth_price_feed(ctx, price_feed)
@@ -232,7 +238,7 @@ pub struct GetSolPrice<'info> {
 
 // Re-export account structs and types
 pub use instructions::admin::{
-    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
+    AdminAction, FeeVaultAdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::FinalizeUniversalTx;
@@ -247,8 +253,12 @@ pub use state::{
     CapsUpdated,
     Config,
     ExecutedSubTx,
+    FeeVault,
     GatewayAccountMeta,
     RevertInstructions,
+    ProtocolFeeCollected,
+    ProtocolFeeReimbursed,
+    ProtocolFeeUpdated,
     TSSAddressUpdated,
     TxType,
     UniversalPayload,
@@ -258,6 +268,7 @@ pub use state::{
     VerificationType,
     CONFIG_SEED,
     EXECUTED_SUB_TX_SEED,
+    FEE_VAULT_SEED,
     FEED_ID,
     VAULT_SEED,
 };

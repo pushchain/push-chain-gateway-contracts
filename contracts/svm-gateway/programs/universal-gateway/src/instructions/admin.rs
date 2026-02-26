@@ -53,6 +53,39 @@ pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap_usd: u128, max_cap_usd: u
     Ok(())
 }
 
+/// Admin action for fee vault operations (intentionally no `!config.paused` guard —
+/// the admin must be able to disable the fee even while paused).
+#[derive(Accounts)]
+pub struct FeeVaultAdminAction<'info> {
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == admin.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init_if_needed,
+        payer = admin,
+        space = FeeVault::LEN,
+        seeds = [FEE_VAULT_SEED],
+        bump,
+    )]
+    pub fee_vault: Account<'info, FeeVault>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn set_protocol_fee(ctx: Context<FeeVaultAdminAction>, fee_lamports: u64) -> Result<()> {
+    // Keep bump persisted so seeded constraints continue to validate consistently.
+    ctx.accounts.fee_vault.bump = ctx.bumps.fee_vault;
+    ctx.accounts.fee_vault.protocol_fee_lamports = fee_lamports;
+    emit!(ProtocolFeeUpdated { new_fee_lamports: fee_lamports });
+    Ok(())
+}
+
 // Pyth oracle configuration functions
 pub fn set_pyth_price_feed(ctx: Context<AdminAction>, price_feed: Pubkey) -> Result<()> {
     require!(price_feed != Pubkey::default(), GatewayError::ZeroAddress);

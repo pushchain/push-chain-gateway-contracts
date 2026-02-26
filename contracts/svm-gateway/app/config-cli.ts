@@ -19,6 +19,7 @@ const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp")
 const CONFIG_SEED = "config";
 const TSS_SEED = "tsspda_v2";
 const VAULT_SEED = "vault";
+const FEE_VAULT_SEED = "fee_vault";
 const RATE_LIMIT_CONFIG_SEED = "rate_limit_config";
 const RATE_LIMIT_SEED = "rate_limit";
 
@@ -55,6 +56,11 @@ function deriveTssPda(): PublicKey {
 
 function deriveVaultPda(): PublicKey {
     const [pda] = PublicKey.findProgramAddressSync([Buffer.from(VAULT_SEED)], PROGRAM_ID);
+    return pda;
+}
+
+function deriveFeeVaultPda(): PublicKey {
+    const [pda] = PublicKey.findProgramAddressSync([Buffer.from(FEE_VAULT_SEED)], PROGRAM_ID);
     return pda;
 }
 
@@ -238,6 +244,45 @@ program_cli
             console.log(`   Transaction: ${tx}\n`);
         } catch (error: any) {
             console.error(`❌ Error unpausing gateway: ${error.message}`);
+            process.exit(1);
+        }
+    });
+
+// ============================================
+//             PROTOCOL FEE COMMANDS
+// ============================================
+
+program_cli
+    .command("fee:init")
+    .description("Initialize fee vault PDA (idempotent); optionally set initial protocol fee")
+    .option("--fee <lamports>", "Initial protocol fee in lamports (u64)", "0")
+    .action(async (options) => {
+        try {
+            console.log("=== INITIALIZING FEE VAULT ===\n");
+
+            const feeLamports = BigInt(options.fee);
+            const configPda = deriveConfigPda();
+            const feeVaultPda = deriveFeeVaultPda();
+
+            console.log(`Config PDA: ${configPda.toBase58()}`);
+            console.log(`Fee Vault PDA: ${feeVaultPda.toBase58()}`);
+            console.log(`Protocol Fee (lamports): ${feeLamports}\n`);
+
+            const tx = await program.methods
+                .setProtocolFee(new anchor.BN(feeLamports.toString()))
+                .accounts({
+                    config: configPda,
+                    feeVault: feeVaultPda,
+                    admin: adminKeypair.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([adminKeypair])
+                .rpc();
+
+            console.log(`✅ Fee vault initialized/updated successfully!`);
+            console.log(`   Transaction: ${tx}\n`);
+        } catch (error: any) {
+            console.error(`❌ Error initializing fee vault: ${error.message}`);
             process.exit(1);
         }
     });
@@ -468,7 +513,7 @@ program_cli
 
 program_cli
     .command("config:show")
-    .description("Show current gateway configuration (config + tss + rate_limit)")
+    .description("Show current gateway configuration (config + tss + rate_limit + fee_vault)")
     .action(async () => {
         try {
             console.log("=== GATEWAY CONFIGURATION ===\n");
@@ -476,6 +521,7 @@ program_cli
             const configPda = deriveConfigPda();
             const tssPda = deriveTssPda();
             const rateLimitConfigPda = deriveRateLimitConfigPda();
+            const feeVaultPda = deriveFeeVaultPda();
 
             // Fetch Config
             console.log("📋 Config Account");
@@ -505,6 +551,19 @@ program_cli
             try {
                 const rateLimitConfig = await (program.account as any).rateLimitConfig.fetch(rateLimitConfigPda);
                 formatAccount("Data", rateLimitConfig);
+            } catch (error: any) {
+                console.log(`   ❌ Not initialized: ${error.message}`);
+            }
+            console.log();
+
+            // Fetch Fee Vault
+            console.log("💸 Fee Vault");
+            console.log(`   PDA: ${feeVaultPda.toBase58()}`);
+            try {
+                const feeVault = await (program.account as any).feeVault.fetch(feeVaultPda);
+                formatAccount("Data", feeVault);
+                const feeVaultBalance = await connection.getBalance(feeVaultPda);
+                console.log(`   Balance (lamports): ${feeVaultBalance}`);
             } catch (error: any) {
                 console.log(`   ❌ Not initialized: ${error.message}`);
             }

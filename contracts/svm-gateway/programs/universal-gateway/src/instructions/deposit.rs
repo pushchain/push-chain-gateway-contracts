@@ -4,7 +4,7 @@ use crate::utils::*;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::system_program;
-use anchor_spl::token::{self, spl_token, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, spl_token, Token, Transfer};
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use spl_token::state::Account as SplAccount;
 // =========================
@@ -27,8 +27,44 @@ pub fn send_universal_tx(
         GatewayError::InsufficientBalance
     );
 
-    let tx_type = fetch_tx_type(&req, native_amount)?;
-    route_universal_tx(&mut ctx, req, native_amount, tx_type)
+    // Collect protocol fee first so all downstream routing sees post-fee native amount.
+    let adjusted_native_amount = collect_protocol_fee(&mut ctx, native_amount)?;
+
+    let tx_type = fetch_tx_type(&req, adjusted_native_amount)?;
+    route_universal_tx(&mut ctx, req, adjusted_native_amount, tx_type)
+}
+
+fn collect_protocol_fee(ctx: &mut Context<SendUniversalTx>, native_amount: u64) -> Result<u64> {
+    let fee_lamports = ctx.accounts.fee_vault.protocol_fee_lamports;
+    if fee_lamports == 0 {
+        return Ok(native_amount);
+    }
+
+    require!(
+        native_amount >= fee_lamports,
+        GatewayError::InsufficientProtocolFee
+    );
+
+    // Transfer fee from user → fee_vault (keeps bridge vault strictly 1:1 backed)
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        system_program::Transfer {
+            from: ctx.accounts.user.to_account_info(),
+            to: ctx.accounts.fee_vault.to_account_info(),
+        },
+    );
+    system_program::transfer(cpi_ctx, fee_lamports)?;
+
+    let adjusted_native_amount = native_amount - fee_lamports;
+
+    emit!(ProtocolFeeCollected {
+        payer: ctx.accounts.user.key(),
+        amount_lamports: fee_lamports,
+        native_amount_before: native_amount,
+        native_amount_after: adjusted_native_amount,
+    });
+
+    Ok(adjusted_native_amount)
 }
 
 /// @notice Internal router: dispatches to GAS or FUNDS handlers based on derived tx_type.
@@ -147,11 +183,6 @@ fn send_tx_with_gas_route(
 
         return Ok(());
     }
-
-    require!(
-        ctx.accounts.user.lamports() >= gas_amount,
-        GatewayError::InsufficientBalance
-    );
 
     // Performs rate-limit checks and handle deposit
     // USD caps: min $1, max $10 (enforced via Pyth oracle)
@@ -351,7 +382,6 @@ fn deposit_spl_to_vault(ctx: &Context<SendUniversalTx>, token: Pubkey, amount: u
 #[derive(Accounts)]
 pub struct SendUniversalTx<'info> {
     #[account(
-        mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
     )]
@@ -363,6 +393,15 @@ pub struct SendUniversalTx<'info> {
         bump = config.vault_bump,
     )]
     pub vault: SystemAccount<'info>,
+
+    /// Fee vault: receives the flat protocol fee per inbound tx.
+    /// Separate from bridge vault to preserve the 1:1 bridge invariant.
+    #[account(
+        mut,
+        seeds = [FEE_VAULT_SEED],
+        bump = fee_vault.bump,
+    )]
+    pub fee_vault: Account<'info, FeeVault>,
 
     /// CHECK: Only required for SPL token routes; validated at runtime.
     /// For native SOL routes, pass vault account as dummy (not used).

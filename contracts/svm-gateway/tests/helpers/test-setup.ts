@@ -73,7 +73,20 @@ export async function ensureTestSetup(): Promise<void> {
         // Step 4: Derive program PDAs
         const [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         const [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
+        const [feeVaultPda] = PublicKey.findProgramAddressSync([Buffer.from("fee_vault")], program.programId);
         const [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
+        const [nativeTokenRateLimitPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit"), PublicKey.default.toBuffer()],
+            program.programId
+        );
+        const [usdtTokenRateLimitPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit"), mockUSDT.mint.publicKey.toBuffer()],
+            program.programId
+        );
+        const [usdcTokenRateLimitPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rate_limit"), mockUSDC.mint.publicKey.toBuffer()],
+            program.programId
+        );
 
         // Step 5: Setup mock Pyth price feed
         let mockPriceFeed: PublicKey;
@@ -162,8 +175,50 @@ export async function ensureTestSetup(): Promise<void> {
                 .signers([admin])
                 .rpc();
         }
+
+        // Step 9: Ensure fee_vault exists (devnet-safe path) and starts disabled
+        await program.methods
+            .setProtocolFee(new anchor.BN(0))
+            .accounts({
+                config: configPda,
+                feeVault: feeVaultPda,
+                admin: admin.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([admin])
+            .rpc();
+
+        // Step 10: Normalize rate-limit state so suites don't inherit stale 0-threshold config
+        await program.methods
+            .updateEpochDuration(new anchor.BN(0))
+            .accounts({
+                admin: admin.publicKey,
+                config: configPda,
+                rateLimitConfig: rateLimitConfigPda,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([admin])
+            .rpc();
+
+        const veryLargeThreshold = new anchor.BN("1000000000000000000000");
+        for (const [tokenMint, tokenRateLimit] of [
+            [PublicKey.default, nativeTokenRateLimitPda],
+            [mockUSDT.mint.publicKey, usdtTokenRateLimitPda],
+            [mockUSDC.mint.publicKey, usdcTokenRateLimitPda],
+        ] as const) {
+            await program.methods
+                .setTokenRateLimit(veryLargeThreshold)
+                .accounts({
+                    admin: admin.publicKey,
+                    config: configPda,
+                    tokenRateLimit,
+                    tokenMint,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        }
     })();
 
     return setupPromise;
 }
-

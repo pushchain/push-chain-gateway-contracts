@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 // PDA seeds
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const VAULT_SEED: &[u8] = b"vault";
+pub const FEE_VAULT_SEED: &[u8] = b"fee_vault";
 pub const TSS_SEED: &[u8] = b"tsspda_v2";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
@@ -94,6 +95,21 @@ impl Config {
     // discriminator + fields + padding
     // 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100
     pub const LEN: usize = 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100;
+}
+
+/// Fee vault: holds protocol fee lamports and the per-tx fee config.
+/// PDA: `[b"fee_vault"]`.
+/// Lamports above rent-exempt minimum = spendable relayer reimbursement pool.
+/// Vault (bridge funds) is never touched by fee logic — 1:1 invariant is structurally enforced.
+#[account]
+pub struct FeeVault {
+    pub protocol_fee_lamports: u64, // Flat fee charged per inbound send_universal_tx; 0 disables
+    pub bump: u8,
+}
+
+impl FeeVault {
+    // 8 (discriminator) + 8 (fee) + 1 (bump) + 50 (padding)
+    pub const LEN: usize = 8 + 8 + 1 + 50;
 }
 
 /// Rate limiting configuration (separate account for backward compatibility)
@@ -229,6 +245,26 @@ pub struct EpochDurationUpdated {
 pub struct TokenRateLimitUpdated {
     pub token_mint: Pubkey,
     pub limit_threshold: u128,
+}
+
+#[event]
+pub struct ProtocolFeeUpdated {
+    pub new_fee_lamports: u64,
+}
+
+#[event]
+pub struct ProtocolFeeCollected {
+    pub payer: Pubkey,
+    pub amount_lamports: u64,
+    pub native_amount_before: u64,
+    pub native_amount_after: u64,
+}
+
+#[event]
+pub struct ProtocolFeeReimbursed {
+    pub sub_tx_id: [u8; 32],
+    pub relayer: Pubkey,
+    pub amount_lamports: u64,
 }
 
 // Keep legacy if referenced; prefer TxWithGas above

@@ -45,6 +45,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
     let configPda: PublicKey;
     let vaultPda: PublicKey;
+    let feeVaultPda: PublicKey;
     let tssPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
     let mockPriceFeed: PublicKey;
@@ -121,8 +122,25 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
         [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
         [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
+        [feeVaultPda] = PublicKey.findProgramAddressSync([Buffer.from("fee_vault")], program.programId);
         [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda_v2")], program.programId);
         [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
+
+        // Ensure protocol fee is disabled for deterministic seeding in this suite.
+        await program.methods
+            .setProtocolFee(new anchor.BN(0))
+            .accounts({
+                config: configPda,
+                feeVault: feeVaultPda,
+                admin: admin.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([admin])
+            .rpc();
+
+        // Seed fee_vault with a small amount to cover relayer gas reimbursements in revert tests
+        const feeVaultFundTx = await provider.connection.requestAirdrop(feeVaultPda, anchor.web3.LAMPORTS_PER_SOL);
+        await provider.connection.confirmTransaction(feeVaultFundTx);
 
         mockPriceFeed = sharedState.getMockPriceFeed();
 
@@ -146,24 +164,19 @@ describe("Universal Gateway - Withdraw Tests", () => {
         // Seed vault with native SOL using sendUniversalTx (FUNDS route)
         const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
 
-        // Initialize native SOL token rate limit if needed
-        try {
-            await program.account.tokenRateLimit.fetch(nativeSolTokenRateLimitPda);
-        } catch {
-            const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
-            await program.methods
-                .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenMint: PublicKey.default,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
+        // Force a known non-zero threshold even if another suite previously set 0.
+        const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
+        await program.methods
+            .setTokenRateLimit(veryLargeThreshold)
+            .accounts({
+                config: configPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenMint: PublicKey.default,
+                admin: admin.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([admin])
+            .rpc();
 
         // Deposit 8 SOL to vault for withdrawal tests (leave room for transaction fees)
         const solDepositAmount = 8 * anchor.web3.LAMPORTS_PER_SOL;
@@ -189,6 +202,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: vaultPda, // Dummy account for native SOL routes
                     gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
                     user: user1.publicKey,
@@ -234,25 +248,18 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
         const splTokenRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
 
-        // Initialize token rate limit if needed (with very large threshold to effectively disable)
-        try {
-            await program.account.tokenRateLimit.fetch(splTokenRateLimitPda);
-        } catch {
-            // Not initialized, create it
-            const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
-            await program.methods
-                .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: splTokenRateLimitPda,
-                    tokenMint: mockUSDT.mint.publicKey,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
+        // Force a known non-zero threshold even if another suite previously set 0.
+        await program.methods
+            .setTokenRateLimit(veryLargeThreshold)
+            .accounts({
+                config: configPda,
+                tokenRateLimit: splTokenRateLimitPda,
+                tokenMint: mockUSDT.mint.publicKey,
+                admin: admin.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([admin])
+            .rpc();
 
         // Verify SPL deposit
         const vaultUsdtBalanceBefore = await mockUSDT.getBalance(vaultUsdtAccount);
@@ -263,6 +270,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     user: user1.publicKey,
                     userTokenAccount: user1UsdtAccount,
                     gatewayTokenAccount: vaultUsdtAccount,
@@ -674,6 +682,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     tssPda,
                     recipient: recipient.publicKey,
                     executedSubTx: executedTxPda,
@@ -691,6 +700,58 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const actualRentForExecutedTx = 890880; // Approximate rent for 8-byte ExecutedSubTx account
             const expectedCallerGain = Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx; // gas_fee minus rent for executed_sub_tx
             expect(callerBalanceChange).to.be.closeTo(expectedCallerGain, 100000); // Allow larger variance
+        });
+
+        it("rejects revert when fee_vault cannot reimburse gas fee", async () => {
+            const revertAmount = 1; // keep transfer leg minimal; only fee-pool check should fail
+            const tooLargeGasFee = BigInt(2 * anchor.web3.LAMPORTS_PER_SOL); // > seeded fee_vault in this suite
+
+            const subTxId = generateTxId();
+            const universalTxId = generateUniversalTxId();
+            const executedTxPda = getExecutedTxPda(subTxId);
+
+            const revertInstruction = {
+                fundRecipient: recipient.publicKey,
+                revertMsg: Buffer.from("insufficient fee pool"),
+            };
+
+            const signature = await signTssMessageWithChainId({
+                instruction: TssInstruction.RevertWithdrawSol,
+                amount: BigInt(revertAmount),
+                additional: [
+                    new Uint8Array(universalTxId),
+                    new Uint8Array(subTxId),
+                    toBytes(recipient.publicKey),
+                    buildGasFeeBuf(tooLargeGasFee),
+                ],
+            });
+
+            await expectRejection(
+                program.methods
+                    .revertUniversalTx(
+                        subTxId,
+                        universalTxId,
+                        new anchor.BN(revertAmount),
+                        revertInstruction,
+                        new anchor.BN(Number(tooLargeGasFee)),
+                        signature.signature,
+                        signature.recoveryId,
+                        signature.messageHash,
+                    )
+                    .accounts({
+                        config: configPda,
+                        vault: vaultPda,
+                        feeVault: feeVaultPda,
+                        tssPda,
+                        recipient: recipient.publicKey,
+                        executedSubTx: executedTxPda,
+                        caller: relayer.publicKey,
+                        systemProgram: SystemProgram.programId,
+                    })
+                    .signers([relayer])
+                    .rpc(),
+                "InsufficientFeePool"
+            );
         });
 
         it("reverts an SPL withdrawal with a valid signature", async () => {
@@ -733,6 +794,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     config: configPda,
                     vault: vaultPda,
                     tokenVault: vaultUsdtAccount,
+                    feeVault: feeVaultPda,
                     tssPda,
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
@@ -1128,6 +1190,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
                         executedSubTx: executedTxPda,
@@ -1174,6 +1237,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey, // Use valid recipient for account validation
                         executedSubTx: executedTxPda,
@@ -1236,6 +1300,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     tssPda,
                     recipient: recipient.publicKey,
                     executedSubTx: executedTxPda,
@@ -1273,6 +1338,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
+                        feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
                         executedSubTx: executedTxPda,
@@ -1334,6 +1400,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         config: configPda,
                         vault: vaultPda,
                         tokenVault: vaultUsdtAccount,
+                        feeVault: feeVaultPda,
                         tssPda,
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
@@ -1384,6 +1451,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         config: configPda,
                         vault: vaultPda,
                         tokenVault: vaultUsdtAccount,
+                        feeVault: feeVaultPda,
                         tssPda,
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,
@@ -1435,6 +1503,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     config: configPda,
                     vault: vaultPda,
                     tokenVault: vaultUsdtAccount,
+                    feeVault: feeVaultPda,
                     tssPda,
                     recipientTokenAccount: recipientRevertAccount,
                     tokenMint: mockUSDT.mint.publicKey,
@@ -1475,6 +1544,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         config: configPda,
                         vault: vaultPda,
                         tokenVault: vaultUsdtAccount,
+                        feeVault: feeVaultPda,
                         tssPda,
                         recipientTokenAccount: recipientRevertAccount,
                         tokenMint: mockUSDT.mint.publicKey,

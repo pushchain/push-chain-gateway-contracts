@@ -1,6 +1,7 @@
 use crate::instructions::tss::validate_message;
 use crate::{errors::*, state::*};
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::sysvar::rent::Rent;
 use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::solana_program::system_instruction;
 use anchor_spl::token::{self, spl_token, Mint, Token, TokenAccount, Transfer};
@@ -24,6 +25,14 @@ pub struct RevertUniversalTx<'info> {
     /// CHECK: SOL-only PDA, no data
     #[account(mut, seeds = [VAULT_SEED], bump = config.vault_bump)]
     pub vault: UncheckedAccount<'info>,
+
+    /// Fee vault — relayer gas reimbursement comes from here, not from bridge vault.
+    #[account(
+        mut,
+        seeds = [FEE_VAULT_SEED],
+        bump = fee_vault.bump,
+    )]
+    pub fee_vault: Account<'info, FeeVault>,
 
     #[account(
         mut,
@@ -118,14 +127,25 @@ pub fn revert_universal_tx(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Transfer gas fee to caller (relayer reimbursement)
-    crate::utils::transfer_gas_fee_to_caller(
-        &ctx.accounts.vault.to_account_info(),
-        &ctx.accounts.caller.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        gas_fee,
-        ctx.accounts.config.vault_bump,
-    )?;
+    // Reimburse relayer gas from fee_vault (not from bridge vault — preserves 1:1 invariant).
+    if gas_fee > 0 {
+        let fee_vault_info = ctx.accounts.fee_vault.to_account_info();
+        let min_balance = Rent::get()?.minimum_balance(FeeVault::LEN);
+        let available = fee_vault_info
+            .lamports()
+            .checked_sub(min_balance)
+            .ok_or(error!(GatewayError::InsufficientFeePool))?;
+        require!(available >= gas_fee, GatewayError::InsufficientFeePool);
+
+        **fee_vault_info.try_borrow_mut_lamports()? -= gas_fee;
+        **ctx.accounts.caller.to_account_info().try_borrow_mut_lamports()? += gas_fee;
+
+        emit!(ProtocolFeeReimbursed {
+            sub_tx_id,
+            relayer: ctx.accounts.caller.key(),
+            amount_lamports: gas_fee,
+        });
+    }
 
     Ok(())
 }
@@ -148,6 +168,14 @@ pub struct RevertUniversalTxToken<'info> {
     /// CHECK: Vault token account - validated at runtime (owner == vault, mint == token_mint)
     #[account(mut)]
     pub token_vault: UncheckedAccount<'info>,
+
+    /// Fee vault — relayer gas reimbursement comes from here, not from bridge vault.
+    #[account(
+        mut,
+        seeds = [FEE_VAULT_SEED],
+        bump = fee_vault.bump,
+    )]
+    pub fee_vault: Account<'info, FeeVault>,
 
     #[account(
         mut,
@@ -175,14 +203,6 @@ pub struct RevertUniversalTxToken<'info> {
     /// The caller/relayer who pays for the transaction (including executed_sub_tx account creation)
     #[account(mut)]
     pub caller: Signer<'info>,
-
-    /// Vault SOL PDA (needed for gas_fee transfer to caller)
-    #[account(
-        mut,
-        seeds = [VAULT_SEED],
-        bump = config.vault_bump,
-    )]
-    pub vault_sol: SystemAccount<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -271,14 +291,25 @@ pub fn revert_universal_tx_token(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Transfer gas fee to caller (relayer reimbursement)
-    crate::utils::transfer_gas_fee_to_caller(
-        &ctx.accounts.vault_sol.to_account_info(),
-        &ctx.accounts.caller.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        gas_fee,
-        ctx.accounts.config.vault_bump,
-    )?;
+    // Reimburse relayer gas from fee_vault (not from bridge vault — preserves 1:1 invariant).
+    if gas_fee > 0 {
+        let fee_vault_info = ctx.accounts.fee_vault.to_account_info();
+        let min_balance = Rent::get()?.minimum_balance(FeeVault::LEN);
+        let available = fee_vault_info
+            .lamports()
+            .checked_sub(min_balance)
+            .ok_or(error!(GatewayError::InsufficientFeePool))?;
+        require!(available >= gas_fee, GatewayError::InsufficientFeePool);
+
+        **fee_vault_info.try_borrow_mut_lamports()? -= gas_fee;
+        **ctx.accounts.caller.to_account_info().try_borrow_mut_lamports()? += gas_fee;
+
+        emit!(ProtocolFeeReimbursed {
+            sub_tx_id,
+            relayer: ctx.accounts.caller.key(),
+            amount_lamports: gas_fee,
+        });
+    }
 
     Ok(())
 }
