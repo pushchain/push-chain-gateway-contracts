@@ -77,6 +77,14 @@ export const getCeaAuthorityPda = (sender: number[], programId: PublicKey): Publ
     return pda;
 };
 
+export const getFeeVaultPda = (programId: PublicKey): PublicKey => {
+    const [pda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("fee_vault")],
+        programId
+    );
+    return pda;
+};
+
 export const getTokenRateLimitPda = (tokenMint: PublicKey, programId: PublicKey): PublicKey => {
     const [pda] = PublicKey.findProgramAddressSync(
         [Buffer.from("rate_limit"), tokenMint.toBuffer()],

@@ -229,6 +229,10 @@ async function run() {
         [Buffer.from(VAULT_SEED)],
         PROGRAM_ID
     );
+    const [feeVaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("fee_vault")],
+        PROGRAM_ID
+    );
     const [tssPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("tsspda_v2")],
         PROGRAM_ID
@@ -340,6 +344,7 @@ async function run() {
     console.log(`User: ${user.toString()}`);
     console.log(`Config PDA: ${configPda.toString()}`);
     console.log(`Vault PDA: ${vaultPda.toString()}\n`);
+    console.log(`Fee Vault PDA: ${feeVaultPda.toString()}\n`);
 
     // Step 1: Initialize Gateway
     console.log("1. Initializing Gateway...");
@@ -550,6 +555,7 @@ async function run() {
         .accounts({
             config: configPda,
             vault: vaultPda,
+            feeVault: feeVaultPda,
             userTokenAccount: vaultPda,
             gatewayTokenAccount: vaultPda,
             user: user,
@@ -587,6 +593,7 @@ async function run() {
         .accounts({
             config: configPda,
             vault: vaultPda,
+            feeVault: feeVaultPda,
             userTokenAccount: vaultPda,
             gatewayTokenAccount: vaultPda,
             user: user,
@@ -626,6 +633,7 @@ async function run() {
         .accounts({
             config: configPda,
             vault: vaultPda,
+            feeVault: feeVaultPda,
             userTokenAccount: vaultPda,
             gatewayTokenAccount: vaultPda,
             user: user,
@@ -670,6 +678,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: tokenAccount,
                 gatewayTokenAccount: vaultAta.address,
                 user: user,
@@ -716,6 +725,7 @@ async function run() {
         .accounts({
             config: configPda,
             vault: vaultPda,
+            feeVault: feeVaultPda,
             userTokenAccount: vaultPda,
             gatewayTokenAccount: vaultPda,
             user: user,
@@ -781,6 +791,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: tokenAccount,
                 gatewayTokenAccount: vaultAta.address,
                 user: user,
@@ -847,6 +858,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: vaultPda,
                 gatewayTokenAccount: vaultPda,
                 user: user,
@@ -884,6 +896,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: vaultPda,
                 gatewayTokenAccount: vaultPda,
                 user: user,
@@ -922,6 +935,7 @@ async function run() {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: tokenAccount,
                     gatewayTokenAccount: vaultAta.address,
                     user: user,
@@ -958,6 +972,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: vaultPda,
                 gatewayTokenAccount: vaultPda,
                 user: user,
@@ -995,6 +1010,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: vaultPda,
                 gatewayTokenAccount: vaultPda,
                 user: user,
@@ -1030,6 +1046,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: vaultPda,
                 gatewayTokenAccount: vaultPda,
                 user: user,
@@ -1069,6 +1086,7 @@ async function run() {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: tokenAccount,
                     gatewayTokenAccount: tokenAccount, // ⚠️ ATTACK: User's own account instead of vault ATA
                     user: user,
@@ -1107,6 +1125,7 @@ async function run() {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: tokenAccount,
                     gatewayTokenAccount: tokenAccount, // ⚠️ ATTACK: User's own account instead of vault ATA
                     user: user,
@@ -1156,6 +1175,7 @@ async function run() {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
+                    feeVault: feeVaultPda,
                     userTokenAccount: tokenAccount,
                     gatewayTokenAccount: wrongMintVaultAta, // ⚠️ ATTACK: Vault ATA but for wrong mint
                     user: user,
@@ -1220,6 +1240,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 userTokenAccount: vaultPda,
                 gatewayTokenAccount: vaultPda,
                 user: user,
@@ -2962,6 +2983,7 @@ async function run() {
             .accounts({
                 config: configPda,
                 vault: vaultPda,
+                feeVault: feeVaultPda,
                 tssPda: tssPda,
                 recipient: admin,
                 executedSubTx: executedTxPdaRevert,

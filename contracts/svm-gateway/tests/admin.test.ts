@@ -319,7 +319,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 .accounts({
                     admin: admin.publicKey,
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: tokenRateLimitPda,
                     tokenMint: mockUSDT.mint.publicKey,
                     systemProgram: SystemProgram.programId,

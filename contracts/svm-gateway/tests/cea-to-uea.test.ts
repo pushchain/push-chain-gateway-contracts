@@ -90,28 +90,23 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             gatewayProgram.programId
         );
 
-        // Initialize token rate limits if not already done
+        // Normalize token rate limits so this suite doesn't inherit stale 0-threshold state.
         const veryLargeThreshold = new anchor.BN("1000000000000000000000");
         for (const [pda, mint] of [
             [nativeSolTokenRateLimitPda, PublicKey.default],
             [usdtTokenRateLimitPda, mockUSDT.mint.publicKey],
         ] as [PublicKey, PublicKey][]) {
-            try {
-                await gatewayProgram.account.tokenRateLimit.fetch(pda);
-            } catch {
-                await gatewayProgram.methods
-                    .setTokenRateLimit(veryLargeThreshold)
-                    .accounts({
-                        config: configPda,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: pda,
-                        tokenMint: mint,
-                        admin: admin.publicKey,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([admin])
-                    .rpc();
-            }
+            await gatewayProgram.methods
+                .setTokenRateLimit(veryLargeThreshold)
+                .accounts({
+                    config: configPda,
+                    tokenRateLimit: pda,
+                    tokenMint: mint,
+                    admin: admin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
         }
 
         // Get vault ATA and create if needed

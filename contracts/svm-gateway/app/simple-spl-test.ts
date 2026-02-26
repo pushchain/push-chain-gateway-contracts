@@ -17,6 +17,7 @@ import { Command } from "commander";
 const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
+const FEE_VAULT_SEED = "fee_vault";
 const RATE_LIMIT_CONFIG_SEED = "rate_limit_config";
 const RATE_LIMIT_SEED = "rate_limit";
 
@@ -68,6 +69,10 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
         [Buffer.from(VAULT_SEED)],
         PROGRAM_ID
     );
+    const [feeVaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(FEE_VAULT_SEED)],
+        PROGRAM_ID
+    );
     const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
         [Buffer.from(RATE_LIMIT_CONFIG_SEED)],
         PROGRAM_ID
@@ -102,6 +107,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     console.log(`Mint: ${mint.toString()}`);
     console.log(`Config PDA: ${configPda.toString()}`);
     console.log(`Vault PDA: ${vaultPda.toString()}`);
+    console.log(`Fee Vault PDA: ${feeVaultPda.toString()}`);
 
     // Step 1: Get vault ATA
     console.log("1. Getting vault ATA...");
@@ -175,8 +181,8 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
                 .setTokenRateLimit(veryLargeThreshold)
                 .accounts({
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: splTokenRateLimitPda,
+                    tokenMint: mint,
                     admin: admin,
                     systemProgram: SystemProgram.programId,
                 })
@@ -193,6 +199,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
         .accounts({
             config: configPda,
             vault: vaultPda,
+            feeVault: feeVaultPda,
             user: user,
             userTokenAccount: userTokenAccount.address,
             gatewayTokenAccount: vaultAta,
