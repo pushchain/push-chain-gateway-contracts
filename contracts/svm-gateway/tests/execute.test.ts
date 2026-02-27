@@ -484,6 +484,360 @@ describe("Universal Gateway - Execute Tests", () => {
             );
         });
 
+        it("should execute SOL transfer using preseeded CEA balance + partial vault top-up", async () => {
+            const pushAccount = generateSender();
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
+
+            const preseedLamports = 50_000_000; // 0.05 SOL already in CEA
+            const topupLamports = 50_000_000;   // 0.05 SOL from vault (burned on Push)
+            const totalTransferLamports = preseedLamports + topupLamports; // 0.1 SOL to recipient
+
+            // Step 1: Preseed CEA with 0.05 SOL via execute (amount > 0) with harmless payload
+            const preseedSubTxId = generateTxId();
+            const preseedUniversalTxId = generateUniversalTxId();
+            const preseedIx = await counterProgram.methods
+                .increment(new anchor.BN(0))
+                .accounts({
+                    counter: counterPda,
+                    authority: counterAuthority.publicKey,
+                })
+                .instruction();
+            const preseedAccounts = instructionAccountsToGatewayMetas(preseedIx);
+            const preseedRemaining = instructionAccountsToRemaining(preseedIx);
+            const { gasFee: preseedGasFee, rentFee: preseedRentFee } = await calculateSolExecuteFees(
+                provider.connection,
+                BigInt(0)
+            );
+
+            const preseedSig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(preseedLamports),
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(preseedUniversalTxId),
+                    new Uint8Array(preseedSubTxId),
+                    counterProgram.programId,
+                    new Uint8Array(pushAccount),
+                    preseedAccounts,
+                    preseedIx.data,
+                    preseedGasFee,
+                    preseedRentFee
+                ),
+            });
+
+            await gatewayProgram.methods
+                .finalizeUniversalTx(
+                    2,
+                    Array.from(preseedSubTxId),
+                    Array.from(preseedUniversalTxId),
+                    new anchor.BN(preseedLamports),
+                    Array.from(pushAccount),
+                    accountsToWritableFlagsOnly(preseedAccounts),
+                    Buffer.from(preseedIx.data),
+                    new anchor.BN(Number(preseedGasFee)),
+                    new anchor.BN(Number(preseedRentFee)),
+                    Array.from(preseedSig.signature),
+                    preseedSig.recoveryId,
+                    Array.from(preseedSig.messageHash),
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    ceaAuthority,
+                    tssPda,
+                    executedSubTx: getExecutedTxPda(preseedSubTxId),
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
+                    destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(preseedRemaining)
+                .signers([admin])
+                .rpc();
+
+            // Step 2: Execute transfer of full 0.1 SOL while topping up only 0.05 from vault
+            const transferSubTxId = generateTxId();
+            const transferUniversalTxId = generateUniversalTxId();
+            const transferIx = await counterProgram.methods
+                .receiveSol(new anchor.BN(totalTransferLamports))
+                .accounts({
+                    counter: counterPda,
+                    recipient: recipient.publicKey,
+                    ceaAuthority,
+                    systemProgram: SystemProgram.programId,
+                })
+                .instruction();
+            const transferAccounts = instructionAccountsToGatewayMetas(transferIx);
+            const transferRemaining = instructionAccountsToRemaining(transferIx);
+            const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection, BigInt(0));
+
+            const transferSig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(topupLamports),
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(transferUniversalTxId),
+                    new Uint8Array(transferSubTxId),
+                    counterProgram.programId,
+                    new Uint8Array(pushAccount),
+                    transferAccounts,
+                    transferIx.data,
+                    gasFee,
+                    rentFee
+                ),
+            });
+
+            const recipientBefore = await provider.connection.getBalance(recipient.publicKey);
+
+            await gatewayProgram.methods
+                .finalizeUniversalTx(
+                    2,
+                    Array.from(transferSubTxId),
+                    Array.from(transferUniversalTxId),
+                    new anchor.BN(topupLamports),
+                    Array.from(pushAccount),
+                    accountsToWritableFlagsOnly(transferAccounts),
+                    Buffer.from(transferIx.data),
+                    new anchor.BN(Number(gasFee)),
+                    new anchor.BN(Number(rentFee)),
+                    Array.from(transferSig.signature),
+                    transferSig.recoveryId,
+                    Array.from(transferSig.messageHash),
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    ceaAuthority,
+                    tssPda,
+                    executedSubTx: getExecutedTxPda(transferSubTxId),
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
+                    destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(transferRemaining)
+                .signers([admin])
+                .rpc();
+
+            const recipientAfter = await provider.connection.getBalance(recipient.publicKey);
+            const ceaAfter = await provider.connection.getBalance(ceaAuthority);
+
+            expect(recipientAfter - recipientBefore).to.equal(totalTransferLamports);
+            expect(ceaAfter).to.equal(0);
+        });
+
+        it("should execute direct System Program transfer using preseeded CEA + partial vault top-up", async () => {
+            const pushAccount = generateSender();
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
+
+            const preseedLamports = 50_000_000; // 0.05 SOL already in CEA
+            const topupLamports = 50_000_000;   // 0.05 SOL released from vault
+            const totalTransferLamports = preseedLamports + topupLamports; // 0.1 SOL to recipient
+
+            // Preseed CEA directly (outside gateway execute path)
+            const preseedTx = new anchor.web3.Transaction().add(
+                anchor.web3.SystemProgram.transfer({
+                    fromPubkey: admin.publicKey,
+                    toPubkey: ceaAuthority,
+                    lamports: preseedLamports,
+                })
+            );
+            await provider.sendAndConfirm(preseedTx, [admin]);
+
+            // Build ix_data for direct System Program transfer: CEA -> recipient
+            const subTxId = generateTxId();
+            const universalTxId = generateUniversalTxId();
+            const sysTransferIx = anchor.web3.SystemProgram.transfer({
+                fromPubkey: ceaAuthority,
+                toPubkey: recipient.publicKey,
+                lamports: totalTransferLamports,
+            });
+            const accounts = instructionAccountsToGatewayMetas(sysTransferIx);
+            const remainingAccounts = instructionAccountsToRemaining(sysTransferIx);
+            const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection, BigInt(0));
+
+            const sig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(topupLamports), // TSS signs only the vault release amount
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(universalTxId),
+                    new Uint8Array(subTxId),
+                    anchor.web3.SystemProgram.programId,
+                    new Uint8Array(pushAccount),
+                    accounts,
+                    sysTransferIx.data,
+                    gasFee,
+                    rentFee
+                ),
+            });
+
+            const recipientBefore = await provider.connection.getBalance(recipient.publicKey);
+
+            await gatewayProgram.methods
+                .finalizeUniversalTx(
+                    2,
+                    Array.from(subTxId),
+                    Array.from(universalTxId),
+                    new anchor.BN(topupLamports),
+                    Array.from(pushAccount),
+                    accountsToWritableFlagsOnly(accounts),
+                    Buffer.from(sysTransferIx.data),
+                    new anchor.BN(Number(gasFee)),
+                    new anchor.BN(Number(rentFee)),
+                    Array.from(sig.signature),
+                    sig.recoveryId,
+                    Array.from(sig.messageHash),
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultSol: vaultPda,
+                    ceaAuthority,
+                    tssPda,
+                    executedSubTx: getExecutedTxPda(subTxId),
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
+                    destinationProgram: anchor.web3.SystemProgram.programId,
+                    recipient: null,
+                    vaultAta: null,
+                    ceaAta: null,
+                    mint: null,
+                    tokenProgram: null,
+                    rent: null,
+                    associatedTokenProgram: null,
+                    recipientAta: null,
+                    systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(remainingAccounts)
+                .signers([admin])
+                .rpc();
+
+            const recipientAfter = await provider.connection.getBalance(recipient.publicKey);
+            const ceaAfter = await provider.connection.getBalance(ceaAuthority);
+
+            expect(recipientAfter - recipientBefore).to.equal(totalTransferLamports);
+            expect(ceaAfter).to.equal(0);
+        });
+
+        it("should revert SOL transfer when preseed + top-up is insufficient (atomic rollback)", async () => {
+            const pushAccount = generateSender();
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
+
+            const preseedLamports = 40_000_000; // 0.04 SOL already in CEA
+            const topupLamports = 50_000_000;   // 0.05 SOL from vault
+            const totalTransferLamports = 100_000_000; // tries to send 0.1 SOL (needs 100M, has 90M)
+
+            // Step 1: Preseed CEA directly (outside gateway execute path)
+            const preseedTx = new anchor.web3.Transaction().add(
+                anchor.web3.SystemProgram.transfer({
+                    fromPubkey: admin.publicKey,
+                    toPubkey: ceaAuthority,
+                    lamports: preseedLamports,
+                })
+            );
+            await provider.sendAndConfirm(preseedTx, [admin]);
+
+            const recipientBefore = await provider.connection.getBalance(recipient.publicKey);
+            const ceaBefore = await provider.connection.getBalance(ceaAuthority);
+
+            // Step 2: Try transferring 0.1 SOL with only 0.09 available (should fail)
+            const transferSubTxId = generateTxId();
+            const transferUniversalTxId = generateUniversalTxId();
+            const transferIx = anchor.web3.SystemProgram.transfer({
+                fromPubkey: ceaAuthority,
+                toPubkey: recipient.publicKey,
+                lamports: totalTransferLamports,
+            });
+            const transferAccounts = instructionAccountsToGatewayMetas(transferIx);
+            const transferRemaining = instructionAccountsToRemaining(transferIx);
+            const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection, BigInt(0));
+
+            const transferSig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(topupLamports),
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(transferUniversalTxId),
+                    new Uint8Array(transferSubTxId),
+                    anchor.web3.SystemProgram.programId,
+                    new Uint8Array(pushAccount),
+                    transferAccounts,
+                    transferIx.data,
+                    gasFee,
+                    rentFee
+                ),
+            });
+
+            try {
+                await gatewayProgram.methods
+                    .finalizeUniversalTx(
+                        2,
+                        Array.from(transferSubTxId),
+                        Array.from(transferUniversalTxId),
+                        new anchor.BN(topupLamports),
+                        Array.from(pushAccount),
+                        accountsToWritableFlagsOnly(transferAccounts),
+                        Buffer.from(transferIx.data),
+                        new anchor.BN(Number(gasFee)),
+                        new anchor.BN(Number(rentFee)),
+                        Array.from(transferSig.signature),
+                        transferSig.recoveryId,
+                        Array.from(transferSig.messageHash),
+                    )
+                    .accounts({
+                        caller: admin.publicKey,
+                        config: configPda,
+                        vaultSol: vaultPda,
+                        ceaAuthority,
+                        tssPda,
+                        executedSubTx: getExecutedTxPda(transferSubTxId),
+                        rateLimitConfig: null,
+                        tokenRateLimit: null,
+                        destinationProgram: anchor.web3.SystemProgram.programId,
+                        recipient: null,
+                        vaultAta: null,
+                        ceaAta: null,
+                        mint: null,
+                        tokenProgram: null,
+                        rent: null,
+                        associatedTokenProgram: null,
+                        recipientAta: null,
+                        systemProgram: SystemProgram.programId,
+                    })
+                    .remainingAccounts(transferRemaining)
+                    .signers([admin])
+                    .rpc();
+                expect.fail("Should fail due to insufficient CEA SOL for payload transfer");
+            } catch (error: any) {
+                expect(error).to.exist;
+            }
+
+            const recipientAfter = await provider.connection.getBalance(recipient.publicKey);
+            const ceaAfter = await provider.connection.getBalance(ceaAuthority);
+
+            expect(recipientAfter).to.equal(recipientBefore);
+            expect(ceaAfter).to.equal(ceaBefore);
+        });
+
         // SOL transfer test removed - covered by CEA staking tests below
 
         it("should reject duplicate sub_tx_id (replay protection)", async () => {
@@ -748,6 +1102,390 @@ describe("Universal Gateway - Execute Tests", () => {
             const ceaAtaInfo = await provider.connection.getAccountInfo(ceaAta);
             expect(ceaAtaInfo).to.not.be.null; // CEA ATA persists (pull model)
         });
+
+        it("should execute SPL transfer using preseeded CEA balance + partial vault top-up", async () => {
+            const pushAccount = generateSender();
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
+            const ceaAta = await getCeaAta(pushAccount, mockUSDT.mint.publicKey);
+
+            const preseedTokens = asTokenAmount(50); // already in CEA
+            const topupTokens = asTokenAmount(50);   // from vault in this tx
+            const totalTransferTokens = asTokenAmount(100);
+
+            // Step 1: Preseed CEA ATA with 50 tokens via execute (amount > 0) and harmless payload
+            const preseedSubTxId = generateTxId();
+            const preseedUniversalTxId = generateUniversalTxId();
+            const preseedIx = await counterProgram.methods
+                .increment(new anchor.BN(0))
+                .accounts({
+                    counter: counterPda,
+                    authority: counterAuthority.publicKey,
+                })
+                .instruction();
+            const preseedAccounts = instructionAccountsToGatewayMetas(preseedIx);
+            const preseedRemaining = instructionAccountsToRemaining(preseedIx);
+            const { gasFee: preseedGasFee, rentFee: preseedRentFee } = await calculateSplExecuteFees(
+                provider.connection,
+                ceaAta,
+                BigInt(0)
+            );
+
+            const preseedSig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(preseedTokens.toString()),
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(preseedUniversalTxId),
+                    new Uint8Array(preseedSubTxId),
+                    counterProgram.programId,
+                    new Uint8Array(pushAccount),
+                    preseedAccounts,
+                    preseedIx.data,
+                    preseedGasFee,
+                    preseedRentFee,
+                    mockUSDT.mint.publicKey
+                ),
+            });
+
+            await gatewayProgram.methods
+                .finalizeUniversalTx(
+                    2,
+                    Array.from(preseedSubTxId),
+                    Array.from(preseedUniversalTxId),
+                    preseedTokens,
+                    Array.from(pushAccount),
+                    accountsToWritableFlagsOnly(preseedAccounts),
+                    Buffer.from(preseedIx.data),
+                    new anchor.BN(Number(preseedGasFee)),
+                    new anchor.BN(Number(preseedRentFee)),
+                    Array.from(preseedSig.signature),
+                    preseedSig.recoveryId,
+                    Array.from(preseedSig.messageHash),
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultAta: vaultUsdtAccount,
+                    vaultSol: vaultPda,
+                    ceaAuthority,
+                    ceaAta,
+                    mint: mockUSDT.mint.publicKey,
+                    tssPda,
+                    executedSubTx: getExecutedTxPda(preseedSubTxId),
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
+                    destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                    recipientAta: null,
+                })
+                .remainingAccounts(preseedRemaining)
+                .signers([admin])
+                .rpc();
+
+            // Step 2: Transfer full 100 while topping up only 50 from vault
+            const transferSubTxId = generateTxId();
+            const transferUniversalTxId = generateUniversalTxId();
+            const transferIx = await counterProgram.methods
+                .receiveSpl(totalTransferTokens)
+                .accounts({
+                    counter: counterPda,
+                    ceaAta,
+                    recipientAta: recipientUsdtAccount,
+                    ceaAuthority,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                })
+                .instruction();
+            const transferAccounts = instructionAccountsToGatewayMetas(transferIx);
+            const transferRemaining = instructionAccountsToRemaining(transferIx);
+            const { gasFee, rentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, BigInt(0));
+
+            const transferSig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(topupTokens.toString()),
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(transferUniversalTxId),
+                    new Uint8Array(transferSubTxId),
+                    counterProgram.programId,
+                    new Uint8Array(pushAccount),
+                    transferAccounts,
+                    transferIx.data,
+                    gasFee,
+                    rentFee,
+                    mockUSDT.mint.publicKey
+                ),
+            });
+
+            const recipientBefore = await mockUSDT.getBalance(recipientUsdtAccount);
+
+            await gatewayProgram.methods
+                .finalizeUniversalTx(
+                    2,
+                    Array.from(transferSubTxId),
+                    Array.from(transferUniversalTxId),
+                    topupTokens,
+                    Array.from(pushAccount),
+                    accountsToWritableFlagsOnly(transferAccounts),
+                    Buffer.from(transferIx.data),
+                    new anchor.BN(Number(gasFee)),
+                    new anchor.BN(Number(rentFee)),
+                    Array.from(transferSig.signature),
+                    transferSig.recoveryId,
+                    Array.from(transferSig.messageHash),
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultAta: vaultUsdtAccount,
+                    vaultSol: vaultPda,
+                    ceaAuthority,
+                    ceaAta,
+                    mint: mockUSDT.mint.publicKey,
+                    tssPda,
+                    executedSubTx: getExecutedTxPda(transferSubTxId),
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
+                    destinationProgram: counterProgram.programId,
+                    recipient: null,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                    recipientAta: null,
+                })
+                .remainingAccounts(transferRemaining)
+                .signers([admin])
+                .rpc();
+
+            const recipientAfter = await mockUSDT.getBalance(recipientUsdtAccount);
+            const ceaAfter = await provider.connection.getTokenAccountBalance(ceaAta);
+
+            expect(recipientAfter - recipientBefore).to.equal(100);
+            expect(Number(ceaAfter.value.amount)).to.equal(0);
+        });
+
+        it("should execute direct SPL Token Program transfer using preseeded CEA + partial vault top-up", async () => {
+            const pushAccount = generateSender();
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
+            const ceaAta = await getCeaAta(pushAccount, mockUSDT.mint.publicKey);
+
+            const preseedTokens = asTokenAmount(50); // already in CEA ATA
+            const topupTokens = asTokenAmount(50);   // released from vault in this tx
+            const totalTransferTokens = asTokenAmount(100);
+
+            // Ensure CEA ATA exists, then preseed it directly (outside gateway execute path)
+            const ceaAtaInfo = await provider.connection.getAccountInfo(ceaAta);
+            if (!ceaAtaInfo) {
+                const createCeaAtaTx = new anchor.web3.Transaction().add(
+                    createAssociatedTokenAccountInstruction(
+                        admin.publicKey,
+                        ceaAta,
+                        ceaAuthority,
+                        mockUSDT.mint.publicKey,
+                        TOKEN_PROGRAM_ID,
+                        ASSOCIATED_TOKEN_PROGRAM_ID
+                    )
+                );
+                await provider.sendAndConfirm(createCeaAtaTx, [admin]);
+            }
+            await mockUSDT.mintTo(ceaAta, Number(preseedTokens.toString()) / 10 ** USDT_DECIMALS);
+
+            // Build ix_data for direct SPL transfer: CEA ATA -> recipient ATA
+            const subTxId = generateTxId();
+            const universalTxId = generateUniversalTxId();
+            const splTransferIx = spl.createTransferInstruction(
+                ceaAta,
+                recipientUsdtAccount,
+                ceaAuthority,
+                Number(totalTransferTokens.toString()),
+                [],
+                TOKEN_PROGRAM_ID
+            );
+            const accounts = instructionAccountsToGatewayMetas(splTransferIx);
+            const remainingAccounts = instructionAccountsToRemaining(splTransferIx);
+            const { gasFee, rentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, BigInt(0));
+
+            const sig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(topupTokens.toString()), // TSS signs only the vault release amount
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(universalTxId),
+                    new Uint8Array(subTxId),
+                    TOKEN_PROGRAM_ID,
+                    new Uint8Array(pushAccount),
+                    accounts,
+                    splTransferIx.data,
+                    gasFee,
+                    rentFee,
+                    mockUSDT.mint.publicKey
+                ),
+            });
+
+            const recipientBefore = await mockUSDT.getBalance(recipientUsdtAccount);
+
+            await gatewayProgram.methods
+                .finalizeUniversalTx(
+                    2,
+                    Array.from(subTxId),
+                    Array.from(universalTxId),
+                    topupTokens,
+                    Array.from(pushAccount),
+                    accountsToWritableFlagsOnly(accounts),
+                    Buffer.from(splTransferIx.data),
+                    new anchor.BN(Number(gasFee)),
+                    new anchor.BN(Number(rentFee)),
+                    Array.from(sig.signature),
+                    sig.recoveryId,
+                    Array.from(sig.messageHash),
+                )
+                .accounts({
+                    caller: admin.publicKey,
+                    config: configPda,
+                    vaultAta: vaultUsdtAccount,
+                    vaultSol: vaultPda,
+                    ceaAuthority,
+                    ceaAta,
+                    mint: mockUSDT.mint.publicKey,
+                    tssPda,
+                    executedSubTx: getExecutedTxPda(subTxId),
+                    rateLimitConfig: null,
+                    tokenRateLimit: null,
+                    destinationProgram: TOKEN_PROGRAM_ID,
+                    recipient: null,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                    rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                    associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                    recipientAta: null,
+                })
+                .remainingAccounts(remainingAccounts)
+                .signers([admin])
+                .rpc();
+
+            const recipientAfter = await mockUSDT.getBalance(recipientUsdtAccount);
+            const ceaAfter = await provider.connection.getTokenAccountBalance(ceaAta);
+
+            expect(recipientAfter - recipientBefore).to.equal(100);
+            expect(Number(ceaAfter.value.amount)).to.equal(0);
+        });
+
+        it("should revert SPL transfer when preseed + top-up is insufficient (atomic rollback)", async () => {
+            const pushAccount = generateSender();
+            const ceaAuthority = getCeaAuthorityPda(pushAccount);
+            const ceaAta = await getCeaAta(pushAccount, mockUSDT.mint.publicKey);
+
+            const preseedTokens = asTokenAmount(40);
+            const topupTokens = asTokenAmount(50);
+            const totalTransferTokens = asTokenAmount(100); // needs 100, has 90
+
+            // Step 1: Ensure CEA ATA exists and preseed directly (outside gateway execute path)
+            const ceaAtaInfo = await provider.connection.getAccountInfo(ceaAta);
+            if (!ceaAtaInfo) {
+                const createCeaAtaTx = new anchor.web3.Transaction().add(
+                    createAssociatedTokenAccountInstruction(
+                        admin.publicKey,
+                        ceaAta,
+                        ceaAuthority,
+                        mockUSDT.mint.publicKey,
+                        TOKEN_PROGRAM_ID,
+                        ASSOCIATED_TOKEN_PROGRAM_ID
+                    )
+                );
+                await provider.sendAndConfirm(createCeaAtaTx, [admin]);
+            }
+            await mockUSDT.mintTo(ceaAta, Number(preseedTokens.toString()) / 10 ** USDT_DECIMALS);
+
+            const recipientBefore = await mockUSDT.getBalance(recipientUsdtAccount);
+            const ceaBefore = await provider.connection.getTokenAccountBalance(ceaAta);
+
+            // Step 2: Try sending 100 with only 90 available
+            const transferSubTxId = generateTxId();
+            const transferUniversalTxId = generateUniversalTxId();
+            const transferIx = spl.createTransferInstruction(
+                ceaAta,
+                recipientUsdtAccount,
+                ceaAuthority,
+                Number(totalTransferTokens.toString()),
+                [],
+                TOKEN_PROGRAM_ID
+            );
+            const transferAccounts = instructionAccountsToGatewayMetas(transferIx);
+            const transferRemaining = instructionAccountsToRemaining(transferIx);
+            const { gasFee, rentFee } = await calculateSplExecuteFees(provider.connection, ceaAta, BigInt(0));
+
+            const transferSig = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(topupTokens.toString()),
+                chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(transferUniversalTxId),
+                    new Uint8Array(transferSubTxId),
+                    TOKEN_PROGRAM_ID,
+                    new Uint8Array(pushAccount),
+                    transferAccounts,
+                    transferIx.data,
+                    gasFee,
+                    rentFee,
+                    mockUSDT.mint.publicKey
+                ),
+            });
+
+            try {
+                await gatewayProgram.methods
+                    .finalizeUniversalTx(
+                        2,
+                        Array.from(transferSubTxId),
+                        Array.from(transferUniversalTxId),
+                        topupTokens,
+                        Array.from(pushAccount),
+                        accountsToWritableFlagsOnly(transferAccounts),
+                        Buffer.from(transferIx.data),
+                        new anchor.BN(Number(gasFee)),
+                        new anchor.BN(Number(rentFee)),
+                        Array.from(transferSig.signature),
+                        transferSig.recoveryId,
+                        Array.from(transferSig.messageHash),
+                    )
+                    .accounts({
+                        caller: admin.publicKey,
+                        config: configPda,
+                        vaultAta: vaultUsdtAccount,
+                        vaultSol: vaultPda,
+                        ceaAuthority,
+                        ceaAta,
+                        mint: mockUSDT.mint.publicKey,
+                        tssPda,
+                        executedSubTx: getExecutedTxPda(transferSubTxId),
+                        rateLimitConfig: null,
+                        tokenRateLimit: null,
+                        destinationProgram: TOKEN_PROGRAM_ID,
+                        recipient: null,
+                        tokenProgram: TOKEN_PROGRAM_ID,
+                        systemProgram: SystemProgram.programId,
+                        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                        associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                        recipientAta: null,
+                    })
+                    .remainingAccounts(transferRemaining)
+                    .signers([admin])
+                    .rpc();
+                expect.fail("Should fail due to insufficient CEA SPL for payload transfer");
+            } catch (error: any) {
+                expect(error).to.exist;
+            }
+
+            const recipientAfter = await mockUSDT.getBalance(recipientUsdtAccount);
+            const ceaAfter = await provider.connection.getTokenAccountBalance(ceaAta);
+
+            expect(recipientAfter).to.equal(recipientBefore);
+            expect(Number(ceaAfter.value.amount)).to.equal(Number(ceaBefore.value.amount));
+        });
+
         it("should reject SPL execution if cea ATA owner mismatches", async () => {
             const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
