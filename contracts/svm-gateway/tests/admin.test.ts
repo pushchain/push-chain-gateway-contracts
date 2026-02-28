@@ -4,14 +4,18 @@ import { UniversalGateway } from "../target/types/universal_gateway";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 import * as sharedState from "./shared-state";
-import { createMockUSDT } from "./helpers/mockSpl";
 import { getTssEthAddress, TSS_CHAIN_ID } from "./helpers/tss";
+import { ensureTestSetup } from "./helpers/test-setup";
 
 
 describe("Universal Gateway - Admin Functions Tests", () => {
     anchor.setProvider(anchor.AnchorProvider.env());
     const provider = anchor.getProvider() as anchor.AnchorProvider;
     const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+
+    before(async () => {
+        await ensureTestSetup();
+    });
 
     // Test accounts
     let admin: Keypair;
@@ -24,15 +28,12 @@ describe("Universal Gateway - Admin Functions Tests", () => {
     // Program PDAs
     let configPda: PublicKey;
     let vaultPda: PublicKey;
-    let whitelistPda: PublicKey;
     let tssPda: PublicKey;
     let rateLimitConfigPda: PublicKey;
 
     // Mock assets
     let mockPriceFeed: PublicKey;
     let mockUSDT: any;
-    let tempWhitelistToken: any;
-
     before(async () => {
         admin = sharedState.getAdmin();
         tssAddress = sharedState.getTssAddress();
@@ -67,13 +68,8 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             program.programId
         );
 
-        [whitelistPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("whitelist")],
-            program.programId
-        );
-
         [tssPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("tsspda")],
+            [Buffer.from("tsspda_v2")],
             program.programId
         );
 
@@ -86,9 +82,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         expect(config.admin.toString()).to.equal(admin.publicKey.toString());
         expect(config.pauser.toString()).to.equal(pauser.publicKey.toString());
         expect(config.tssAddress.toString()).to.equal(tssAddress.publicKey.toString());
-
-        tempWhitelistToken = await createMockUSDT(provider.connection, admin);
-        await tempWhitelistToken.createMint();
 
     });
 
@@ -311,77 +304,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         });
     });
 
-    describe("Token Whitelist Management", () => {
-        it("Adds token to whitelist", async () => {
-
-            const whitelistBefore = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const beforeTokens = whitelistBefore.tokens.map((t: PublicKey) => t.toString());
-
-            await program.methods
-                .whitelistToken(tempWhitelistToken.mint.publicKey)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    whitelist: whitelistPda,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-
-            const whitelistAfter = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const afterTokens = whitelistAfter.tokens.map((t: PublicKey) => t.toString());
-
-            expect(afterTokens.length).to.equal(beforeTokens.length + 1);
-            expect(afterTokens).to.include(tempWhitelistToken.mint.publicKey.toString());
-
-        });
-
-        it("Removes token from whitelist", async () => {
-
-            const whitelistBefore = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const beforeTokens = whitelistBefore.tokens.map((t: PublicKey) => t.toString());
-            expect(beforeTokens).to.include(tempWhitelistToken.mint.publicKey.toString());
-
-            await program.methods
-                .removeWhitelistToken(tempWhitelistToken.mint.publicKey)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    whitelist: whitelistPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            const whitelistAfter = await program.account.tokenWhitelist.fetch(whitelistPda);
-            const afterTokens = whitelistAfter.tokens.map((t: PublicKey) => t.toString());
-
-            expect(afterTokens.length).to.equal(beforeTokens.length - 1);
-            expect(afterTokens).to.not.include(tempWhitelistToken.mint.publicKey.toString());
-
-        });
-
-        it("Rejects unauthorized whitelist operations", async () => {
-            try {
-                await program.methods
-                    .whitelistToken(tempWhitelistToken.mint.publicKey)
-                    .accounts({
-                        admin: unauthorizedUser.publicKey,
-                        config: configPda,
-                        whitelist: whitelistPda,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([unauthorizedUser])
-                    .rpc();
-
-                expect.fail("Unauthorized whitelist addition should have failed");
-            } catch (error: any) {
-                expect(error).to.exist;
-                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
-                expect(errorCode).to.equal("Unauthorized");
-            }
-        });
-    });
-
     describe("Token Rate Limits", () => {
         it("Sets token rate limit threshold", async () => {
 
@@ -416,7 +338,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         it("Rejects TSS initialization by non-admin", async () => {
             // Use the correct TSS PDA seed (just "tss", not with extra bytes)
             const [actualTssPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from("tsspda")],
+                [Buffer.from("tsspda_v2")],
                 program.programId
             );
 
@@ -522,81 +444,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             expect(tss.chainId).to.equal(newChainId);
         });
 
-        it("Resets nonce when TSS address changes", async () => {
-            // Set nonce to a non-zero value first
-            await program.methods
-                .resetNonce(new anchor.BN(50))
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            let tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal("50");
-
-            // Update TSS with a different address - should reset nonce to 0
-            const newTssEthAddress = Array.from(Buffer.alloc(20, 3));
-            await program.methods
-                .updateTss(newTssEthAddress, "1")
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal("0");
-            expect(Buffer.from(tss.tssEthAddress).equals(Buffer.from(newTssEthAddress))).to.be.true;
-        });
-
-        it("Does not reset nonce when TSS address unchanged", async () => {
-            // Set nonce to a non-zero value
-            await program.methods
-                .resetNonce(new anchor.BN(100))
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            let tss = await program.account.tssPda.fetch(tssPda);
-            const currentAddress = Array.from(tss.tssEthAddress);
-            const currentNonce = tss.nonce.toString();
-
-            // Update TSS with same address but different chain_id - nonce should NOT reset
-            await program.methods
-                .updateTss(currentAddress, "999")
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal(currentNonce); // Nonce unchanged
-            expect(tss.chainId).to.equal("999");
-        });
-
-        it("Resets TSS nonce", async () => {
-            const newNonce = new anchor.BN(100);
-
-            await program.methods
-                .resetNonce(newNonce)
-                .accounts({
-                    authority: admin.publicKey,
-                    tssPda: tssPda,
-                })
-                .signers([admin])
-                .rpc();
-
-            const tss = await program.account.tssPda.fetch(tssPda);
-            expect(tss.nonce.toString()).to.equal(newNonce.toString());
-        });
     });
 
 
@@ -644,15 +491,6 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         const expectedTssEthAddress = getTssEthAddress();
         await program.methods
             .updateTss(expectedTssEthAddress, TSS_CHAIN_ID)
-            .accounts({
-                tssPda,
-                authority: admin.publicKey,
-            })
-            .signers([admin])
-            .rpc();
-
-        await program.methods
-            .resetNonce(new anchor.BN(0))
             .accounts({
                 tssPda,
                 authority: admin.publicKey,

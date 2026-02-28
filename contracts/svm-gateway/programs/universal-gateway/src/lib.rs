@@ -7,8 +7,8 @@ pub mod utils;
 
 use instructions::*;
 
-// declare_id!("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
-declare_id!("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
+declare_id!("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+
 #[program]
 pub mod universal_gateway {
     use super::*;
@@ -27,10 +27,6 @@ pub mod universal_gateway {
     ) -> Result<()> {
         instructions::deposit::send_universal_tx(ctx, req, native_amount)
     }
-
-    // =========================
-    //        WITHDRAWALS
-    // =========================
 
     // =========================
     //           ADMIN
@@ -72,16 +68,6 @@ pub mod universal_gateway {
         instructions::admin::set_caps_usd(ctx, min_cap, max_cap)
     }
 
-    /// @notice Whitelist a token
-    pub fn whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-        instructions::admin::whitelist_token(ctx, token)
-    }
-
-    /// @notice Remove token from whitelist
-    pub fn remove_whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-        instructions::admin::remove_whitelist_token(ctx, token)
-    }
-
     /// @notice Set Pyth price feed
     pub fn set_pyth_price_feed(ctx: Context<AdminAction>, price_feed: Pubkey) -> Result<()> {
         instructions::admin::set_pyth_price_feed(ctx, price_feed)
@@ -113,8 +99,6 @@ pub mod universal_gateway {
     }
 
     /// @notice Set token-specific rate limit threshold
-    /// @dev For batch operations, call this function multiple times in a single transaction.
-    ///      This is the Solana-idiomatic approach and provides better type safety than using remaining_accounts.
     pub fn set_token_rate_limit(
         ctx: Context<TokenRateLimitAction>,
         limit_threshold: u128,
@@ -141,64 +125,40 @@ pub mod universal_gateway {
         instructions::tss::update_tss(ctx, tss_eth_address, chain_id)
     }
 
-    pub fn reset_nonce(ctx: Context<ResetNonce>, new_nonce: u64) -> Result<()> {
-        instructions::tss::reset_nonce(ctx, new_nonce)
-    }
-
     // =========================
-    //        WITHDRAW
+    //    FINALIZE UNIVERSAL TX
     // =========================
-    /// @notice TSS-verified withdraw of native SOL (EVM parity: `withdraw`)
-    /// @param tx_id Transaction ID for tracking
-    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
-    pub fn withdraw(
-        ctx: Context<Withdraw>,
-        tx_id: [u8; 32],
-        origin_caller: [u8; 20],
+    /// @notice Unified outbound entrypoint: withdraw (mode 1) or execute (mode 2)
+    /// @param instruction_id 1=withdraw (vault→CEA→recipient), 2=execute (vault→CEA→CPI)
+    pub fn finalize_universal_tx(
+        ctx: Context<FinalizeUniversalTx>,
+        instruction_id: u8,
+        sub_tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
+        push_account: [u8; 20],
+        writable_flags: Vec<u8>,
+        ix_data: Vec<u8>,
         gas_fee: u64,
+        rent_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::withdraw(
+        instructions::execute::finalize_universal_tx(
             ctx,
-            tx_id,
-            origin_caller,
+            instruction_id,
+            sub_tx_id,
+            universal_tx_id,
             amount,
+            push_account,
+            writable_flags,
+            ix_data,
             gas_fee,
+            rent_fee,
             signature,
             recovery_id,
             message_hash,
-            nonce,
-        )
-    }
-
-    /// @notice TSS-verified withdraw of SPL tokens (EVM parity: `withdrawFunds`)
-    /// @param tx_id Transaction ID for tracking
-    /// @param origin_caller Original caller on source chain (EVM address, 20 bytes)
-    pub fn withdraw_funds(
-        ctx: Context<WithdrawFunds>,
-        tx_id: [u8; 32],
-        origin_caller: [u8; 20],
-        amount: u64,
-        gas_fee: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-        nonce: u64,
-    ) -> Result<()> {
-        instructions::withdraw::withdraw_funds(
-            ctx,
-            tx_id,
-            origin_caller,
-            amount,
-            gas_fee,
-            signature,
-            recovery_id,
-            message_hash,
-            nonce,
         )
     }
 
@@ -206,135 +166,52 @@ pub mod universal_gateway {
     //        REVERT
     // =========================
     /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
-    /// @param tx_id Transaction ID for tracking
     pub fn revert_universal_tx(
         ctx: Context<RevertUniversalTx>,
-        tx_id: [u8; 32],
+        sub_tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
         gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_universal_tx(
+        instructions::revert::revert_universal_tx(
             ctx,
-            tx_id,
+            sub_tx_id,
+            universal_tx_id,
             amount,
             revert_instruction,
             gas_fee,
             signature,
             recovery_id,
             message_hash,
-            nonce,
         )
     }
 
     /// @notice TSS-verified revert withdraw for SPL tokens (EVM parity: `revertUniversalTxToken`)
-    /// @param tx_id Transaction ID for tracking
     pub fn revert_universal_tx_token(
         ctx: Context<RevertUniversalTxToken>,
-        tx_id: [u8; 32],
+        sub_tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
         gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_universal_tx_token(
+        instructions::revert::revert_universal_tx_token(
             ctx,
-            tx_id,
+            sub_tx_id,
+            universal_tx_id,
             amount,
             revert_instruction,
             gas_fee,
             signature,
             recovery_id,
             message_hash,
-            nonce,
-        )
-    }
-
-    // =========================
-    //        EXECUTE
-    // =========================
-    /// @notice TSS-verified execute arbitrary Solana instruction with SOL
-    /// @param tx_id Transaction ID from Push chain event
-    /// @param amount Amount of SOL to transfer to cea authority
-    /// @param target_program Target Solana program to invoke
-    /// @param sender EVM sender address (same as origin_caller in EVM)
-    /// @param accounts Ordered list of accounts for target program
-    /// @param ix_data Instruction data for target program
-    pub fn execute_universal_tx(
-        ctx: Context<ExecuteUniversalTx>,
-        tx_id: [u8; 32],
-        amount: u64,
-        target_program: Pubkey,
-        sender: [u8; 20],
-        accounts: Vec<GatewayAccountMeta>,
-        ix_data: Vec<u8>,
-        gas_fee: u64,
-        rent_fee: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-        nonce: u64,
-    ) -> Result<()> {
-        instructions::execute::execute_universal_tx(
-            ctx,
-            tx_id,
-            amount,
-            target_program,
-            sender,
-            accounts,
-            ix_data,
-            gas_fee,
-            rent_fee,
-            signature,
-            recovery_id,
-            message_hash,
-            nonce,
-        )
-    }
-
-    /// @notice TSS-verified execute arbitrary Solana instruction with SPL tokens
-    /// @param tx_id Transaction ID from Push chain event
-    /// @param amount Amount of SPL tokens to transfer to cea ATA
-    /// @param target_program Target Solana program to invoke
-    /// @param sender EVM sender address (same as origin_caller in EVM)
-    /// @param accounts Ordered list of accounts for target program
-    /// @param ix_data Instruction data for target program
-    pub fn execute_universal_tx_token(
-        ctx: Context<ExecuteUniversalTxToken>,
-        tx_id: [u8; 32],
-        amount: u64,
-        target_program: Pubkey,
-        sender: [u8; 20],
-        accounts: Vec<GatewayAccountMeta>,
-        ix_data: Vec<u8>,
-        gas_fee: u64,
-        rent_fee: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-        nonce: u64,
-    ) -> Result<()> {
-        instructions::execute::execute_universal_tx_token(
-            ctx,
-            tx_id,
-            amount,
-            target_program,
-            sender,
-            accounts,
-            ix_data,
-            gas_fee,
-            rent_fee,
-            signature,
-            recovery_id,
-            message_hash,
-            nonce,
         )
     }
 
@@ -342,7 +219,6 @@ pub mod universal_gateway {
     //         UTILS
     // =========================
     /// @notice View function for SOL price (locker-compatible)
-    /// @dev    Anyone can fetch SOL price in USD
     pub fn get_sol_price(ctx: Context<GetSolPrice>) -> Result<PriceData> {
         utils::get_sol_price(&ctx.accounts.price_update)
     }
@@ -356,13 +232,13 @@ pub struct GetSolPrice<'info> {
 
 // Re-export account structs and types
 pub use instructions::admin::{
-    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction, WhitelistAction,
+    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
-pub use instructions::execute::{ExecuteUniversalTx, ExecuteUniversalTxToken};
+pub use instructions::execute::FinalizeUniversalTx;
 pub use instructions::initialize::Initialize;
-pub use instructions::withdraw::{
-    RevertUniversalTx, RevertUniversalTxToken, Withdraw, WithdrawFunds,
+pub use instructions::revert::{
+    RevertUniversalTx, RevertUniversalTxToken,
 };
 pub use utils::PriceData;
 
@@ -370,22 +246,18 @@ pub use state::{
     // Events
     CapsUpdated,
     Config,
-    ExecuteMessage,
-    ExecutedTx,
+    ExecutedSubTx,
     GatewayAccountMeta,
     RevertInstructions,
     TSSAddressUpdated,
-    TokenWhitelist,
     TxType,
     UniversalPayload,
     UniversalTx,
-    UniversalTxExecuted,
+    UniversalTxFinalized,
     UniversalTxRequest,
     VerificationType,
-    WithdrawToken,
     CONFIG_SEED,
-    EXECUTED_TX_SEED,
+    EXECUTED_SUB_TX_SEED,
     FEED_ID,
     VAULT_SEED,
-    WHITELIST_SEED,
 };

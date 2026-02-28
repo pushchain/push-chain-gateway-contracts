@@ -1,10 +1,8 @@
 use crate::errors::GatewayError;
 use crate::state::{
-    Config, EpochUsage, ExecuteMessage, GatewayAccountMeta, RateLimitConfig, TokenRateLimit,
-    UniversalPayload, FEED_ID, RATE_LIMIT_SEED,
+    Config, GatewayAccountMeta, RateLimitConfig, TokenRateLimit, FEED_ID, VAULT_SEED,
 };
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::keccak;
 use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -119,18 +117,6 @@ pub fn calculate_usd_amount(lamports: u64, price_data: &PriceData) -> Result<u12
     Ok(usd_amount)
 }
 
-// Calculate payload hash (matching ETH contract keccak256(abi.encode(payload)))
-pub fn payload_hash(payload: &UniversalPayload) -> [u8; 32] {
-    // Use Solana's sha256 to hash the serialized payload (closest to keccak256)
-    let serialized = payload.try_to_vec().unwrap_or_default();
-    anchor_lang::solana_program::hash::hash(&serialized).to_bytes()
-}
-
-// Convert payload to bytes (matching ETH contract)
-pub fn payload_to_bytes(payload: &UniversalPayload) -> Vec<u8> {
-    payload.try_to_vec().unwrap_or_default()
-}
-
 // =========================
 // RATE LIMITING FUNCTIONS
 // =========================
@@ -226,98 +212,6 @@ pub fn validate_token_and_consume_rate_limit(
     Ok(())
 }
 
-/// Get or create rate limit config account (backward compatible)
-pub fn get_or_create_rate_limit_config<'info>(
-    accounts: &'info [AccountInfo<'info>],
-    program_id: &Pubkey,
-) -> Result<Option<Account<'info, RateLimitConfig>>> {
-    let (rate_limit_config_pda, _bump) =
-        Pubkey::find_program_address(&[crate::state::RATE_LIMIT_CONFIG_SEED], program_id);
-
-    // Find the rate limit config account in the accounts list
-    let rate_limit_config_account = accounts
-        .iter()
-        .find(|account| account.key() == rate_limit_config_pda);
-
-    match rate_limit_config_account {
-        Some(account) => {
-            if account.data_is_empty() {
-                // Account doesn't exist, rate limiting is disabled
-                Ok(None)
-            } else {
-                // Account exists, load it
-                Ok(Some(Account::<RateLimitConfig>::try_from(account)?))
-            }
-        }
-        None => {
-            // Account not provided, rate limiting is disabled
-            Ok(None)
-        }
-    }
-}
-
-/// Get or create token rate limit account (matching EVM pattern)
-pub fn get_or_create_token_rate_limit<'info>(
-    token_mint: Pubkey,
-    limit_threshold: u128,
-    accounts: &'info [AccountInfo<'info>],
-    program_id: &Pubkey,
-) -> Result<Account<'info, TokenRateLimit>> {
-    let (rate_limit_pda, bump) =
-        Pubkey::find_program_address(&[RATE_LIMIT_SEED, token_mint.as_ref()], program_id);
-
-    // Find the rate limit account in the accounts list
-    let rate_limit_account = accounts
-        .iter()
-        .find(|account| account.key() == rate_limit_pda)
-        .ok_or(GatewayError::InvalidAccount)?;
-
-    // Check if account exists and is initialized
-    if rate_limit_account.data_is_empty() {
-        // Account doesn't exist, create it
-        let mut rate_limit = Account::<TokenRateLimit>::try_from(rate_limit_account)?;
-        rate_limit.token_mint = token_mint;
-        rate_limit.limit_threshold = limit_threshold;
-        rate_limit.epoch_usage = EpochUsage { epoch: 0, used: 0 };
-        rate_limit.bump = bump;
-        Ok(rate_limit)
-    } else {
-        // Account exists, load it
-        Account::<TokenRateLimit>::try_from(rate_limit_account)
-    }
-}
-
-/// Get token rate limit account if it exists (optional, for backward compatibility)
-pub fn get_token_rate_limit_optional<'info>(
-    token_mint: Pubkey,
-    accounts: &'info [AccountInfo<'info>],
-    program_id: &Pubkey,
-) -> Result<Option<Account<'info, TokenRateLimit>>> {
-    let (rate_limit_pda, _bump) =
-        Pubkey::find_program_address(&[RATE_LIMIT_SEED, token_mint.as_ref()], program_id);
-
-    // Find the rate limit account in the accounts list
-    let rate_limit_account = accounts
-        .iter()
-        .find(|account| account.key() == rate_limit_pda);
-
-    match rate_limit_account {
-        Some(account) => {
-            if account.data_is_empty() {
-                // Account doesn't exist, rate limiting is disabled for this token
-                Ok(None)
-            } else {
-                // Account exists, load it
-                Ok(Some(Account::<TokenRateLimit>::try_from(account)?))
-            }
-        }
-        None => {
-            // Account not provided, rate limiting is disabled for this token
-            Ok(None)
-        }
-    }
-}
-
 // =========================
 // EXECUTE VALIDATION
 // =========================
@@ -361,6 +255,36 @@ pub fn validate_remaining_accounts(
         require!(!actual.is_signer, GatewayError::UnexpectedOuterSigner);
     }
 
+    Ok(())
+}
+
+// =========================
+// GAS FEE TRANSFER HELPER
+// =========================
+
+/// Transfer gas fee from vault to caller (relayer reimbursement)
+/// Used by finalize_universal_tx and revert functions
+pub fn transfer_gas_fee_to_caller<'info>(
+    vault_sol: &AccountInfo<'info>,
+    caller: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    gas_fee: u64,
+    vault_bump: u8,
+) -> Result<()> {
+    if gas_fee > 0 {
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+        let fee_transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
+            vault_sol.key,
+            caller.key,
+            gas_fee,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &fee_transfer_ix,
+            &[vault_sol.clone(), caller.clone(), system_program.clone()],
+            &[vault_seeds],
+        )?;
+    }
     Ok(())
 }
 

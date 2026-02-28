@@ -10,6 +10,9 @@ import { PublicKey, Keypair } from "@solana/web3.js";
 export let admin: Keypair | null = null;
 export let tssAddress: Keypair | null = null;
 export let pauser: Keypair | null = null;
+export let counterAuthority: Keypair | null = null;
+export let user1: Keypair | null = null;
+export let user2: Keypair | null = null;
 
 // Mock tokens (created once in setup.test.ts)
 export let mockUSDT: any = null;
@@ -47,6 +50,18 @@ export function setMockPythOracle(oracle: any) {
 
 export function setMockPriceFeed(feed: PublicKey) {
     mockPriceFeed = feed;
+}
+
+export function setCounterAuthority(keypair: Keypair) {
+    counterAuthority = keypair;
+}
+
+export function setUser1(keypair: Keypair) {
+    user1 = keypair;
+}
+
+export function setUser2(keypair: Keypair) {
+    user2 = keypair;
 }
 
 // Getter functions (with validation)
@@ -87,3 +102,20 @@ export function getMockPriceFeed(): PublicKey {
     return mockPriceFeed;
 }
 
+export function getCounterAuthority(): Keypair {
+    if (!counterAuthority) {
+        // Generate and cache if not set
+        counterAuthority = Keypair.generate();
+    }
+    return counterAuthority;
+}
+
+export function getUser1(): Keypair {
+    if (!user1) throw new Error("User1 not initialized - did setup.test.ts run?");
+    return user1;
+}
+
+export function getUser2(): Keypair {
+    if (!user2) throw new Error("User2 not initialized - did setup.test.ts run?");
+    return user2;
+}
