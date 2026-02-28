@@ -34,6 +34,7 @@ contract MockReentrantContract {
 
     function attemptReentrancy(uint256 amount, uint256 gasLimit, address revertRecipient) external {
         UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
+            recipient: bytes(""),
             token: prc20Token,
             amount: amount,
             gasLimit: gasLimit,
@@ -50,6 +51,7 @@ contract MockReentrantContract {
         address revertRecipient
     ) external {
         UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
+            recipient: bytes(""),
             token: prc20Token,
             amount: amount,
             gasLimit: gasLimit,

@@ -75,6 +75,7 @@ contract UniversalGatewayPCTest is Test {
     }
 
     function _createOutboundRequest(
+        bytes memory recipient,
         address token,
         uint256 amount,
         uint256 gasLimit,
@@ -82,6 +83,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient
     ) internal pure returns (UniversalOutboundTxRequest memory) {
         return UniversalOutboundTxRequest({
+            recipient: recipient,
             token: token,
             amount: amount,
             gasLimit: gasLimit,
@@ -92,13 +94,14 @@ contract UniversalGatewayPCTest is Test {
 
     function _calculateExpectedsubTxId(
         address sender,
+        bytes memory recipient,
         address token,
         uint256 amount,
         bytes memory payload,
         string memory chainId,
         uint256 expectedNonce
     ) internal pure returns (bytes32) {
-        return keccak256(abi.encode(sender, token, amount, keccak256(payload), chainId, expectedNonce));
+        return keccak256(abi.encode(sender, recipient, token, amount, keccak256(payload), chainId, expectedNonce));
     }
 
     function testInitializeSuccess() public {
@@ -346,6 +349,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -367,6 +371,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -390,6 +395,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -399,13 +405,14 @@ contract UniversalGatewayPCTest is Test {
 
         // Calculate expected subTxId (nonce should be 0 for first transaction)
         bytes32 expectedsubTxId =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
 
         // Expect the UniversalTxOutbound event with TX_TYPE.FUNDS
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             amount, // amount
@@ -432,6 +439,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -453,6 +461,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(0),
             amount,
             gasLimit,
@@ -471,6 +480,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -489,6 +499,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = address(0); // Zero recipient
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -510,6 +521,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -543,6 +555,7 @@ contract UniversalGatewayPCTest is Test {
         }
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -565,6 +578,7 @@ contract UniversalGatewayPCTest is Test {
         gasToken.approve(address(gateway), 0);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -583,6 +597,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -610,6 +625,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -632,6 +648,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -656,6 +673,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -665,13 +683,14 @@ contract UniversalGatewayPCTest is Test {
 
         // Calculate expected subTxId (nonce should be 0 for first transaction)
         bytes32 expectedsubTxId =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
 
         // Expect the UniversalTxOutbound event with TX_TYPE.FUNDS_AND_PAYLOAD
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             amount, // amount
@@ -699,6 +718,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -725,6 +745,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -760,6 +781,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -782,6 +804,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(0),
             amount,
             gasLimit,
@@ -801,6 +824,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -825,6 +849,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = address(0); // Zero recipient
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -847,6 +872,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -881,6 +907,7 @@ contract UniversalGatewayPCTest is Test {
         }
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -904,6 +931,7 @@ contract UniversalGatewayPCTest is Test {
         gasToken.approve(address(gateway), 0);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -923,6 +951,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -946,6 +975,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory smallPayload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
 
         UniversalOutboundTxRequest memory req1 = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -977,6 +1007,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         UniversalOutboundTxRequest memory req2 = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -1066,6 +1097,7 @@ contract UniversalGatewayPCTest is Test {
         }
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -1097,6 +1129,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -1147,6 +1180,7 @@ contract UniversalGatewayPCTest is Test {
         invalidToken.approve(address(gateway), amount);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(invalidToken),
             amount,
             gasLimit,
@@ -1212,6 +1246,7 @@ contract UniversalGatewayPCTest is Test {
         invalidToken.approve(address(gateway), amount);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(invalidToken),
             amount,
             gasLimit,
@@ -1251,6 +1286,7 @@ contract UniversalGatewayPCTest is Test {
         failingToken.setBalance(user1, 0);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(failingToken),
             amount,
             gasLimit,
@@ -1405,6 +1441,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1416,13 +1453,14 @@ contract UniversalGatewayPCTest is Test {
 
         // Calculate expected subTxId (nonce should be 0 for first transaction)
         bytes32 expectedsubTxId =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
 
         // Expect the UniversalTxOutbound event with TX_TYPE.FUNDS
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             amount, // amount
@@ -1445,6 +1483,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1456,13 +1495,14 @@ contract UniversalGatewayPCTest is Test {
 
         // Calculate expected subTxId (nonce should be 0 for first transaction)
         bytes32 expectedsubTxId =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
 
         // Expect the UniversalTxOutbound event with TX_TYPE.FUNDS_AND_PAYLOAD
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
             amount, // amount
@@ -1485,6 +1525,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1509,6 +1550,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1531,6 +1573,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1553,6 +1596,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1580,6 +1624,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1603,6 +1648,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1614,13 +1660,14 @@ contract UniversalGatewayPCTest is Test {
 
         // Calculate expected subTxId (nonce should be 0 for first transaction)
         bytes32 expectedsubTxId =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
 
         // Expect TX_TYPE.FUNDS_AND_PAYLOAD
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1,
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             amount,
@@ -1647,6 +1694,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1669,6 +1717,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1688,7 +1737,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Test with bytes("")
         UniversalOutboundTxRequest memory req1 = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
         );
 
         uint256 initialBalance1 = prc20Token.balanceOf(user1);
@@ -1705,7 +1754,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Test with new bytes(0)
         UniversalOutboundTxRequest memory req2 = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, new bytes(0), revertRecipient
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, new bytes(0), revertRecipient
         );
 
         uint256 initialBalance2 = prc20Token.balanceOf(user1);
@@ -1724,6 +1773,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1735,13 +1785,14 @@ contract UniversalGatewayPCTest is Test {
 
         // Calculate expected subTxId (nonce should be 0 for first transaction)
         bytes32 expectedsubTxId =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
 
         // Verify event emits correct TX_TYPE.FUNDS
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1,
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             amount,
@@ -1764,6 +1815,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1787,6 +1839,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1798,13 +1851,14 @@ contract UniversalGatewayPCTest is Test {
 
         // Calculate expected subTxId (nonce should be 0 for first transaction)
         bytes32 expectedsubTxId =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, payload, SOURCE_CHAIN_NAMESPACE, 0);
 
         // Verify event emits correct TX_TYPE.FUNDS_AND_PAYLOAD
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1,
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             amount,
@@ -1829,6 +1883,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(0), // Invalid zero token
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1848,6 +1903,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             DEFAULT_GAS_LIMIT,
@@ -1872,7 +1928,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req =
-            _createOutboundRequest(address(prc20Token), amount, DEFAULT_GAS_LIMIT, payload, revertRecipient);
+            _createOutboundRequest(bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, payload, revertRecipient);
 
         // Should revert with InvalidInput (from _fetchTxType for empty transactions)
         vm.prank(user1);
@@ -1888,6 +1944,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -1912,6 +1969,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -1940,6 +1998,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit,
@@ -1969,6 +2028,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Create struct with all fields populated
         UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
+            recipient: bytes(""),
             token: address(prc20Token),
             amount: amount,
             gasLimit: gasLimit,
@@ -1991,6 +2051,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
             address(prc20Token),
             amount,
             gasLimit, // 0 should use DEFAULT_GAS_LIMIT
@@ -2014,11 +2075,11 @@ contract UniversalGatewayPCTest is Test {
 
         // Test both bytes("") and new bytes(0) are treated the same
         UniversalOutboundTxRequest memory req1 = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
         );
 
         UniversalOutboundTxRequest memory req2 = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, new bytes(0), revertRecipient
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, new bytes(0), revertRecipient
         );
 
         // Both should be treated as TX_TYPE.FUNDS
@@ -2052,16 +2113,17 @@ contract UniversalGatewayPCTest is Test {
 
         // First transaction
         UniversalOutboundTxRequest memory req1 = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
         );
 
         bytes32 expectedsubTxId1 =
-            _calculateExpectedsubTxId(user1, address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
 
         vm.expectEmit(true, true, true, true);
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId1,
             user1,
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             amount,
@@ -2087,11 +2149,12 @@ contract UniversalGatewayPCTest is Test {
 
         // Second transaction with same parameters
         UniversalOutboundTxRequest memory req2 = _createOutboundRequest(
-            address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
         );
 
         bytes32 expectedsubTxId2 = _calculateExpectedsubTxId(
             user1,
+            bytes(""),
             address(prc20Token),
             amount,
             bytes(""),
@@ -2106,6 +2169,7 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId2,
             user1,
+            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
             amount,
@@ -2123,5 +2187,129 @@ contract UniversalGatewayPCTest is Test {
 
         // Verify nonce incremented to 2
         assertEq(gateway.nonce(), 2);
+    }
+
+    // =========================
+    //  RECIPIENT FIELD TESTS
+    // =========================
+
+    /// @notice G-R1: bytes("") recipient is emitted verbatim in event
+    function testOutbound_RecipientEmpty_EmittedInEvent() public {
+        uint256 amount = 1000 * 1e6;
+        address revertRecipient = user2;
+
+        UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+        );
+
+        uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        bytes32 expectedsubTxId =
+            _calculateExpectedsubTxId(user1, bytes(""), address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0);
+
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGatewayPC.UniversalTxOutbound(
+            expectedsubTxId,
+            user1,
+            bytes(""), // recipient
+            SOURCE_CHAIN_NAMESPACE,
+            address(prc20Token),
+            amount,
+            address(gasToken),
+            expectedGasFee,
+            DEFAULT_GAS_LIMIT,
+            bytes(""),
+            DEFAULT_PROTOCOL_FEE,
+            revertRecipient,
+            TX_TYPE.FUNDS
+        );
+
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound(req);
+    }
+
+    /// @notice G-R2: arbitrary bytes recipient is emitted verbatim in event
+    function testOutbound_RecipientNonEmpty_EmittedInEvent() public {
+        uint256 amount = 1000 * 1e6;
+        address revertRecipient = user2;
+        bytes memory arbitraryRecipient = abi.encodePacked(address(0x1234567890123456789012345678901234567890));
+
+        UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            arbitraryRecipient, address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+        );
+
+        uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        bytes32 expectedsubTxId = _calculateExpectedsubTxId(
+            user1, arbitraryRecipient, address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0
+        );
+
+        vm.expectEmit(true, true, true, true);
+        emit IUniversalGatewayPC.UniversalTxOutbound(
+            expectedsubTxId,
+            user1,
+            arbitraryRecipient, // recipient emitted verbatim
+            SOURCE_CHAIN_NAMESPACE,
+            address(prc20Token),
+            amount,
+            address(gasToken),
+            expectedGasFee,
+            DEFAULT_GAS_LIMIT,
+            bytes(""),
+            DEFAULT_PROTOCOL_FEE,
+            revertRecipient,
+            TX_TYPE.FUNDS
+        );
+
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound(req);
+    }
+
+    /// @notice G-R3: two requests identical except recipient → different subTxId
+    function testOutbound_RecipientIncludedInSubTxId() public {
+        uint256 amount = 1000 * 1e6;
+        address revertRecipient = user2;
+        bytes memory recipientA = bytes("");
+        bytes memory recipientB = abi.encodePacked(address(0xBEEF));
+
+        bytes32 idA = _calculateExpectedsubTxId(
+            user1, recipientA, address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0
+        );
+        bytes32 idB = _calculateExpectedsubTxId(
+            user1, recipientB, address(prc20Token), amount, bytes(""), SOURCE_CHAIN_NAMESPACE, 0
+        );
+
+        assertFalse(idA == idB, "Different recipients must produce different subTxIds");
+    }
+
+    /// @notice G-R4: bytes("") recipient accepted for all outbound TX_TYPEs without revert
+    function testOutbound_RecipientNotValidated_AllTxTypes() public {
+        uint256 amount = 1000 * 1e6;
+        address revertRecipient = user2;
+        bytes memory payload = abi.encodeWithSignature("execute()");
+
+        // FUNDS
+        UniversalOutboundTxRequest memory reqFunds = _createOutboundRequest(
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+        );
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound(reqFunds);
+
+        // Replenish
+        prc20Token.mint(user1, amount);
+        vm.prank(user1);
+        prc20Token.approve(address(gateway), amount);
+
+        // FUNDS_AND_PAYLOAD
+        UniversalOutboundTxRequest memory reqFAP = _createOutboundRequest(
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, payload, revertRecipient
+        );
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound(reqFAP);
+
+        // GAS_AND_PAYLOAD (amount=0, payload non-empty)
+        UniversalOutboundTxRequest memory reqGAP = _createOutboundRequest(
+            bytes(""), address(prc20Token), 0, DEFAULT_GAS_LIMIT, payload, revertRecipient
+        );
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound(reqGAP);
     }
 }

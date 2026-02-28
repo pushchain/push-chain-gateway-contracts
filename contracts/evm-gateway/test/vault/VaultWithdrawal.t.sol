@@ -11,6 +11,7 @@ import { ICEA } from "../../src/interfaces/ICEA.sol";
 import { Multicall } from "../../src/libraries/Types.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
+import { MockCEA } from "../mocks/MockCEA.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Comprehensive test suite for Vault withdrawal functionality via finalizeUniversalTx with empty payload
@@ -161,7 +162,7 @@ contract VaultWithdrawalTest is Test {
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxFinalized(
-            subTxId, universalTxId, originCaller, address(usdc), amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(0), address(usdc), amount, expectedPayload
         );
 
         // TSS calls vault.finalizeUniversalTx with withdrawal payload
@@ -170,6 +171,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc), // token
             amount,
             expectedPayload
@@ -200,6 +202,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount) // Withdrawal multicall
@@ -227,6 +230,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             excessiveAmount,
             _withdrawalPayloadDirect(address(usdc), recipient, excessiveAmount)
@@ -247,6 +251,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             unsupportedToken,
             amount,
             _withdrawalPayloadDirect(unsupportedToken, recipient, amount)
@@ -267,6 +272,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             0, // Zero amount
             _withdrawalPayloadDirect(address(usdc), recipient, 0)
@@ -291,6 +297,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
@@ -319,7 +326,7 @@ contract VaultWithdrawalTest is Test {
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(0), recipient, amount);
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxFinalized(
-            subTxId, universalTxId, originCaller, address(0), amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(0), address(0), amount, expectedPayload
         );
 
         // Fund TSS with ETH to send
@@ -331,6 +338,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(0), // token = address(0) for native
             amount,
             expectedPayload
@@ -364,6 +372,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(0),
             amount,
             _withdrawalPayloadDirect(address(0), recipient, amount)
@@ -394,6 +403,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(0),
             amount,
             _withdrawalPayloadDirect(address(0), recipient, amount)
@@ -414,6 +424,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(0),
             0, // Zero amount
             _withdrawalPayloadDirect(address(0), recipient, 0)
@@ -451,6 +462,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             payload // Multicall-wrapped payload
@@ -484,6 +496,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(0), // native
             amount,
             payload // Multicall-wrapped payload
@@ -519,6 +532,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             _withdrawalPayloadDirect(address(usdc), cea, amount)
@@ -554,6 +568,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(0),
             amount,
             _withdrawalPayloadDirect(address(0), cea, amount)
@@ -578,12 +593,12 @@ contract VaultWithdrawalTest is Test {
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
         emit IVault.VaultUniversalTxFinalized(
-            subTxId, universalTxId, originCaller, address(usdc), amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(0), address(usdc), amount, expectedPayload
         );
 
         vm.prank(tss);
         vault.finalizeUniversalTx(
-            subTxId, universalTxId, originCaller, address(usdc), amount, expectedPayload
+            subTxId, universalTxId, originCaller, address(0), address(usdc), amount, expectedPayload
         );
     }
 
@@ -608,13 +623,14 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0),
             address(usdc),
             amount,
             payload // Multicall-wrapped payload
         );
 
         vm.prank(tss);
-        vault.finalizeUniversalTx(subTxId, universalTxId, originCaller, address(usdc), amount, payload);
+        vault.finalizeUniversalTx(subTxId, universalTxId, originCaller, address(0), address(usdc), amount, payload);
     }
 
     // =========================
@@ -637,6 +653,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
@@ -671,6 +688,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(0),
             amount,
             _withdrawalPayloadDirect(address(0), recipient, amount)
@@ -697,6 +715,7 @@ contract VaultWithdrawalTest is Test {
             keccak256("tx60"),
             keccak256("utx60"),
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount1,
             _withdrawalPayloadDirect(address(usdc), recipient, amount1)
@@ -708,6 +727,7 @@ contract VaultWithdrawalTest is Test {
             keccak256("tx61"),
             keccak256("utx61"),
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount2,
             _withdrawalPayloadDirect(address(usdc), recipient, amount2)
@@ -740,6 +760,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
@@ -760,6 +781,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             _withdrawalPayloadDirect(address(usdc), recipient, amount)
@@ -785,6 +807,7 @@ contract VaultWithdrawalTest is Test {
             subTxId,
             universalTxId,
             originCaller,
+            address(0), // recipient
             address(usdc),
             amount,
             _withdrawalPayloadDirect(address(usdc), smartWallet, amount)
@@ -792,5 +815,132 @@ contract VaultWithdrawalTest is Test {
 
         // Verify smart wallet received tokens
         assertEq(usdc.balanceOf(smartWallet), initialBalance + amount, "Smart wallet should receive tokens");
+    }
+
+    // =========================
+    //  8. RECIPIENT FIELD TESTS
+    // =========================
+
+    /// @notice V-R1: recipient=address(0) is forwarded to CEA as address(0)
+    function testWithdraw_RecipientZero_FundsParkedInCEA() public {
+        bytes32 subTxId = keccak256("txR1");
+        bytes32 universalTxId = keccak256("utxR1");
+        address originCaller = user1;
+        uint256 amount = 100e6;
+
+        vm.prank(tss);
+        vault.finalizeUniversalTx(
+            subTxId, universalTxId, originCaller, address(0), address(usdc), amount,
+            _withdrawalPayloadDirect(address(usdc), recipient, amount)
+        );
+
+        (address ceaAddr, bool deployed) = ceaFactory.getCEAForPushAccount(originCaller);
+        assertTrue(deployed);
+        MockCEA cea = ceaFactory.getMockCEA(ceaAddr);
+        assertEq(cea.lastRecipient(), address(0));
+    }
+
+    /// @notice V-R2: non-zero recipient is threaded to CEA (ERC20)
+    function testWithdraw_RecipientNonZero_ERC20() public {
+        bytes32 subTxId = keccak256("txR2");
+        bytes32 universalTxId = keccak256("utxR2");
+        address originCaller = user1;
+        uint256 amount = 100e6;
+        address specificRecipient = makeAddr("specificRecipient");
+
+        vm.prank(tss);
+        vault.finalizeUniversalTx(
+            subTxId, universalTxId, originCaller, specificRecipient, address(usdc), amount,
+            _withdrawalPayloadDirect(address(usdc), recipient, amount)
+        );
+
+        (address ceaAddr,) = ceaFactory.getCEAForPushAccount(originCaller);
+        MockCEA cea = ceaFactory.getMockCEA(ceaAddr);
+        assertEq(cea.lastRecipient(), specificRecipient);
+    }
+
+    /// @notice V-R3: non-zero recipient is threaded to CEA (native)
+    function testWithdraw_RecipientNonZero_Native() public {
+        bytes32 subTxId = keccak256("txR3");
+        bytes32 universalTxId = keccak256("utxR3");
+        address originCaller = user1;
+        uint256 amount = 1 ether;
+        address specificRecipient = makeAddr("specificRecipientNative");
+
+        vm.deal(tss, amount);
+        vm.prank(tss);
+        vault.finalizeUniversalTx{ value: amount }(
+            subTxId, universalTxId, originCaller, specificRecipient, address(0), amount,
+            _withdrawalPayloadDirect(address(0), recipient, amount)
+        );
+
+        (address ceaAddr,) = ceaFactory.getCEAForPushAccount(originCaller);
+        MockCEA cea = ceaFactory.getMockCEA(ceaAddr);
+        assertEq(cea.lastRecipient(), specificRecipient);
+    }
+
+    /// @notice V-R4: VaultUniversalTxFinalized emits correct recipient (ERC20)
+    function testWithdraw_RecipientInEvent_ERC20() public {
+        bytes32 subTxId = keccak256("txR4");
+        bytes32 universalTxId = keccak256("utxR4");
+        address originCaller = user1;
+        uint256 amount = 100e6;
+        address specificRecipient = makeAddr("eventRecipientERC20");
+        bytes memory payload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
+
+        vm.expectEmit(true, true, true, true);
+        emit IVault.VaultUniversalTxFinalized(
+            subTxId, universalTxId, originCaller, specificRecipient, address(usdc), amount, payload
+        );
+
+        vm.prank(tss);
+        vault.finalizeUniversalTx(
+            subTxId, universalTxId, originCaller, specificRecipient, address(usdc), amount, payload
+        );
+    }
+
+    /// @notice V-R5: VaultUniversalTxFinalized emits correct recipient (native)
+    function testWithdraw_RecipientInEvent_Native() public {
+        bytes32 subTxId = keccak256("txR5");
+        bytes32 universalTxId = keccak256("utxR5");
+        address originCaller = user1;
+        uint256 amount = 2 ether;
+        address specificRecipient = makeAddr("eventRecipientNative");
+        bytes memory payload = _withdrawalPayloadDirect(address(0), recipient, amount);
+
+        vm.deal(tss, amount);
+        vm.expectEmit(true, true, true, true);
+        emit IVault.VaultUniversalTxFinalized(
+            subTxId, universalTxId, originCaller, specificRecipient, address(0), amount, payload
+        );
+
+        vm.prank(tss);
+        vault.finalizeUniversalTx{ value: amount }(
+            subTxId, universalTxId, originCaller, specificRecipient, address(0), amount, payload
+        );
+    }
+
+    /// @notice V-R6: recipient + non-empty payload both thread correctly to CEA
+    function testWithdraw_RecipientNonZero_WithPayload() public {
+        bytes32 subTxId = keccak256("txR6");
+        bytes32 universalTxId = keccak256("utxR6");
+        address originCaller = user1;
+        uint256 amount = 100e6;
+        address specificRecipient = makeAddr("recipientWithPayload");
+        bytes memory rawCalldata = abi.encodeWithSignature("someFunction()");
+        address mockTarget = address(0x4242);
+        vm.etch(mockTarget, hex"00");
+        vm.mockCall(mockTarget, rawCalldata, abi.encode(true));
+        bytes memory payload = _externalCallPayload(mockTarget, 0, rawCalldata);
+
+        vm.prank(tss);
+        vault.finalizeUniversalTx(
+            subTxId, universalTxId, originCaller, specificRecipient, address(usdc), amount, payload
+        );
+
+        (address ceaAddr,) = ceaFactory.getCEAForPushAccount(originCaller);
+        MockCEA cea = ceaFactory.getMockCEA(ceaAddr);
+        assertEq(cea.lastRecipient(), specificRecipient);
+        assertEq(cea.lastPayload(), payload);
     }
 }

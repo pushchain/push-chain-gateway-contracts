@@ -18,6 +18,7 @@ contract MockCEA is ICEA {
     bytes32 public lastsubTxId;
     bytes32 public lastuniversalTxId;
     address public lastUEA;
+    address public lastRecipient;
     bytes public lastPayload;
 
     // Call path tracking
@@ -49,11 +50,13 @@ contract MockCEA is ICEA {
      * @notice Executes a universal transaction using multicall payload
      * @dev Decodes and executes multicall for testing purposes
      */
-    function executeUniversalTx(bytes32 subTxId, bytes32 universalTxId, address originCaller, bytes calldata payload)
-        external
-        payable
-        override
-    {
+    function executeUniversalTx(
+        bytes32 subTxId,
+        bytes32 universalTxId,
+        address originCaller,
+        address recipient,
+        bytes calldata payload
+    ) external payable override {
         executeCallCount++;
 
         // Revert if configured (for rollback testing)
@@ -72,6 +75,7 @@ contract MockCEA is ICEA {
         lastsubTxId = subTxId;
         lastuniversalTxId = universalTxId;
         lastUEA = originCaller;
+        lastRecipient = recipient;
         lastPayload = payload;
 
         // Decode and execute multicall
