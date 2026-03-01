@@ -1,11 +1,8 @@
 use crate::instructions::tss::validate_message;
+use crate::utils::{encode_u64_be, pda_spl_transfer, pda_system_transfer, reimburse_relayer_from_fee_vault};
 use crate::{errors::*, state::*};
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::sysvar::rent::Rent;
-use anchor_lang::solana_program::program_pack::Pack;
-use anchor_lang::solana_program::system_instruction;
-use anchor_spl::token::{self, spl_token, Mint, Token, TokenAccount, Transfer};
-use spl_token::state::Account as SplAccount;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 // =========================
 //   TSS REVERT WITHDRAW FUNCTIONS
@@ -84,13 +81,11 @@ pub fn revert_universal_tx(
     );
 
     let instruction_id: u8 = 3;
-    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
-    let mut gas_fee_buf = [0u8; 8];
-    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    let gas_fee_buf = encode_u64_be(gas_fee);
     let additional: [&[u8]; 4] = [
-        &universal_tx_id[..],
-        &sub_tx_id[..],
-        &recipient_bytes[..],
+        &universal_tx_id,
+        &sub_tx_id,
+        &revert_instruction.fund_recipient.to_bytes(),
         &gas_fee_buf,
     ];
     validate_message(
@@ -104,18 +99,12 @@ pub fn revert_universal_tx(
     )?;
 
     let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-    anchor_lang::solana_program::program::invoke_signed(
-        &system_instruction::transfer(
-            &ctx.accounts.vault.key(),
-            &revert_instruction.fund_recipient,
-            amount,
-        ),
-        &[
-            ctx.accounts.vault.to_account_info(),
-            ctx.accounts.recipient.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        &[seeds],
+    pda_system_transfer(
+        &ctx.accounts.vault.to_account_info(),
+        &ctx.accounts.recipient.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        amount,
+        seeds,
     )?;
 
     emit!(crate::state::RevertUniversalTx {
@@ -127,25 +116,12 @@ pub fn revert_universal_tx(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Reimburse relayer gas from fee_vault (not from bridge vault — preserves 1:1 invariant).
-    if gas_fee > 0 {
-        let fee_vault_info = ctx.accounts.fee_vault.to_account_info();
-        let min_balance = Rent::get()?.minimum_balance(FeeVault::LEN);
-        let available = fee_vault_info
-            .lamports()
-            .checked_sub(min_balance)
-            .ok_or(error!(GatewayError::InsufficientFeePool))?;
-        require!(available >= gas_fee, GatewayError::InsufficientFeePool);
-
-        **fee_vault_info.try_borrow_mut_lamports()? -= gas_fee;
-        **ctx.accounts.caller.to_account_info().try_borrow_mut_lamports()? += gas_fee;
-
-        emit!(ProtocolFeeReimbursed {
-            sub_tx_id,
-            relayer: ctx.accounts.caller.key(),
-            amount_lamports: gas_fee,
-        });
-    }
+    reimburse_relayer_from_fee_vault(
+        &ctx.accounts.fee_vault,
+        &ctx.accounts.caller.to_account_info(),
+        sub_tx_id,
+        gas_fee,
+    )?;
 
     Ok(())
 }
@@ -165,9 +141,8 @@ pub struct RevertUniversalTxToken<'info> {
     #[account(mut, seeds = [VAULT_SEED], bump = config.vault_bump)]
     pub vault: UncheckedAccount<'info>,
 
-    /// CHECK: Vault token account - validated at runtime (owner == vault, mint == token_mint)
-    #[account(mut)]
-    pub token_vault: UncheckedAccount<'info>,
+    #[account(mut, token::authority = vault, token::mint = token_mint)]
+    pub token_vault: Account<'info, TokenAccount>,
 
     /// Fee vault — relayer gas reimbursement comes from here, not from bridge vault.
     #[account(
@@ -234,16 +209,13 @@ pub fn revert_universal_tx_token(
     );
 
     let instruction_id: u8 = 4;
-    let mut mint_bytes = [0u8; 32];
-    mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
-    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
-    let mut gas_fee_buf = [0u8; 8];
-    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
+    let mint_bytes = ctx.accounts.token_mint.key().to_bytes();
+    let gas_fee_buf = encode_u64_be(gas_fee);
     let additional: [&[u8]; 5] = [
-        &universal_tx_id[..],
-        &sub_tx_id[..],
-        &mint_bytes[..],
-        &recipient_bytes[..],
+        &universal_tx_id,
+        &sub_tx_id,
+        &mint_bytes,
+        &revert_instruction.fund_recipient.to_bytes(),
         &gas_fee_buf,
     ];
     validate_message(
@@ -256,31 +228,14 @@ pub fn revert_universal_tx_token(
         recovery_id,
     )?;
 
-    // SECURITY: Validate token_vault is owned by vault and matches token_mint
-    let data = ctx.accounts.token_vault.try_borrow_data()?.to_vec();
-    let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
-    require!(
-        parsed.owner == ctx.accounts.vault.key(),
-        GatewayError::InvalidOwner
-    );
-    require!(
-        parsed.mint == ctx.accounts.token_mint.key(),
-        GatewayError::InvalidMint
-    );
-
     let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-
-    let cpi_accounts = Transfer {
-        from: ctx.accounts.token_vault.to_account_info(),
-        to: ctx.accounts.recipient_token_account.to_account_info(),
-        authority: ctx.accounts.vault.to_account_info(),
-    };
-
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let seeds_array = [seeds];
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, &seeds_array);
-
-    token::transfer(cpi_ctx, amount)?;
+    pda_spl_transfer(
+        &ctx.accounts.token_vault.to_account_info(),
+        &ctx.accounts.recipient_token_account.to_account_info(),
+        &ctx.accounts.vault.to_account_info(),
+        amount,
+        seeds,
+    )?;
 
     emit!(crate::state::RevertUniversalTx {
         universal_tx_id,
@@ -291,25 +246,12 @@ pub fn revert_universal_tx_token(
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Reimburse relayer gas from fee_vault (not from bridge vault — preserves 1:1 invariant).
-    if gas_fee > 0 {
-        let fee_vault_info = ctx.accounts.fee_vault.to_account_info();
-        let min_balance = Rent::get()?.minimum_balance(FeeVault::LEN);
-        let available = fee_vault_info
-            .lamports()
-            .checked_sub(min_balance)
-            .ok_or(error!(GatewayError::InsufficientFeePool))?;
-        require!(available >= gas_fee, GatewayError::InsufficientFeePool);
-
-        **fee_vault_info.try_borrow_mut_lamports()? -= gas_fee;
-        **ctx.accounts.caller.to_account_info().try_borrow_mut_lamports()? += gas_fee;
-
-        emit!(ProtocolFeeReimbursed {
-            sub_tx_id,
-            relayer: ctx.accounts.caller.key(),
-            amount_lamports: gas_fee,
-        });
-    }
+    reimburse_relayer_from_fee_vault(
+        &ctx.accounts.fee_vault,
+        &ctx.accounts.caller.to_account_info(),
+        sub_tx_id,
+        gas_fee,
+    )?;
 
     Ok(())
 }

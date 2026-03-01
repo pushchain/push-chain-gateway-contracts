@@ -261,7 +261,6 @@ pub use state::{
     ProtocolFeeUpdated,
     TSSAddressUpdated,
     TxType,
-    UniversalPayload,
     UniversalTx,
     UniversalTxFinalized,
     UniversalTxRequest,

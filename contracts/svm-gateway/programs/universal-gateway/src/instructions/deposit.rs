@@ -2,11 +2,9 @@ use crate::errors::GatewayError;
 use crate::state::*;
 use crate::utils::*;
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::system_program;
 use anchor_spl::token::{self, spl_token, Token, Transfer};
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
-use spl_token::state::Account as SplAccount;
 // =========================
 //           DEPOSITS
 // =========================
@@ -90,7 +88,6 @@ fn route_universal_tx(
         TxType::Funds | TxType::FundsAndPayload => {
             send_tx_with_funds_route(ctx, req, native_amount, tx_type)
         }
-        _ => Err(error!(GatewayError::InvalidTxType)),
     }
 }
 
@@ -218,15 +215,8 @@ fn send_tx_with_gas_route(
     Ok(())
 }
 
-/// @notice Internal helper function to deposit for Standard TX (FUNDS route).
-/// @dev    Handles bridge deposits with optional gas batching.
-///         Case 1: TX_TYPE = FUNDS
-///           - Case 1.1: Native SOL funds → req.token == Pubkey::default()
-///           - Case 1.2: SPL token funds → req.token != Pubkey::default()
-///         Case 2: TX_TYPE = FUNDS_AND_PAYLOAD
-///           - Case 2.1: No batching (native_amount == 0) → user already has UEA with gas
-///           - Case 2.2: Batching with native SOL → split: gasAmount = native_amount - req.amount
-///           - Case 2.3: Batching with SPL + native gas → gasAmount = native_amount, bridgeAmount = req.amount
+/// Dispatcher for FUNDS / FUNDS_AND_PAYLOAD routes.
+/// Branches on asset type first, then delegates behavior differences to each handler.
 fn send_tx_with_funds_route(
     ctx: &mut Context<SendUniversalTx>,
     req: UniversalTxRequest,
@@ -238,103 +228,84 @@ fn send_tx_with_funds_route(
         GatewayError::InvalidRecipient
     );
     require!(req.amount > 0, GatewayError::InvalidAmount);
-
-    // Payload validation (matching EVM Temp lines 978-984)
     if tx_type == TxType::Funds {
         require!(req.payload.is_empty(), GatewayError::InvalidInput);
-    }
-    if tx_type == TxType::FundsAndPayload {
+    } else {
         require!(!req.payload.is_empty(), GatewayError::InvalidInput);
     }
 
-    match tx_type {
-        TxType::Funds => {
-            if req.token == Pubkey::default() {
-                // Case 1.1: Native SOL
-                require!(native_amount == req.amount, GatewayError::InvalidAmount);
-                validate_token_and_consume_rate_limit(
-                    &mut ctx.accounts.token_rate_limit,
-                    Pubkey::default(),
-                    req.amount as u128,
-                    &ctx.accounts.rate_limit_config,
-                )?;
-                let cpi_ctx = CpiContext::new(
-                    ctx.accounts.system_program.to_account_info(),
-                    system_program::Transfer {
-                        from: ctx.accounts.user.to_account_info(),
-                        to: ctx.accounts.vault.to_account_info(),
-                    },
-                );
-                system_program::transfer(cpi_ctx, req.amount)?;
-            } else {
-                // Case 1.2: SPL token
-                require!(native_amount == 0, GatewayError::InvalidAmount);
-                validate_token_and_consume_rate_limit(
-                    &mut ctx.accounts.token_rate_limit,
-                    req.token,
-                    req.amount as u128,
-                    &ctx.accounts.rate_limit_config,
-                )?;
-                deposit_spl_to_vault(ctx, req.token, req.amount)?;
-            }
-        }
-        TxType::FundsAndPayload => {
-            if req.token == Pubkey::default() {
-                // Case 2.2: Native SOL bridge + optional gas split
-                // Split Needed: Native token is split between gasAmount and bridge amount (native_amount >= req.amount)
-                // Note: If native_amount == 0, this will revert via the require below (Case 2.1 requires SPL token)
-                require!(native_amount >= req.amount, GatewayError::InvalidAmount);
-                let gas_amount = native_amount.saturating_sub(req.amount);
-                if gas_amount > 0 {
-                    send_tx_with_gas_route(
-                        ctx,
-                        TxType::Gas,
-                        gas_amount,
-                        &[],
-                        &req.revert_instruction,
-                        &req.signature_data,
-                    )?;
-                }
-                validate_token_and_consume_rate_limit(
-                    &mut ctx.accounts.token_rate_limit,
-                    Pubkey::default(),
-                    req.amount as u128,
-                    &ctx.accounts.rate_limit_config,
-                )?;
-                let cpi_ctx = CpiContext::new(
-                    ctx.accounts.system_program.to_account_info(),
-                    system_program::Transfer {
-                        from: ctx.accounts.user.to_account_info(),
-                        to: ctx.accounts.vault.to_account_info(),
-                    },
-                );
-                system_program::transfer(cpi_ctx, req.amount)?;
-            } else {
-                // Case 2.1/2.3: SPL bridge (+ optional native gas)
-                // No Split Needed: gasAmount is used via native_token, and bridgeAmount is used via SPL token.
-                if native_amount > 0 {
-                    send_tx_with_gas_route(
-                        ctx,
-                        TxType::Gas,
-                        native_amount,
-                        &[],
-                        &req.revert_instruction,
-                        &req.signature_data,
-                    )?;
-                }
-                validate_token_and_consume_rate_limit(
-                    &mut ctx.accounts.token_rate_limit,
-                    req.token,
-                    req.amount as u128,
-                    &ctx.accounts.rate_limit_config,
-                )?;
-                deposit_spl_to_vault(ctx, req.token, req.amount)?;
-            }
-        }
-        _ => return Err(error!(GatewayError::InvalidTxType)),
+    if req.token == Pubkey::default() {
+        handle_native_funds_route(ctx, &req, native_amount, tx_type)?;
+    } else {
+        handle_spl_funds_route(ctx, &req, native_amount, tx_type)?;
     }
 
-    // FUNDS carries a specific recipient; FundsAndPayload targets UEA on Push Chain (zero address)
+    emit_funds_route_event(ctx, req, tx_type);
+    Ok(())
+}
+
+/// Native SOL path for FUNDS and FUNDS_AND_PAYLOAD.
+/// FUNDS:           native_amount must equal req.amount exactly.
+/// FUNDS_AND_PAYLOAD: native_amount >= req.amount; excess becomes a gas leg.
+fn handle_native_funds_route(
+    ctx: &mut Context<SendUniversalTx>,
+    req: &UniversalTxRequest,
+    native_amount: u64,
+    tx_type: TxType,
+) -> Result<()> {
+    require!(native_amount >= req.amount, GatewayError::InvalidAmount);
+    if tx_type == TxType::Funds {
+        require!(native_amount == req.amount, GatewayError::InvalidAmount);
+    }
+
+    let gas_amount = native_amount.saturating_sub(req.amount);
+    if gas_amount > 0 {
+        send_tx_with_gas_route(ctx, TxType::Gas, gas_amount, &[], &req.revert_instruction, &req.signature_data)?;
+    }
+
+    validate_token_and_consume_rate_limit(
+        &mut ctx.accounts.token_rate_limit,
+        Pubkey::default(),
+        req.amount as u128,
+        &ctx.accounts.rate_limit_config,
+    )?;
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        system_program::Transfer {
+            from: ctx.accounts.user.to_account_info(),
+            to: ctx.accounts.vault.to_account_info(),
+        },
+    );
+    system_program::transfer(cpi_ctx, req.amount)
+}
+
+/// SPL token path for FUNDS and FUNDS_AND_PAYLOAD.
+/// FUNDS:           native_amount must be zero (no gas batching).
+/// FUNDS_AND_PAYLOAD: native_amount is optional gas top-up.
+fn handle_spl_funds_route(
+    ctx: &mut Context<SendUniversalTx>,
+    req: &UniversalTxRequest,
+    native_amount: u64,
+    tx_type: TxType,
+) -> Result<()> {
+    if tx_type == TxType::Funds {
+        require!(native_amount == 0, GatewayError::InvalidAmount);
+    } else if native_amount > 0 {
+        send_tx_with_gas_route(ctx, TxType::Gas, native_amount, &[], &req.revert_instruction, &req.signature_data)?;
+    }
+
+    validate_token_and_consume_rate_limit(
+        &mut ctx.accounts.token_rate_limit,
+        req.token,
+        req.amount as u128,
+        &ctx.accounts.rate_limit_config,
+    )?;
+    deposit_spl_to_vault(ctx, req.token, req.amount)
+}
+
+/// Emit the UniversalTx event for FUNDS / FUNDS_AND_PAYLOAD routes.
+/// FUNDS carries the user-specified recipient; FUNDS_AND_PAYLOAD targets UEA (zero address).
+fn emit_funds_route_event(ctx: &Context<SendUniversalTx>, req: UniversalTxRequest, tx_type: TxType) {
     let recipient = if tx_type == TxType::Funds { req.recipient } else { [0u8; 20] };
     emit!(UniversalTx {
         sender: ctx.accounts.user.key(),
@@ -347,8 +318,6 @@ fn send_tx_with_funds_route(
         signature_data: req.signature_data,
         from_cea: false,
     });
-
-    Ok(())
 }
 
 /// Transfer SPL tokens from user's token account to the vault's ATA.
@@ -357,10 +326,15 @@ fn deposit_spl_to_vault(ctx: &Context<SendUniversalTx>, token: Pubkey, amount: u
     let user_token_info = ctx.accounts.user_token_account.to_account_info();
     require!(user_token_info.owner == &spl_token::ID, GatewayError::InvalidOwner);
 
+    // Validate source: authority must be the signer, mint must match requested token.
+    // Without this, a malicious user could pass someone else's token account.
+    let parsed_user = parse_token_account(&user_token_info)?;
+    require!(parsed_user.owner == ctx.accounts.user.key(), GatewayError::InvalidOwner);
+    require!(parsed_user.mint == token, GatewayError::InvalidMint);
+
     // SECURITY: Validate gateway_token_account is the vault's ATA for this token.
     // This prevents users from providing their own token account and stealing funds.
-    let data = ctx.accounts.gateway_token_account.try_borrow_data()?.to_vec();
-    let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
+    let parsed = parse_token_account(&ctx.accounts.gateway_token_account.to_account_info())?;
     require!(parsed.owner == ctx.accounts.vault.key(), GatewayError::InvalidOwner);
     require!(parsed.mint == token, GatewayError::InvalidMint);
 
