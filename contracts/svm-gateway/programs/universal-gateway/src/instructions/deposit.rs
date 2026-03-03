@@ -323,7 +323,18 @@ fn emit_funds_route_event(ctx: &Context<SendUniversalTx>, req: UniversalTxReques
 /// Transfer SPL tokens from user's token account to the vault's ATA.
 /// SECURITY: validates vault ownership and mint before transferring.
 fn deposit_spl_to_vault(ctx: &Context<SendUniversalTx>, token: Pubkey, amount: u64) -> Result<()> {
-    let user_token_info = ctx.accounts.user_token_account.to_account_info();
+    let user_token_account = ctx
+        .accounts
+        .user_token_account
+        .as_ref()
+        .ok_or_else(|| error!(GatewayError::InvalidAccount))?;
+    let gateway_token_account = ctx
+        .accounts
+        .gateway_token_account
+        .as_ref()
+        .ok_or_else(|| error!(GatewayError::InvalidAccount))?;
+
+    let user_token_info = user_token_account.to_account_info();
     require!(user_token_info.owner == &spl_token::ID, GatewayError::InvalidOwner);
 
     // Validate source: authority must be the signer, mint must match requested token.
@@ -334,7 +345,7 @@ fn deposit_spl_to_vault(ctx: &Context<SendUniversalTx>, token: Pubkey, amount: u
 
     // SECURITY: Validate gateway_token_account is the vault's ATA for this token.
     // This prevents users from providing their own token account and stealing funds.
-    let parsed = parse_token_account(&ctx.accounts.gateway_token_account.to_account_info())?;
+    let parsed = parse_token_account(&gateway_token_account.to_account_info())?;
     require!(parsed.owner == ctx.accounts.vault.key(), GatewayError::InvalidOwner);
     require!(parsed.mint == token, GatewayError::InvalidMint);
 
@@ -342,7 +353,7 @@ fn deposit_spl_to_vault(ctx: &Context<SendUniversalTx>, token: Pubkey, amount: u
         ctx.accounts.token_program.to_account_info(),
         Transfer {
             from: user_token_info,
-            to: ctx.accounts.gateway_token_account.to_account_info(),
+            to: gateway_token_account.to_account_info(),
             authority: ctx.accounts.user.to_account_info(),
         },
     );
@@ -377,17 +388,13 @@ pub struct SendUniversalTx<'info> {
     )]
     pub fee_vault: Account<'info, FeeVault>,
 
-    /// CHECK: Only required for SPL token routes; validated at runtime.
-    /// For native SOL routes, pass vault account as dummy (not used).
-    /// TODO use Optional Account instead 
+    /// Only required for SPL token routes; can be omitted (pass null) on native SOL routes.
     #[account(mut)]
-    pub user_token_account: UncheckedAccount<'info>,
+    pub user_token_account: Option<UncheckedAccount<'info>>,
 
-    /// CHECK: Only required for SPL token routes; validated at runtime.
-    /// For native SOL routes, pass vault account as dummy (not used).
-    /// TODO use Optional Account instead 
+    /// Only required for SPL token routes; can be omitted (pass null) on native SOL routes.
     #[account(mut)]
-    pub gateway_token_account: UncheckedAccount<'info>,
+    pub gateway_token_account: Option<UncheckedAccount<'info>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
