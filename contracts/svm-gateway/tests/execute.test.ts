@@ -2346,6 +2346,75 @@ describe("Universal Gateway - Execute Tests", () => {
             });
         });
 
+        it("should reject outer signer in remaining accounts (UnexpectedOuterSigner)", async () => {
+            // validate_remaining_accounts fires BEFORE TSS validation (execute.rs line 523 vs 542),
+            // so we don't need a valid TSS signature — the check fires first.
+            // A malicious relayer could try to pass a signer account to gain signing authority
+            // inside the target CPI. This must be rejected unconditionally.
+            const subTxId = generateTxId();
+            const universalTxId = generateUniversalTxId();
+            const pushAccount = generateSender();
+
+            // outerSigner: a real keypair that will be added as a signer in remainingAccounts.
+            const outerSigner = Keypair.generate();
+
+            // writable_flags for 1 account = 1 byte, bit 0 = not writable
+            const writableFlags = Buffer.from([0x00]);
+
+            // Dummy values — TSS check never reached, values don't matter for this path
+            const dummySig = Array(64).fill(0);
+            const dummyHash = Array(32).fill(0);
+            const { gasFee, rentFee } = await calculateSolExecuteFees(provider.connection);
+
+            await expectExecuteRevert(
+                "Outer signer in remaining accounts",
+                async () => {
+                    return await gatewayProgram.methods
+                        .finalizeUniversalTx(
+                            2,
+                            Array.from(subTxId),
+                            Array.from(universalTxId),
+                            new anchor.BN(0),
+                            Array.from(pushAccount),
+                            writableFlags,
+                            Buffer.from([]),
+                            new anchor.BN(Number(gasFee)),
+                            new anchor.BN(Number(rentFee)),
+                            dummySig,
+                            0,
+                            dummyHash,
+                        )
+                        .accounts({
+                            caller: admin.publicKey,
+                            config: configPda,
+                            vaultSol: vaultPda,
+                            ceaAuthority: getCeaAuthorityPda(pushAccount),
+                            tssPda,
+                            executedSubTx: getExecutedTxPda(subTxId),
+                            rateLimitConfig: null,
+                            tokenRateLimit: null,
+                            destinationProgram: counterProgram.programId,
+                            recipient: null,
+                            vaultAta: null,
+                            ceaAta: null,
+                            mint: null,
+                            tokenProgram: null,
+                            rent: null,
+                            associatedTokenProgram: null,
+                            recipientAta: null,
+                            systemProgram: SystemProgram.programId,
+                        })
+                        .remainingAccounts([
+                            // isSigner: true — must be accompanied by actual tx signature
+                            { pubkey: outerSigner.publicKey, isWritable: false, isSigner: true },
+                        ])
+                        .signers([admin, outerSigner]) // outerSigner actually signs so tx is valid at runtime level
+                        .rpc();
+                },
+                "UnexpectedOuterSigner"
+            );
+        });
+
         describe("signature and authentication attacks", () => {
             it("should reject invalid signature", async () => {
                 const subTxId = generateTxId();
@@ -3787,6 +3856,9 @@ describe("Universal Gateway - Execute Tests", () => {
                     sig1.recoveryId,
                     Array.from(sig1.messageHash),
                 )
+                .preInstructions([
+                    ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+                ])
                 .accounts({
                     caller: admin.publicKey,
                     config: configPda,
@@ -3813,14 +3885,110 @@ describe("Universal Gateway - Execute Tests", () => {
 
             console.log("✅ User4 staked 100 SPL tokens");
 
-            // Now try to have User4 unstake from User3's stake (should fail)
-            // Note: User3 already unstaked, so this will fail because stake doesn't exist
-            // This demonstrates cross-user isolation at the test-counter level
+            // Cross-user isolation: User4 attempts to unstake from User3's stake PDA.
+            // Gateway correctly routes User4's push_account → User4's CEA as CPI signer.
+            // test-counter rejects because stake.authority == user3Cea != user4Cea.
+            const user3Stake = getStakePda(user3Cea);
+            const txId2 = generateTxId();
+            const universalTxId2 = generateUniversalTxId();
+            const { gasFee: gasFee2, rentFee: rentFee2 } = await calculateSplExecuteFees(
+                provider.connection,
+                await getCeaAta(user4Sender, mockUSDT.mint.publicKey)
+            );
 
-            console.log("✅ Cross-user isolation verified: Each user has separate stake accounts");
-            console.log("  User3 Stake PDA:", getStakePda(user3Cea).toString());
-            console.log("  User4 Stake PDA:", getStakePda(user4Cea).toString());
-            console.log("  These are different, ensuring isolation");
+            // Build unstakeSpl targeting User3's stake but signed by User4's CEA
+            const crossUnstakeIx = await counterProgram.methods
+                .unstakeSpl(new anchor.BN(1))
+                .accounts({
+                    counter: counterPda,
+                    authority: user4Cea,         // User4's CEA — wrong authority for User3's stake
+                    stake: user3Stake,            // User3's stake PDA
+                    mint: mockUSDT.mint.publicKey,
+                    authorityAta: await getCeaAta(user4Sender, mockUSDT.mint.publicKey),
+                    stakeAta: await getStakeAta(user3Stake, mockUSDT.mint.publicKey),
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .instruction();
+
+            const crossAccounts = instructionAccountsToGatewayMetas(crossUnstakeIx);
+            const chainId2 = (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId;
+            const sigCross = await signTssMessage({
+                instruction: TssInstruction.Execute,
+                amount: BigInt(0),
+                chainId: chainId2,
+                additional: buildExecuteAdditionalData(
+                    new Uint8Array(universalTxId2),
+                    new Uint8Array(txId2),
+                    counterProgram.programId,
+                    new Uint8Array(user4Sender),
+                    crossAccounts,
+                    crossUnstakeIx.data,
+                    gasFee2,
+                    rentFee2,
+                    mockUSDT.mint.publicKey
+                ),
+            });
+
+            // Snapshot User3's stake state before the attack
+            const user3StakeBefore = await counterProgram.account.stake.fetch(user3Stake);
+
+            try {
+                await gatewayProgram.methods
+                    .finalizeUniversalTx(
+                        2,
+                        Array.from(txId2),
+                        Array.from(universalTxId2),
+                        new anchor.BN(0),
+                        Array.from(user4Sender),
+                        accountsToWritableFlagsOnly(crossAccounts),
+                        Buffer.from(crossUnstakeIx.data),
+                        new anchor.BN(Number(gasFee2)),
+                        new anchor.BN(Number(rentFee2)),
+                        Array.from(sigCross.signature),
+                        sigCross.recoveryId,
+                        Array.from(sigCross.messageHash),
+                    )
+                    .preInstructions([
+                        ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+                    ])
+                    .accounts({
+                        caller: admin.publicKey,
+                        config: configPda,
+                        vaultAta: vaultUsdtAccount,
+                        vaultSol: vaultPda,
+                        ceaAuthority: user4Cea,
+                        ceaAta: await getCeaAta(user4Sender, mockUSDT.mint.publicKey),
+                        mint: mockUSDT.mint.publicKey,
+                        tssPda,
+                        executedSubTx: getExecutedTxPda(txId2),
+                        rateLimitConfig: null,
+                        tokenRateLimit: null,
+                        destinationProgram: counterProgram.programId,
+                        recipient: null,
+                        tokenProgram: TOKEN_PROGRAM_ID,
+                        systemProgram: SystemProgram.programId,
+                        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                        associatedTokenProgram: spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+                        recipientAta: null,
+                    })
+                    .remainingAccounts(instructionAccountsToRemaining(crossUnstakeIx))
+                    .signers([admin])
+                    .rpc();
+                expect.fail("User4 should not be able to unstake User3's funds");
+            } catch (error: any) {
+                // test-counter rejects because stake.authority != user4Cea
+                expect(error.toString()).to.not.include("User4 should not be able");
+
+                // Postcondition: User3's stake is completely unchanged after the failed attack
+                const user3StakeAfter = await counterProgram.account.stake.fetch(user3Stake);
+                expect(user3StakeAfter.amount.toString()).to.equal(
+                    user3StakeBefore.amount.toString(),
+                    "User3 stake amount must be unchanged after failed cross-user attack"
+                );
+                console.log("✅ Cross-user isolation verified: User4 cannot unstake User3's funds");
+                console.log("  User3 stake amount unchanged:", user3StakeAfter.amount.toString());
+            }
         });
     });
 

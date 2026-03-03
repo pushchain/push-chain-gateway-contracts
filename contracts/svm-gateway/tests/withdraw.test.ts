@@ -203,8 +203,8 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
-                    userTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+                    userTokenAccount: null, 
+                    gatewayTokenAccount: null, 
                     user: user1.publicKey,
                     priceUpdate: mockPriceFeed,
                     rateLimitConfig: rateLimitConfigPda,
