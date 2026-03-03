@@ -45,7 +45,7 @@ sub_tx_id[32] | universal_tx_id[32] | push_account[20] | token[32] | gas_fee_be[
 4. `Vault → CEA`: transfer `amount` + `rent_fee`
 5. `Vault → Caller`: transfer `gas_fee - rent_fee` (relayer reimbursement)
 6. Mode-specific action (see below)
-7. Emit `UniversalTxFinalized`
+7. Emit `UniversalTxFinalized` — **except** on the CEA self-withdraw path (`target == gateway`), which emits `UniversalTx` instead and suppresses `UniversalTxFinalized`
 
 ---
 

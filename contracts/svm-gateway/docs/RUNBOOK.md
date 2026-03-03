@@ -27,7 +27,7 @@ Accounts created by the bootstrap flow:
 - `Config` PDA
 - `Vault` PDA
 - `FeeVault` PDA (created lazily when `set_protocol_fee` is first called)
-- `RateLimitConfig` PDA (created lazily when `set_block_usd_cap` is first called)
+- `RateLimitConfig` PDA (created lazily when any rate-limit config command is first called: `set_block_usd_cap` or `update_epoch_duration`)
 
 ---
 
@@ -92,7 +92,7 @@ npm run config:pyth-set-feed -- --feed <pyth-price-feed-pubkey>
 npm run config:pyth-set-conf -- --threshold <u64>
 ```
 
-Current feed ID (SOL/USD): `ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d`
+The program does not enforce a fixed feed — the admin can update it at any time via `set_pyth_price_feed`.
 
 ---
 
@@ -113,6 +113,8 @@ Controls the period for token-based epoch rate limits.
 ```bash
 npm run config:rate-set-epoch -- --seconds 86400
 ```
+
+Set to `0` to disable epoch-based rate limiting entirely.
 
 ### Token rate limits (FUNDS route)
 

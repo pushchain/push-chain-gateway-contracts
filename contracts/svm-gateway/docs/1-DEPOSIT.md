@@ -33,6 +33,8 @@ A flat fee in lamports is deducted from `native_amount` before routing. The adju
 
 Applies to `Gas` and `GasAndPayload`. After fee deduction:
 
+> **Note:** GAS route payload validation is currently disabled (matching EVM V0). The gateway accepts `Gas` with a non-empty payload and `GasAndPayload` with an empty payload without error.
+
 1. USD cap check: `min_cap_usd <= lamports_to_usd(amount) <= max_cap_usd` (Pyth SOL/USD)
 2. Block USD cap check: per-slot budget; resets each slot
 3. Transfer: `User → Vault` (native SOL)

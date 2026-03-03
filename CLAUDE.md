@@ -255,10 +255,10 @@ if !hasPayload && !hasFunds: revert InvalidInput (empty tx)
 ```rust
 CONFIG_SEED: b"config"           // Global config
 VAULT_SEED: b"vault"             // SOL vault (no data, just authority)
-TSS_SEED: b"tsspda"              // TSS state (address, nonce, chain_id)
+TSS_SEED: b"tsspda_v2"           // TSS state (address, chain_id)
 RATE_LIMIT_CONFIG_SEED: b"rate_limit_config"  // Rate limit settings
 RATE_LIMIT_SEED: b"rate_limit"   // Per-token rate limit state
-EXECUTED_TX_SEED: b"executed_tx" // Replay protection
+EXECUTED_SUB_TX_SEED: b"executed_sub_tx" // Replay protection
 CEA_SEED: b"push_identity"       // Per-user signing authority
 ```
 
