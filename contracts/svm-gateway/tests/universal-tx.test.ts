@@ -224,8 +224,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
-          userTokenAccount: vaultPda, // Dummy account for native SOL routes
-          gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
           user: user1.publicKey,
           priceUpdate: mockPriceFeed,
           rateLimitConfig: rateLimitConfigPda,
@@ -270,8 +270,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
-          userTokenAccount: vaultPda, // Correct: use vaultPda as dummy for native SOL
-          gatewayTokenAccount: vaultPda, // Correct: use vaultPda as dummy for native SOL
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
           user: user1.publicKey,
           priceUpdate: mockPriceFeed,
           rateLimitConfig: rateLimitConfigPda,
@@ -313,8 +313,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
-          userTokenAccount: vaultPda, // Dummy account for native SOL routes
-          gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
           user: user1.publicKey,
           priceUpdate: mockPriceFeed,
           rateLimitConfig: rateLimitConfigPda,
@@ -350,8 +350,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
-          userTokenAccount: vaultPda, // Dummy account for native SOL routes
-          gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
           user: user1.publicKey,
           priceUpdate: mockPriceFeed,
           rateLimitConfig: rateLimitConfigPda,
@@ -389,8 +389,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
-          userTokenAccount: vaultPda, // Dummy account for native SOL routes
-          gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
           user: user1.publicKey,
           priceUpdate: mockPriceFeed,
           rateLimitConfig: rateLimitConfigPda,
@@ -429,8 +429,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
-          userTokenAccount: vaultPda,
-          gatewayTokenAccount: vaultPda,
+          userTokenAccount: null,
+          gatewayTokenAccount: null,
           user: user1.publicKey,
           priceUpdate: mockPriceFeed,
           rateLimitConfig: rateLimitConfigPda,
@@ -468,8 +468,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
-            userTokenAccount: vaultPda,
-            gatewayTokenAccount: vaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
             user: user1.publicKey,
             priceUpdate: mockPriceFeed,
             rateLimitConfig: rateLimitConfigPda,
@@ -543,6 +543,54 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
         (finalGatewayBalance - initialGatewayBalance) * 10 ** mockUSDT.config.decimals;
       expect(balanceIncrease).to.equal(tokenAmount.toNumber());
       expect(finalFeeVaultBalance - initialFeeVaultBalance).to.equal(DEFAULT_PROTOCOL_FEE_LAMPORTS);
+    });
+
+    it("Should reject SPL deposit from token account not owned by signer (InvalidOwner)", async () => {
+      // Create two users: victim owns the token account, attacker signs the tx.
+      // This tests deposit_spl_to_vault line: parsed_user.owner == ctx.accounts.user.key()
+      const victim = Keypair.generate();
+      await provider.connection.requestAirdrop(victim.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
+
+      const victimTokenAccount = await mockUSDT.createTokenAccount(victim.publicKey);
+      const gatewayTokenAccount = await mockUSDT.createTokenAccount(vaultPda, true);
+      await mockUSDT.mintTo(victimTokenAccount, 1000);
+
+      const tokenAmount = new anchor.BN(1000 * 10 ** mockUSDT.config.decimals);
+      const usdtTokenRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: mockUSDT.mint.publicKey,
+        amount: tokenAmount,
+        payload: Buffer.from([]),
+        revertInstruction: createRevertInstruction(user1.publicKey),
+        signatureData: Buffer.from("invalid_owner_test"),
+      };
+
+      try {
+        // user1 signs but victimTokenAccount is owned by victim — must be rejected
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(0))
+          .accounts({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: victimTokenAccount,
+            gatewayTokenAccount: gatewayTokenAccount,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: usdtTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should have rejected: token account owned by different wallet");
+      } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidOwner");
+      }
     });
 
     it("Should reject FUNDS SPL when native SOL is provided", async () => {
@@ -642,8 +690,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
-          userTokenAccount: vaultPda, // Dummy account for native SOL routes
-          gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
           user: user1.publicKey,
           priceUpdate: mockPriceFeed,
           rateLimitConfig: rateLimitConfigPda,
@@ -682,8 +730,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
-            userTokenAccount: vaultPda,
-            gatewayTokenAccount: vaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
             user: user1.publicKey,
             priceUpdate: mockPriceFeed,
             rateLimitConfig: rateLimitConfigPda,
@@ -927,8 +975,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
-            userTokenAccount: vaultPda, // Dummy account for native SOL routes
-            gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
+            userTokenAccount: null, 
+            gatewayTokenAccount: null, 
             user: user1.publicKey,
             priceUpdate: mockPriceFeed,
             rateLimitConfig: rateLimitConfigPda,
@@ -949,6 +997,69 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
         .accounts({ pauser: pauser.publicKey, config: configPda })
         .signers([pauser])
         .rpc();
+    });
+
+    it("Should reject GAS route amounts outside USD cap bounds", async () => {
+      // Snapshot current caps — other test files may leave config at different values.
+      // We pin to known bounds, test, then restore the exact prior state in `finally`.
+      const configBefore = await program.account.config.fetch(configPda);
+      const prevMin = configBefore.minCapUniversalTxUsd;
+      const prevMax = configBefore.maxCapUniversalTxUsd;
+
+      await program.methods
+        .setCapsUsd(new anchor.BN(100_000_000), new anchor.BN(1_000_000_000)) // $1 min / $10 max
+        .accounts({ admin: admin.publicKey, config: configPda })
+        .signers([admin])
+        .rpc();
+
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+      const cases = [
+        { label: "BelowMinCap", usd: 0.5,  expectedError: "BelowMinCap" },  // $0.50 < $1 min
+        { label: "AboveMaxCap", usd: 15.0, expectedError: "AboveMaxCap" },  // $15 > $10 max
+      ];
+
+      try {
+        for (const { label, usd, expectedError } of cases) {
+          const gasAmount = calculateSolAmount(usd, solPrice);
+          const req = {
+            recipient: Array.from(Buffer.alloc(20, 0)),
+            token: PublicKey.default,
+            amount: new anchor.BN(0),
+            payload: Buffer.from([]),
+            revertInstruction: createRevertInstruction(user1.publicKey),
+            signatureData: Buffer.from(label),
+          };
+          try {
+            await program.methods
+              .sendUniversalTx(req, withProtocolFee(gasAmount))
+              .accounts({
+                config: configPda,
+                vault: vaultPda,
+                feeVault: feeVaultPda,
+                userTokenAccount: null,
+                gatewayTokenAccount: null,
+                user: user1.publicKey,
+                priceUpdate: mockPriceFeed,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+              })
+              .signers([user1])
+              .rpc();
+            expect.fail(`${label}: Should have rejected with ${expectedError}`);
+          } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            expect(errorCode).to.equal(expectedError, `${label}: wrong error code`);
+          }
+        }
+      } finally {
+        await program.methods
+          .setCapsUsd(prevMin, prevMax)
+          .accounts({ admin: admin.publicKey, config: configPda })
+          .signers([admin])
+          .rpc();
+      }
     });
 
     it("Should reject invalid parameter combinations (no gas or funds)", async () => {
@@ -972,8 +1083,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
-            userTokenAccount: vaultPda,
-            gatewayTokenAccount: vaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
             user: user1.publicKey,
             priceUpdate: mockPriceFeed,
             rateLimitConfig: rateLimitConfigPda,
@@ -1012,8 +1123,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
-        userTokenAccount: vaultPda,
-        gatewayTokenAccount: vaultPda,
+        userTokenAccount: null,
+        gatewayTokenAccount: null,
         user: user1.publicKey,
         priceUpdate: mockPriceFeed,
         rateLimitConfig: rateLimitConfigPda,
@@ -1076,8 +1187,8 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
-            userTokenAccount: vaultPda,
-            gatewayTokenAccount: vaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
             user: user1.publicKey,
             priceUpdate: mockPriceFeed,
             rateLimitConfig: rateLimitConfigPda,

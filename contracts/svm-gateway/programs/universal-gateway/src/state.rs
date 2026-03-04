@@ -41,20 +41,7 @@ pub enum VerificationType {
     UniversalTxVerification,
 }
 
-/// Universal payload for cross-chain execution (parity with EVM `UniversalPayload`).
-/// Serialized and hashed for event parity with EVM (payload bytes/hash).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct UniversalPayload {
-    pub to: [u8; 20], // Ethereum address (20 bytes)
-    pub value: u64,
-    pub data: Vec<u8>,
-    pub gas_limit: u64,
-    pub max_fee_per_gas: u64,
-    pub max_priority_fee_per_gas: u64,
-    pub nonce: u64,
-    pub deadline: i64,
-    pub v_type: VerificationType,
-}
+
 
 /// Revert instructions for failed transactions (parity with EVM `RevertInstructions`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
@@ -79,7 +66,9 @@ pub struct UniversalTxRequest {
 #[account]
 pub struct Config {
     pub admin: Pubkey,
-    pub tss_address: Pubkey, // Not used - TODO: Remove
+    /// Legacy field — reserved for account layout compatibility.
+    /// Cannot be removed without a migration because it is part of the deployed on-chain layout.
+    pub tss_address: Pubkey,
     pub pauser: Pubkey,
     pub min_cap_universal_tx_usd: u128, // 1e8 = $1 (Pyth format)
     pub max_cap_universal_tx_usd: u128, // 1e8 = $10 (Pyth format)
