@@ -996,10 +996,12 @@ contract UniversalGateway is
             revert Errors.InvalidRecipient();
         }
 
-        // Collect protocol fee before routing; nativeValue is adjusted post-fee
-        uint256 feeCollected;
-        (nativeValue, feeCollected) = _collectProtocolFee(nativeValue, req.token, txType);
-        totalProtocolFeesCollected += feeCollected;
+        // Skip protocol fee for CEA path — fees already paid on Push Chain
+        if (!fromCEA) {
+            uint256 feeCollected;
+            (nativeValue, feeCollected) = _collectProtocolFee(nativeValue, req.token, txType);
+            totalProtocolFeesCollected += feeCollected;
+        }
 
         // Route 1: GAS or GAS_AND_PAYLOAD → Instant route
         if (txType == TX_TYPE.GAS || txType == TX_TYPE.GAS_AND_PAYLOAD) {

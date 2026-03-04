@@ -398,37 +398,69 @@ contract ProtocolFeeTest is BaseTest {
     }
 
     // =========================
-    //      GROUP 7: CEA PATH
+    //      GROUP 7: CEA PATH (fee skipped — already paid on Push Chain)
     // =========================
 
-    /// @notice sendUniversalTxFromCEA also deducts protocol fee
-    function testCEAPath_AlsoChargesFee() public {
+    /// @notice CEA GAS tx: no fee deducted, full msg.value forwarded
+    function testCEAPath_NoFee_GAS() public {
         vm.prank(admin);
         gw.setProtocolFee(PROTOCOL_FEE_WEI);
 
         uint256 tssBalBefore = tss.balance;
-        uint256 totalSend = GAS_AMOUNT + PROTOCOL_FEE_WEI;
 
         UniversalTxRequest memory req = _buildCEAReq(address(0), 0, bytes(""));
-
         vm.prank(address(cea));
-        gw.sendUniversalTxFromCEA{ value: totalSend }(req);
+        gw.sendUniversalTxFromCEA{ value: GAS_AMOUNT }(req);
 
-        // TSS receives both gasAmount and fee
-        assertEq(tss.balance - tssBalBefore, totalSend);
-        assertEq(gw.totalProtocolFeesCollected(), PROTOCOL_FEE_WEI);
+        assertEq(tss.balance - tssBalBefore, GAS_AMOUNT);
+        assertEq(gw.totalProtocolFeesCollected(), 0);
     }
 
-    /// @notice CEA path: insufficient fee reverts
-    function testCEAPath_InsufficientFee_Reverts() public {
+    /// @notice CEA native FUNDS tx: no fee deducted, full amount bridged
+    function testCEAPath_NoFee_FUNDS_Native() public {
         vm.prank(admin);
         gw.setProtocolFee(PROTOCOL_FEE_WEI);
 
-        UniversalTxRequest memory req = _buildCEAReq(address(0), 0, bytes(""));
+        uint256 tssBalBefore = tss.balance;
 
-        vm.expectRevert(Errors.InsufficientProtocolFee.selector);
+        UniversalTxRequest memory req = _buildCEAReq(address(0), FUNDS_AMOUNT, bytes(""));
         vm.prank(address(cea));
-        gw.sendUniversalTxFromCEA{ value: PROTOCOL_FEE_WEI - 1 }(req);
+        gw.sendUniversalTxFromCEA{ value: FUNDS_AMOUNT }(req);
+
+        assertEq(tss.balance - tssBalBefore, FUNDS_AMOUNT);
+        assertEq(gw.totalProtocolFeesCollected(), 0);
+    }
+
+    /// @notice CEA ERC20 FUNDS tx: no native fee required
+    function testCEAPath_NoFee_FUNDS_ERC20() public {
+        vm.prank(admin);
+        gw.setProtocolFee(PROTOCOL_FEE_WEI);
+
+        uint256 erc20Amount = 100 ether;
+        UniversalTxRequest memory req = _buildCEAReq(address(tokenA), erc20Amount, bytes(""));
+
+        vm.prank(address(cea));
+        gw.sendUniversalTxFromCEA{ value: 0 }(req);
+
+        assertEq(gw.totalProtocolFeesCollected(), 0);
+    }
+
+    /// @notice Normal tx increments accumulator; CEA tx leaves it unchanged
+    function testCEAPath_NoFee_AccumulatorUnchanged() public {
+        vm.prank(admin);
+        gw.setProtocolFee(PROTOCOL_FEE_WEI);
+
+        // Normal tx: accumulator increments
+        UniversalTxRequest memory normalReq = _buildReq(address(0), 0, bytes(""));
+        vm.prank(user1);
+        gw.sendUniversalTx{ value: GAS_AMOUNT + PROTOCOL_FEE_WEI }(normalReq);
+        assertEq(gw.totalProtocolFeesCollected(), PROTOCOL_FEE_WEI);
+
+        // CEA tx: accumulator unchanged
+        UniversalTxRequest memory ceaReq = _buildCEAReq(address(0), 0, bytes(""));
+        vm.prank(address(cea));
+        gw.sendUniversalTxFromCEA{ value: GAS_AMOUNT }(ceaReq);
+        assertEq(gw.totalProtocolFeesCollected(), PROTOCOL_FEE_WEI);
     }
 
     // =========================
