@@ -63,13 +63,37 @@ hasNativeValue := nativeValue > 0   // msg.value or swapped ETH from token-gas p
 | false        | false      | —               | true             | `GAS`                         | Instant  |
 | true         | false      | —               | any              | `GAS_AND_PAYLOAD`             | Instant  |
 | false        | true       | true            | true             | `FUNDS`                       | Standard |
-| false        | true       | false           | false            | `FUNDS`                       | Standard |
+| false        | true       | false           | any              | `FUNDS`                       | Standard |
 | true         | true       | false           | false            | `FUNDS_AND_PAYLOAD` (Case 2.1)| Standard |
 | true         | true       | true            | true             | `FUNDS_AND_PAYLOAD` (Case 2.2)| Standard |
 | true         | true       | false           | true             | `FUNDS_AND_PAYLOAD` (Case 2.3)| Standard |
 | (any other)  | —          | —               | —                | ❌ reverts `InvalidInput`     | —        |
 
-### 1.5 Rate-Limit Model
+### 1.5 Protocol Fee
+
+Every inbound transaction (except CEA self-calls) pays a flat protocol fee in native token.
+The fee is extracted from `msg.value` by `_collectProtocolFee` inside `_routeUniversalTx`
+**before** any routing logic runs. All downstream functions see the post-fee `nativeValue`.
+
+| Property                     | Value                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| State variable               | `PROTOCOL_FEE` (uint256, wei). Default: 0 (disabled).                  |
+| Admin setter                 | `setProtocolFee(uint256)` — `DEFAULT_ADMIN_ROLE` only.                 |
+| Accumulator                  | `totalProtocolFeesCollected` — running total, incremented per-tx.      |
+| Destination                  | Forwarded to `TSS_ADDRESS` via low-level call.                         |
+| CEA path (`fromCEA=true`)    | **Skipped** — fee is already paid on Push Chain.                       |
+| Insufficient fee             | Reverts with `Errors.InsufficientProtocolFee()`.                       |
+
+**Fee mechanics (additive model)**: Users send `msg.value = desiredAmount + PROTOCOL_FEE`.
+After extraction, `nativeValue = msg.value - PROTOCOL_FEE`. The `req.amount` field represents
+the intended bridge amount, not the gross payment.
+
+- **GAS / GAS_AND_PAYLOAD**: `msg.value = gasTopUp + PROTOCOL_FEE`. Post-fee gas = `gasTopUp`.
+- **FUNDS native**: `msg.value = req.amount + PROTOCOL_FEE`. Post-fee `nativeValue = req.amount`.
+- **FUNDS ERC20**: `msg.value = PROTOCOL_FEE` (or `PROTOCOL_FEE + gasTopUp` for gas batching).
+- **Payload-only** (`GAS_AND_PAYLOAD`, `msg.value = PROTOCOL_FEE`): post-fee `nativeValue = 0`.
+
+### 1.6 Rate-Limit Model
 
 | System              | Applies To                     | Mechanism                                                                       |
 | ------------------- | ------------------------------ | ------------------------------------------------------------------------------- |
@@ -80,7 +104,7 @@ hasNativeValue := nativeValue > 0   // msg.value or swapped ETH from token-gas p
 USD caps apply **only when `nativeValue > 0`**. A `GAS_AND_PAYLOAD` tx with `msg.value == 0`
 (payload-only) skips all USD cap checks.
 
-### 1.6 Entry Points
+### 1.7 Entry Points
 
 | Function                                          | Caller           | CEA blocked? | Key extra step                              |
 | ------------------------------------------------- | ---------------- | ------------ | ------------------------------------------- |
@@ -123,7 +147,7 @@ UniversalTxRequest({
     revertRecipient: BOB_ADDRESS,
     signatureData:   bytes("")
 })
-// msg.value = gasAmount (must be within USD caps)
+// msg.value = gasAmount + PROTOCOL_FEE (must be within USD caps after fee extraction)
 ```
 
 **TX_TYPE**: `GAS` (`hasPayload=false`, `hasFunds=false`, `hasNativeValue=true`).
@@ -136,8 +160,9 @@ sequenceDiagram
     participant TSS as TSS_ADDRESS (External Chain)
     participant PC as Push Chain
 
-    BOB->>GW: sendUniversalTx{value: gasAmount}(req)
+    BOB->>GW: sendUniversalTx{value: gasAmount + PROTOCOL_FEE}(req)
     GW->>GW: _fetchTxType → GAS
+    GW->>GW: _collectProtocolFee → forward PROTOCOL_FEE to TSS
     GW->>GW: _checkUSDCaps(gasAmount)
     GW->>GW: _checkBlockUSDCap(gasAmount)
     GW->>TSS: forward gasAmount ETH
@@ -205,9 +230,10 @@ The payload is forwarded to Push Chain for execution via BOB's UEA. No funds are
 **Scenario**: BOB submits a payload to execute on Push Chain but provides no ETH. BOB's UEA
 must already have gas on Push Chain.
 
-**Call**: `sendUniversalTx(req)` with `payload=<pushChainCalldata>`, `msg.value=0`.
+**Call**: `sendUniversalTx(req)` with `payload=<pushChainCalldata>`, `msg.value=PROTOCOL_FEE`
+(or `0` if fee is disabled).
 
-**Rate limits**: No USD cap or block cap check (skipped when `nativeValue == 0`,
+**Rate limits**: No USD cap or block cap check (skipped when post-fee `nativeValue == 0`,
 `UniversalGateway.sol:392`).
 
 **Event**: `UniversalTx(sender=BOB, recipient=address(0), token=address(0), amount=0,
@@ -219,9 +245,9 @@ payload=<calldata>, txType=GAS_AND_PAYLOAD, fromCEA=false)`.
 
 **Scenario**: BOB submits a payload and also tops up his UEA's gas in one transaction.
 
-**Call**: `sendUniversalTx(req)` with `payload=<calldata>`, `msg.value=gasAmount`.
+**Call**: `sendUniversalTx(req)` with `payload=<calldata>`, `msg.value=gasAmount + PROTOCOL_FEE`.
 
-**Rate limits**: USD caps + block cap checked on `gasAmount`.
+**Rate limits**: USD caps + block cap checked on post-fee `gasAmount`.
 
 **Event**: `UniversalTx(amount=gasAmount, txType=GAS_AND_PAYLOAD)`.
 
@@ -258,12 +284,14 @@ UniversalTxRequest({
     revertRecipient: BOB_ADDRESS,
     signatureData:   bytes("")
 })
-// msg.value must equal req.amount exactly
+// msg.value must equal req.amount + PROTOCOL_FEE
 ```
 
 **TX_TYPE**: `FUNDS` (`hasFunds=true`, `hasPayload=false`, `fundsIsNative=true`, `hasNativeValue=true`).
 
-**Validation** (`UniversalGateway.sol:419`): `req.amount != msg.value` → revert `InvalidAmount`.
+**Validation** (`UniversalGateway.sol:419`): After fee extraction, `req.amount != nativeValue`
+→ revert `InvalidAmount`. Since `nativeValue = msg.value - PROTOCOL_FEE`, this means
+`msg.value` must equal `req.amount + PROTOCOL_FEE` exactly.
 
 **Routing**:
 1. `_consumeRateLimit(address(0), req.amount)` — consume native epoch quota.
@@ -278,8 +306,9 @@ sequenceDiagram
     participant TSS as TSS_ADDRESS (External Chain)
     participant PC as Push Chain
 
-    BOB->>GW: sendUniversalTx{value: 1 ETH}(req{token=0x0, amount=1ETH})
+    BOB->>GW: sendUniversalTx{value: 1 ETH + PROTOCOL_FEE}(req{token=0x0, amount=1ETH})
     GW->>GW: _fetchTxType → FUNDS
+    GW->>GW: _collectProtocolFee → forward PROTOCOL_FEE to TSS
     GW->>GW: _consumeRateLimit(address(0), 1ETH)
     GW->>TSS: forward 1 ETH
     GW-->>PC: emit UniversalTx(sender=BOB, recipient=0, token=0x0, amount=1ETH, txType=FUNDS)
@@ -288,21 +317,20 @@ sequenceDiagram
 
 ---
 
-### 4.2 ERC20 FUNDS Transfer
+### 4.2 ERC20 FUNDS Transfer (No Gas Batching)
 
 **Scenario**: BOB bridges ERC20 tokens (e.g. USDC) from the external chain to Push Chain.
+No gas top-up needed — BOB's UEA already has gas on Push Chain.
 
-**Call**: `req.token = USDC_ADDRESS`, `req.amount = 1000e6`, `msg.value = 0`.
+**Call**: `req.token = USDC_ADDRESS`, `req.amount = 1000e6`, `msg.value = 0` (or `PROTOCOL_FEE`
+if fee is enabled).
 
-**TX_TYPE**: `FUNDS` (`hasFunds=true`, `hasPayload=false`, `fundsIsNative=false`, `hasNativeValue=false`).
-
-**Validation** (`UniversalGateway.sol:424`): if `nativeValue > 0` → revert `InvalidAmount`
-(no ETH allowed on the ERC20 FUNDS path).
+**TX_TYPE**: `FUNDS` (`hasFunds=true`, `hasPayload=false`, `fundsIsNative=false`).
 
 **Token support check** (`UniversalGateway.sol:736`): `tokenToLimitThreshold[token] == 0`
 → revert `NotSupported`. Token must be in the allowlist.
 
-**Routing**:
+**Routing** (Case 1.2, `nativeValue == 0` post-fee):
 1. `_consumeRateLimit(USDC, 1000e6)` — consume USDC epoch quota.
 2. `_handleDeposits(USDC, 1000e6)` — `safeTransferFrom(BOB, Vault, 1000e6)`.
 3. Emit `UniversalTx(txType=FUNDS, token=USDC)`.
@@ -328,13 +356,57 @@ sequenceDiagram
 
 ---
 
-### 4.3 ERC20 FUNDS via Token Swap
+### 4.3 ERC20 FUNDS + Native Gas Batching
 
-Same as 4.2 but uses `sendUniversalTx(UniversalTokenTxRequest)`. The `gasToken` fields add a
-native gas component but the `token`/`amount` fields identify the ERC20 being bridged. The swap
-runs first; the resulting `ethOut` is used as `nativeValue`. TX_TYPE inference then runs
-identically, producing `FUNDS` for the ERC20 leg (since `fundsIsNative=false`, `hasNativeValue`
-reflects the swapped ETH only for the gas leg, not the funds leg).
+**Scenario**: BOB bridges ERC20 tokens and also tops up his UEA's gas in a single transaction.
+
+**Call**: `req.token = USDC_ADDRESS`, `req.amount = 1000e6`, `msg.value = gasTopUp`
+(or `gasTopUp + PROTOCOL_FEE` if fee is enabled).
+
+**TX_TYPE**: `FUNDS` (`hasFunds=true`, `hasPayload=false`, `fundsIsNative=false`).
+
+**Routing** (Case 1.2, `nativeValue > 0` post-fee):
+1. `_sendTxWithGas(GAS, gasTopUp)` → USD caps + block cap checked → forward gas ETH to TSS →
+   emit **first** `UniversalTx(txType=GAS, amount=gasTopUp)`.
+2. `_consumeRateLimit(USDC, 1000e6)` — consume USDC epoch quota.
+3. `_handleDeposits(USDC, 1000e6)` — `safeTransferFrom(BOB, Vault, 1000e6)`.
+4. Emit **second** `UniversalTx(txType=FUNDS, token=USDC, amount=1000e6)`.
+
+**Total events**: 2 (gas leg + funds leg).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant BOB as BOB (External Chain)
+    participant GW as UniversalGateway (External Chain)
+    participant V as Vault (External Chain)
+    participant USDC as USDC Token (External Chain)
+    participant TSS as TSS_ADDRESS (External Chain)
+    participant PC as Push Chain
+
+    BOB->>GW: sendUniversalTx{value: gasTopUp}(req{token=USDC, amount=1000e6})
+    GW->>GW: _fetchTxType → FUNDS
+    GW->>GW: _checkUSDCaps(gasTopUp), _checkBlockUSDCap(gasTopUp)
+    GW->>TSS: forward gasTopUp ETH (gas leg)
+    GW-->>PC: emit UniversalTx(txType=GAS, amount=gasTopUp) [gas leg]
+    GW->>GW: _consumeRateLimit(USDC, 1000e6)
+    GW->>USDC: safeTransferFrom(BOB, Vault, 1000e6)
+    USDC-->>V: +1000e6 USDC
+    GW-->>PC: emit UniversalTx(txType=FUNDS, token=USDC, amount=1000e6) [funds leg]
+    Note over PC: gasTopUp tops UEA gas; 1000 USDC minted as PRC20-USDC
+```
+
+---
+
+### 4.4 ERC20 FUNDS via Token Swap
+
+Uses `sendUniversalTx(UniversalTokenTxRequest)`. The `gasToken` is swapped to native ETH
+(`ethOut`) via `swapToNative`. After protocol fee extraction, the remaining `nativeValue`
+becomes a gas top-up (Section 4.3 pattern). The ERC20 `token`/`amount` fields identify the
+funds being bridged.
+
+**Routing**: identical to 4.3 — post-fee `nativeValue` is routed as gas via `_sendTxWithGas`,
+ERC20 amount goes to Vault via `_handleDeposits`.
 
 ---
 
@@ -354,7 +426,8 @@ based on `req.token` and `nativeValue`.
 **Scenario**: BOB bridges USDC and includes a Push Chain payload. BOB already has gas on Push
 Chain — no gas top-up needed.
 
-**Call**: `req.token=USDC`, `req.amount=500e6`, `req.payload=<calldata>`, `msg.value=0`.
+**Call**: `req.token=USDC`, `req.amount=500e6`, `req.payload=<calldata>`, `msg.value=0`
+(or `PROTOCOL_FEE` if fee is enabled).
 
 **TX_TYPE**: `FUNDS_AND_PAYLOAD` Case 2.1 (`hasPayload=true`, `hasFunds=true`,
 `fundsIsNative=false`, `hasNativeValue=false`).
@@ -391,10 +464,10 @@ sequenceDiagram
 **Scenario**: BOB sends 1.1 ETH — 1 ETH is bridged to Push Chain, 0.1 ETH tops up UEA gas.
 Both happen in a single transaction.
 
-**Call**: `req.token=address(0)`, `req.amount=1 ether`, `msg.value=1.1 ether`.
+**Call**: `req.token=address(0)`, `req.amount=1 ether`, `msg.value=1.1 ether + PROTOCOL_FEE`.
 
-**Invariant** (`UniversalGateway.sol:473`): `nativeValue >= req.amount`. If `nativeValue < req.amount`
-→ revert `InvalidAmount`.
+**Invariant** (`UniversalGateway.sol:473`): post-fee `nativeValue >= req.amount`. If
+`nativeValue < req.amount` → revert `InvalidAmount`.
 
 **Routing**:
 1. `gasAmount = nativeValue - req.amount` = 0.1 ETH.
@@ -414,9 +487,10 @@ sequenceDiagram
     participant TSS as TSS_ADDRESS (External Chain)
     participant PC as Push Chain
 
-    BOB->>GW: sendUniversalTx{value: 1.1 ETH}(req{token=0x0, amount=1ETH, payload=calldata})
+    BOB->>GW: sendUniversalTx{value: 1.1 ETH + PROTOCOL_FEE}(req{token=0x0, amount=1ETH, payload=calldata})
     GW->>GW: _fetchTxType → FUNDS_AND_PAYLOAD (Case 2.2)
-    GW->>GW: gasAmount = 1.1 - 1.0 = 0.1 ETH
+    GW->>GW: _collectProtocolFee → forward PROTOCOL_FEE to TSS
+    GW->>GW: gasAmount = 1.1 - 1.0 = 0.1 ETH (post-fee nativeValue = 1.1)
     GW->>GW: _checkUSDCaps(0.1 ETH), _checkBlockUSDCap(0.1 ETH)
     GW->>TSS: forward 0.1 ETH (gas leg)
     GW-->>PC: emit UniversalTx(txType=GAS, amount=0.1ETH) [gas leg]
@@ -434,7 +508,8 @@ sequenceDiagram
 
 **Scenario**: BOB sends 0.01 ETH for gas and bridges 500 USDC with a payload, all in one call.
 
-**Call**: `req.token=USDC`, `req.amount=500e6`, `req.payload=<calldata>`, `msg.value=0.01 ether`.
+**Call**: `req.token=USDC`, `req.amount=500e6`, `req.payload=<calldata>`,
+`msg.value=0.01 ether + PROTOCOL_FEE`.
 
 **Routing**:
 1. `gasAmount = nativeValue` = 0.01 ETH (entire native value is the gas leg).
@@ -456,8 +531,9 @@ sequenceDiagram
     participant TSS as TSS_ADDRESS (External Chain)
     participant PC as Push Chain
 
-    BOB->>GW: sendUniversalTx{value: 0.01ETH}(req{token=USDC, amount=500e6, payload=calldata})
+    BOB->>GW: sendUniversalTx{value: 0.01ETH + PROTOCOL_FEE}(req{token=USDC, amount=500e6, payload=calldata})
     GW->>GW: _fetchTxType → FUNDS_AND_PAYLOAD (Case 2.3)
+    GW->>GW: _collectProtocolFee → forward PROTOCOL_FEE to TSS
     GW->>GW: _checkUSDCaps(0.01ETH), _checkBlockUSDCap(0.01ETH)
     GW->>TSS: forward 0.01 ETH (gas leg)
     GW-->>PC: emit UniversalTx(txType=GAS, amount=0.01ETH) [gas leg]
@@ -486,6 +562,10 @@ or results to the user's UEA on Push Chain.
 
 All four TX_TYPEs are supported. TX_TYPE inference is identical to the normal path. All events
 emit `fromCEA=true` and `recipient=mappedUEA`.
+
+**Protocol fee is skipped** for CEA calls (`fromCEA=true`). The fee is already paid on Push
+Chain before the CEA executes on the external chain. CEAs send `msg.value` without adding
+`PROTOCOL_FEE` on top.
 
 ### 6.1 Entry Point Checks (`UniversalGateway.sol:352-364`)
 
@@ -728,17 +808,20 @@ address without derivation.
 
 ## 10. Full Flow Reference Table
 
-| #   | TX_TYPE                     | Entry Point                        | `req.token`     | `msg.value` | Rate Limit                      | Events Emitted          |
-| --- | --------------------------- | ---------------------------------- | --------------- | ----------- | ------------------------------- | ----------------------- |
-| 1.1 | `GAS`                       | `sendUniversalTx` (native)         | `address(0)`    | > 0         | USD caps + block cap            | 1× `UniversalTx`        |
-| 1.2 | `GAS`                       | `sendUniversalTx` (token swap)     | any → native    | 0           | USD caps + block cap on `ethOut`| 1× `UniversalTx`        |
-| 2.1 | `GAS_AND_PAYLOAD`           | `sendUniversalTx` (native)         | `address(0)`    | ≥ 0         | USD caps if `msg.value > 0`     | 1× `UniversalTx`        |
-| 2.2 | `GAS_AND_PAYLOAD`           | `sendUniversalTx` (token swap)     | any → native    | 0           | USD caps if `ethOut > 0`        | 1× `UniversalTx`        |
-| 3.1 | `FUNDS`                     | `sendUniversalTx` (native)         | `address(0)`    | == amount   | Epoch (native)                  | 1× `UniversalTx`        |
-| 3.2 | `FUNDS`                     | `sendUniversalTx` (native)         | ERC20           | 0           | Epoch (token)                   | 1× `UniversalTx`        |
-| 4.1 | `FUNDS_AND_PAYLOAD` (2.1)   | `sendUniversalTx`                  | ERC20           | 0           | Epoch (token)                   | 1× `UniversalTx`        |
-| 4.2 | `FUNDS_AND_PAYLOAD` (2.2)   | `sendUniversalTx`                  | `address(0)`    | ≥ amount    | Epoch (native) + USD if gas > 0 | 1–2× `UniversalTx`      |
-| 4.3 | `FUNDS_AND_PAYLOAD` (2.3)   | `sendUniversalTx`                  | ERC20           | > 0         | Epoch (token) + USD caps        | 2× `UniversalTx`        |
-| 5.x | Any of above                | `sendUniversalTxFromCEA`           | any             | any         | Same as above                   | Same + `fromCEA=true`   |
-| 6.1 | —                           | `revertUniversalTxToken` (VAULT)   | ERC20           | 0           | None                            | 1× `RevertUniversalTx`  |
-| 6.2 | —                           | `revertUniversalTx` (TSS)          | `address(0)`    | == amount   | None                            | 1× `RevertUniversalTx`  |
+All `msg.value` amounts shown below are **pre-fee** (raw `msg.value`). When `PROTOCOL_FEE > 0`,
+add `PROTOCOL_FEE` to each `msg.value` shown. CEA path (`5.x`) is exempt from the fee.
+
+| #   | TX_TYPE                     | Entry Point                        | `req.token`     | `msg.value` (pre-fee) | Rate Limit                      | Events Emitted          |
+| --- | --------------------------- | ---------------------------------- | --------------- | --------------------- | ------------------------------- | ----------------------- |
+| 1.1 | `GAS`                       | `sendUniversalTx` (native)         | `address(0)`    | > 0                   | USD caps + block cap            | 1× `UniversalTx`        |
+| 1.2 | `GAS`                       | `sendUniversalTx` (token swap)     | any → native    | 0                     | USD caps + block cap on `ethOut`| 1× `UniversalTx`        |
+| 2.1 | `GAS_AND_PAYLOAD`           | `sendUniversalTx` (native)         | `address(0)`    | ≥ 0                   | USD caps if `msg.value > 0`     | 1× `UniversalTx`        |
+| 2.2 | `GAS_AND_PAYLOAD`           | `sendUniversalTx` (token swap)     | any → native    | 0                     | USD caps if `ethOut > 0`        | 1× `UniversalTx`        |
+| 3.1 | `FUNDS`                     | `sendUniversalTx` (native)         | `address(0)`    | == amount             | Epoch (native)                  | 1× `UniversalTx`        |
+| 3.2 | `FUNDS`                     | `sendUniversalTx` (native)         | ERC20           | ≥ 0                   | Epoch (token) + USD if gas > 0  | 1–2× `UniversalTx`      |
+| 4.1 | `FUNDS_AND_PAYLOAD` (2.1)   | `sendUniversalTx`                  | ERC20           | 0                     | Epoch (token)                   | 1× `UniversalTx`        |
+| 4.2 | `FUNDS_AND_PAYLOAD` (2.2)   | `sendUniversalTx`                  | `address(0)`    | ≥ amount              | Epoch (native) + USD if gas > 0 | 1–2× `UniversalTx`      |
+| 4.3 | `FUNDS_AND_PAYLOAD` (2.3)   | `sendUniversalTx`                  | ERC20           | > 0                   | Epoch (token) + USD caps        | 2× `UniversalTx`        |
+| 5.x | Any of above                | `sendUniversalTxFromCEA`           | any             | any (no fee)          | Same as above                   | Same + `fromCEA=true`   |
+| 6.1 | —                           | `revertUniversalTxToken` (VAULT)   | ERC20           | 0                     | None                            | 1× `RevertUniversalTx`  |
+| 6.2 | —                           | `revertUniversalTx` (TSS)          | `address(0)`    | == amount             | None                            | 1× `RevertUniversalTx`  |
