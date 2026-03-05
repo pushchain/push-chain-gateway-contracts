@@ -961,7 +961,7 @@ contract UniversalGateway is
     /// @param nativeValue      Raw native value received with the transaction
     /// @return adjustedNative  nativeValue minus the collected fee
     /// @return feeCollected    Amount forwarded to TSS as the protocol fee
-    function _collectProtocolFee(uint256 nativeValue, address, TX_TYPE)
+    function _collectProtocolFee(uint256 nativeValue)
         private
         returns (uint256 adjustedNative, uint256 feeCollected)
     {
@@ -999,7 +999,7 @@ contract UniversalGateway is
         // Skip protocol fee for CEA path — fees already paid on Push Chain
         if (!fromCEA) {
             uint256 feeCollected;
-            (nativeValue, feeCollected) = _collectProtocolFee(nativeValue, req.token, txType);
+            (nativeValue, feeCollected) = _collectProtocolFee(nativeValue);
             totalProtocolFeesCollected += feeCollected;
         }
 
