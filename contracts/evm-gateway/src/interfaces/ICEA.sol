@@ -16,9 +16,14 @@ interface ICEA {
      * @param subTxId           Transaction ID of the UniversalTx to execute.
      * @param universalTxId  Universal transaction identifier from gateway.
      * @param originCaller   UEA address on Push Chain (must match CEA's UEA).
+     * @param recipient      Decoded destination address on this chain; address(0) means hold funds in CEA.
      * @param payload        ABI-encoded Multicall[] execution steps.
      */
-    function executeUniversalTx(bytes32 subTxId, bytes32 universalTxId, address originCaller, bytes calldata payload)
-        external
-        payable;
+    function executeUniversalTx(
+        bytes32 subTxId,
+        bytes32 universalTxId,
+        address originCaller,
+        address recipient,
+        bytes calldata payload
+    ) external payable;
 }

@@ -104,12 +104,13 @@ contract UniversalGatewayPC is
         nonce = _nonce + 1;
 
         bytes32 subTxId = keccak256(
-            abi.encode(msg.sender, req.token, req.amount, keccak256(req.payload), chainNamespace, _nonce)
+            abi.encode(msg.sender, req.recipient, req.token, req.amount, keccak256(req.payload), chainNamespace, _nonce)
         );
 
         emit UniversalTxOutbound(
             subTxId,
             msg.sender,
+            req.recipient,
             chainNamespace,
             req.token,
             req.amount,

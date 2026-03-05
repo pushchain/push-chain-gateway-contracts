@@ -151,6 +151,7 @@ contract Vault is
         bytes32 subTxId,
         bytes32 universalTxId,
         address pushAccount,
+        address recipient,
         address token,
         uint256 amount,
         bytes calldata data
@@ -162,10 +163,10 @@ contract Vault is
         }
 
         // Single execution path for all operations
-        _finalizeUniversalTx(subTxId, universalTxId, pushAccount, token, amount, data, cea);
+        _finalizeUniversalTx(subTxId, universalTxId, pushAccount, recipient, token, amount, data, cea);
 
         // Emit event
-        emit VaultUniversalTxFinalized(subTxId, universalTxId, pushAccount, token, amount, data);
+        emit VaultUniversalTxFinalized(subTxId, universalTxId, pushAccount, recipient, token, amount, data);
     }
 
     /// @inheritdoc IVault
@@ -217,6 +218,7 @@ contract Vault is
      * @param subTxId       Gateway transaction ID
      * @param universalTxId Universal transaction ID
      * @param pushAccount   Push Chain account (UEA) this transaction is attributed to
+     * @param recipient     Destination address on this chain; address(0) means park in CEA
      * @param token         Token address (address(0) for native)
      * @param amount        Amount of tokens to fund CEA with
      * @param data          Multicall payload (abi.encode(Multicall[]))
@@ -226,6 +228,7 @@ contract Vault is
         bytes32 subTxId,
         bytes32 universalTxId,
         address pushAccount,
+        address recipient,
         address token,
         uint256 amount,
         bytes calldata data,
@@ -239,10 +242,10 @@ contract Vault is
             // ERC20: transfer to CEA first, then execute multicall
             if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
             IERC20(token).safeTransfer(cea, amount);
-            ICEA(cea).executeUniversalTx(subTxId, universalTxId, pushAccount, data);
+            ICEA(cea).executeUniversalTx(subTxId, universalTxId, pushAccount, recipient, data);
         } else {
             // Native: forward value to CEA during executeUniversalTx call
-            ICEA(cea).executeUniversalTx{ value: amount }(subTxId, universalTxId, pushAccount, data);
+            ICEA(cea).executeUniversalTx{ value: amount }(subTxId, universalTxId, pushAccount, recipient, data);
         }
     }
 }

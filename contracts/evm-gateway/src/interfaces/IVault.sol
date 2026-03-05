@@ -31,6 +31,7 @@ interface IVault {
     /// @param subTxId      Gateway transaction identifier
     /// @param universalTxId    Universal transaction identifier
     /// @param pushAccount      Push Chain account (UEA) this transaction is attributed to
+    /// @param recipient        Destination address on the external chain; address(0) means park in CEA
     /// @param token            Token address being sent
     /// @param amount           Amount of token being sent
     /// @param data             Calldata to be executed on target contract on external chain
@@ -38,6 +39,7 @@ interface IVault {
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed pushAccount,
+        address recipient,
         address token,
         uint256 amount,
         bytes data
@@ -69,6 +71,7 @@ interface IVault {
      * @param subTxId       Gateway transaction identifier
      * @param universalTxId Universal transaction identifier from Push Chain
      * @param pushAccount   Push Chain account (UEA) this transaction is attributed to
+     * @param recipient     Destination address on the external chain; address(0) means park in CEA
      * @param token         Token address (address(0) for native)
      * @param amount        Amount of token/native
      * @param data          Calldata (empty for withdrawal, non-empty for execution)
@@ -77,6 +80,7 @@ interface IVault {
         bytes32 subTxId,
         bytes32 universalTxId,
         address pushAccount,
+        address recipient,
         address token,
         uint256 amount,
         bytes calldata data
