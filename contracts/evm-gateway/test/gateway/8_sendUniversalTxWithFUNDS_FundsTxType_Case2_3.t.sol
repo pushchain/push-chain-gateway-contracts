@@ -393,22 +393,27 @@ contract GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test is BaseTest {
         assertEq(tokenA.balanceOf(address(this)), vaultBalanceBefore + erc20Amount, "Should route to Case 2.1");
     }
 
-    /// @notice Test Case 2.3 - Empty payload reverts
-    /// @dev FUNDS_AND_PAYLOAD requires non-empty payload
-    function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_EmptyPayload() public {
-        uint256 msgValue = 0.002 ether;
+    /// @notice Test Case 2.3 - Empty payload with ERC20 + native routes as FUNDS + gas top-up
+    /// @dev _fetchTxType infers FUNDS (empty payload); Case 1.2 routes nativeValue as gas top-up
+    function test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_EmptyPayload_RoutesAsGas() public {
+        uint256 msgValue = 0.002 ether; // ~$4 at $2000/ETH, within $1-$10 USD cap
         uint256 erc20Amount = 100 ether;
 
         UniversalTxRequest memory req = buildUniversalTxRequest(
-            address(0), // FUNDS_AND_PAYLOAD requires recipient == address(0)
+            address(0), // recipient
             address(tokenA),
             erc20Amount,
-            bytes("") // Empty payload
+            bytes("") // Empty payload → inferred as FUNDS, not FUNDS_AND_PAYLOAD
         );
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        uint256 tssBalBefore = tss.balance;
+        uint256 vaultBalBefore = tokenA.balanceOf(address(this)); // address(this) is the vault
+
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: msgValue }(req);
+
+        assertEq(tss.balance - tssBalBefore, msgValue, "TSS should receive gas top-up");
+        assertEq(tokenA.balanceOf(address(this)) - vaultBalBefore, erc20Amount, "Vault should receive ERC20");
     }
 
     /// @notice Test Case 2.3 - Zero amount with payload routes to GAS_AND_PAYLOAD (matrix inference)

@@ -377,13 +377,16 @@ contract GatewayFetchTxTypeTest is BaseTest {
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
 
-    /// @notice Test 4.2.1: ERC-20 FUNDS with native value reverts
-    function test_FUNDS_erc20_withNativeValue_revert() public {
+    /// @notice Test 4.2.1: ERC-20 FUNDS with native value routes excess native as gas top-up
+    function test_FUNDS_erc20_withNativeValue_routesAsGas() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 1000 ether, erc20A);
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        uint256 tssBalBefore = tss.balance;
+
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 1 ether }(req);
+        gatewayTemp.sendUniversalTx{ value: 0.003 ether }(req);
+
+        assertEq(tss.balance - tssBalBefore, 0.003 ether, "TSS should receive gas top-up");
     }
 
     /// @notice Test 4.2.2: ERC-20 with no funds reverts
@@ -532,13 +535,16 @@ contract GatewayFetchTxTypeTest is BaseTest {
         gatewayTemp.sendUniversalTx{ value: 0 }(req);
     }
 
-    /// @notice Test 8.4: ERC-20 funds with native value reverts
-    function test_Invalid_erc20Funds_withNoPayload_andNativeValue() public {
+    /// @notice Test 8.4: ERC-20 funds with native value routes excess as gas top-up
+    function test_erc20Funds_withNoPayload_andNativeValue_routesAsGas() public {
         UniversalTxRequest memory req = makeReq(bytes(""), 1000 ether, erc20A);
 
-        vm.expectRevert(Errors.InvalidInput.selector);
+        uint256 tssBalBefore = tss.balance;
+
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 1 ether }(req);
+        gatewayTemp.sendUniversalTx{ value: 0.003 ether }(req);
+
+        assertEq(tss.balance - tssBalBefore, 0.003 ether, "TSS should receive gas top-up");
     }
 
     // =========================

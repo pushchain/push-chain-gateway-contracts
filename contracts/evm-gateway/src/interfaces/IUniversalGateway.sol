@@ -68,6 +68,10 @@ interface IUniversalGateway {
     /// @param newVault              New Vault address
     event VaultUpdated(address indexed oldVault, address indexed newVault);
 
+    /// @notice                      Protocol fee updated event
+    /// @param newFee                New protocol fee in wei
+    event ProtocolFeeUpdated(uint256 newFee);
+
     /// @notice                     Revert withdraw event: For withdrawals/actions during a revert
     /// @param subTxId                 Gateway transaction identifier
     /// @param universalTxId        Universal transaction identifier
@@ -243,4 +247,14 @@ interface IUniversalGateway {
     ///@return used        amount already consumed in the current epoch (in token's natural units)
     ///@return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
     function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining);
+
+    ///@notice             Flat protocol fee in native token (wei). 0 = disabled.
+    function PROTOCOL_FEE() external view returns (uint256);
+
+    ///@notice             Running total of protocol fees collected (native, in wei).
+    function totalProtocolFeesCollected() external view returns (uint256);
+
+    /// @notice            Set the flat protocol fee (in wei). Set to 0 to disable.
+    /// @param fee         New protocol fee in wei
+    function setProtocolFee(uint256 fee) external;
 }
