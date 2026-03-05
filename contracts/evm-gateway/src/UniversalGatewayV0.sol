@@ -464,9 +464,22 @@ contract UniversalGatewayV0 is
                 tokenForFunds = address(0);
             }
             // Case 1.2: Token to bridge is ERC20 Token -> _req.token
-            // nativeValue must be 0 post-fee (user sent exactly PROTOCOL_FEE or 0 if fee disabled)
+            // Post-fee nativeValue is routed as a gas top-up (e.g. from swapToNative or batched native).
+            // If nativeValue == 0 (no gas), only the ERC20 bridge proceeds.
             else {
-                if (nativeValue > 0) revert Errors.InvalidAmount();
+                if (nativeValue > 0) {
+                    address gasRecipient = fromCEA ? _req.recipient : address(0);
+                    _sendTxWithGas(
+                        TX_TYPE.GAS,
+                        _msgSender(),
+                        gasRecipient,
+                        nativeValue,
+                        bytes(""),
+                        _req.revertRecipient,
+                        _req.signatureData,
+                        fromCEA
+                    );
+                }
                 tokenForFunds = _req.token;
             }
 

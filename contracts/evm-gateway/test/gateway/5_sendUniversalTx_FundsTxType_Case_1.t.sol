@@ -399,10 +399,11 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         assertEq(usedAfter, usedBefore + fundsAmount, "Rate limit should be consumed");
     }
 
-    /// @notice Test FUNDS with ERC20 - msg.value must be zero
-    /// @dev Revert if msg.value > 0 for ERC20 transfers
-    function test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroMsgValue() public {
+    /// @notice Test FUNDS with ERC20 + msg.value > 0 routes excess native as gas top-up
+    /// @dev Post-fee native is forwarded via _sendTxWithGas; ERC20 bridge proceeds normally
+    function test_SendTxWithFunds_FUNDS_ERC20_WithNativeValue_RoutesAsGas() public {
         uint256 fundsAmount = 1000 ether;
+        uint256 gasTopUp = 0.003 ether; // ~$6 at $2000/ETH, within $1-$10 USD cap
 
         UniversalTxRequest memory req = buildUniversalTxRequest(
             address(0), // FUNDS requires recipient == address(0)
@@ -411,11 +412,14 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
             bytes("")
         );
 
-        // With fee support, ERC20 FUNDS with msg.value > 0 passes _fetchTxType but fails in
-        // _sendTxWithFunds Case 1.2 (post-fee nativeValue > 0) with InvalidAmount.
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        uint256 tssBalBefore = tss.balance;
+        uint256 vaultBalBefore = tokenA.balanceOf(address(this)); // address(this) is the vault
+
         vm.prank(user1);
-        gatewayTemp.sendUniversalTx{ value: 1 ether }(req); // msg.value > PROTOCOL_FEE not allowed for ERC20
+        gatewayTemp.sendUniversalTx{ value: gasTopUp }(req);
+
+        assertEq(tss.balance - tssBalBefore, gasTopUp, "TSS should receive gas top-up");
+        assertEq(tokenA.balanceOf(address(this)) - vaultBalBefore, fundsAmount, "Vault should receive ERC20");
     }
 
     /// @notice Test FUNDS with ERC20 - unsupported token reverts

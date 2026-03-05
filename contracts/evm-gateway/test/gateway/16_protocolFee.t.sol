@@ -345,17 +345,23 @@ contract ProtocolFeeTest is BaseTest {
         assertEq(gw.totalProtocolFeesCollected(), PROTOCOL_FEE_WEI);
     }
 
-    /// @notice ERC20 FUNDS: msg.value > PROTOCOL_FEE reverts with InvalidAmount
-    function testFUNDS_ERC20_TooMuchNative_Reverts() public {
+    /// @notice ERC20 FUNDS: msg.value > PROTOCOL_FEE routes excess as gas top-up
+    function testFUNDS_ERC20_ExcessNative_RoutesAsGas() public {
         vm.prank(admin);
         gw.setProtocolFee(PROTOCOL_FEE_WEI);
 
         uint256 erc20Amount = 100 ether;
+        uint256 extraNative = 0.003 ether; // ~$6 at $2000/ETH, within $1-$10 USD cap
         UniversalTxRequest memory req = _buildReq(address(tokenA), erc20Amount, bytes(""));
 
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        uint256 tssBalBefore = tss.balance;
+
         vm.prank(user1);
-        gw.sendUniversalTx{ value: PROTOCOL_FEE_WEI + 1 }(req);
+        gw.sendUniversalTx{ value: PROTOCOL_FEE_WEI + extraNative }(req);
+
+        // TSS receives: PROTOCOL_FEE (from fee collection) + extraNative (gas top-up)
+        assertEq(tss.balance - tssBalBefore, PROTOCOL_FEE_WEI + extraNative);
+        assertEq(gw.totalProtocolFeesCollected(), PROTOCOL_FEE_WEI);
     }
 
     /// @notice ERC20 FUNDS: msg.value = 0 reverts when fee > 0

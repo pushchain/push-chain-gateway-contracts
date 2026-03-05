@@ -1183,20 +1183,21 @@ contract SendUniversalTxViaCEATest is BaseTest {
         assertEq(tss.balance, tssBefore + gasAmount, "TSS should receive gas");
     }
 
-    function test_FUNDS_ViaCEA_ERC20_RevertWhen_MsgValueNonZero() public {
+    function test_FUNDS_ViaCEA_ERC20_WithNativeValue_RoutesAsGas() public {
         // ERC-20 token + msg.value > 0 + no payload:
-        // _fetchTxType sees hasFunds=true, !fundsIsNative, hasNativeValue=true, !hasPayload.
-        // Inside the FUNDS case: !fundsIsNative && !hasNativeValue is false, fundsIsNative is false →
-        // falls through to revert InvalidInput. CEAs cannot send ERC-20 FUNDS with msg.value > 0.
+        // Post-fee nativeValue > 0 is routed as a gas top-up to the CEA's mapped UEA.
+        // CEA path skips protocol fee, so full amount becomes gas.
+        uint256 gasTopUp = 0.003 ether; // ~$6 at $2000/ETH, within $1-$10 USD cap
         UniversalTxRequest memory req = _buildViaCEARequest(
             address(tokenA), 100 ether, bytes("")
         );
 
-        // ERC20 FUNDS with msg.value > PROTOCOL_FEE passes _fetchTxType but reverts in
-        // _sendTxWithFunds Case 1.2 with InvalidAmount (post-fee nativeValue > 0).
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        uint256 tssBalBefore = tss.balance;
+
         vm.prank(address(cea));
-        gateway.sendUniversalTxFromCEA{ value: 0.001 ether }(req);
+        gateway.sendUniversalTxFromCEA{ value: gasTopUp }(req);
+
+        assertEq(tss.balance - tssBalBefore, gasTopUp, "TSS should receive gas top-up");
     }
 
     function test_FUNDS_ViaCEA_Native_RevertWhen_MsgValueMismatch() public {
