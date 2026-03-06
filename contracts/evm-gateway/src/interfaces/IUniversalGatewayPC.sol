@@ -36,7 +36,8 @@ interface IUniversalGatewayPC {
         bytes payload,
         uint256 protocolFee,
         address revertRecipient,
-        TX_TYPE txType
+        TX_TYPE txType,
+        uint256 gasPrice
     );
 
     /// @notice                 Emitted when VaultPC address is updated
@@ -49,7 +50,7 @@ interface IUniversalGatewayPC {
      *                           TX_TYPE is automatically inferred based on the presence of payload and amount.
      * @param req                UniversalOutboundTxRequest struct containing all transaction parameters.
      */
-    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external;
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external payable;
 
     // ========= View Functions =========
     function UNIVERSAL_CORE() external view returns (address);

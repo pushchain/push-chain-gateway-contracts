@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import { IUniversalCore } from "../../src/interfaces/IUniversalCore.sol";
 import { IPRC20 } from "../../src/interfaces/IPRC20.sol";
+import { MockPRC20 } from "./MockPRC20.sol";
 
 /**
  * @title MockUniversalCoreReal
@@ -49,6 +50,7 @@ contract MockUniversalCoreReal is IUniversalCore {
     /// @notice Role for managing gas-related configurations
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 public constant GATEWAY_ROLE = keccak256("GATEWAY_ROLE");
 
     // Role assignments
     mapping(bytes32 => mapping(address => bool)) private _roles;
@@ -284,6 +286,23 @@ contract MockUniversalCoreReal is IUniversalCore {
         BASE_GAS_LIMIT = gasLimit;
         emit BaseGasLimitUpdated(oldLimit, gasLimit);
     }
+
+    // ========= Swap Functions =========
+    function swapPCForGasToken(
+        address prc20,
+        address vault,
+        uint24,
+        uint256,
+        uint256
+    ) external payable returns (uint256 gasTokenOut) {
+        string memory ns = IPRC20(prc20).SOURCE_CHAIN_NAMESPACE();
+        address gasTokenAddr = gasTokenPRC20ByChainNamespace[ns];
+        gasTokenOut = gasPriceByChainNamespace[ns] * BASE_GAS_LIMIT
+            + IPRC20(prc20).PC_PROTOCOL_FEE();
+        MockPRC20(gasTokenAddr).mint(vault, gasTokenOut);
+    }
+
+    receive() external payable {}
 
     // ========= Test Helper Functions =========
     function setUniversalExecutorModule(address _uem) external {

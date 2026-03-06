@@ -82,21 +82,24 @@ contract UniversalGatewayPC is
         _unpause();
     }
 
-    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external whenNotPaused nonReentrant {
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external payable whenNotPaused nonReentrant {
         _validateCommon(req.token, req.revertRecipient);
 
         // Determine TX_TYPE based on user input (rejects empty transactions internally)
         TX_TYPE txType = _fetchTxType(req);
 
-        // Compute fees + collect from caller into the UEM fee sink
+        // Quote for event data (gasToken address, gasFee, protocolFee)
         (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
             _calculateGasFeesWithLimit(req.token, req.gasLimit);
-        _moveFees(msg.sender, gasToken, gasFee);
 
-        // Only burn tokens if amount > 0 (supports payload-only transactions where CEA already has funds)
+        // Burn PRC20 first (if amount > 0), before swap
         if (req.amount > 0) {
             _burnPRC20(msg.sender, req.token, req.amount);
         }
+
+        // Swap native PC → gas token PRC20 → VaultPC; verify output covers quoted gasFee
+        uint256 gasTokenOut = _swapAndCollectFees(req.token, msg.value);
+        if (gasTokenOut < gasFee) revert Errors.InsufficientProtocolFee();
 
         string memory chainNamespace = IPRC20(req.token).SOURCE_CHAIN_NAMESPACE();
 
@@ -120,7 +123,8 @@ contract UniversalGatewayPC is
             req.payload,
             protocolFee,
             req.revertRecipient,
-            txType
+            txType,
+            msg.value
         );
     }
 
@@ -195,15 +199,22 @@ contract UniversalGatewayPC is
     }
 
     /**
-     * @dev     Pull fee from user into the VaultPC.
-     *          Caller must have approved `gasToken` for at least `gasFee`.
+     * @dev     Swap native PC → gas token PRC20 via UniversalCore, sending output to VaultPC.
+     * @param prc20    PRC20 token address (used by UniversalCore to resolve the swap pair).
+     * @param pcAmount Native PC amount (msg.value) to swap.
      */
-    function _moveFees(address from, address gasToken, uint256 gasFee) internal {
-        address _vaultPC = address(VAULT_PC);
-        if (_vaultPC == address(0)) revert Errors.ZeroAddress();
+    function _swapAndCollectFees(
+        address prc20,
+        uint256 pcAmount
+    ) internal returns (uint256 gasTokenOut) {
+        if (pcAmount == 0) revert Errors.ZeroAmount();
+        address vault = address(VAULT_PC);
+        if (vault == address(0)) revert Errors.ZeroAddress();
 
-        bool ok = IPRC20(gasToken).transferFrom(from, _vaultPC, gasFee);
-        if (!ok) revert Errors.GasFeeTransferFailed(gasToken, from, gasFee);
+        gasTokenOut = IUniversalCore(UNIVERSAL_CORE)
+            .swapPCForGasToken{value: pcAmount}(
+                prc20, vault, 0, 0, 0
+            );
     }
 
     function _burnPRC20(address from, address token, uint256 amount) internal {

@@ -54,4 +54,14 @@ interface IUniversalCore {
      * @return gasFee Gas fee
      */
     function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit) external view returns (address gasToken, uint256 gasFee);
+
+    function GATEWAY_ROLE() external view returns (bytes32);
+
+    function swapPCForGasToken(
+        address prc20,
+        address vault,
+        uint24 fee,
+        uint256 minGasTokenOut,
+        uint256 deadline
+    ) external payable returns (uint256 gasTokenOut);
 }
