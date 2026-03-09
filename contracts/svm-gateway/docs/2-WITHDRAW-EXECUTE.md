@@ -28,8 +28,7 @@ sub_tx_id[32] | universal_tx_id[32] | push_account[20] | token[32] | gas_fee_be[
 
 ### Execute (id=2) — additional_data
 ```
-sub_tx_id[32] | universal_tx_id[32] | push_account[20] | token[32] | gas_fee_be[8]
-| target_program[32] | accounts_buf | ix_data_buf | rent_fee_be[8]
+sub_tx_id[32] | universal_tx_id[32] | push_account[20] | token[32] | gas_fee_be[8] | target_program[32] | accounts_buf | ix_data_buf
 ```
 
 **accounts_buf:** `[count (4 bytes BE)][pubkey (32 bytes)][is_writable (1 byte)]...`
@@ -42,8 +41,8 @@ sub_tx_id[32] | universal_tx_id[32] | push_account[20] | token[32] | gas_fee_be[
 1. Validate params and account presence (SOL vs SPL paths)
 2. Verify TSS signature — recover Ethereum address, compare to `TssPda.tss_eth_address`
 3. Create `ExecutedSubTx` PDA (replay protection — init fails if `sub_tx_id` reused)
-4. `Vault → CEA`: transfer `amount` + `rent_fee`
-5. `Vault → Caller`: transfer `gas_fee - rent_fee` (relayer reimbursement)
+4. `Vault → CEA`: transfer `amount`
+5. `Vault → Caller`: transfer `gas_fee` (relayer reimbursement)
 6. Mode-specific action (see below)
 7. Emit `UniversalTxFinalized` — **except** on the CEA self-withdraw path (`target == gateway`), which emits `UniversalTx` instead and suppresses `UniversalTxFinalized`
 
@@ -59,7 +58,6 @@ Transfers funds from CEA to the recipient. If `recipient == cea_authority`, fund
 
 Builds a CPI instruction with CEA as signer via `invoke_signed`. `remaining_accounts` must match the signed `accounts_buf` exactly (pubkeys, writable flags). No account in `remaining_accounts` may have `is_signer = true` — CEA gains signer authority only via `invoke_signed`.
 
-`rent_fee` is forwarded to CEA for target program account creation needs. `gas_fee - rent_fee` reimburses the relayer.
 
 ### CEA Self-Withdraw (target == gateway)
 

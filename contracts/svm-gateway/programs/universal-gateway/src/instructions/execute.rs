@@ -20,7 +20,7 @@ use anchor_spl::token::{spl_token, Mint, Token, TokenAccount};
 // =========================
 
 #[derive(Accounts)]
-#[instruction(instruction_id: u8, sub_tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, push_account: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, rent_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32])]
+#[instruction(instruction_id: u8, sub_tx_id: [u8; 32], universal_tx_id: [u8; 32], amount: u64, push_account: [u8; 20], writable_flags: Vec<u8>, ix_data: Vec<u8>, gas_fee: u64, signature: [u8; 64], recovery_id: u8, message_hash: [u8; 32])]
 pub struct FinalizeUniversalTx<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
@@ -126,7 +126,6 @@ pub fn finalize_universal_tx(
     writable_flags: Vec<u8>,
     ix_data: Vec<u8>,
     gas_fee: u64,
-    rent_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
@@ -140,8 +139,6 @@ pub fn finalize_universal_tx(
         push_account,
         &writable_flags,
         &ix_data,
-        rent_fee,
-        gas_fee,
     )?;
 
     let execute_accounts = verify_finalize_tss(
@@ -153,7 +150,6 @@ pub fn finalize_universal_tx(
         &writable_flags,
         &ix_data,
         gas_fee,
-        rent_fee,
         amount,
         &message_hash,
         &signature,
@@ -165,7 +161,7 @@ pub fn finalize_universal_tx(
     let cea_bump = [ctx.bumps.cea_authority];
     let cea_seeds = [CEA_SEED, push_account.as_ref(), &cea_bump[..]];
 
-    stage_assets_to_cea(&ctx, &request, amount, gas_fee, rent_fee, &vault_seeds)?;
+    stage_assets_to_cea(&ctx, &request, amount, gas_fee, &vault_seeds)?;
     let should_emit_finalized = dispatch_finalize_action(
         &mut ctx,
         &request,
@@ -229,8 +225,6 @@ fn validate_finalize_request(
     push_account: [u8; 20],
     writable_flags: &[u8],
     ix_data: &[u8],
-    rent_fee: u64,
-    gas_fee: u64,
 ) -> Result<FinalizeRequestContext> {
     let is_withdraw = match instruction_id {
         1 => true,
@@ -259,7 +253,6 @@ fn validate_finalize_request(
         require!(push_account != [0u8; 20], GatewayError::InvalidInput);
         require!(writable_flags.is_empty(), GatewayError::InvalidInput);
         require!(ix_data.is_empty(), GatewayError::InvalidInput);
-        require!(rent_fee == 0, GatewayError::InvalidInput);
 
         if !is_native {
             require!(
@@ -284,8 +277,6 @@ fn validate_finalize_request(
             writable_flags.len() == expected_writable_flags_len,
             GatewayError::InvalidAccount
         );
-
-        require!(rent_fee <= gas_fee, GatewayError::InvalidAmount);
     }
 
     Ok(FinalizeRequestContext {
@@ -309,7 +300,6 @@ fn verify_finalize_tss(
     writable_flags: &[u8],
     ix_data: &[u8],
     gas_fee: u64,
-    rent_fee: u64,
     amount: u64,
     message_hash: &[u8; 32],
     signature: &[u8; 64],
@@ -343,7 +333,6 @@ fn verify_finalize_tss(
         writable_flags,
         ix_data,
         gas_fee,
-        rent_fee,
         amount,
         message_hash,
         signature,
@@ -363,17 +352,8 @@ fn stage_assets_to_cea(
     request: &FinalizeRequestContext,
     amount: u64,
     gas_fee: u64,
-    rent_fee: u64,
     vault_seeds: &[&[u8]],
 ) -> Result<()> {
-    pda_system_transfer(
-        &ctx.accounts.vault_sol.to_account_info(),
-        &ctx.accounts.cea_authority.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        rent_fee,
-        vault_seeds,
-    )?;
-
     if request.is_native {
         pda_system_transfer(
             &ctx.accounts.vault_sol.to_account_info(),
@@ -386,15 +366,11 @@ fn stage_assets_to_cea(
         process_spl_vault_to_cea_transfer(ctx, amount, vault_seeds)?;
     }
 
-    let relayer_fee = gas_fee
-        .checked_sub(rent_fee)
-        .ok_or(GatewayError::InvalidAmount)?;
-
     crate::utils::transfer_gas_fee_to_caller(
         &ctx.accounts.vault_sol.to_account_info(),
         &ctx.accounts.caller.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
-        relayer_fee,
+        gas_fee,
         ctx.accounts.config.vault_bump,
     )
 }
@@ -501,7 +477,6 @@ fn build_and_validate_tss_withdraw(
 /// 6. target_program (32 bytes) - execute specific
 /// 7. accounts_buf (variable) - execute specific
 /// 8. ix_data_buf (variable) - execute specific
-/// 9. rent_fee (u64 BE) - execute specific
 fn build_and_validate_tss_execute<'info>(
     tss_pda: &mut Account<TssPda>,
     remaining_accounts: &[AccountInfo<'info>],
@@ -513,7 +488,6 @@ fn build_and_validate_tss_execute<'info>(
     writable_flags: &[u8],
     ix_data: &[u8],
     gas_fee: u64,
-    rent_fee: u64,
     amount: u64,
     message_hash: &[u8; 32],
     signature: &[u8; 64],
@@ -523,11 +497,9 @@ fn build_and_validate_tss_execute<'info>(
     validate_remaining_accounts(&accounts, remaining_accounts)?;
 
     let accounts_buf = serialize_gateway_accounts(&accounts);
-    let ix_data_buf  = serialize_ix_data(ix_data);
-    let gas_fee_buf  = encode_u64_be(gas_fee);
-    let rent_fee_buf = encode_u64_be(rent_fee);
-
-    let additional: [&[u8]; 9] = [
+    let ix_data_buf = serialize_ix_data(ix_data);
+    let gas_fee_buf = encode_u64_be(gas_fee);
+    let additional: [&[u8]; 8] = [
         &sub_tx_id,
         &universal_tx_id,
         &push_account,
@@ -536,7 +508,6 @@ fn build_and_validate_tss_execute<'info>(
         &target.to_bytes(),
         &accounts_buf,
         &ix_data_buf,
-        &rent_fee_buf,
     ];
 
     validate_message(tss_pda, 2, Some(amount), &additional, message_hash, signature, recovery_id)?;

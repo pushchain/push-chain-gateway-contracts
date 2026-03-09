@@ -71,7 +71,6 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
   4. `token` (32 bytes, Pubkey)
   5. `gas_fee` (u64 BE)
 - **Withdraw-specific**: `recipient` (32 bytes)
-- **Execute-specific**: `target_program` (32 bytes), `accounts_buf` (variable), `ix_data_buf` (variable), `rent_fee` (u64 BE)
 - Public key recovered from signature, validated against TSS ETH address
 
 ## Account Structure (PDAs)
@@ -188,7 +187,6 @@ await program.methods
     Buffer.from([]),          // Vec<u8> - writable_flags (empty for withdraw)
     Buffer.from([]),          // Vec<u8> - ix_data (empty for withdraw)
     new anchor.BN(gasFee),    // u64 - gas_fee
-    new anchor.BN(0),         // u64 - rent_fee (must be 0 for withdraw)
     signature,                // [u8; 64] - signature
     recoveryId,               // u8 - recovery_id
     messageHash,              // [u8; 32] - message_hash
@@ -231,7 +229,6 @@ import {
 // - recipient = null (must be None for execute mode)
 // - writable_flags = bitpacked flags for remaining_accounts
 // - ix_data = instruction data for target program
-// - rent_fee = rent for target program accounts (can be > 0)
 // - remaining_accounts = accounts for target program CPI
 
 // Build TSS message (execute)
@@ -243,7 +240,6 @@ const additional = buildExecuteAdditionalData(
   accountsForTarget,  // AccountMeta[]
   ixData,
   gasFee,
-  rentFee,
   tokenMint  // Pubkey::default() for SOL
 );
 
@@ -264,7 +260,6 @@ await program.methods
     writableFlags,            // Vec<u8> - Bitpacked: ceil(accounts/8) bytes
     ixData,                   // Vec<u8> - Target program instruction data
     new anchor.BN(gasFee),    // u64 - gas_fee
-    new anchor.BN(rentFee),   // u64 - rent_fee (for target program rent)
     signature,                // [u8; 64] - signature
     recoveryId,               // u8 - recovery_id
     messageHash,              // [u8; 32] - message_hash
@@ -316,7 +311,6 @@ const withdrawAdditional = buildWithdrawAdditionalData(
 );
 
 // For execute (instruction_id = 2)
-// Returns: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
 const executeAdditional = buildExecuteAdditionalData(
   universalTxId,
   subTxId,
@@ -325,7 +319,6 @@ const executeAdditional = buildExecuteAdditionalData(
   accountsForTarget,  // GatewayAccountMeta[] = {pubkey, isWritable}[]
   ixData,             // Uint8Array
   gasFee,
-  rentFee,
   tokenMint
 );
 

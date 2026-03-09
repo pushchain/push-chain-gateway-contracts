@@ -9,32 +9,31 @@ import { getCeaAuthorityPda, getExecutedTxPda } from "./test-utils";
 // =============================================================================
 
 export interface FinalizeUniversalTxArgs {
-    instructionId: number;
-    subTxId: number[];
-    universalTxId: number[] | Uint8Array;
-    amount: anchor.BN;
-    pushAccount: number[];
-    writableFlags?: Buffer;
-    ixData?: Buffer;
-    gasFee: anchor.BN;
-    rentFee?: anchor.BN;
-    sig: {
-        signature: ArrayLike<number>;
-        recoveryId: number;
-        messageHash: ArrayLike<number>;
-    };
-    caller: PublicKey;
-    destinationProgram?: PublicKey;
-    recipient?: PublicKey | null;
-    vaultAta?: PublicKey | null;
-    ceaAta?: PublicKey | null;
-    mint?: PublicKey | null;
-    tokenProgram?: PublicKey | null;
-    rent?: PublicKey | null;
-    associatedTokenProgram?: PublicKey | null;
-    recipientAta?: PublicKey | null;
-    rateLimitConfig?: PublicKey | null;
-    tokenRateLimit?: PublicKey | null;
+  instructionId: number;
+  subTxId: number[];
+  universalTxId: number[] | Uint8Array;
+  amount: anchor.BN;
+  pushAccount: number[];
+  writableFlags?: Buffer;
+  ixData?: Buffer;
+  gasFee: anchor.BN;
+  sig: {
+    signature: ArrayLike<number>;
+    recoveryId: number;
+    messageHash: ArrayLike<number>;
+  };
+  caller: PublicKey;
+  destinationProgram?: PublicKey;
+  recipient?: PublicKey | null;
+  vaultAta?: PublicKey | null;
+  ceaAta?: PublicKey | null;
+  mint?: PublicKey | null;
+  tokenProgram?: PublicKey | null;
+  rent?: PublicKey | null;
+  associatedTokenProgram?: PublicKey | null;
+  recipientAta?: PublicKey | null;
+  rateLimitConfig?: PublicKey | null;
+  tokenRateLimit?: PublicKey | null;
 }
 
 /**
@@ -47,12 +46,14 @@ export interface FinalizeUniversalTxArgs {
  * Call sites still chain .signers([...]).rpc() — and .remainingAccounts([...]) for execute.
  * All test assertions remain in the test body unchanged.
  */
-export const makeFinalizeUniversalTxBuilder = (
+export const makeFinalizeUniversalTxBuilder =
+  (
     program: Program<UniversalGateway>,
     configPda: PublicKey,
     vaultPda: PublicKey,
-    tssPda: PublicKey,
-) => ({
+    tssPda: PublicKey
+  ) =>
+  ({
     instructionId,
     subTxId,
     universalTxId,
@@ -61,7 +62,6 @@ export const makeFinalizeUniversalTxBuilder = (
     writableFlags = Buffer.alloc(0),
     ixData = Buffer.from([]),
     gasFee,
-    rentFee = new anchor.BN(0),
     sig,
     caller,
     destinationProgram,
@@ -75,39 +75,41 @@ export const makeFinalizeUniversalTxBuilder = (
     recipientAta = null,
     rateLimitConfig = null,
     tokenRateLimit = null,
-}: FinalizeUniversalTxArgs) =>
+  }: FinalizeUniversalTxArgs) =>
     program.methods
-        .finalizeUniversalTx(
-            instructionId,
-            Array.from(subTxId),
-            Array.from(universalTxId),
-            amount,
-            Array.from(pushAccount),
-            writableFlags,
-            ixData,
-            gasFee,
-            rentFee,
-            Array.from(sig.signature),
-            sig.recoveryId,
-            Array.from(sig.messageHash),
-        )
-        .accounts({
-            caller,
-            config: configPda,
-            vaultSol: vaultPda,
-            ceaAuthority: getCeaAuthorityPda(Array.from(pushAccount), program.programId),
-            tssPda,
-            executedSubTx: getExecutedTxPda(Array.from(subTxId), program.programId),
-            destinationProgram: destinationProgram ?? SystemProgram.programId,
-            recipient,
-            vaultAta,
-            ceaAta,
-            mint,
-            tokenProgram,
-            rent,
-            associatedTokenProgram,
-            recipientAta,
-            rateLimitConfig,
-            tokenRateLimit,
-            systemProgram: SystemProgram.programId,
-        });
+      .finalizeUniversalTx(
+        instructionId,
+        Array.from(subTxId),
+        Array.from(universalTxId),
+        amount,
+        Array.from(pushAccount),
+        writableFlags,
+        ixData,
+        gasFee,
+        Array.from(sig.signature),
+        sig.recoveryId,
+        Array.from(sig.messageHash)
+      )
+      .accounts({
+        caller,
+        config: configPda,
+        vaultSol: vaultPda,
+        ceaAuthority: getCeaAuthorityPda(
+          Array.from(pushAccount),
+          program.programId
+        ),
+        tssPda,
+        executedSubTx: getExecutedTxPda(Array.from(subTxId), program.programId),
+        destinationProgram: destinationProgram ?? SystemProgram.programId,
+        recipient,
+        vaultAta,
+        ceaAta,
+        mint,
+        tokenProgram,
+        rent,
+        associatedTokenProgram,
+        recipientAta,
+        rateLimitConfig,
+        tokenRateLimit,
+        systemProgram: SystemProgram.programId,
+      });

@@ -26,8 +26,8 @@ When `destination_program == gateway_program_id` in execute mode, the flow route
 
 ```
 finalize_universal_tx (instruction_id=2, target=gateway)
-  → Vault → CEA (amount + rent_fee)
-  → Vault → Caller (gas_fee - rent_fee, relayer reimbursement)
+  → Vault → CEA (amount)
+  → Vault → Caller (gas_fee, relayer reimbursement)
   → CEA → Vault (withdraw_amount)
   → emit UniversalTx (from_cea=true)
   [UniversalTxFinalized is NOT emitted on this path]

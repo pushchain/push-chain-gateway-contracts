@@ -14,7 +14,7 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
 1. User calls `UniversalGatewayPC.FinalizeUniversalTx()` on Push Chain
 2. Push Chain burns tokens, emits `UniversalTxOutbound` event
 3. Backend service watches events, extracts event data
-4. Backend decodes payload to get `instructionId` (1=withdraw, 2=execute) + accounts + ixData + rentFee
+4. Backend decodes payload (`instructionId`, `targetProgram`, `accounts`, `ixData`) and validates mode-specific rules
 5. Backend builds mode-specific TSS message hash (format varies by instructionId), signs with ECDSA secp256k1
 6. Backend constructs Solana transaction calling unified `finalize_universal_tx` function
 7. Backend submits transaction to Solana network
@@ -38,7 +38,7 @@ event UniversalTxOutbound(
     bytes target,                  // Target program/contract address (32 bytes for Solana)
     uint256 amount,                // Amount to withdraw
     address gasToken,              // Gas token address
-    uint256 gasFee,                // Gas fee (includes compute + rent)
+    uint256 gasFee,                // Gas fee
     uint256 gasLimit,              // Gas limit (for EVM; not used on Solana)
     bytes payload,                 // Encoded payload (see section 2)
     uint256 protocolFee,           // Protocol fee
@@ -51,7 +51,6 @@ event UniversalTxOutbound(
 - `push_account` → Convert to 20-byte array for `push_account` parameter
 - `target` → 32-byte Solana program pubkey
 - `amount` → u64 amount (reject if > u64::MAX, events are uint256)
-- `payload` → Decode to get accounts, ixData, rentFee
 - `gasFee` → u64 gas fee (reject if > u64::MAX, events are uint256)
 - `revertRecipient` → For revert operations
 
@@ -86,8 +85,6 @@ event UniversalTxOutbound(
      - Execute mode: Must be None/null
 
 4. **Mode-specific validation**:
-   - Withdraw: `rent_fee` must be 0, `writable_flags` empty, `ix_data` empty, `amount` > 0
-   - Execute: `rent_fee` <= `gas_fee`, `writable_flags` present, `ix_data` present
 
 5. **TSS message format**: Hash construction differs by instruction_id (see section 3.2)
 
@@ -114,12 +111,11 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 ... (repeat for all accounts)
 [ix_data_length: 4 bytes (u32 big-endian)]
 [ix_data: N bytes]
-[rent_fee: 8 bytes (u64 big-endian)]
 [instruction_id: 1 byte (u8)]
 [target_program: 32 bytes] ← REQUIRED - canonical destination (source of truth)
 ```
 
-**Total size**: `4 + (33 * accounts_count) + 4 + ix_data_length + 8 + 1 + 32`
+**Total size**: `4 + (33 * accounts_count) + 4 + ix_data_length + 1 + 32`
 
 **Instruction ID values**:
 - `1` = Withdraw (SOL or SPL; vault→CEA→recipient)
@@ -138,7 +134,6 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 **Output**:
 - `accounts`: Array of `{ pubkey: 32 bytes, isWritable: bool }`
 - `ixData`: Raw instruction data bytes
-- `rentFee`: u64 big-endian
 - `instructionId`: u8 (1 = withdraw, 2 = execute)
 - `targetProgram`: 32-byte pubkey (canonical execute destination)
 
@@ -149,26 +144,23 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
    - Read 1 byte → `is_writable` (0 = false, 1 = true)
 3. Read next 4 bytes → `ix_data_length` (u32 BE)
 4. Read `ix_data_length` bytes → `ix_data`
-5. Read next 8 bytes → `rent_fee` (u64 BE)
-6. Read next 1 byte → `instruction_id` (u8)
-7. Read next 32 bytes → `target_program` (canonical destination pubkey) - REQUIRED
+5. Read next 1 byte → `instruction_id` (u8)
+6. Read next 32 bytes → `target_program` (canonical destination pubkey) - REQUIRED
    - **IMPORTANT**: This is the source of truth for the destination program
    - The `destination_program` account must match this value
    - Payload decoding will fail if this field is missing
-8. Validate: total bytes consumed == payload length
+7. Validate: total bytes consumed == payload length
 
 ### 2.3 Encoding Payload (For Testing/Validation)
 
-**Input**: `accounts[]`, `ixData`, `rentFee`, `instructionId`, `targetProgram`
 
 **Algorithm**:
 1. Write `accounts.length` as u32 BE (4 bytes)
 2. For each account: write `pubkey` (32 bytes) + `is_writable` (1 byte)
 3. Write `ixData.length` as u32 BE (4 bytes)
 4. Write `ixData` bytes
-5. Write `rentFee` as u64 BE (8 bytes)
-6. Write `instructionId` as u8 (1 byte)
-7. Write `targetProgram` as 32 bytes (canonical destination pubkey) - REQUIRED
+5. Write `instructionId` as u8 (1 byte)
+6. Write `targetProgram` as 32 bytes (canonical destination pubkey) - REQUIRED
    - **IMPORTANT**: This establishes the canonical destination for the execution
    - The TSS signature must include this same targetProgram value
    - On-chain validation will verify destination_program account matches this value
@@ -192,7 +184,6 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 | `ix_data_length` | u32 | 4 bytes | BE | In payload and ix_data_buf |
 | `amount` | u64 | 8 bytes | BE | From event (reject if > u64::MAX) |
 | `gas_fee` | u64 | 8 bytes | BE | From event (reject if > u64::MAX) |
-| `rent_fee` | u64 | 8 bytes | BE | Decoded from payload (execute flows only, reject if > u64::MAX) |
 
 
 #### 3.1.2 Chain ID Encoding (CRITICAL)
@@ -251,7 +242,6 @@ gas_fee (u64 BE)
 target_program (32 bytes, pubkey)  // Execute-specific: target program for CPI
 accounts_buf (see 3.3)             // Execute-specific: accounts for CPI
 ix_data_buf (see 3.3)              // Execute-specific: instruction data
-rent_fee (u64 BE)                  // Execute-specific: rent for target accounts
 ```
 
 **For Withdraw (1, unified SOL+SPL):**
@@ -422,7 +412,6 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `writable_flags`: Vec<u8> - bitpacked writable flags (empty for withdraw, see 3.4 for execute)
 - `ix_data`: Vec<u8> - CPI instruction data (empty for withdraw, from decoded payload for execute)
 - `gas_fee`: u64 - total gas fee (includes relayer reimbursement)
-- `rent_fee`: u64 - rent for target program (must be 0 for withdraw, from decoded payload for execute)
 - `signature`: [u8; 64] - TSS signature
 - `recovery_id`: u8 - signature recovery ID (0 or 1)
 - `message_hash`: [u8; 32] - keccak256 hash of TSS message
@@ -478,7 +467,6 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 | `remaining_accounts` | must be empty | required for CPI |
 | `writable_flags` | must be empty | length = ceil(accounts/8) |
 | `ix_data` | must be empty | CPI data |
-| `rent_fee` | must be 0 | <= gas_fee |
 | `amount` | must be > 0 | any (can be 0) |
 | `recipient_ata` | SPL only | must be None |
 
@@ -499,7 +487,6 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `remaining_accounts`: Decoded accounts from payload
 - `writable_flags`: Bitpacked flags matching accounts
 - `ix_data`: Instruction data from payload
-- `rent_fee`: From decoded payload (can be 0 if target doesn't need rent)
 - For SPL: include all SPL accounts (vault_ata, cea_ata, mint, etc.)
 
 **Flow**: vault→CEA→CPI to destination_program
@@ -515,11 +502,20 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `remaining_accounts`: Must be empty
 - `writable_flags`: Must be empty
 - `ix_data`: Must be empty
-- `rent_fee`: Must be 0
 - `amount`: Must be > 0
 - For SPL: include all SPL accounts including `recipient_ata`
 
 **Flow**: vault→CEA→recipient (direct transfer)
+
+### 4.4 Example: CEA Self-Withdraw (Execute to Gateway)
+
+**Use case**: Execute path where `destination_program == gateway_program_id` routes to CEA→UEA withdrawal instead of normal CPI.
+
+**Key requirements**:
+- `instruction_id = 2`
+- `destination_program`: gateway program ID
+- `ix_data`: `send_universal_tx_to_uea` discriminator + Borsh args (`token`, `amount`, `payload`)
+- Emits `UniversalTx` with `from_cea: true` (does not emit `UniversalTxFinalized`)
 
 ### 4.5 Revert Universal Transaction (SOL)
 
@@ -574,45 +570,26 @@ All PDAs use `findProgramAddressSync` with gateway program ID.
 
 ### 6.1 Gas Fee Components
 
-**Precheck Rule**: `rent_fee <= gas_fee` (must be validated before signing TSS message)
+`gas_fee` is relayer reimbursement. There is no separate target-account top-up field.
 
 **For SOL Execute**:
-```
-gas_fee = rent_fee + executed_sub_tx_rent + compute_buffer
+```text
+gas_fee = executed_sub_tx_rent + compute_buffer
 ```
 
 **For SPL Execute**:
-```
-gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_buffer
+```text
+gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 ```
 
 **Components**:
-- `rent_fee`: For target program account creation (transferred to CEA, used by target program if needed)
-  - **Note**: This is ONLY for target program rent. Gateway account rent (executed_sub_tx, cea_ata) is covered by validator and reimbursed via `gas_fee`
-  - **Precheck**: Must be `<= gas_fee` (reject if `rent_fee > gas_fee`)
-- `executed_sub_tx_rent`: ~890,880 lamports (8-byte account, paid by relayer, reimbursed via gas_fee)
-  - **Backend SHOULD compute**: Use `getMinimumBalanceForRentExemption(8)` for exact value
-- `cea_ata_rent`: ~2,039,280 lamports (165-byte token account, only if CEA ATA doesn't exist, paid by relayer, reimbursed via gas_fee)
-  - **Backend SHOULD compute**: Use `getMinimumBalanceForRentExemption(165)` for exact value
-- `compute_buffer`: ~100,000 lamports (transaction fees + compute units)
+- `executed_sub_tx_rent`: get exact value via `getMinimumBalanceForRentExemption(8)`
+- `cea_ata_rent_if_created`: get exact value via `getMinimumBalanceForRentExemption(165)` when CEA ATA does not already exist
+- `compute_buffer`: operational buffer for tx fees / compute
 
-**On-chain split**:
-- `rent_fee` → CEA (if > 0, for target program use)
-- `amount` → CEA (if > 0)
-- `relayer_fee = gas_fee - rent_fee` → Caller (relayer, reimburses gateway account rent + compute fees)
-
-### 6.2 Rent Fee (from Payload)
-
-**For execute flows**: `rent_fee` is included in the `payload` bytes (see section 2.2). Backend decodes it from payload - no estimation needed.
-
-**For payload construction** (tests/tools only): If you're building payloads off-chain, estimate `rent_fee` based on target program needs:
-- If target creates accounts: estimate rent for those accounts
-- If target only reads/writes: `rent_fee = 0` or small buffer
-- Common values: 0 (no rent), 1,500,000 (1.5 SOL), or calculated per account size
-- Use `getMinimumBalanceForRentExemption(size)` RPC call for exact values
-- Add buffer for safety (~10-20%)
-
-**Important**: `rent_fee` is ONLY for target program account creation (transferred to CEA). Gateway account rent (executed_sub_tx, cea_ata) is covered by validator and reimbursed via `gas_fee`.
+**On-chain transfer split**:
+- `amount` → CEA (if `amount > 0`)
+- `gas_fee` → caller (relayer reimbursement)
 
 ---
 
@@ -632,13 +609,9 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
 3. Extract fields:
    - `accounts[]`: Array of account metadata (pubkey + isWritable)
    - `ixData`: Instruction data for target program
-   - `rentFee`: Rent fee for target program (u64)
    - `instructionId`: Operation mode (1=withdraw, 2=execute)
 4. Validate:
-   - `rent_fee >= 0` and `rent_fee <= gas_fee` (precheck: rent_fee cannot exceed gas_fee)
    - Gateway allows `accounts_count == 0` and `ix_data_length == 0`, but target program may fail
-   - Reject if `amount > u64::MAX` or `gasFee > u64::MAX` or `rentFee > u64::MAX`
-   - For withdraw (instructionId=1): `accounts` must be empty, `ixData` must be empty, `rentFee` must be 0
    - For execute (instructionId=2): `accounts` and `ixData` contain CPI data
 
 ### 7.3 TSS Message Construction
@@ -653,7 +626,7 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
    - **Withdraw (1)**:
      `PREFIX | 0x01 | chain_id | amount | sub_tx_id | universal_tx_id | push_account | token | gas_fee | target`
    - **Execute (2)**:
-     `PREFIX | 0x02 | chain_id | amount | sub_tx_id | universal_tx_id | push_account | token | gas_fee | target_program | accounts_buf | ix_data_buf | rent_fee`
+     `PREFIX | 0x02 | chain_id | amount | sub_tx_id | universal_tx_id | push_account | token | gas_fee | target_program | accounts_buf | ix_data_buf`
 4. For execute: build `accounts_buf` and `ix_data_buf` with length prefixes (section 3.3)
 
 ### 7.4 TSS Signing
@@ -671,7 +644,6 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
    - **Execute (2)**: Decode payload first, then set `destination_program = decoded.targetProgram`, `recipient` = None, `remaining_accounts` = decoded accounts
 3. Build instruction using Anchor client or raw instruction:
    - Function: `finalize_universal_tx`
-   - Parameters: `instruction_id`, `sub_tx_id`, `universal_tx_id`, `amount`, `push_account`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT**: No `target` parameter - execute target comes from decoded payload `targetProgram`, and `destination_program` must match it
    - Accounts: Required accounts + mode-specific optional accounts + SPL accounts (if token) + remaining_accounts (if execute)
 4. For execute mode: convert accounts to writable_flags (bitpacked, see section 3.4)
@@ -756,13 +728,11 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
 - Include in: TSS message hash, function parameters, event emissions
 - NOT stored on-chain (only emitted in events)
 
-### 8.3 Rent Fee Source
+### 8.3 Target Program Funding Policy
 
-- `rent_fee` is NOT a top-level Push Chain event field
-- For execute flows: `rent_fee` is included inside the `payload` bytes (see section 2.2)
-- Backend decodes `rent_fee` from payload - no estimation needed
-- Only when constructing payloads off-chain (tests/tools) do you estimate and encode it
-- Can be 0 if target program doesn't need rent
+- There is no dedicated target-account top-up field in execute payload or finalize args.
+- If target CPI requires lamports/tokens in CEA, backend must ensure the bridged amount and flow cover that requirement.
+- Payload contains only CPI routing data (`targetProgram`, `accounts`, `ixData`) and mode selector (`instructionId`).
 
 ### 8.4 Replay Protection
 
@@ -783,25 +753,21 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
 ### Execute Flow (instruction_id=2):
 
 1. **Event received**: `UniversalTxOutbound` with `target`, `amount`, `payload`, `gasFee`, `push_account`
-2. **Decode payload**: Extract `accounts[]`, `ixData`, `rentFee`, `instructionId`, `targetProgram`
    - Verify `instructionId == 2` (execute mode)
-   - Validate: `rentFee <= gasFee`, accounts and ixData present, `targetProgram` present
+2. **Decode payload**: extract `instructionId`, `targetProgram`, `accounts[]`, `ixData`
 3. **Derive PDAs**: CEA authority, executed_sub_tx, config, vault, tss_pda
 4. **Fetch TSS state**: Get `chain_id` from TSS PDA (`["tsspda_v2"]`)
 5. **Build writable flags**: Convert `accounts[]` to bitpacked `writable_flags` (1 bit per account, MSB first)
 6. **Build TSS message**:
    - Use `buildExecuteAdditionalData()` helper (see `tests/helpers/tss.ts`)
    - instruction_id = 2
-   - additional_data = [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
    - **Common fields first**: sub_tx_id, universal_tx_id, push_account, token, gas_fee
-   - **Execute-specific**: target_program, accounts_buf, ix_data_buf, rent_fee
    - `accounts_buf` = length-prefixed serialized accounts (u32 BE count + accounts with pubkeys + isWritable)
    - `ix_data_buf` = length-prefixed instruction data (u32 BE length + data)
    - `token` = `Pubkey::default()` for SOL, mint pubkey for SPL
 7. **Sign**: Call `signTssMessage()` → Keccak-256 hash → secp256k1 sign → signature + recovery_id
 8. **Build Solana transaction**:
    - Function: `finalize_universal_tx`
-   - Parameters: `instruction_id=2`, `sub_tx_id`, `universal_tx_id`, `amount`, `push_account`, `writable_flags`, `ix_data`, `gas_fee`, `rent_fee`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT - No target parameter**: Execute target comes from decoded payload `targetProgram`
    - Accounts:
      - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_sub_tx`, `system_program`
@@ -818,7 +784,6 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
 1. **Event received**: `UniversalTxOutbound` with `payload` (or no payload for simple withdraw)
 2. **Decode payload** (if present): Extract `instructionId`
    - Verify `instructionId == 1` (withdraw mode)
-   - Validate: `accounts` empty, `ixData` empty, `rentFee == 0`
 3. **Derive PDAs**: Same as execute (see section 5)
 4. **Fetch TSS state**: Get `chain_id` from TSS PDA (`["tsspda_v2"]`)
 5. **Build TSS message**:
@@ -832,7 +797,6 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
 6. **Sign**: Call `signTssMessage()` → Keccak-256 hash → secp256k1 sign → signature + recovery_id
 7. **Build Solana transaction**:
    - Function: `finalize_universal_tx`
-   - Parameters: `instruction_id=1`, `sub_tx_id`, `universal_tx_id`, `amount`, `push_account`, `writable_flags=[]`, `ix_data=[]`, `gas_fee`, `rent_fee=0`, `signature`, `recovery_id`, `message_hash`
    - **IMPORTANT - No target parameter**: Target derived from `recipient` account
    - Accounts:
      - Required: `caller`, `config`, `vault_sol`, `cea_authority`, `tss_pda`, `executed_sub_tx`, `system_program`
@@ -863,7 +827,6 @@ Before production:
 - [ ] Payload decode matches encode (roundtrip)
 - [ ] TSS message hash matches on-chain reconstruction
 - [ ] Account order/flags match in all three places (hash, param, remaining)
-- [ ] Fee calculations correct (relayer receives gas_fee - rent_fee)
 - [ ] CEA ATA creation works (SPL execute)
 - [ ] Error handling for all error codes
 - [ ] Event verification works
@@ -877,8 +840,6 @@ Before production:
 **File**: `contracts/svm-gateway/app/execute-payload.ts`
 
 **Key Functions**:
-- `encodeExecutePayload()` - Encodes accounts + ixData + rentFee + instructionId + targetProgram into payload bytes
-- `decodeExecutePayload()` - Decodes payload bytes back to accounts + ixData + rentFee + instructionId + targetProgram
 - `accountsToWritableFlags()` - Converts accounts array to bitpacked writable flags
 
 **Usage**: See test file `contracts/svm-gateway/tests/execute.test.ts` (search for `encodeExecutePayload`)
@@ -892,7 +853,6 @@ Before production:
   - Takes: `{ instruction, amount, additional, chainId }`
   - Returns: `{ signature, recoveryId, messageHash }`
 - `buildExecuteAdditionalData()` - Constructs additional fields for execute (instruction_id=2)
-  - Format: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target_program, accounts_buf, ix_data_buf, rent_fee]
   - **Common fields first**, then execute-specific
 - `buildWithdrawAdditionalData()` - Constructs additional fields for withdraw (instruction_id=1)
   - Format: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target]

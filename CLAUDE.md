@@ -300,7 +300,7 @@ Common fields come first (matching function parameter order):
 ```rust
 // Common (both modes): [tx_id, universal_tx_id, sender, token, gas_fee]
 // Withdraw adds: [recipient]
-// Execute adds: [target_program, accounts_buf, ix_data_buf, rent_fee]
+// Execute adds: [target_program, accounts_buf, ix_data_buf]
 ```
 
 **Rationale:** Consistent ordering reduces errors, matches function signatures.
@@ -309,8 +309,6 @@ Common fields come first (matching function parameter order):
 
 **SVM Flow:**
 ```
-1. Vault → CEA transfer (amount + rent_fee)
-2. Vault → Relayer transfer (gas_fee - rent_fee)
 3. Build CPI instruction with CEA as signer
 4. invoke_signed(cpi_ix, &[cea_seeds])
 ```
@@ -318,7 +316,6 @@ Common fields come first (matching function parameter order):
 **Key Components:**
 - `writable_flags`: Bitmap encoding which accounts are writable (1 byte per 8 accounts)
 - `ix_data`: Target program instruction data
-- `rent_fee`: Rent for CEA to handle target program account creation
 - `gas_fee`: Relayer reimbursement (includes executed_tx rent + CEA ATA rent if needed)
 
 **CEA as Signer:**
@@ -377,7 +374,6 @@ const executeAdditionalData = buildExecuteAdditionalData({
   target_program,
   accounts_buf,
   ix_data_buf,
-  rent_fee,
 });
 
 const tssSignature = await signTssMessage({
@@ -391,25 +387,15 @@ const tssSignature = await signTssMessage({
 
 **SOL Execute:**
 ```typescript
-const { gasFee, rentFee } = await calculateSolExecuteFees(
-  connection,
-  BASE_RENT_FEE  // rent for target program
-);
-// gasFee = rentFee + executed_tx_rent + compute_buffer
+const { gasFee } = await calculateSolExecuteFees(connection);
 ```
 
 **SPL Execute:**
 ```typescript
-const { gasFee, rentFee } = await calculateSplExecuteFees(
-  connection,
-  ceaAta,
-  BASE_RENT_FEE
-);
-// gasFee = rentFee + executed_tx_rent + cea_ata_rent (if created) + compute_buffer
+const { gasFee } = await calculateSplExecuteFees(connection, ceaAta);
 ```
 
 **Components:**
-- `rent_fee`: Transferred to CEA for target program rent needs
 - `executed_tx_rent`: Gateway PDA creation (reimbursed from gas_fee)
 - `cea_ata_rent`: CEA ATA creation if needed (reimbursed from gas_fee)
 - `compute_buffer`: Transaction fees and compute units (~100k lamports)
