@@ -474,7 +474,7 @@ When a CEA sends `FUNDS_AND_PAYLOAD` with `msg.value > req.amount` (native batch
 
 ## UniversalGatewayPC - Outbound Transaction Handling
 
-**UniversalGatewayPC** is deployed on Push Chain and handles outbound transactions from Push Chain to external chains. It supports three TX_TYPE values (GAS is not supported on outbound).
+**UniversalGatewayPC** is deployed on Push Chain and handles outbound transactions from Push Chain to external chains. It supports three TX_TYPE values (GAS is not supported on outbound). Gas fees are paid in native PC, swapped to gas token PRC20 via UniversalCore's `swapPCForGasToken` (exactOutputSingle), and sent to VaultPC. Unused PC is refunded directly to the caller by UniversalCore.
 
 ### TX_TYPE Inference on Push Chain (`_fetchTxType()`)
 
@@ -525,7 +525,7 @@ function _fetchTxType(UniversalOutboundTxRequest calldata req) private pure retu
 
 ### Validation Flow
 
-**Function**: `_validateCommon(req.target, req.token, req.revertRecipient)`
+**Function**: `_validateCommon(req.token, req.revertRecipient)`
 
 
 **Note**: Amount validation is intentionally NOT in `_validateCommon()` because it's context-dependent:
@@ -540,7 +540,7 @@ Amount validation happens in `_fetchTxType()` which rejects empty transactions (
 
 2. **Conditional Token Burn**: Tokens are only burned when `amount > 0`. For payload-only transactions (GAS_AND_PAYLOAD with amount=0), the burn is skipped entirely.
 
-3. **Gas Fees Always Required**: Even for payload-only transactions, users must pay gas fees via `_moveFees()` to prevent spam/DoS.
+3. **Gas Fees Always Required**: Even for payload-only transactions, users must pay gas fees (native PC swapped via `_swapAndCollectFees()`) to prevent spam/DoS.
 
 4. **Supported TX_TYPEs on Push Chain**:
    - ✅ `TX_TYPE.FUNDS` - Withdraw tokens only
@@ -568,10 +568,18 @@ When testing UniversalGatewayPC:
 - `req.amount > 0` with empty payload → `TX_TYPE.FUNDS`
 - `req.amount > 0` with payload → `TX_TYPE.FUNDS_AND_PAYLOAD`
 
+### Gas Fee Swap Flow (exactOutputSingle)
+
+`sendUniversalTxOutbound` accepts native PC as `msg.value`, quotes the required `gasFee` via `_calculateGasFeesWithLimit()`, then calls `_swapAndCollectFees()` which delegates to `UniversalCore.swapPCForGasToken()`:
+
+1. UGPC passes `gasFee` as `requiredGasTokenOut` and `msg.sender` as `caller`
+2. UniversalCore performs an exactOutputSingle swap: produces exactly `requiredGasTokenOut` gas tokens to VaultPC
+3. UniversalCore refunds unused PC directly to `caller` (the original user)
+4. If the swap cannot produce the required output, UniversalCore reverts (no separate check in UGPC)
+
 ### Related Files
 
-- `src/UniversalGatewayPC.sol:83-119` - `sendUniversalTxOutbound()` main function
-- `src/UniversalGatewayPC.sol:141-166` - `_fetchTxType()` inference logic
-- `src/UniversalGatewayPC.sol:168-182` - `_validateCommon()` validation
-- `test/gateway/14_gatewayPC.t.sol` - Comprehensive test suite (79 tests)
+- `src/UniversalGatewayPC.sol` - `sendUniversalTxOutbound()`, `_swapAndCollectFees()`, `_fetchTxType()`
+- `src/interfaces/IUniversalCore.sol` - `swapPCForGasToken()` interface
+- `test/gateway/14_gatewayPC.t.sol` - Comprehensive test suite (82 tests)
 - `test/gateway/9_sendUniversalTxFetchTxType.t.sol` - TX_TYPE inference tests (27 tests)

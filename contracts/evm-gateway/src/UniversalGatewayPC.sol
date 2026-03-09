@@ -3,15 +3,17 @@ pragma solidity 0.8.26;
 
 /**
  * @title   UniversalGatewayPC
- * @notice  Universal Gateway implementation for Push Chain
+ * @notice  Outbound gateway on Push Chain for bridging funds and payloads to external EVM chains.
  *
  * @dev
  *         - Strictly to be deployed on Push Chain.
  *         - Allows users to withdraw PRC20 (wrapped) tokens back to the origin chain.
  *         - Allows users to withdraw PRC20 and attach a payload for arbitrary call execution on the origin chain.
+ *         - Allows payload-only transactions (no token burn) using existing CEA funds on the origin chain.
  *         - This contract does NOT handle deposits or inbound transfers.
  *         - This contract does NOT custody user assets; PRC20 are burned at request time.
- *         - The Gateway includes a withdrawal fees for withdrwal from Push Chain to origin chain.
+ *         - Gas fees are paid in native PC, swapped to gas token PRC20 via UniversalCore (exactOutputSingle),
+ *           and sent to VaultPC. Unused PC is refunded directly to the caller by UniversalCore.
  */
 import { Errors } from "./libraries/Errors.sol";
 import { IPRC20 } from "./interfaces/IPRC20.sol";
@@ -82,6 +84,11 @@ contract UniversalGatewayPC is
         _unpause();
     }
 
+    /// @notice Sends an outbound universal transaction from Push Chain to an external chain.
+    /// @dev    Infers TX_TYPE from the request, quotes gas fees, burns PRC20 (if amount > 0),
+    ///         swaps native PC to gas token PRC20 via UniversalCore exactOutputSingle (refunding
+    ///         unused PC directly to the caller), and emits UniversalTxOutbound.
+    /// @param req The outbound transaction request struct.
     function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req)
         external
         payable
@@ -169,7 +176,7 @@ contract UniversalGatewayPC is
 
     /// @notice                 Validates the common parameters.
     /// @dev                    Validates token and revertRecipient addresses.
-    ///                         Amount validation is handled in sendUniversalTxOutbound() to support payload-only transactions.
+    ///                         Amount validation is handled in _fetchTxType() to support payload-only transactions.
     /// @param token            PRC20 token address on Push Chain.
     /// @param revertRecipient  address to receive funds in case of revert.
     function _validateCommon(address token, address revertRecipient) internal pure {
@@ -179,11 +186,13 @@ contract UniversalGatewayPC is
 
     /**
      * @dev                 Use UniversalCore's withdrawGasFeeWithGasLimit to compute fee (gas coin + amount).
-     *                          If gasLimit = 0, pull the default BASE_GAS_LIMIT from UniversalCore.
-     * @return gasToken     PRC20 address to be used for fee payment.
-     * @return gasFee       amount of gasToken to collect from the user (includes protocol fee).
-     * @return gasLimitUsed gas limit actually used for the quote.
-     * @return protocolFee  the flat protocol fee component (as exposed by PRC20).
+     *                      If gasLimit = 0, pull the default BASE_GAS_LIMIT from UniversalCore.
+     * @param token         PRC20 token address on Push Chain (used to resolve chain namespace and protocol fee).
+     * @param gasLimit      Caller-requested gas limit (0 = use BASE_GAS_LIMIT from UniversalCore).
+     * @return gasToken     PRC20 address of the gas token for the target chain.
+     * @return gasFee       Amount of gasToken to collect (includes protocol fee).
+     * @return gasLimitUsed Gas limit actually used for the quote.
+     * @return protocolFee  Flat protocol fee component (as exposed by PRC20).
      */
     function _calculateGasFeesWithLimit(address token, uint256 gasLimit)
         internal
@@ -217,6 +226,7 @@ contract UniversalGatewayPC is
         IUniversalCore(UNIVERSAL_CORE).swapPCForGasToken{ value: pcAmount }(prc20, vault, 0, gasFee, 0, msg.sender);
     }
 
+    /// @dev Pulls PRC20 from `from` into this contract, then burns them.
     function _burnPRC20(address from, address token, uint256 amount) internal {
         // Pull PRC20 into this gateway first
         IPRC20(token).transferFrom(from, address(this), amount);
