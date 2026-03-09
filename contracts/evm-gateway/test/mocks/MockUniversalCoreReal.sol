@@ -251,32 +251,38 @@ contract MockUniversalCoreReal is IUniversalCore {
         return amountIn;
     }
 
-    function withdrawGasFee(address _prc20) public view returns (address gasToken, uint256 gasFee) {
-        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
+    function withdrawGasFee(address _prc20)
+        public
+        view
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace)
+    {
+        chainNamespace = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
-        gasToken = gasTokenPRC20ByChainNamespace[chainID];
+        gasToken = gasTokenPRC20ByChainNamespace[chainNamespace];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
 
-        uint256 price = gasPriceByChainNamespace[chainID];
+        uint256 price = gasPriceByChainNamespace[chainNamespace];
         require(price != 0, "MockUniversalCore: zero gas price");
 
-        gasFee = price * BASE_GAS_LIMIT + IPRC20(_prc20).PC_PROTOCOL_FEE();
+        gasFee = price * BASE_GAS_LIMIT;
+        protocolFee = IPRC20(_prc20).PC_PROTOCOL_FEE();
     }
 
     function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit)
         public
         view
-        returns (address gasToken, uint256 gasFee)
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace)
     {
-        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
+        chainNamespace = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
-        gasToken = gasTokenPRC20ByChainNamespace[chainID];
+        gasToken = gasTokenPRC20ByChainNamespace[chainNamespace];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
 
-        uint256 price = gasPriceByChainNamespace[chainID];
+        uint256 price = gasPriceByChainNamespace[chainNamespace];
         require(price != 0, "MockUniversalCore: zero gas price");
 
-        gasFee = price * gasLimit + IPRC20(_prc20).PC_PROTOCOL_FEE();
+        gasFee = price * gasLimit;
+        protocolFee = IPRC20(_prc20).PC_PROTOCOL_FEE();
     }
 
     /// @notice Update the base gas limit for the cross-chain outbound transactions.
@@ -288,26 +294,34 @@ contract MockUniversalCoreReal is IUniversalCore {
     }
 
     // ========= Swap Functions =========
-    function swapPCForGasToken(
-        address prc20,
+    function swapAndBurnGas(
+        address gasTokenAddr,
         address vault,
         uint24,
-        uint256 requiredGasTokenOut,
+        uint256 gasFee,
+        uint256 protocolFee,
         uint256,
         address caller
     ) external payable returns (uint256 gasTokenOut, uint256 refund) {
-        require(requiredGasTokenOut > 0, "MockUniversalCore: zero required output");
+        uint256 totalRequired = gasFee + protocolFee;
+        require(totalRequired > 0, "MockUniversalCore: zero total output");
 
-        string memory ns = IPRC20(prc20).SOURCE_CHAIN_NAMESPACE();
-        address gasTokenAddr = gasTokenPRC20ByChainNamespace[ns];
+        // Burn gasFee portion (mint then burn to simulate swap+burn)
+        if (gasFee > 0) {
+            MockPRC20(gasTokenAddr).mint(address(this), gasFee);
+            MockPRC20(gasTokenAddr).burn(gasFee);
+        }
 
-        // Mint exactly requiredGasTokenOut to vault (simulates exactOutputSingle)
-        gasTokenOut = requiredGasTokenOut;
-        MockPRC20(gasTokenAddr).mint(vault, gasTokenOut);
+        // Send protocolFee to vault
+        if (protocolFee > 0) {
+            MockPRC20(gasTokenAddr).mint(vault, protocolFee);
+        }
 
-        // Refund unused PC directly to the caller
-        if (msg.value > gasTokenOut) {
-            refund = msg.value - gasTokenOut;
+        gasTokenOut = totalRequired;
+
+        // Refund unused PC directly to the caller (1:1 ratio for mock simplicity)
+        if (msg.value > totalRequired) {
+            refund = msg.value - totalRequired;
             (bool ok,) = caller.call{value: refund}("");
             require(ok, "MockUniversalCore: refund failed");
         }

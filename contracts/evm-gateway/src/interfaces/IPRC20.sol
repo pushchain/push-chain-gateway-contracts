@@ -14,7 +14,10 @@ interface IPRC20 {
     function SOURCE_CHAIN_NAMESPACE() external view returns (string memory);
     function PC_PROTOCOL_FEE() external view returns (uint256);
     function GAS_LIMIT() external view returns (uint256);
-    function withdrawGasFeeWithGasLimit(uint256 gasLimit) external view returns (address gasToken, uint256 gasFee);
+    function withdrawGasFeeWithGasLimit(uint256 gasLimit)
+        external
+        view
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace);
 
     /**
      * @notice ERC-20 standard functions

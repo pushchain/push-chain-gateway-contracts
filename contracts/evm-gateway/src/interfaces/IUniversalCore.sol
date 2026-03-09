@@ -41,9 +41,14 @@ interface IUniversalCore {
      * @dev    Uses BASE_GAS_LIMIT for the gas limit used in the fee computation.
      * @param _prc20 PRC20 address
      * @return gasToken Gas token address
-     * @return gasFee Gas fee
+     * @return gasFee Gas cost only (gasPrice * gasLimit), excludes protocol fee
+     * @return protocolFee Flat protocol fee in gas token units
+     * @return chainNamespace Chain namespace string for the target chain
      */
-    function withdrawGasFee(address _prc20) external view returns (address gasToken, uint256 gasFee);
+    function withdrawGasFee(address _prc20)
+        external
+        view
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace);
 
     /**
      * @notice Get gas fee for a PRC20 token with a custom gas limit
@@ -51,17 +56,23 @@ interface IUniversalCore {
      * @param _prc20 PRC20 address
      * @param gasLimit Gas limit
      * @return gasToken Gas token address
-     * @return gasFee Gas fee
+     * @return gasFee Gas cost only (gasPrice * gasLimit), excludes protocol fee
+     * @return protocolFee Flat protocol fee in gas token units
+     * @return chainNamespace Chain namespace string for the target chain
      */
-    function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit) external view returns (address gasToken, uint256 gasFee);
+    function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit)
+        external
+        view
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace);
 
     function GATEWAY_ROLE() external view returns (bytes32);
 
-    function swapPCForGasToken(
-        address prc20,
+    function swapAndBurnGas(
+        address gasToken,
         address vault,
         uint24 fee,
-        uint256 requiredGasTokenOut,
+        uint256 gasFee,
+        uint256 protocolFee,
         uint256 deadline,
         address caller
     ) external payable returns (uint256 gasTokenOut, uint256 refund);

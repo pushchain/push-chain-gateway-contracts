@@ -165,7 +165,11 @@ contract MockPRC20 is IPRC20 {
     }
 
     /// @notice Get gas fee with custom gas limit (delegates to UniversalCore)
-    function withdrawGasFeeWithGasLimit(uint256 gasLimit) external view returns (address gasToken, uint256 gasFee) {
+    function withdrawGasFeeWithGasLimit(uint256 gasLimit)
+        external
+        view
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace)
+    {
         return IUniversalCore(UNIVERSAL_CORE).withdrawGasFeeWithGasLimit(address(this), gasLimit);
     }
 
