@@ -41,8 +41,6 @@ pub enum VerificationType {
     UniversalTxVerification,
 }
 
-
-
 /// Revert instructions for failed transactions (parity with EVM `RevertInstructions`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct RevertInstructions {

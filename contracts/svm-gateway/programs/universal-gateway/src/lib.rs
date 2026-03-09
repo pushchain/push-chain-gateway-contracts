@@ -146,7 +146,6 @@ pub mod universal_gateway {
         writable_flags: Vec<u8>,
         ix_data: Vec<u8>,
         gas_fee: u64,
-        rent_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
@@ -161,7 +160,6 @@ pub mod universal_gateway {
             writable_flags,
             ix_data,
             gas_fee,
-            rent_fee,
             signature,
             recovery_id,
             message_hash,
@@ -243,9 +241,7 @@ pub use instructions::admin::{
 pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::FinalizeUniversalTx;
 pub use instructions::initialize::Initialize;
-pub use instructions::revert::{
-    RevertUniversalTx, RevertUniversalTxToken,
-};
+pub use instructions::revert::{RevertUniversalTx, RevertUniversalTxToken};
 pub use utils::PriceData;
 
 pub use state::{
@@ -255,10 +251,10 @@ pub use state::{
     ExecutedSubTx,
     FeeVault,
     GatewayAccountMeta,
-    RevertInstructions,
     ProtocolFeeCollected,
     ProtocolFeeReimbursed,
     ProtocolFeeUpdated,
+    RevertInstructions,
     TSSAddressUpdated,
     TxType,
     UniversalTx,
@@ -267,7 +263,7 @@ pub use state::{
     VerificationType,
     CONFIG_SEED,
     EXECUTED_SUB_TX_SEED,
-    FEE_VAULT_SEED,
     FEED_ID,
+    FEE_VAULT_SEED,
     VAULT_SEED,
 };

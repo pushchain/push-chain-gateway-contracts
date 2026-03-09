@@ -312,7 +312,7 @@ async function main() {
         Buffer.alloc(0),
         Buffer.alloc(0),
         gasFeeBn,
-        new anchor.BN(0),
+
         Array.from(signature),
         recoveryId,
         Array.from(messageHash),
@@ -463,7 +463,7 @@ async function main() {
             Buffer.alloc(0),
             Buffer.alloc(0),
             gasFeeBn,
-            new anchor.BN(0),
+
             Array.from(splSig.signature),
             splSig.recoveryId,
             Array.from(splSig.messageHash),
