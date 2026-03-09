@@ -61,7 +61,8 @@ interface IUniversalCore {
         address prc20,
         address vault,
         uint24 fee,
-        uint256 minGasTokenOut,
-        uint256 deadline
-    ) external payable returns (uint256 gasTokenOut);
+        uint256 requiredGasTokenOut,
+        uint256 deadline,
+        address caller
+    ) external payable returns (uint256 gasTokenOut, uint256 refund);
 }

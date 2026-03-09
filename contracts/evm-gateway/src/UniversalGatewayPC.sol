@@ -82,7 +82,12 @@ contract UniversalGatewayPC is
         _unpause();
     }
 
-    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external payable whenNotPaused nonReentrant {
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req)
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+    {
         _validateCommon(req.token, req.revertRecipient);
 
         // Determine TX_TYPE based on user input (rejects empty transactions internally)
@@ -97,9 +102,8 @@ contract UniversalGatewayPC is
             _burnPRC20(msg.sender, req.token, req.amount);
         }
 
-        // Swap native PC → gas token PRC20 → VaultPC; verify output covers quoted gasFee
-        uint256 gasTokenOut = _swapAndCollectFees(req.token, msg.value);
-        if (gasTokenOut < gasFee) revert Errors.InsufficientProtocolFee();
+        // Swap native PC → gas token PRC20 → VaultPC (exactOutputSingle: reverts if insufficient)
+        _swapAndCollectFees(req.token, msg.value, gasFee);
 
         string memory chainNamespace = IPRC20(req.token).SOURCE_CHAIN_NAMESPACE();
 
@@ -199,22 +203,18 @@ contract UniversalGatewayPC is
     }
 
     /**
-     * @dev     Swap native PC → gas token PRC20 via UniversalCore, sending output to VaultPC.
+     * @dev     Swap native PC → gas token PRC20 via UniversalCore (exactOutputSingle), sending output to VaultPC.
+     *          UniversalCore refunds any unused PC directly to the caller.
      * @param prc20    PRC20 token address (used by UniversalCore to resolve the swap pair).
      * @param pcAmount Native PC amount (msg.value) to swap.
+     * @param gasFee   Exact gas token output required (passed as requiredGasTokenOut).
      */
-    function _swapAndCollectFees(
-        address prc20,
-        uint256 pcAmount
-    ) internal returns (uint256 gasTokenOut) {
+    function _swapAndCollectFees(address prc20, uint256 pcAmount, uint256 gasFee) internal {
         if (pcAmount == 0) revert Errors.ZeroAmount();
         address vault = address(VAULT_PC);
         if (vault == address(0)) revert Errors.ZeroAddress();
 
-        gasTokenOut = IUniversalCore(UNIVERSAL_CORE)
-            .swapPCForGasToken{value: pcAmount}(
-                prc20, vault, 0, 0, 0
-            );
+        IUniversalCore(UNIVERSAL_CORE).swapPCForGasToken{ value: pcAmount }(prc20, vault, 0, gasFee, 0, msg.sender);
     }
 
     function _burnPRC20(address from, address token, uint256 amount) internal {

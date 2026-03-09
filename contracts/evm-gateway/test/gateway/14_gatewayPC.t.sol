@@ -345,8 +345,7 @@ contract UniversalGatewayPCTest is Test {
             prc20Token.approve(address(gateway), amount);
         }
 
-        // Mock swap always outputs based on BASE_GAS_LIMIT (not custom gasLimit)
-        uint256 expectedSwapOut = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
@@ -362,8 +361,8 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
-        // Verify token balances (swap output based on BASE_GAS_LIMIT)
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedSwapOut);
+        // Verify token balances (exactOutputSingle mints exactly gasFee to vault)
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -586,8 +585,7 @@ contract UniversalGatewayPCTest is Test {
         bytes memory payload = abi.encodeWithSignature("transfer(address,uint256)", user2, 100);
         address revertRecipient = user2;
 
-        // Mock swap always outputs based on BASE_GAS_LIMIT (not custom gasLimit)
-        uint256 expectedSwapOut = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
@@ -603,8 +601,8 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
-        // Verify token balances (swap output based on BASE_GAS_LIMIT)
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedSwapOut);
+        // Verify token balances (exactOutputSingle mints exactly gasFee to vault)
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -1008,10 +1006,10 @@ contract UniversalGatewayPCTest is Test {
 
     function testMaxGasLimit() public {
         uint256 amount = 1000 * 1e6;
-        uint256 gasLimit = DEFAULT_GAS_LIMIT; // Use BASE_GAS_LIMIT (mock swap output matches quote at this limit)
+        uint256 gasLimit = DEFAULT_GAS_LIMIT;
         address revertRecipient = user2;
 
-        uint256 expectedSwapOut = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -1027,7 +1025,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify withdrawal succeeded
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedSwapOut);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + expectedGasFee);
     }
 
     function testGasFeeCalculationAccuracy() public {
@@ -1042,8 +1040,8 @@ contract UniversalGatewayPCTest is Test {
     }
 
     function _testGasFeeForLimit(uint256 amount, address revertRecipient, uint256 gasLimit) internal {
-        // Mock swap always outputs based on BASE_GAS_LIMIT regardless of requested gasLimit
-        uint256 expectedSwapOut = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        // exactOutputSingle mints exactly the quoted gasFee for the requested gasLimit
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 balanceBefore = gasToken.balanceOf(vaultPC);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -1059,7 +1057,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         uint256 balanceAfter = gasToken.balanceOf(vaultPC);
-        assertEq(balanceAfter - balanceBefore, expectedSwapOut);
+        assertEq(balanceAfter - balanceBefore, expectedGasFee);
 
         // Reset for next iteration
         prc20Token.mint(user1, amount);
@@ -1869,15 +1867,14 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // Mock swap output is always based on BASE_GAS_LIMIT
-        uint256 expectedSwapOut = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
 
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify gas tokens were minted to vault via swap
-        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + expectedSwapOut);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + expectedGasFee);
     }
 
     function testGasFee_GAS_AND_PAYLOAD_NotSupportedOnPC() public {
@@ -1895,8 +1892,7 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // Mock swap output is always based on BASE_GAS_LIMIT
-        uint256 expectedSwapOut = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
         uint256 nonceBefore = gateway.nonce();
 
@@ -1905,7 +1901,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Verify transaction succeeded and gas tokens were minted to vault via swap
         assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
-        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + expectedSwapOut, "Gas tokens should be minted to vault");
+        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + expectedGasFee, "Gas tokens should be minted to vault");
     }
 
     function testGasFee_FUNDS_AND_PAYLOAD_CorrectCalculation() public {
@@ -1923,8 +1919,7 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // Mock swap output is always based on BASE_GAS_LIMIT
-        uint256 expectedSwapOut = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
         uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
@@ -1932,7 +1927,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify gas tokens minted to vault via swap and PRC20 burned
-        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + expectedSwapOut);
+        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + expectedGasFee);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -2290,21 +2285,68 @@ contract UniversalGatewayPCTest is Test {
         assertEq(prc20Token.balanceOf(address(gateway)), 0);
     }
 
-    function testSwapFees_InsufficientSwapOutput_Reverts() public {
+    function testRefund_UserReceivesExcessPC() public {
         uint256 amount = 1000 * 1e6;
         address revertRecipient = user2;
 
-        // The mock swap outputs: gasPrice * BASE_GAS_LIMIT + protocolFee.
-        // The quote uses:        gasPrice * requestedGasLimit + protocolFee.
-        // When requestedGasLimit > BASE_GAS_LIMIT, the quoted gasFee exceeds swap output → revert.
-        uint256 highGasLimit = DEFAULT_GAS_LIMIT * 2; // 1M > 500k BASE_GAS_LIMIT
-
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
-            bytes(""), address(prc20Token), amount, highGasLimit, bytes(""), revertRecipient
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
         );
 
+        uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+        uint256 userBalanceBefore = user1.balance;
+
         vm.prank(user1);
-        vm.expectRevert(Errors.InsufficientProtocolFee.selector);
+        gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
+
+        // User gets refund: PC_FEE - gasFee (mock uses 1:1 PC-to-gasToken ratio)
+        uint256 expectedRefund = PC_FEE - expectedGasFee;
+        assertEq(user1.balance, userBalanceBefore - PC_FEE + expectedRefund);
+    }
+
+    function testRefund_NoRefundWhenExactAmount() public {
+        uint256 amount = 1000 * 1e6;
+        address revertRecipient = user2;
+
+        uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
+
+        UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+        );
+
+        uint256 userBalanceBefore = user1.balance;
+
+        // Send exactly gasFee as msg.value (no refund expected)
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{value: expectedGasFee}(req);
+
+        // User spent exactly gasFee, no refund
+        assertEq(user1.balance, userBalanceBefore - expectedGasFee);
+    }
+
+    function testRefund_ForwardFailure_Reverts() public {
+        uint256 amount = 1000 * 1e6;
+        address revertRecipient = user2;
+
+        // Deploy a contract that rejects ETH transfers
+        ETHRejecter rejecter = new ETHRejecter();
+        vm.deal(address(rejecter), 100 ether);
+        prc20Token.mint(address(rejecter), LARGE_AMOUNT);
+        vm.prank(address(rejecter));
+        prc20Token.approve(address(gateway), type(uint256).max);
+
+        UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
+        );
+
+        // Rejecter sends more than gasFee, so UniversalCore's refund to caller fails
+        vm.prank(address(rejecter));
+        vm.expectRevert("MockUniversalCore: refund failed");
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
     }
+}
+
+/// @dev Helper contract that rejects native token transfers (for testing refund failure)
+contract ETHRejecter {
+    // No receive() or fallback() — rejects all ETH transfers
 }

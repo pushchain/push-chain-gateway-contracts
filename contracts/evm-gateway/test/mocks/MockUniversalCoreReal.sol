@@ -292,14 +292,25 @@ contract MockUniversalCoreReal is IUniversalCore {
         address prc20,
         address vault,
         uint24,
+        uint256 requiredGasTokenOut,
         uint256,
-        uint256
-    ) external payable returns (uint256 gasTokenOut) {
+        address caller
+    ) external payable returns (uint256 gasTokenOut, uint256 refund) {
+        require(requiredGasTokenOut > 0, "MockUniversalCore: zero required output");
+
         string memory ns = IPRC20(prc20).SOURCE_CHAIN_NAMESPACE();
         address gasTokenAddr = gasTokenPRC20ByChainNamespace[ns];
-        gasTokenOut = gasPriceByChainNamespace[ns] * BASE_GAS_LIMIT
-            + IPRC20(prc20).PC_PROTOCOL_FEE();
+
+        // Mint exactly requiredGasTokenOut to vault (simulates exactOutputSingle)
+        gasTokenOut = requiredGasTokenOut;
         MockPRC20(gasTokenAddr).mint(vault, gasTokenOut);
+
+        // Refund unused PC directly to the caller
+        if (msg.value > gasTokenOut) {
+            refund = msg.value - gasTokenOut;
+            (bool ok,) = caller.call{value: refund}("");
+            require(ok, "MockUniversalCore: refund failed");
+        }
     }
 
     receive() external payable {}
