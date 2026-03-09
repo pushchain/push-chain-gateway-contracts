@@ -170,7 +170,7 @@ contract MockPRC20 is IPRC20 {
         view
         returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace)
     {
-        return IUniversalCore(UNIVERSAL_CORE).withdrawGasFeeWithGasLimit(address(this), gasLimit);
+        return IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(address(this), gasLimit);
     }
 
     //*** ADMIN FUNCTIONS ***//

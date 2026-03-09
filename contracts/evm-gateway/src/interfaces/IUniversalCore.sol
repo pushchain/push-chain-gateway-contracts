@@ -2,28 +2,6 @@
 pragma solidity 0.8.26;
 
 interface IUniversalCore {
-
-    /**
-     * @notice Check if a token is supported
-     * @param token Token address
-     * @return bool True if the token is supported, false otherwise
-     */
-    function isSupportedToken(address token) external view returns (bool);
-
-    /**
-     * @notice Get gas token PRC20 address for a chain
-     * @param chainId Chain ID
-     * @return gasToken Gas token address
-     */
-    function gasTokenPRC20ByChainNamespace(string memory chainId) external view returns (address gasToken);
-
-    /**
-     * @notice Get gas price for a chain
-     * @param chainId Chain ID
-     * @return price Gas price
-     */
-    function gasPriceByChainNamespace(string memory chainId) external view returns (uint256 price);
-
     /**
      * @notice Get base gas limit for a chain
      * @return baseGasLimit Base gas limit
@@ -31,41 +9,18 @@ interface IUniversalCore {
     function BASE_GAS_LIMIT() external view returns (uint256 baseGasLimit);
 
     /**
-     * @notice Get the Universal Executor Module address
-     * @return executorModule Universal Executor Module address
-     */
-    function UNIVERSAL_EXECUTOR_MODULE() external view returns (address executorModule);
-
-    /**
-     * @notice Get gas fee for a PRC20 token.
-     * @dev    Uses BASE_GAS_LIMIT for the gas limit used in the fee computation.
-     * @param _prc20 PRC20 address
-     * @return gasToken Gas token address
-     * @return gasFee Gas cost only (gasPrice * gasLimit), excludes protocol fee
-     * @return protocolFee Flat protocol fee in gas token units
-     * @return chainNamespace Chain namespace string for the target chain
-     */
-    function withdrawGasFee(address _prc20)
-        external
-        view
-        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace);
-
-    /**
-     * @notice Get gas fee for a PRC20 token with a custom gas limit
-     * @dev    Uses the provided gas limit for the fee computation.
-     * @param _prc20 PRC20 address
+     * @notice Get gas fee and chain metadata for an outbound transaction with a custom gas limit.
+     * @param _prc20 PRC20 address (used to resolve chain namespace)
      * @param gasLimit Gas limit
      * @return gasToken Gas token address
      * @return gasFee Gas cost only (gasPrice * gasLimit), excludes protocol fee
      * @return protocolFee Flat protocol fee in gas token units
      * @return chainNamespace Chain namespace string for the target chain
      */
-    function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit)
+    function getOutboundTxGasAndFees(address _prc20, uint256 gasLimit)
         external
         view
         returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace);
-
-    function GATEWAY_ROLE() external view returns (bytes32);
 
     function swapAndBurnGas(
         address gasToken,

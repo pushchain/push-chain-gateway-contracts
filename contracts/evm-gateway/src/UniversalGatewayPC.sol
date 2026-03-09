@@ -213,7 +213,7 @@ contract UniversalGatewayPC is
         }
 
         (gasToken, gasFee, protocolFee, chainNamespace) =
-            IUniversalCore(UNIVERSAL_CORE).withdrawGasFeeWithGasLimit(token, gasLimitUsed);
+            IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(token, gasLimitUsed);
 
         if (gasToken == address(0) || gasFee + protocolFee == 0) {
             revert Errors.InvalidData();
