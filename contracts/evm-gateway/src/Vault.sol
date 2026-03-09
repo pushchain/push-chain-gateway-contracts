@@ -36,27 +36,17 @@ contract Vault is
 {
     using SafeERC20 for IERC20;
 
-    // =========================
-    //            ROLES
-    // =========================
     bytes32 public constant TSS_ROLE = keccak256("TSS_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    // =========================
-    //           STATE
-    // =========================
-    /// @notice UniversalGateway on the same chain; source of truth for token support.
     IUniversalGateway public gateway;
-
-    /// @notice The current TSS address for Vault
     address public TSS_ADDRESS;
-
-    /// @notice The current CEAFactory address for Vault
     ICEAFactory public CEAFactory;
 
-    // =========================
-    //         INITIALIZER
-    // =========================
+    // ==============================
+    //  VAULT_1: ADMIN ACTIONS
+    // ==============================
+
     function initialize(address admin, address pauser, address tss, address gw, address ceaFactory)
         external
         initializer
@@ -82,24 +72,16 @@ contract Vault is
         CEAFactory = ICEAFactory(ceaFactory);
     }
 
-    // =========================
-    //          ADMIN OPS
-    // =========================
-    /// @notice             Allows the admin to pause the contract
-    /// @dev                Only callable by PAUSER_ROLE
     function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    /// @notice             Allows the admin to unpause the contract
-    /// @dev                Only callable by PAUSER_ROLE
     function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
-    /// @notice             Allows the admin to update the UniversalGateway address
-    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
-    /// @param gw           New UniversalGateway address
+    /// @notice Updates the UniversalGateway address.
+    /// @param gw New UniversalGateway address.
     function setGateway(address gw) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (gw == address(0)) revert Errors.ZeroAddress();
         address old = address(gateway);
@@ -107,9 +89,8 @@ contract Vault is
         emit GatewayUpdated(old, gw);
     }
 
-    /// @notice             Allows the admin to update the TSS address
-    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
-    /// @param newTss       New TSS address
+    /// @notice Updates the TSS address and transfers TSS_ROLE.
+    /// @param newTss New TSS address.
     function setTSS(address newTss) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTss == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
@@ -122,9 +103,8 @@ contract Vault is
         emit TSSUpdated(old, newTss);
     }
 
-    /// @notice             Allows the admin to update the CEAFactory address
-    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
-    /// @param newCEAFactory New CEAFactory address
+    /// @notice Updates the CEAFactory address.
+    /// @param newCEAFactory New CEAFactory address.
     function setCEAFactory(address newCEAFactory) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newCEAFactory == address(0)) revert Errors.ZeroAddress();
         address old = address(CEAFactory);
@@ -132,21 +112,17 @@ contract Vault is
         emit CEAFactoryUpdated(old, newCEAFactory);
     }
 
-    /// @notice             Allows the admin to sweep tokens from the contract
-    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
-    /// @param token        Token address
-    /// @param to           Recipient address
-    /// @param amount       Amount of token to sweep
+    /// @notice Sweeps stuck ERC20 tokens from the contract.
     function sweep(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
         IERC20(token).safeTransfer(to, amount);
     }
 
-    // =========================
-    //   WITHDRAW & EXECUTION
-    // =========================
+    // ==============================
+    //  VAULT_2: WITHDRAW & EXECUTION
+    // ==============================
+
     /// @inheritdoc IVault
-    /// @dev All execution now routes through CEA.executeUniversalTx with multicall payload
     function finalizeUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
@@ -165,7 +141,6 @@ contract Vault is
         // Single execution path for all operations
         _finalizeUniversalTx(subTxId, universalTxId, pushAccount, recipient, token, amount, data, cea);
 
-        // Emit event
         emit VaultUniversalTxFinalized(subTxId, universalTxId, pushAccount, recipient, token, amount, data);
     }
 
@@ -190,9 +165,10 @@ contract Vault is
         emit VaultUniversalTxReverted(subTxId, universalTxId, token, amount, revertInstruction);
     }
 
-    // =========================
-    //        INTERNALS
-    // =========================
+    // ==============================
+    //  VAULT_3: INTERNAL HELPERS
+    // ==============================
+
     function _enforceSupported(address token) internal view {
         // Single source of truth lives in UniversalGateway
         if (!gateway.isSupportedToken(token)) revert Errors.NotSupported();
@@ -234,10 +210,8 @@ contract Vault is
         bytes calldata data,
         address cea
     ) private {
-        // Validations
         _validateParams(pushAccount, token, amount);
 
-        // Fund CEA and forward multicall payload
         if (token != address(0)) {
             // ERC20: transfer to CEA first, then execute multicall
             if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();

@@ -85,7 +85,7 @@ contract VaultPCTest is Test {
     function test_Initialization_RolesAssigned() public view {
         assertTrue(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(vault.hasRole(vault.PAUSER_ROLE(), pauser));
-        assertTrue(vault.hasRole(vault.FUND_MANAGER_ROLE(), fundManager));
+        assertTrue(vault.hasRole(vault.MANAGER_ROLE(), fundManager));
     }
 
     function test_Initialization_StartsUnpaused() public view {
