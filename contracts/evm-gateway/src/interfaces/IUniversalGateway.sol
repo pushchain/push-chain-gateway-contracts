@@ -191,7 +191,7 @@ interface IUniversalGateway {
      *                         Strict validations:
      *                         - msg.sender must be a valid CEA per CEAFactory.isCEA()
      *                         - req.recipient must exactly match the mapped UEA from
-     *                           CEAFactory.getUEAForCEA() (anti-spoof).
+     *                           CEAFactory.getPushAccountForCEA() (anti-spoof).
      *
      * @param req              UniversalTxRequest struct
      */

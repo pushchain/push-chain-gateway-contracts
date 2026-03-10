@@ -366,7 +366,7 @@ contract UniversalGateway is
         if (CEA_FACTORY == address(0)) revert Errors.InvalidInput();
         if (!_isCallerCEA()) revert Errors.InvalidInput();
 
-        address mappedUEA = ICEAFactory(CEA_FACTORY).getUEAForCEA(_msgSender());
+        address mappedUEA = ICEAFactory(CEA_FACTORY).getPushAccountForCEA(_msgSender());
         if (mappedUEA == address(0)) revert Errors.InvalidInput();
 
         if (req.recipient != mappedUEA) revert Errors.InvalidRecipient();
