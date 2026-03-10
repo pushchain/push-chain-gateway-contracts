@@ -88,7 +88,7 @@ contract UniversalGatewayPC is
         whenNotPaused
         nonReentrant
     {
-        _validateCommon(req.token, req.revertRecipient);
+        _validateParams(req.token, req.revertRecipient);
 
         TX_TYPE txType = _fetchTxType(req);
 
@@ -149,7 +149,7 @@ contract UniversalGatewayPC is
     }
 
     /// @dev Validates token and revertRecipient are non-zero.
-    function _validateCommon(address token, address revertRecipient) internal pure {
+    function _validateParams(address token, address revertRecipient) internal pure {
         if (token == address(0)) revert Errors.ZeroAddress();
         if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
     }
@@ -199,7 +199,7 @@ contract UniversalGatewayPC is
         address vault = address(VAULT_PC);
         if (vault == address(0)) revert Errors.ZeroAddress();
 
-        IUniversalCore(UNIVERSAL_CORE).swapAndBurnGas{value: pcAmount}(
+        IUniversalCore(UNIVERSAL_CORE).swapAndBurnGas{ value: pcAmount }(
             gasToken, vault, 0, gasFee, protocolFee, 0, msg.sender
         );
     }

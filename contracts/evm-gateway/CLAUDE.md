@@ -525,10 +525,10 @@ function _fetchTxType(UniversalOutboundTxRequest calldata req) private pure retu
 
 ### Validation Flow
 
-**Function**: `_validateCommon(req.token, req.revertRecipient)`
+**Function**: `_validateParams(req.token, req.revertRecipient)`
 
 
-**Note**: Amount validation is intentionally NOT in `_validateCommon()` because it's context-dependent:
+**Note**: Amount validation is intentionally NOT in `_validateParams()` because it's context-dependent:
 - For `FUNDS`: Amount must be > 0
 - For `GAS_AND_PAYLOAD`: Amount can be 0 (payload-only execution)
 
