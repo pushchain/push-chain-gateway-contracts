@@ -9,7 +9,8 @@
 | UniversalGatewayV0 Proxy                   | `0x44aFFC61983F4348DdddB886349eb992C061EaC0` |
 | UniversalGatewayV0 ProxyAdmin              | `0x5Cef317D8392dF9F8C8E8a696c6893FD4112542C` |
 | UniversalGatewayV0 Impl 1 (superseded)     | `0x94B4849dFCCAb024daD29eEbCEe9c2372938596C` |
-| UniversalGatewayV0 Impl 2 (current, clean) | `0x4C4186282842BE1a4c85BA4105E56A7781B5D926` |
+| UniversalGatewayV0 Impl 2 (superseded)     | `0x4C4186282842BE1a4c85BA4105E56A7781B5D926` |
+| UniversalGatewayV0 Impl 3 (current)        | `0x975e025B7B497e7F474EC530F4d162c699E84c1B` |
 
 ## Vault System
 
