@@ -31,12 +31,12 @@ hash = keccak256(message)
 
 ### SOL Revert (instruction_id=3) — additional_data
 ```
-universal_tx_id[32] | sub_tx_id[32] | recipient[32] | gas_fee (8 BE)
+sub_tx_id[32] | universal_tx_id[32] | recipient[32] | gas_fee (8 BE)
 ```
 
 ### SPL Revert (instruction_id=4) — additional_data
 ```
-universal_tx_id[32] | sub_tx_id[32] | mint[32] | recipient[32] | gas_fee (8 BE)
+sub_tx_id[32] | universal_tx_id[32] | mint[32] | recipient[32] | gas_fee (8 BE)
 ```
 
 `PREFIX = b"PUSH_CHAIN_SVM"`

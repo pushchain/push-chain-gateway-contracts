@@ -197,8 +197,8 @@ pub struct UniversalTx {
 /// Revert withdraw event (parity with EVM `RevertUniversalTx`).
 #[event]
 pub struct RevertUniversalTx {
-    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
     pub sub_tx_id: [u8; 32],       // Transaction ID
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
     pub fund_recipient: Pubkey,    // Recipient of reverted funds
     pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
     pub amount: u64,               // Amount

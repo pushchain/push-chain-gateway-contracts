@@ -83,8 +83,8 @@ pub fn revert_universal_tx(
     let instruction_id: u8 = 3;
     let gas_fee_buf = encode_u64_be(gas_fee);
     let additional: [&[u8]; 4] = [
-        &universal_tx_id,
         &sub_tx_id,
+        &universal_tx_id,
         &revert_instruction.fund_recipient.to_bytes(),
         &gas_fee_buf,
     ];
@@ -108,8 +108,8 @@ pub fn revert_universal_tx(
     )?;
 
     emit!(crate::state::RevertUniversalTx {
-        universal_tx_id,
         sub_tx_id,
+        universal_tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: Pubkey::default(),
         amount,
@@ -212,8 +212,8 @@ pub fn revert_universal_tx_token(
     let mint_bytes = ctx.accounts.token_mint.key().to_bytes();
     let gas_fee_buf = encode_u64_be(gas_fee);
     let additional: [&[u8]; 5] = [
-        &universal_tx_id,
         &sub_tx_id,
+        &universal_tx_id,
         &mint_bytes,
         &revert_instruction.fund_recipient.to_bytes(),
         &gas_fee_buf,
@@ -238,8 +238,8 @@ pub fn revert_universal_tx_token(
     )?;
 
     emit!(crate::state::RevertUniversalTx {
-        universal_tx_id,
         sub_tx_id,
+        universal_tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: ctx.accounts.token_mint.key(),
         amount,
