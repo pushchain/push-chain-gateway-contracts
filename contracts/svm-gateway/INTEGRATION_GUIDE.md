@@ -281,7 +281,7 @@ recipient_pubkey (32 bytes)
 gas_fee (u64 BE)
 ```
 
-**IMPORTANT**: All fields listed above (including `universal_tx_id`, `sub_tx_id`, `push_account`) **must** be included in the `additional` array when calling `signTssMessage()`. The helper function does **not** auto-inject these fields.
+**IMPORTANT**: All fields listed above (including `sub_tx_id`, `universal_tx_id`, `push_account`) **must** be included in the `additional` array when calling `signTssMessage()`. The helper function does **not** auto-inject these fields.
 
 ### 3.3 Accounts and Instruction Data Buffers (Execute Only)
 
@@ -698,7 +698,7 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
 1. After transaction confirmation, listen for Solana events:
    - **Normal execute/withdraw:** `UniversalTxFinalized` — field order: `sub_tx_id`, `universal_tx_id`, `push_account`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
    - **CEA self-withdraw (target == gateway):** `UniversalTx` with `from_cea: true` — emitted by `send_universal_tx_to_uea`, NO `UniversalTxFinalized` event
-   - **Revert:** `RevertUniversalTx`
+   - **Revert:** `RevertUniversalTx` — field order: `sub_tx_id`, `universal_tx_id`, `fund_recipient`, `token`, `amount`, `revert_instruction`
 2. Verify event fields match your transaction
 3. Mark transaction as completed
 
@@ -848,9 +848,9 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
    - instruction_id = 3 (SOL) or 4 (SPL)
    - Call `signTssMessage()` with:
      - `additional`:
-       - SOL: `[universal_tx_id, sub_tx_id, recipient_pubkey, gas_fee_buf]`
-       - SPL: `[universal_tx_id, sub_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
-   - **Note**: `signTssMessage()` does **not** auto-include `universal_tx_id` / `sub_tx_id`. Include them in `additional` as specified.
+       - SOL: `[sub_tx_id, universal_tx_id, recipient_pubkey, gas_fee_buf]`
+       - SPL: `[sub_tx_id, universal_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
+   - **Note**: `signTssMessage()` does **not** auto-include `sub_tx_id` / `universal_tx_id`. Include them in `additional` as specified.
 3. **Sign and submit**: 
    - `signTssMessage()` returns signature, recovery_id, message_hash
    - See account structs: `RevertUniversalTx` or `RevertUniversalTxToken` in `revert.rs`

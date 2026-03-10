@@ -78,12 +78,7 @@ pub fn revert_universal_tx(
     let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    let additional: [&[u8]; 4] = [
-        &universal_tx_id[..],
-        &sub_tx_id[..],
-        &recipient_bytes[..],
-        &gas_fee_buf,
-    ];
+    let additional: [&[u8]; 4] = [&sub_tx_id[..], &universal_tx_id[..], &recipient_bytes[..], &gas_fee_buf];
     validate_message(
         &mut ctx.accounts.tss_pda,
         instruction_id,
@@ -110,8 +105,8 @@ pub fn revert_universal_tx(
     )?;
 
     emit!(crate::state::RevertUniversalTx {
-        universal_tx_id,
         sub_tx_id,
+        universal_tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: Pubkey::default(),
         amount,
@@ -220,8 +215,8 @@ pub fn revert_universal_tx_token(
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
     let additional: [&[u8]; 5] = [
-        &universal_tx_id[..],
         &sub_tx_id[..],
+        &universal_tx_id[..],
         &mint_bytes[..],
         &recipient_bytes[..],
         &gas_fee_buf,
@@ -263,8 +258,8 @@ pub fn revert_universal_tx_token(
     token::transfer(cpi_ctx, amount)?;
 
     emit!(crate::state::RevertUniversalTx {
-        universal_tx_id,
         sub_tx_id,
+        universal_tx_id,
         fund_recipient: revert_instruction.fund_recipient,
         token: ctx.accounts.token_mint.key(),
         amount,

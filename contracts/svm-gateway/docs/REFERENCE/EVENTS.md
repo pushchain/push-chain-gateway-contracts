@@ -57,8 +57,8 @@ pub struct UniversalTxFinalized {
 ```rust
 #[event]
 pub struct RevertUniversalTx {
-    pub universal_tx_id: [u8; 32],     // Cross-chain ID
     pub sub_tx_id: [u8; 32],               // Transaction ID
+    pub universal_tx_id: [u8; 32],     // Cross-chain ID
     pub fund_recipient: Pubkey,        // Who received reverted funds
     pub token: Pubkey,                 // Token (Pubkey::default() = SOL)
     pub amount: u64,                   // Reverted amount

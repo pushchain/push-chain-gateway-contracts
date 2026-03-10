@@ -30,7 +30,9 @@
     "test:admin": "TEST_FILE=tests/admin.test.ts anchor test",
     "test:rate-limit": "TEST_FILE=tests/rate-limit.test.ts anchor test",
     "test:universal-tx": "TEST_FILE=tests/universal-tx.test.ts anchor test",
-    "devnet:test": "ts-node app/gateway-test.ts"
+    "devnet:test": "ts-node app/gateway-test.ts",
+    "decode:outbound": "node app/decode-outbound-tx.js",
+    "decode:inbound": "node app/decode-tx.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

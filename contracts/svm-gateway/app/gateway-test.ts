@@ -2908,7 +2908,7 @@ async function run() {
         // Generate universal_tx_id for revert
         const universalTxIdRevert = generateUniversalTxId();
 
-        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + amount + universal_tx_id + sub_tx_id + recipient + gas_fee
+        // Build message: PUSH_CHAIN_SVM + instruction_id + chain_id + amount + sub_tx_id + universal_tx_id + recipient + gas_fee
         // No push_account for revert functions
         const PREFIX = Buffer.from("PUSH_CHAIN_SVM");
         const instructionIdBE = Buffer.from([instructionId]);
@@ -2925,8 +2925,8 @@ async function run() {
             instructionIdBE,
             chainIdBytes,          // UTF-8 bytes of chain_id string
             amountBE,
-            Buffer.from(universalTxIdRevert), // universal_tx_id (32 bytes) - MUST be first in additional_data
-            Buffer.from(txIdRevert), // sub_tx_id (32 bytes)
+            Buffer.from(txIdRevert), // sub_tx_id (32 bytes) - MUST be first in additional_data
+            Buffer.from(universalTxIdRevert), // universal_tx_id (32 bytes)
             recipientBytesBE,        // recipient (32 bytes)
             gasFeeBE,               // gas_fee (8 bytes, u64 BE)
         ]);

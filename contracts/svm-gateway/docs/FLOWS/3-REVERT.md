@@ -36,8 +36,8 @@ message = PREFIX
         || instruction_id (1 byte = 3)
         || chain_id (string bytes)
         || amount (8 bytes BE)
-        || universal_tx_id[32]
         || sub_tx_id[32]
+        || universal_tx_id[32]
         || recipient_pubkey[32]
         || gas_fee_be[8]
 
@@ -50,8 +50,8 @@ message = PREFIX
         || instruction_id (1 byte = 4)
         || chain_id (string bytes)
         || amount (8 bytes BE)
-        || universal_tx_id[32]
         || sub_tx_id[32]
+        || universal_tx_id[32]
         || mint_pubkey[32]
         || recipient_pubkey[32]
         || gas_fee_be[8]
@@ -95,8 +95,8 @@ hash = keccak256(message)
 ```rust
 #[event]
 pub struct RevertUniversalTx {
-    pub universal_tx_id: [u8; 32],
     pub sub_tx_id: [u8; 32],
+    pub universal_tx_id: [u8; 32],
     pub fund_recipient: Pubkey,
     pub token: Pubkey,              // Pubkey::default() for SOL
     pub amount: u64,
