@@ -386,7 +386,7 @@ contract UniversalGatewayV0 is
         if (!ICEAFactory(ceaFactory).isCEA(msg.sender)) revert Errors.Unauthorized();
 
         // Resolve the UEA mapped to this CEA and enforce anti-spoof
-        address mappedUEA = ICEAFactory(ceaFactory).getUEAForCEA(msg.sender);
+        address mappedUEA = ICEAFactory(ceaFactory).getPushAccountForCEA(msg.sender);
         if (req.recipient != mappedUEA) revert Errors.InvalidInput();
 
         uint256 nativeValue = msg.value;

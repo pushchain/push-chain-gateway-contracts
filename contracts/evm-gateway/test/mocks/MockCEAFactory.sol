@@ -132,7 +132,7 @@ contract MockCEAFactory is ICEAFactory {
     }
 
     /// @inheritdoc ICEAFactory
-    function getUEAForCEA(address _cea) external view override returns (address uea) {
+    function getPushAccountForCEA(address _cea) external view override returns (address pushAccount) {
         return CEA_to_UEA[_cea];
     }
 

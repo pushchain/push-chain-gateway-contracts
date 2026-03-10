@@ -147,7 +147,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     // =====================================================
 
     function test_RevertWhen_MappedUEAIsZero() public {
-        // Deploy a second factory that returns address(0) for getUEAForCEA
+        // Deploy a second factory that returns address(0) for getPushAccountForCEA
         MockCEAFactory badFactory = new MockCEAFactory();
         badFactory.setVault(address(this));
         // Deploy a CEA but then manipulate — use a fresh address not in mapping

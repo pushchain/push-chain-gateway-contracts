@@ -39,9 +39,9 @@ interface ICEAFactory {
     function isCEA(address _cea) external view returns (bool);
 
     /**
-     * @notice Returns the UEA on Push Chain that maps to the given CEA.
-     * @param _cea  CEA address on this chain.
-     * @return uea  Mapped UEA address (address(0) if no mapping exists).
+     * @notice Returns the push account (UEA) on Push Chain that maps to the given CEA.
+     * @param _cea         CEA address on this chain.
+     * @return pushAccount Mapped push account address (address(0) if no mapping exists).
      */
-    function getUEAForCEA(address _cea) external view returns (address uea);
+    function getPushAccountForCEA(address _cea) external view returns (address pushAccount);
 }
