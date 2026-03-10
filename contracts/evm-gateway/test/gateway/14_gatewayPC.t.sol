@@ -428,7 +428,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE, // protocolFee
             revertRecipient, // revertRecipient
             TX_TYPE.FUNDS, // txType
-            PC_FEE // gasPrice
+            DEFAULT_GAS_PRICE // gasPrice
         );
 
         vm.prank(user1);
@@ -670,7 +670,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE, // protocolFee
             revertRecipient, // revertRecipient
             TX_TYPE.FUNDS_AND_PAYLOAD, // txType
-            PC_FEE // gasPrice
+            DEFAULT_GAS_PRICE // gasPrice
         );
 
         vm.prank(user1);
@@ -1385,7 +1385,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE, // protocolFee
             revertRecipient, // revertRecipient
             TX_TYPE.FUNDS, // txType
-            PC_FEE // gasPrice
+            DEFAULT_GAS_PRICE // gasPrice
         );
 
         vm.prank(user1);
@@ -1428,7 +1428,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE, // protocolFee
             revertRecipient, // revertRecipient
             TX_TYPE.FUNDS_AND_PAYLOAD, // txType
-            PC_FEE // gasPrice
+            DEFAULT_GAS_PRICE // gasPrice
         );
 
         vm.prank(user1);
@@ -1594,7 +1594,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE,
             revertRecipient,
             TX_TYPE.FUNDS_AND_PAYLOAD,
-            PC_FEE
+            DEFAULT_GAS_PRICE
         );
 
         vm.prank(user1);
@@ -1720,7 +1720,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE,
             revertRecipient,
             TX_TYPE.FUNDS, // Verify this is FUNDS
-            PC_FEE // gasPrice
+            DEFAULT_GAS_PRICE // gasPrice
         );
 
         vm.prank(user1);
@@ -1787,7 +1787,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE,
             revertRecipient,
             TX_TYPE.FUNDS_AND_PAYLOAD, // Verify this is FUNDS_AND_PAYLOAD
-            PC_FEE // gasPrice
+            DEFAULT_GAS_PRICE // gasPrice
         );
 
         vm.prank(user1);
@@ -2051,7 +2051,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE,
             revertRecipient,
             TX_TYPE.FUNDS,
-            PC_FEE
+            DEFAULT_GAS_PRICE
         );
 
         vm.prank(user1);
@@ -2098,7 +2098,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE,
             revertRecipient,
             TX_TYPE.FUNDS,
-            PC_FEE
+            DEFAULT_GAS_PRICE
         );
 
         vm.prank(user1);
@@ -2140,7 +2140,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE,
             revertRecipient,
             TX_TYPE.FUNDS,
-            PC_FEE
+            DEFAULT_GAS_PRICE
         );
 
         vm.prank(user1);
@@ -2177,7 +2177,7 @@ contract UniversalGatewayPCTest is Test {
             DEFAULT_PROTOCOL_FEE,
             revertRecipient,
             TX_TYPE.FUNDS,
-            PC_FEE
+            DEFAULT_GAS_PRICE
         );
 
         vm.prank(user1);

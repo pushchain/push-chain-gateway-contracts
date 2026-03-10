@@ -168,7 +168,7 @@ contract MockPRC20 is IPRC20 {
     function withdrawGasFeeWithGasLimit(uint256 gasLimit)
         external
         view
-        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace)
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, uint256 gasPrice, string memory chainNamespace)
     {
         return IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(address(this), gasLimit);
     }

@@ -9,18 +9,20 @@ interface IUniversalCore {
     function BASE_GAS_LIMIT() external view returns (uint256 baseGasLimit);
 
     /**
-     * @notice Get gas fee and chain metadata for an outbound transaction with a custom gas limit.
-     * @param _prc20 PRC20 address (used to resolve chain namespace)
-     * @param gasLimit Gas limit
+     * @notice Get gas fee for a PRC20 token, split into gasFee and protocolFee.
+     * @dev    When gasLimit is 0, falls back to BASE_GAS_LIMIT.
+     * @param _prc20 PRC20 address
+     * @param gasLimit Gas limit (0 = use BASE_GAS_LIMIT)
      * @return gasToken Gas token address
-     * @return gasFee Gas cost only (gasPrice * gasLimit), excludes protocol fee
-     * @return protocolFee Flat protocol fee in gas token units
-     * @return chainNamespace Chain namespace string for the target chain
+     * @return gasFee Gas fee (gasPrice * effective gas limit)
+     * @return protocolFee Protocol fee from PRC20
+     * @return gasPrice Gas price on the external chain
+     * @return chainNamespace Source chain namespace
      */
     function getOutboundTxGasAndFees(address _prc20, uint256 gasLimit)
         external
         view
-        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace);
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, uint256 gasPrice, string memory chainNamespace);
 
     function swapAndBurnGas(
         address gasToken,

@@ -92,8 +92,14 @@ contract UniversalGatewayPC is
 
         TX_TYPE txType = _fetchTxType(req);
 
-        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee, string memory chainNamespace) =
-            _fetchOutboundTxInfo(req.token, req.gasLimit);
+        (
+            address gasToken,
+            uint256 gasFee,
+            uint256 gasLimitUsed,
+            uint256 protocolFee,
+            uint256 gasPrice,
+            string memory chainNamespace
+        ) = _fetchOutboundTxInfo(req.token, req.gasLimit);
 
         if (req.amount > 0) {
             _burnPRC20(msg.sender, req.token, req.amount);
@@ -122,7 +128,7 @@ contract UniversalGatewayPC is
             protocolFee,
             req.revertRecipient,
             txType,
-            msg.value
+            gasPrice
         );
     }
 
@@ -163,6 +169,7 @@ contract UniversalGatewayPC is
      * @return gasFee       Gas cost in gas token units (excludes protocol fee).
      * @return gasLimitUsed Gas limit actually used for the quote.
      * @return protocolFee  Flat protocol fee in gas token units.
+     * @return gasPrice     Gas price on the external chain (wei per gas unit).
      * @return chainNamespace Chain namespace string for the target chain.
      */
     function _fetchOutboundTxInfo(address token, uint256 gasLimit)
@@ -173,12 +180,13 @@ contract UniversalGatewayPC is
             uint256 gasFee,
             uint256 gasLimitUsed,
             uint256 protocolFee,
+            uint256 gasPrice,
             string memory chainNamespace
         )
     {
         gasLimitUsed = gasLimit == 0 ? IUniversalCore(UNIVERSAL_CORE).BASE_GAS_LIMIT() : gasLimit;
 
-        (gasToken, gasFee, protocolFee, chainNamespace) =
+        (gasToken, gasFee, protocolFee, gasPrice, chainNamespace) =
             IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(token, gasLimitUsed);
 
         if (gasToken == address(0) || gasFee + protocolFee == 0) {

@@ -254,17 +254,17 @@ contract MockUniversalCoreReal is IUniversalCore {
     function getOutboundTxGasAndFees(address _prc20, uint256 gasLimit)
         public
         view
-        returns (address gasToken, uint256 gasFee, uint256 protocolFee, string memory chainNamespace)
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, uint256 gasPrice, string memory chainNamespace)
     {
         chainNamespace = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
         gasToken = gasTokenPRC20ByChainNamespace[chainNamespace];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
 
-        uint256 price = gasPriceByChainNamespace[chainNamespace];
-        require(price != 0, "MockUniversalCore: zero gas price");
+        gasPrice = gasPriceByChainNamespace[chainNamespace];
+        require(gasPrice != 0, "MockUniversalCore: zero gas price");
 
-        gasFee = price * gasLimit;
+        gasFee = gasPrice * gasLimit;
         protocolFee = IPRC20(_prc20).PC_PROTOCOL_FEE();
     }
 
