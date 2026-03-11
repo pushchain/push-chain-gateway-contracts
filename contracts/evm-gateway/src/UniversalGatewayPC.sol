@@ -44,16 +44,8 @@ contract UniversalGatewayPC is
     /// @param pauser           Address of the pauser.
     /// @param universalCore    Address of the UniversalCore.
     /// @param vaultPC          Address of the VaultPC.
-    function initialize(
-        address admin,
-        address pauser,
-        address universalCore,
-        address vaultPC
-    ) external initializer {
-        if (
-            admin == address(0) || pauser == address(0)
-                || universalCore == address(0) || vaultPC == address(0)
-        ) {
+    function initialize(address admin, address pauser, address universalCore, address vaultPC) external initializer {
+        if (admin == address(0) || pauser == address(0) || universalCore == address(0) || vaultPC == address(0)) {
             revert Errors.ZeroAddress();
         }
 
@@ -78,11 +70,7 @@ contract UniversalGatewayPC is
 
     /// @notice                Sets the VaultPC address.
     /// @param vaultPC         Address of the new VaultPC.
-    function setVaultPC(address vaultPC)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-    {
+    function setVaultPC(address vaultPC) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
         if (vaultPC == address(0)) revert Errors.ZeroAddress();
         address oldVaultPC = address(VAULT_PC);
         VAULT_PC = IVaultPC(vaultPC);
@@ -111,7 +99,7 @@ contract UniversalGatewayPC is
             uint256 protocolFee,
             uint256 gasPrice,
             string memory chainNamespace
-        ) = _fetchOutboundTxInfo(req.token, req.gasLimit);
+        ) = _fetchOutboundTxGasAndFees(req.token, req.gasLimit);
 
         if (req.amount > 0) {
             _burnPRC20(msg.sender, req.token, req.amount);
@@ -124,8 +112,7 @@ contract UniversalGatewayPC is
 
         bytes32 subTxId = keccak256(
             abi.encode(
-                msg.sender, req.recipient, req.token, req.amount,
-                keccak256(req.payload), chainNamespace, currentNonce
+                msg.sender, req.recipient, req.token, req.amount, keccak256(req.payload), chainNamespace, currentNonce
             )
         );
 
@@ -158,11 +145,7 @@ contract UniversalGatewayPC is
     ///                         - amount = 0, no payload  → reverts (empty tx)
     /// @param req              The outbound transaction request.
     /// @return inferred        The inferred TX_TYPE.
-    function _fetchTxType(UniversalOutboundTxRequest calldata req)
-        private
-        pure
-        returns (TX_TYPE inferred)
-    {
+    function _fetchTxType(UniversalOutboundTxRequest calldata req) private pure returns (TX_TYPE inferred) {
         bool hasPayload = req.payload.length > 0;
         bool hasFunds = req.amount > 0;
 
@@ -176,10 +159,7 @@ contract UniversalGatewayPC is
     /// @dev                    Validates token and revertRecipient are non-zero.
     /// @param token            Token address to validate.
     /// @param revertRecipient  Address to receive funds in case of revert.
-    function _validateParams(
-        address token,
-        address revertRecipient
-    ) internal pure {
+    function _validateParams(address token, address revertRecipient) internal pure {
         if (token == address(0)) revert Errors.ZeroAddress();
         if (revertRecipient == address(0)) {
             revert Errors.InvalidRecipient();
@@ -196,10 +176,7 @@ contract UniversalGatewayPC is
     /// @return protocolFee     Flat protocol fee in gas token units.
     /// @return gasPrice        Gas price on the external chain (wei per gas unit).
     /// @return chainNamespace  Chain namespace string for the target chain.
-    function _fetchOutboundTxInfo(
-        address token,
-        uint256 gasLimit
-    )
+    function _fetchOutboundTxGasAndFees(address token, uint256 gasLimit)
         internal
         view
         returns (
@@ -211,14 +188,10 @@ contract UniversalGatewayPC is
             string memory chainNamespace
         )
     {
-        gasLimitUsed = gasLimit == 0
-            ? IUniversalCore(UNIVERSAL_CORE).BASE_GAS_LIMIT()
-            : gasLimit;
+        gasLimitUsed = gasLimit == 0 ? IUniversalCore(UNIVERSAL_CORE).BASE_GAS_LIMIT() : gasLimit;
 
         (gasToken, gasFee, protocolFee, gasPrice, chainNamespace) =
-            IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(
-                token, gasLimitUsed
-            );
+            IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(token, gasLimitUsed);
 
         if (gasToken == address(0) || gasFee + protocolFee == 0) {
             revert Errors.InvalidData();
@@ -231,12 +204,7 @@ contract UniversalGatewayPC is
     /// @param pcAmount         Native PC amount (msg.value) to swap.
     /// @param gasFee           Gas cost portion to burn (in gas token units).
     /// @param protocolFee      Protocol fee portion to send to VaultPC (in gas token units).
-    function _swapAndCollectFees(
-        address gasToken,
-        uint256 pcAmount,
-        uint256 gasFee,
-        uint256 protocolFee
-    ) internal {
+    function _swapAndCollectFees(address gasToken, uint256 pcAmount, uint256 gasFee, uint256 protocolFee) internal {
         if (pcAmount == 0) revert Errors.ZeroAmount();
         address vault = address(VAULT_PC);
         if (vault == address(0)) revert Errors.ZeroAddress();

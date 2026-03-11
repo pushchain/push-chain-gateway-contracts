@@ -38,11 +38,11 @@ interface IUniversalGateway {
         address indexed recipient,
         address token,
         uint256 amount,
-        bytes   payload,
+        bytes payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes   signatureData,
-        bool    fromCEA
+        bytes signatureData,
+        bool fromCEA
     );
 
     /// @notice                  Universal tx execution event on external chains.
@@ -60,7 +60,7 @@ interface IUniversalGateway {
         address target,
         address token,
         uint256 amount,
-        bytes   data
+        bytes data
     );
 
     /// @notice                  Vault updated event
@@ -202,7 +202,7 @@ interface IUniversalGateway {
     function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining);
 
     /// @notice                  Flat protocol fee in native token (wei). 0 = disabled.
-    function PROTOCOL_FEE() external view returns (uint256);
+    function INBOUND_FEE() external view returns (uint256);
 
     /// @notice                  Running total of protocol fees collected (native, in wei).
     function totalProtocolFeesCollected() external view returns (uint256);

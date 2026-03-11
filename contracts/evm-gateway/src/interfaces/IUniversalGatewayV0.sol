@@ -184,7 +184,7 @@ interface IUniversalGatewayV0 {
     function isSupportedToken(address token) external view returns (bool);
 
     ///@notice             Flat protocol fee in native token (wei). 0 = disabled.
-    function PROTOCOL_FEE() external view returns (uint256);
+    function INBOUND_FEE() external view returns (uint256);
 
     ///@notice             Running total of protocol fees collected (native, in wei).
     function totalProtocolFeesCollected() external view returns (uint256);
