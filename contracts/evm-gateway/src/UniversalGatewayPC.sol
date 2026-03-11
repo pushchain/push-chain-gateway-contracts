@@ -3,15 +3,12 @@ pragma solidity 0.8.26;
 
 /**
  * @title   UniversalGatewayPC
- * @notice  Universal Gateway implementation for Push Chain
+ * @notice  Outbound gateway on Push Chain for bridging funds and payloads to external EVM chains.
  *
- * @dev
- *         - Strictly to be deployed on Push Chain.
- *         - Allows users to withdraw PRC20 (wrapped) tokens back to the origin chain.
- *         - Allows users to withdraw PRC20 and attach a payload for arbitrary call execution on the origin chain.
- *         - This contract does NOT handle deposits or inbound transfers.
- *         - This contract does NOT custody user assets; PRC20 are burned at request time.
- *         - The Gateway includes a withdrawal fees for withdrwal from Push Chain to origin chain.
+ * @dev     Deployed on Push Chain only. Routes three outbound TX_TYPEs: FUNDS, FUNDS_AND_PAYLOAD,
+ *          and GAS_AND_PAYLOAD. PRC20 tokens are burned at request time; gas fees paid in native PC
+ *          are swapped via UniversalCore — the gas-cost portion is burned (freeing backing tokens
+ *          for TSS relayers) and the protocol-fee portion is sent to VaultPC as revenue.
  */
 import { Errors } from "./libraries/Errors.sol";
 import { IPRC20 } from "./interfaces/IPRC20.sol";
@@ -32,23 +29,20 @@ contract UniversalGatewayPC is
     PausableUpgradeable,
     IUniversalGatewayPC
 {
-    /// @notice Pauser role for pausing the contract.
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    /// @notice UniversalCore on Push Chain (provides gas coin/prices + UEM address).
     address public UNIVERSAL_CORE;
-
-    /// @notice VaultPC on Push Chain (custody vault for fees collected from outbound flows).
     IVaultPC public VAULT_PC;
-
-    /// @notice Nonce for outbound transactions.
     uint256 public nonce;
 
-    /// @notice                 Initializes the contract.
-    /// @param admin            address of the admin.
-    /// @param pauser           address of the pauser.
-    /// @param universalCore    address of the UniversalCore.
-    /// @param vaultPC          address of the VaultPC.
+    // =========================
+    //  UGPC_1: ADMIN ACTIONS
+    // =========================
+
+    /// @param admin            Address of the admin.
+    /// @param pauser           Address of the pauser.
+    /// @param universalCore    Address of the UniversalCore.
+    /// @param vaultPC          Address of the VaultPC.
     function initialize(address admin, address pauser, address universalCore, address vaultPC) external initializer {
         if (admin == address(0) || pauser == address(0) || universalCore == address(0) || vaultPC == address(0)) {
             revert Errors.ZeroAddress();
@@ -65,15 +59,6 @@ contract UniversalGatewayPC is
         VAULT_PC = IVaultPC(vaultPC);
     }
 
-    /// @notice                 Sets the VaultPC address.
-    /// @param vaultPC    address of the VaultPC.
-    function setVaultPC(address vaultPC) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
-        if (vaultPC == address(0)) revert Errors.ZeroAddress();
-        address oldVaultPC = address(VAULT_PC);
-        VAULT_PC = IVaultPC(vaultPC);
-        emit VaultPCUpdated(oldVaultPC, vaultPC);
-    }
-
     function pause() external onlyRole(PAUSER_ROLE) whenNotPaused {
         _pause();
     }
@@ -82,23 +67,45 @@ contract UniversalGatewayPC is
         _unpause();
     }
 
-    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external whenNotPaused nonReentrant {
-        _validateCommon(req.token, req.revertRecipient);
+    /// @notice Sets the VaultPC address.
+    /// @param vaultPC Address of the new VaultPC.
+    function setVaultPC(address vaultPC) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        if (vaultPC == address(0)) revert Errors.ZeroAddress();
+        address oldVaultPC = address(VAULT_PC);
+        VAULT_PC = IVaultPC(vaultPC);
+        emit VaultPCUpdated(oldVaultPC, vaultPC);
+    }
 
-        // Determine TX_TYPE based on user input (rejects empty transactions internally)
+    // =========================
+    //  UGPC_2: OUTBOUND TX
+    // =========================
+
+    /// @notice Sends an outbound universal transaction from Push Chain to an external chain.
+    /// @param req The outbound transaction request struct.
+    function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req)
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+    {
+        _validateParams(req.token, req.revertRecipient);
+
         TX_TYPE txType = _fetchTxType(req);
 
-        // Compute fees + collect from caller into the UEM fee sink
-        (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee) =
-            _calculateGasFeesWithLimit(req.token, req.gasLimit);
-        _moveFees(msg.sender, gasToken, gasFee);
+        (
+            address gasToken,
+            uint256 gasFee,
+            uint256 gasLimitUsed,
+            uint256 protocolFee,
+            uint256 gasPrice,
+            string memory chainNamespace
+        ) = _fetchOutboundTxInfo(req.token, req.gasLimit);
 
-        // Only burn tokens if amount > 0 (supports payload-only transactions where CEA already has funds)
         if (req.amount > 0) {
             _burnPRC20(msg.sender, req.token, req.amount);
         }
 
-        string memory chainNamespace = IPRC20(req.token).SOURCE_CHAIN_NAMESPACE();
+        _swapAndCollectFees(gasToken, msg.value, gasFee, protocolFee);
 
         uint256 _nonce = nonce;
         nonce = _nonce + 1;
@@ -120,97 +127,94 @@ contract UniversalGatewayPC is
             req.payload,
             protocolFee,
             req.revertRecipient,
-            txType
+            txType,
+            gasPrice
         );
     }
 
-    // ========= Helpers =========
+    // =========================
+    //  UGPC_3: INTERNAL HELPERS
+    // =========================
 
     /**
-     * @notice                  Infers the TX_TYPE for an outbound universal request from Push Chain.
-     * @dev                     Determines TX_TYPE based on the presence of payload and amount:
-     *                          - If NO payload AND funds > 0: TX_TYPE.FUNDS (funds-only withdrawal)
-     *                          - If payload AND amount > 0: TX_TYPE.FUNDS_AND_PAYLOAD (funds + execution)
-     *                          - If payload AND amount == 0: TX_TYPE.GAS_AND_PAYLOAD (execution-only)
-     *                          - If NO payload AND NO funds: Reverts with InvalidInput (empty transaction)
-     * @param req               UniversalOutboundTxRequest struct
-     * @return inferred         The inferred TX_TYPE for routing
+     * @notice Infers TX_TYPE from the outbound request.
+     * @dev    - amount > 0, no payload  → FUNDS
+     *         - amount > 0, payload     → FUNDS_AND_PAYLOAD
+     *         - amount = 0, payload     → GAS_AND_PAYLOAD
+     *         - amount = 0, no payload  → reverts (empty tx)
      */
     function _fetchTxType(UniversalOutboundTxRequest calldata req) private pure returns (TX_TYPE inferred) {
         bool hasPayload = req.payload.length > 0;
         bool hasFunds = req.amount > 0;
 
-        // Case 1: No payload + Funds → FUNDS (funds-only withdrawal)
-        if (!hasPayload && hasFunds) {
-            return TX_TYPE.FUNDS;
-        }
+        if (!hasPayload && hasFunds) return TX_TYPE.FUNDS;
+        if (hasPayload && hasFunds) return TX_TYPE.FUNDS_AND_PAYLOAD;
+        if (hasPayload && !hasFunds) return TX_TYPE.GAS_AND_PAYLOAD;
 
-        // Case 2: Payload + Funds → FUNDS_AND_PAYLOAD (funds + execution)
-        if (hasPayload && hasFunds) {
-            return TX_TYPE.FUNDS_AND_PAYLOAD;
-        }
-
-        // Case 3: Payload only (no funds) → GAS_AND_PAYLOAD (execution-only)
-        if (hasPayload && !hasFunds) {
-            return TX_TYPE.GAS_AND_PAYLOAD;
-        }
-
-        // Case 4: No payload + No funds → Invalid (empty transaction)
         revert Errors.InvalidInput();
     }
 
-    /// @notice                 Validates the common parameters.
-    /// @dev                    Validates token and revertRecipient addresses.
-    ///                         Amount validation is handled in sendUniversalTxOutbound() to support payload-only transactions.
-    /// @param token            PRC20 token address on Push Chain.
-    /// @param revertRecipient  address to receive funds in case of revert.
-    function _validateCommon(address token, address revertRecipient) internal pure {
+    /// @dev Validates token and revertRecipient are non-zero.
+    function _validateParams(address token, address revertRecipient) internal pure {
         if (token == address(0)) revert Errors.ZeroAddress();
         if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
     }
 
     /**
-     * @dev                 Use UniversalCore's withdrawGasFeeWithGasLimit to compute fee (gas coin + amount).
-     *                          If gasLimit = 0, pull the default BASE_GAS_LIMIT from UniversalCore.
-     * @return gasToken     PRC20 address to be used for fee payment.
-     * @return gasFee       amount of gasToken to collect from the user (includes protocol fee).
-     * @return gasLimitUsed gas limit actually used for the quote.
-     * @return protocolFee  the flat protocol fee component (as exposed by PRC20).
+     * @dev    Fetch gas fee quote and chain metadata from UniversalCore.
+     *         If gasLimit = 0, uses BASE_GAS_LIMIT from UniversalCore.
+     * @param token         PRC20 token address (used to resolve chain).
+     * @param gasLimit      Caller-requested gas limit (0 = default).
+     * @return gasToken     Gas token PRC20 address for the target chain.
+     * @return gasFee       Gas cost in gas token units (excludes protocol fee).
+     * @return gasLimitUsed Gas limit actually used for the quote.
+     * @return protocolFee  Flat protocol fee in gas token units.
+     * @return gasPrice     Gas price on the external chain (wei per gas unit).
+     * @return chainNamespace Chain namespace string for the target chain.
      */
-    function _calculateGasFeesWithLimit(address token, uint256 gasLimit)
+    function _fetchOutboundTxInfo(address token, uint256 gasLimit)
         internal
         view
-        returns (address gasToken, uint256 gasFee, uint256 gasLimitUsed, uint256 protocolFee)
+        returns (
+            address gasToken,
+            uint256 gasFee,
+            uint256 gasLimitUsed,
+            uint256 protocolFee,
+            uint256 gasPrice,
+            string memory chainNamespace
+        )
     {
-        if (gasLimit == 0) {
-            gasLimitUsed = IUniversalCore(UNIVERSAL_CORE).BASE_GAS_LIMIT();
-        } else {
-            gasLimitUsed = gasLimit;
+        gasLimitUsed = gasLimit == 0 ? IUniversalCore(UNIVERSAL_CORE).BASE_GAS_LIMIT() : gasLimit;
+
+        (gasToken, gasFee, protocolFee, gasPrice, chainNamespace) =
+            IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(token, gasLimitUsed);
+
+        if (gasToken == address(0) || gasFee + protocolFee == 0) {
+            revert Errors.InvalidData();
         }
-
-        (gasToken, gasFee) = IUniversalCore(UNIVERSAL_CORE).withdrawGasFeeWithGasLimit(token, gasLimitUsed);
-        if (gasToken == address(0) || gasFee == 0) revert Errors.InvalidData();
-
-        protocolFee = IPRC20(token).PC_PROTOCOL_FEE();
     }
 
     /**
-     * @dev     Pull fee from user into the VaultPC.
-     *          Caller must have approved `gasToken` for at least `gasFee`.
+     * @dev    Swap native PC → gas token PRC20 via UniversalCore.
+     *         Burns gasFee, sends protocolFee to VaultPC. Refunds unused PC to caller.
+     * @param gasToken     Gas token PRC20 address (e.g., pETH).
+     * @param pcAmount     Native PC amount (msg.value) to swap.
+     * @param gasFee       Gas cost portion to burn (in gas token units).
+     * @param protocolFee  Protocol fee portion to send to VaultPC (in gas token units).
      */
-    function _moveFees(address from, address gasToken, uint256 gasFee) internal {
-        address _vaultPC = address(VAULT_PC);
-        if (_vaultPC == address(0)) revert Errors.ZeroAddress();
+    function _swapAndCollectFees(address gasToken, uint256 pcAmount, uint256 gasFee, uint256 protocolFee) internal {
+        if (pcAmount == 0) revert Errors.ZeroAmount();
+        address vault = address(VAULT_PC);
+        if (vault == address(0)) revert Errors.ZeroAddress();
 
-        bool ok = IPRC20(gasToken).transferFrom(from, _vaultPC, gasFee);
-        if (!ok) revert Errors.GasFeeTransferFailed(gasToken, from, gasFee);
+        IUniversalCore(UNIVERSAL_CORE).swapAndBurnGas{ value: pcAmount }(
+            gasToken, vault, 0, gasFee, protocolFee, 0, msg.sender
+        );
     }
 
+    /// @dev Pulls PRC20 from `from` into this contract, then burns them.
     function _burnPRC20(address from, address token, uint256 amount) internal {
-        // Pull PRC20 into this gateway first
         IPRC20(token).transferFrom(from, address(this), amount);
-
-        // Then burn from this contract's balance
         bool ok = IPRC20(token).burn(amount);
         if (!ok) revert Errors.TokenBurnFailed(token, amount);
     }

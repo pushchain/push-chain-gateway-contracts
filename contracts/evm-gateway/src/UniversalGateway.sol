@@ -109,7 +109,7 @@ contract UniversalGateway is
     address public CEA_FACTORY;
 
     /// @notice Flat protocol fee in native token (wei). 0 = disabled.
-    uint256 public PROTOCOL_FEE;
+    uint256 public PROTOCOL_FEE; // INBOUND_FEE
 
     /// @notice Running total of protocol fees collected (native, in wei).
     uint256 public totalProtocolFeesCollected;
@@ -366,7 +366,7 @@ contract UniversalGateway is
         if (CEA_FACTORY == address(0)) revert Errors.InvalidInput();
         if (!_isCallerCEA()) revert Errors.InvalidInput();
 
-        address mappedUEA = ICEAFactory(CEA_FACTORY).getUEAForCEA(_msgSender());
+        address mappedUEA = ICEAFactory(CEA_FACTORY).getPushAccountForCEA(_msgSender());
         if (mappedUEA == address(0)) revert Errors.InvalidInput();
 
         if (req.recipient != mappedUEA) revert Errors.InvalidRecipient();
@@ -974,10 +974,7 @@ contract UniversalGateway is
     /// @param nativeValue      Raw native value received with the transaction
     /// @return adjustedNative  nativeValue minus the collected fee
     /// @return feeCollected    Amount forwarded to TSS as the protocol fee
-    function _collectProtocolFee(uint256 nativeValue)
-        private
-        returns (uint256 adjustedNative, uint256 feeCollected)
-    {
+    function _collectProtocolFee(uint256 nativeValue) private returns (uint256 adjustedNative, uint256 feeCollected) {
         uint256 fee = PROTOCOL_FEE;
         if (fee == 0) return (nativeValue, 0);
 

@@ -12,8 +12,8 @@ external EVM chain (Ethereum, Base, Arbitrum, etc.).
 
 | Chain          | Contract             | Role                                                                |
 | -------------- | -------------------- | ------------------------------------------------------------------- |
-| Push Chain     | `UniversalGatewayPC` | Outbound entry point; infers TX_TYPE; burns PRC20; collects fees    |
-| Push Chain     | `VaultPC`            | Receives gas fees from outbound requests                            |
+| Push Chain     | `UniversalGatewayPC` | Outbound entry point; infers TX_TYPE; burns PRC20; swaps PC for gas fees |
+| Push Chain     | `VaultPC`            | Receives protocol fee portion of gas fees (revenue)                      |
 | External Chain | `Vault`              | TSS-controlled custody; deploys/funds CEA; calls executeUniversalTx |
 | External Chain | `CEAFactory`         | Deterministic CREATE2 deployer for CEA contracts                    |
 | External Chain | `CEA`                | Per-UEA smart contract wallet; executes multicall payloads          |
@@ -33,11 +33,14 @@ external EVM chain (Ethereum, Base, Arbitrum, etc.).
 PRC20 tokens are wrapped representations of external chain tokens on Push Chain.
 
 - **Outbound withdrawal**: When `amount > 0`, `UniversalGatewayPC` burns PRC20 tokens from BOB. The corresponding tokens are released from `Vault` on the external chain.
-- **Gas fee**: Always collected in PRC20 (or designated gas token) via `_moveFees → VaultPC`, regardless of whether `amount > 0`.
+- **Gas fees**: Paid in **native PC** via `msg.value`. The gateway swaps PC → gas token PRC20 via `UniversalCore.swapAndBurnGas()`:
+  - **`gasFee`** (gas cost = `gasPrice × gasLimit`) is **burned** — freeing backing tokens on the origin chain for TSS relayers to spend on execution gas.
+  - **`protocolFee`** (flat fee in gas token units) is **sent to VaultPC** as protocol revenue.
+  - **Unused PC** is refunded directly to the caller.
 
 ### 1.4 TX_TYPE Reference
 
-#### Push Chain (`UniversalGatewayPC._fetchTxType`, `src/UniversalGatewayPC.sol:139-160`)
+#### Push Chain (`UniversalGatewayPC._fetchTxType`, `src/UniversalGatewayPC.sol:140-149`)
 
 | `req.payload` | `req.amount` | TX_TYPE             | PRC20 Burn | Description                                |
 | ------------- | ------------ | ------------------- | ---------- | ------------------------------------------ |
@@ -118,7 +121,7 @@ UniversalOutboundTxRequest({
 })
 ```
 
-**TX_TYPE**: `FUNDS`. Gateway collects gas fee, burns 1 PRC20-ETH, emits `UniversalTxOutbound`.
+**TX_TYPE**: `FUNDS`. Gateway swaps native PC → pETH (burns gasFee, sends protocolFee to VaultPC), burns 1 PRC20-ETH, emits `UniversalTxOutbound`.
 
 **TSS** observes the event and calls `Vault.finalizeUniversalTx{value: 1 ETH}`. Vault gets/deploys
 BOB's CEA, forwards 1 ETH to it, and calls `CEA.executeUniversalTx`.
@@ -130,13 +133,14 @@ calls[0] = Multicall({ to: recipientAddress, value: 1 ether, data: bytes("") });
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: `recipientAddress` on Ethereum receives 1 ETH. BOB's PRC20-ETH reduced by `amount + gasFee`.
+**Result**: `recipientAddress` on Ethereum receives 1 ETH. BOB's PRC20-ETH reduced by `amount` only (gas fees paid separately in native PC).
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
     participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
@@ -144,9 +148,12 @@ sequenceDiagram
     participant CEA as CEA (Ethereum)
     participant R as recipientAddress (Ethereum)
 
-    BOB->>GPC: sendUniversalTxOutbound(token=PRC20_ETH, amount=1ETH, payload="")
-    GPC->>VPC: collect gasFee from BOB
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=1ETH, payload="")
     GPC->>GPC: burn 1 PRC20-ETH from BOB
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS)
 
     TSS->>V: finalizeUniversalTx{value:1ETH}(BOB_UEA, address(0), 1ETH, data)
@@ -178,13 +185,14 @@ calls[0] = Multicall({
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: `recipientAddress` on Ethereum receives 1000 USDC.
+**Result**: `recipientAddress` on Ethereum receives 1000 USDC. Gas fees paid separately in native PC (swapped to pETH, gasFee burned, protocolFee to VaultPC).
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
     participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
@@ -193,9 +201,12 @@ sequenceDiagram
     participant USDC as USDC Token (Ethereum)
     participant R as recipientAddress (Ethereum)
 
-    BOB->>GPC: sendUniversalTxOutbound(token=PRC20_USDC, amount=1000e6, payload="")
-    GPC->>VPC: collect gasFee from BOB
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=1000e6, payload="")
     GPC->>GPC: burn 1000e6 PRC20-USDC from BOB
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS)
 
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, USDC, 1000e6, data)
@@ -228,13 +239,14 @@ calls[0] = Multicall({ to: recipientAddress, value: 0.5 ether, data: bytes("") }
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: `recipientAddress` receives 0.5 ETH. BOB's PRC20-ETH is unchanged (no burn).
+**Result**: `recipientAddress` receives 0.5 ETH. BOB's PRC20-ETH is unchanged (no burn). Gas fees paid in native PC.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
     participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
@@ -242,9 +254,12 @@ sequenceDiagram
     participant R as recipientAddress (Ethereum)
 
     Note over CEA: CEA holds 0.5 ETH (pre-existing)
-    BOB->>GPC: sendUniversalTxOutbound(amount=0, payload=multicallCalldata)
-    GPC->>VPC: collect gasFee from BOB
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=multicallCalldata)
     Note over GPC: No burn (amount == 0)
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, address(0), 0, data)
@@ -276,13 +291,14 @@ calls[0] = Multicall({
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: `recipientAddress` receives 200 USDC. CEA's USDC balance reduced. No PRC20 burned.
+**Result**: `recipientAddress` receives 200 USDC. CEA's USDC balance reduced. No PRC20 burned. Gas fees paid in native PC.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
     participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
@@ -291,9 +307,12 @@ sequenceDiagram
     participant R as recipientAddress (Ethereum)
 
     Note over CEA: CEA holds 200e6 USDC (pre-existing)
-    BOB->>GPC: sendUniversalTxOutbound(amount=0, payload=multicallCalldata)
-    GPC->>VPC: collect gasFee from BOB
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=multicallCalldata)
     Note over GPC: No burn (amount == 0)
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, address(0), 0, data)
@@ -335,20 +354,26 @@ calls[0] = Multicall({
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: Swap output tokens arrive in CEA. BOB's PRC20-ETH reduced by `1 ether + gasFee`.
+**Result**: Swap output tokens arrive in CEA. BOB's PRC20-ETH reduced by `1 ether` only (gas fees paid separately in native PC).
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
+    participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
     participant CEA as CEA (Ethereum)
     participant T as Uniswap Router (Ethereum)
 
-    BOB->>GPC: sendUniversalTxOutbound(token=PRC20_ETH, amount=1ETH, payload=swapCalldata)
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=1ETH, payload=swapCalldata)
     GPC->>GPC: burn 1 PRC20-ETH from BOB
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:1ETH}(BOB_UEA, address(0), 1ETH, data)
@@ -376,21 +401,27 @@ calls[0] = Multicall({ to: TARGET_CONTRACT, value: 0.5 ether, data: targetCallda
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: CEA ETH balance reduced by 0.5. No PRC20 burned.
+**Result**: CEA ETH balance reduced by 0.5. No PRC20 burned. Gas fees paid in native PC.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
+    participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
     participant CEA as CEA (Ethereum)
     participant T as Target Protocol (Ethereum)
 
     Note over CEA: CEA already holds 0.5 ETH
-    BOB->>GPC: sendUniversalTxOutbound(amount=0, payload=targetCalldata)
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=targetCalldata)
     Note over GPC: No burn
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, address(0), 0, data)
@@ -423,14 +454,20 @@ sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
+    participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
     participant CEA as CEA (Ethereum)
     participant T as Target Protocol (Ethereum)
 
     Note over CEA: CEA holds 0.3 ETH pre-existing
-    BOB->>GPC: sendUniversalTxOutbound(token=PRC20_ETH, amount=0.5ETH, payload=targetCalldata)
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=0.5ETH, payload=targetCalldata)
     GPC->>GPC: burn 0.5 PRC20-ETH from BOB
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:0.5ETH}(BOB_UEA, address(0), 0.5ETH, data)
@@ -456,21 +493,27 @@ calls[1] = Multicall({ to: AAVE_POOL, value: 0, data: abi.encodeCall(IAavePool.s
 bytes memory data = abi.encode(calls);
 ```
 
-**Result**: CEA holds aUSDC receipt tokens. BOB's PRC20-USDC reduced by `500e6 + gasFee`.
+**Result**: CEA holds aUSDC receipt tokens. BOB's PRC20-USDC reduced by `500e6` only (gas fees paid separately in native PC).
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
+    participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
     participant CEA as CEA (Ethereum)
     participant USDC as USDC Token
     participant AAVE as Aave Pool (Ethereum)
 
-    BOB->>GPC: sendUniversalTxOutbound(token=PRC20_USDC, amount=500e6, payload=aaveCalldata)
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=500e6, payload=aaveCalldata)
     GPC->>GPC: burn 500e6 PRC20-USDC from BOB
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, USDC, 500e6, data)
@@ -534,7 +577,8 @@ Only `FUNDS` and `FUNDS_AND_PAYLOAD` are currently active for CEA→UEA routes.
 
 The general flow for all Category 3 cases:
 ```
-BOB: sendUniversalTxOutbound(amount>0, payload=<multicallData>)  [FUNDS_AND_PAYLOAD, burns PRC20]
+BOB: sendUniversalTxOutbound{value: pcFee}(amount>0, payload=<multicallData>)
+  [FUNDS_AND_PAYLOAD, burns PRC20, swaps PC → gas token (burn gasFee, protocolFee to VaultPC)]
   → TSS: Vault.finalizeUniversalTx(BOB_UEA, ..., data=<multicallData>)
   → CEA.executeUniversalTx(data)  [Vault supplies tokens to CEA]
   → multicall: [..., sendUniversalTxFromCEA(req{recipient=BOB_UEA})]
@@ -578,13 +622,19 @@ sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
+    participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
     participant CEA as CEA (Ethereum)
     participant GW as UniversalGateway (Ethereum)
 
-    BOB->>GPC: sendUniversalTxOutbound(token=PRC20_ETH, amount=ethAmount, payload=multicallData)
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=ethAmount, payload=multicallData)
     GPC->>GPC: burn ethAmount PRC20-ETH from BOB
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:ethAmount}(BOB_UEA, address(0), ethAmount, data)
@@ -635,14 +685,20 @@ sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
+    participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
     participant CEA as CEA (Ethereum)
     participant GW as UniversalGateway (Ethereum)
     participant USDC as USDC Token
 
-    BOB->>GPC: sendUniversalTxOutbound(token=PRC20_USDC, amount=500e6, payload=multicallData)
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=500e6, payload=multicallData)
     GPC->>GPC: burn 500e6 PRC20-USDC from BOB
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, USDC, 500e6, data)
@@ -958,6 +1014,7 @@ sequenceDiagram
     autonumber
     participant BOB as BOB (UEA on Push Chain)
     participant GPC as UniversalGatewayPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
     participant VPC as VaultPC (Push Chain)
     participant TSS as TSS (off-chain relayer)
     participant V as Vault (Ethereum)
@@ -965,9 +1022,12 @@ sequenceDiagram
     participant CF as CEAFactory (Ethereum)
     participant MC as MigrationContract (Ethereum)
 
-    BOB->>GPC: sendUniversalTxOutbound(amount=0, payload=MIGRATION_SELECTOR)
-    GPC->>VPC: collect gasFee from BOB
+    BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=MIGRATION_SELECTOR)
     Note over GPC: No burn (amount == 0)
+    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    UC->>UC: swap PC → pETH, burn gasFee
+    UC->>VPC: send protocolFee (pETH)
+    UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 
     TSS->>V: finalizeUniversalTx{value:0}(BOB_UEA, address(0), 0, migrationPayload)

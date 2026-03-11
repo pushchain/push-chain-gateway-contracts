@@ -132,7 +132,7 @@ contract MockCEAFactory is ICEAFactory {
     }
 
     /// @inheritdoc ICEAFactory
-    function getUEAForCEA(address _cea) external view override returns (address uea) {
+    function getPushAccountForCEA(address _cea) external view override returns (address uea) {
         return CEA_to_UEA[_cea];
     }
 
@@ -148,26 +148,13 @@ contract MockCEAFactory is ICEAFactory {
     function _computeCEAInternal(address ueaOnPush) internal view returns (address) {
         // Use similar salt generation as real CEAFactory
         bytes32 salt = _generateSalt(ueaOnPush);
-        
+
         // In real contract, this uses Clones.predictDeterministicAddress
         // For mock, we compute a deterministic address based on salt and factory address
         // This mimics CREATE2 behavior without circular reference
         // Using a fixed bytecode hash to avoid circular reference
         bytes32 bytecodeHash = keccak256(abi.encodePacked("MOCK_CEA_PROXY"));
-        return address(
-            uint160(
-                uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            bytes1(0xff),
-                            address(this),
-                            salt,
-                            bytecodeHash
-                        )
-                    )
-                )
-            )
-        );
+        return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, bytecodeHash)))));
     }
 
     function _generateSalt(address ueaOnPush) internal pure returns (bytes32) {

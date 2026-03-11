@@ -4,12 +4,7 @@ pragma solidity 0.8.26;
 import { BaseTest } from "../BaseTest.t.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
-import {
-    TX_TYPE,
-    RevertInstructions,
-    UniversalPayload,
-    UniversalTxRequest
-} from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions, UniversalPayload, UniversalTxRequest } from "../../src/libraries/Types.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
@@ -89,11 +84,11 @@ contract SendUniversalTxViaCEATest is BaseTest {
         return abi.encode(buildDefaultPayload());
     }
 
-    function _buildViaCEARequest(
-        address token,
-        uint256 amount,
-        bytes memory payload
-    ) internal view returns (UniversalTxRequest memory) {
+    function _buildViaCEARequest(address token, uint256 amount, bytes memory payload)
+        internal
+        view
+        returns (UniversalTxRequest memory)
+    {
         return UniversalTxRequest({
             recipient: mappedUEA,
             token: token,
@@ -113,9 +108,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.store(address(gateway), bytes32(uint256(20)), bytes32(0));
         assertEq(gateway.CEA_FACTORY(), address(0));
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(address(cea));
@@ -123,9 +116,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     }
 
     function test_RevertWhen_CallerIsNotACEA() public {
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(attacker);
@@ -133,9 +124,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     }
 
     function test_RevertWhen_CallerIsEOA() public {
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         vm.expectRevert(Errors.InvalidInput.selector);
         vm.prank(user1);
@@ -147,7 +136,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     // =====================================================
 
     function test_RevertWhen_MappedUEAIsZero() public {
-        // Deploy a second factory that returns address(0) for getUEAForCEA
+        // Deploy a second factory that returns address(0) for getPushAccountForCEA
         MockCEAFactory badFactory = new MockCEAFactory();
         badFactory.setVault(address(this));
         // Deploy a CEA but then manipulate — use a fresh address not in mapping
@@ -156,9 +145,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(admin);
         gateway.setCEAFactory(address(badFactory));
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         // fakeCEA is not in the factory mapping → isCEA returns false
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -225,9 +212,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // amount=0, token=tokenA, payload=non-empty → GAS_AND_PAYLOAD
         // _sendTxWithGas called with gasAmount=0 → skips caps, just emits event
         // req.token field is ignored by _sendTxWithGas (always emits token=address(0))
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 0, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 0, _defaultPayload());
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
@@ -249,9 +234,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     function test_FUNDS_ViaCEA_ERC20_HappyPath() public {
         // amount=100, token=tokenA, payload=empty → TX_TYPE.FUNDS → now allowed via CEA
         uint256 amount = 100 ether;
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, bytes(""));
 
         uint256 vaultBefore = tokenA.balanceOf(address(this));
 
@@ -277,23 +260,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
     function test_FUNDS_ViaCEA_Native_HappyPath() public {
         // Native FUNDS: msg.value must equal req.amount exactly
         uint256 amount = 1 ether;
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), amount, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), amount, bytes(""));
 
         uint256 tssBefore = tss.balance;
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            address(cea),
-            mappedUEA,
-            address(0),
-            amount,
-            bytes(""),
-            req.revertRecipient,
-            TX_TYPE.FUNDS,
-            bytes(""),
-            true
+            address(cea), mappedUEA, address(0), amount, bytes(""), req.revertRecipient, TX_TYPE.FUNDS, bytes(""), true
         );
 
         vm.prank(address(cea));
@@ -310,9 +283,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 amount = 100 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, payload);
 
         uint256 vaultBefore = tokenA.balanceOf(address(this)); // VAULT = address(this) in BaseTest
 
@@ -333,11 +304,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         gateway.sendUniversalTxFromCEA(req);
 
         // Vault received tokens
-        assertEq(
-            tokenA.balanceOf(address(this)),
-            vaultBefore + amount,
-            "Vault should receive ERC20"
-        );
+        assertEq(tokenA.balanceOf(address(this)), vaultBefore + amount, "Vault should receive ERC20");
     }
 
     function test_ERC20_RevertWhen_TokenNotSupported() public {
@@ -350,9 +317,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(admin);
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         vm.expectRevert(Errors.NotSupported.selector);
         vm.prank(address(cea));
@@ -364,9 +329,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(address(cea));
         tokenA.approve(address(gateway), 0);
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         vm.expectRevert();
         vm.prank(address(cea));
@@ -381,9 +344,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 amount = 1 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), amount, payload);
 
         uint256 tssBefore = tss.balance;
 
@@ -414,24 +375,14 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 totalValue = fundsAmount + gasTopUp;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), fundsAmount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), fundsAmount, payload);
 
         uint256 tssBefore = tss.balance;
 
         // Expect GAS leg event first (gasTopUp)
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            address(cea),
-            mappedUEA,
-            address(0),
-            gasTopUp,
-            bytes(""),
-            req.revertRecipient,
-            TX_TYPE.GAS,
-            bytes(""),
-            true
+            address(cea), mappedUEA, address(0), gasTopUp, bytes(""), req.revertRecipient, TX_TYPE.GAS, bytes(""), true
         );
         // Then FUNDS_AND_PAYLOAD event (fundsAmount)
         vm.expectEmit(true, true, false, true, address(gateway));
@@ -457,9 +408,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 amount = 2 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), amount, payload);
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(address(cea));
@@ -477,9 +426,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 gasAmount = 0.002 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, payload);
 
         uint256 vaultBefore = tokenA.balanceOf(address(this));
         uint256 tssBefore = tss.balance;
@@ -487,15 +434,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // Expect GAS leg event first (gasAmount in native)
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            address(cea),
-            mappedUEA,
-            address(0),
-            gasAmount,
-            bytes(""),
-            req.revertRecipient,
-            TX_TYPE.GAS,
-            bytes(""),
-            true
+            address(cea), mappedUEA, address(0), gasAmount, bytes(""), req.revertRecipient, TX_TYPE.GAS, bytes(""), true
         );
         // Then FUNDS_AND_PAYLOAD event (ERC-20)
         vm.expectEmit(true, true, false, true, address(gateway));
@@ -523,9 +462,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 amount = 1 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), amount, payload);
 
         uint256 tssBefore = tss.balance;
 
@@ -549,9 +486,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(admin);
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
         vm.prank(address(cea));
@@ -597,15 +532,15 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            address(cea),       // sender = CEA
-            mappedUEA,          // recipient = mapped UEA (not address(0))
+            address(cea), // sender = CEA
+            mappedUEA, // recipient = mapped UEA (not address(0))
             address(tokenA),
             amount,
             payload,
             address(0x456),
             TX_TYPE.FUNDS_AND_PAYLOAD,
             sigData,
-            true                // fromCEA = true
+            true // fromCEA = true
         );
 
         vm.prank(address(cea));
@@ -634,7 +569,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
             address(0x456),
             TX_TYPE.GAS,
             bytes(""),
-            false               // fromCEA = false
+            false // fromCEA = false
         );
 
         vm.prank(user1);
@@ -645,18 +580,14 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 amount = 50 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, payload);
 
         vm.recordLogs();
         vm.prank(address(cea));
         gateway.sendUniversalTxFromCEA(req);
 
         // Find the UniversalTx event and verify recipient != address(0)
-        bytes32 eventSig = keccak256(
-            "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
-        );
+        bytes32 eventSig = keccak256("UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -715,9 +646,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 amount = 200 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, payload);
 
         uint256 vaultBefore = tokenA.balanceOf(address(this));
 
@@ -737,11 +666,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(address(cea));
         gateway.sendUniversalTxFromCEA(req);
 
-        assertEq(
-            tokenA.balanceOf(address(this)),
-            vaultBefore + amount,
-            "Vault received ERC20"
-        );
+        assertEq(tokenA.balanceOf(address(this)), vaultBefore + amount, "Vault received ERC20");
     }
 
     function test_E2E_Native_FundsAndPayload_NoBatching_ViaCEA() public {
@@ -749,9 +674,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 fundsAmount = 5 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), fundsAmount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), fundsAmount, payload);
 
         uint256 tssBefore = tss.balance;
 
@@ -762,9 +685,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     }
 
     function test_E2E_InvalidCEA_Reverts() public {
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         // Attacker is not a CEA
         vm.expectRevert(Errors.InvalidInput.selector);
@@ -780,31 +701,20 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 amount = 100 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, payload);
 
         vm.recordLogs();
         vm.prank(address(cea));
         gateway.sendUniversalTxFromCEA(req);
 
-        bytes32 eventSig = keccak256(
-            "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
-        );
+        bytes32 eventSig = keccak256("UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == eventSig) {
                 address emittedRecipient = address(uint160(uint256(logs[i].topics[2])));
-                assertTrue(
-                    emittedRecipient != address(0),
-                    "REGRESSION: fromCEA must never emit recipient=address(0)"
-                );
-                assertEq(
-                    emittedRecipient,
-                    mappedUEA,
-                    "REGRESSION: recipient must be mapped UEA"
-                );
+                assertTrue(emittedRecipient != address(0), "REGRESSION: fromCEA must never emit recipient=address(0)");
+                assertEq(emittedRecipient, mappedUEA, "REGRESSION: recipient must be mapped UEA");
                 return;
             }
         }
@@ -829,19 +739,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(user1);
         gateway.sendUniversalTx(req);
 
-        bytes32 eventSig = keccak256(
-            "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
-        );
+        bytes32 eventSig = keccak256("UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == eventSig) {
                 address emittedRecipient = address(uint160(uint256(logs[i].topics[2])));
-                assertEq(
-                    emittedRecipient,
-                    address(0),
-                    "Non-fromCEA FUNDS_AND_PAYLOAD must keep recipient=address(0)"
-                );
+                assertEq(emittedRecipient, address(0), "Non-fromCEA FUNDS_AND_PAYLOAD must keep recipient=address(0)");
                 return;
             }
         }
@@ -856,9 +760,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(admin);
         gateway.pause();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());
 
         vm.expectRevert();
         vm.prank(address(cea));
@@ -873,9 +775,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 gasAmount = 0.002 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, payload);
 
         uint256 tssBefore = tss.balance;
 
@@ -901,23 +801,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
     function test_GasAndPayload_ViaCEA_PayloadOnly_NoGas_HappyPath() public {
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, payload);
 
         uint256 tssBefore = tss.balance;
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            address(cea),
-            mappedUEA,
-            address(0),
-            0,
-            payload,
-            address(0x456),
-            TX_TYPE.GAS_AND_PAYLOAD,
-            bytes(""),
-            true
+            address(cea), mappedUEA, address(0), 0, payload, address(0x456), TX_TYPE.GAS_AND_PAYLOAD, bytes(""), true
         );
 
         vm.prank(address(cea));
@@ -934,9 +824,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // amount=0, token=tokenA, payload=non-empty → GAS_AND_PAYLOAD
         // _sendTxWithGas called with gasAmount=0 → skips caps, just emits
         // req.token field is ignored by _sendTxWithGas (token=address(0) in event)
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 0, _defaultPayload()
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 0, _defaultPayload());
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
@@ -959,23 +847,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // amount=0, token=address(0), payload=empty, msg.value>0 → GAS
         // GAS is now allowed via CEA
         uint256 gasAmount = 0.002 ether;
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, bytes(""));
 
         uint256 tssBefore = tss.balance;
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            address(cea),
-            mappedUEA,
-            address(0),
-            gasAmount,
-            bytes(""),
-            req.revertRecipient,
-            TX_TYPE.GAS,
-            bytes(""),
-            true
+            address(cea), mappedUEA, address(0), gasAmount, bytes(""), req.revertRecipient, TX_TYPE.GAS, bytes(""), true
         );
 
         vm.prank(address(cea));
@@ -1025,9 +903,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 tinyGas = 0.0001 ether; // ~$0.20 at $2000/ETH, below $1 min
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, payload);
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(address(cea));
@@ -1043,9 +919,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         uint256 gasAmount = 0.002 ether;
         bytes memory payload = _defaultPayload();
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, payload);
 
         vm.expectRevert(Errors.BlockCapLimitExceeded.selector);
         vm.prank(address(cea));
@@ -1059,9 +933,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         setCaps(1000e18, 2000e18); // $1000-$2000 range
 
         bytes memory payload = _defaultPayload();
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, payload);
 
         // Should succeed — caps skipped when gasAmount=0
         vm.prank(address(cea));
@@ -1074,17 +946,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
     function test_GasAndPayload_ViaCEA_EventRecipientIsNeverZero() public {
         bytes memory payload = _defaultPayload();
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, payload
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, payload);
 
         vm.recordLogs();
         vm.prank(address(cea));
         gateway.sendUniversalTxFromCEA{ value: 0.002 ether }(req);
 
-        bytes32 eventSig = keccak256(
-            "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
-        );
+        bytes32 eventSig = keccak256("UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -1115,15 +983,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            user1,
-            address(0),
-            address(0),
-            gasAmount,
-            payload,
-            address(0x456),
-            TX_TYPE.GAS_AND_PAYLOAD,
-            bytes(""),
-            false
+            user1, address(0), address(0), gasAmount, payload, address(0x456), TX_TYPE.GAS_AND_PAYLOAD, bytes(""), false
         );
 
         vm.prank(user1);
@@ -1158,23 +1018,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // amount=0, token=address(0), payload=empty, msg.value>0 → GAS
         // GAS is now allowed via CEA
         uint256 gasAmount = 0.002 ether;
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 0, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 0, bytes(""));
 
         uint256 tssBefore = tss.balance;
 
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            address(cea),
-            mappedUEA,
-            address(0),
-            gasAmount,
-            bytes(""),
-            req.revertRecipient,
-            TX_TYPE.GAS,
-            bytes(""),
-            true
+            address(cea), mappedUEA, address(0), gasAmount, bytes(""), req.revertRecipient, TX_TYPE.GAS, bytes(""), true
         );
 
         vm.prank(address(cea));
@@ -1188,9 +1038,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // Post-fee nativeValue > 0 is routed as a gas top-up to the CEA's mapped UEA.
         // CEA path skips protocol fee, so full amount becomes gas.
         uint256 gasTopUp = 0.003 ether; // ~$6 at $2000/ETH, within $1-$10 USD cap
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, bytes(""));
 
         uint256 tssBalBefore = tss.balance;
 
@@ -1202,9 +1050,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
     function test_FUNDS_ViaCEA_Native_RevertWhen_MsgValueMismatch() public {
         // Native FUNDS: msg.value must exactly equal req.amount
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(0), 2 ether, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(0), 2 ether, bytes(""));
 
         vm.expectRevert(Errors.InvalidAmount.selector);
         vm.prank(address(cea));
@@ -1338,9 +1184,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(admin);
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), 100 ether, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, bytes(""));
 
         vm.expectRevert(Errors.RateLimitExceeded.selector);
         vm.prank(address(cea));
@@ -1349,17 +1193,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
     function test_FUNDS_ViaCEA_EventRecipientIsNeverZero() public {
         uint256 amount = 50 ether;
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, bytes(""));
 
         vm.recordLogs();
         vm.prank(address(cea));
         gateway.sendUniversalTxFromCEA(req);
 
-        bytes32 eventSig = keccak256(
-            "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
-        );
+        bytes32 eventSig = keccak256("UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -1377,17 +1217,13 @@ contract SendUniversalTxViaCEATest is BaseTest {
 
     function test_FUNDS_ViaCEA_EventViaCEA_True() public {
         uint256 amount = 50 ether;
-        UniversalTxRequest memory req = _buildViaCEARequest(
-            address(tokenA), amount, bytes("")
-        );
+        UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), amount, bytes(""));
 
         vm.recordLogs();
         vm.prank(address(cea));
         gateway.sendUniversalTxFromCEA(req);
 
-        bytes32 eventSig = keccak256(
-            "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
-        );
+        bytes32 eventSig = keccak256("UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -1402,10 +1238,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
                     TX_TYPE txType,
                     bytes memory sigData,
                     bool fromCEA
-                ) = abi.decode(
-                    logs[i].data,
-                    (address, uint256, bytes, address, TX_TYPE, bytes, bool)
-                );
+                ) = abi.decode(logs[i].data, (address, uint256, bytes, address, TX_TYPE, bytes, bool));
                 assertTrue(fromCEA, "fromCEA must be true for FUNDS via CEA");
                 assertEq(uint8(txType), uint8(TX_TYPE.FUNDS), "txType must be FUNDS");
                 assertEq(token, address(tokenA), "token must be tokenA");
@@ -1433,18 +1266,14 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(user1);
         gateway.sendUniversalTx(req);
 
-        bytes32 eventSig = keccak256(
-            "UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)"
-        );
+        bytes32 eventSig = keccak256("UniversalTx(address,address,address,uint256,bytes,address,uint8,bytes,bool)");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == eventSig) {
-                (,,,,,, bool fromCEA) = abi.decode(
-                    logs[i].data,
-                    (address, uint256, bytes, address, TX_TYPE, bytes, bool)
-                );
+                (,,,,,, bool fromCEA) =
+                    abi.decode(logs[i].data, (address, uint256, bytes, address, TX_TYPE, bytes, bool));
                 assertFalse(fromCEA, "Non-fromCEA FUNDS must emit fromCEA=false");
                 found = true;
                 break;
@@ -1473,15 +1302,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
         // Expect GAS leg: fromCEA=false, recipient=address(0)
         vm.expectEmit(true, true, false, true, address(gateway));
         emit UniversalTx(
-            user1,
-            address(0),
-            address(0),
-            gasTopUp,
-            bytes(""),
-            address(0x456),
-            TX_TYPE.GAS,
-            bytes(""),
-            false
+            user1, address(0), address(0), gasTopUp, bytes(""), address(0x456), TX_TYPE.GAS, bytes(""), false
         );
         // Expect FUNDS_AND_PAYLOAD leg: fromCEA=false, recipient=address(0)
         vm.expectEmit(true, true, false, true, address(gateway));
@@ -1500,5 +1321,4 @@ contract SendUniversalTxViaCEATest is BaseTest {
         vm.prank(user1);
         gateway.sendUniversalTx{ value: totalValue }(req);
     }
-
 }

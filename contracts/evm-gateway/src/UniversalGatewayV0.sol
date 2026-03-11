@@ -399,7 +399,7 @@ contract UniversalGatewayV0 is
         if (!ICEAFactory(ceaFactory).isCEA(msg.sender)) revert Errors.Unauthorized();
 
         // Resolve the UEA mapped to this CEA and enforce anti-spoof
-        address mappedUEA = ICEAFactory(ceaFactory).getUEAForCEA(msg.sender);
+        address mappedUEA = ICEAFactory(ceaFactory).getPushAccountForCEA(msg.sender);
         if (req.recipient != mappedUEA) revert Errors.InvalidInput();
 
         uint256 nativeValue = msg.value;
@@ -1041,10 +1041,7 @@ contract UniversalGatewayV0 is
     /// @param nativeValue      Raw native value received with the transaction
     /// @return adjustedNative  nativeValue minus the collected fee
     /// @return feeCollected    Amount forwarded to TSS as the protocol fee
-    function _collectProtocolFee(uint256 nativeValue)
-        private
-        returns (uint256 adjustedNative, uint256 feeCollected)
-    {
+    function _collectProtocolFee(uint256 nativeValue) private returns (uint256 adjustedNative, uint256 feeCollected) {
         uint256 fee = PROTOCOL_FEE;
         if (fee == 0) return (nativeValue, 0);
 

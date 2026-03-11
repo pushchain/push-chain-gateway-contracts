@@ -877,8 +877,8 @@ DA:119,9
 DA:121,8
 DA:122,8
 DA:135,35
-FN:135,UniversalGatewayPC._validateCommon
-FNDA:35,UniversalGatewayPC._validateCommon
+FN:135,UniversalGatewayPC._validateParams
+FNDA:35,UniversalGatewayPC._validateParams
 DA:141,35
 BRDA:141,2,0,2
 DA:142,33

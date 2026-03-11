@@ -32,7 +32,7 @@ contract MockReentrantContract {
     // UniversalGatewayPC Reentrancy Functions
     // ============================================================================
 
-    function attemptReentrancy(uint256 amount, uint256 gasLimit, address revertRecipient) external {
+    function attemptReentrancy(uint256 amount, uint256 gasLimit, address revertRecipient) external payable {
         UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
             recipient: bytes(""),
             token: prc20Token,
@@ -41,7 +41,7 @@ contract MockReentrantContract {
             payload: bytes(""), // empty payload for FUNDS type
             revertRecipient: revertRecipient
         });
-        IUniversalGatewayPC(gateway).sendUniversalTxOutbound(req);
+        IUniversalGatewayPC(gateway).sendUniversalTxOutbound{value: msg.value}(req);
     }
 
     function attemptReentrancyWithExecute(
@@ -49,7 +49,7 @@ contract MockReentrantContract {
         bytes calldata payload,
         uint256 gasLimit,
         address revertRecipient
-    ) external {
+    ) external payable {
         UniversalOutboundTxRequest memory req = UniversalOutboundTxRequest({
             recipient: bytes(""),
             token: prc20Token,
@@ -58,8 +58,10 @@ contract MockReentrantContract {
             payload: payload, // non-empty payload for FUNDS_AND_PAYLOAD type
             revertRecipient: revertRecipient
         });
-        IUniversalGatewayPC(gateway).sendUniversalTxOutbound(req);
+        IUniversalGatewayPC(gateway).sendUniversalTxOutbound{value: msg.value}(req);
     }
+
+    receive() external payable {}
 
     // ============================================================================
     // Vault Reentrancy Functions

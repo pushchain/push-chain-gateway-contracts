@@ -29,4 +29,5 @@ library Errors {
     error InsufficientBalance();
     error Unauthorized();
     error InsufficientProtocolFee();
+    error ZeroAmount();
 }
