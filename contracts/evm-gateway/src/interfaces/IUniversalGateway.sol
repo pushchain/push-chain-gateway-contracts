@@ -4,55 +4,55 @@ pragma solidity 0.8.26;
 import { RevertInstructions, TX_TYPE, UniversalTxRequest, UniversalTokenTxRequest } from "../libraries/Types.sol";
 
 interface IUniversalGateway {
-    // =========================
-    //           EVENTS
-    // =========================
+    // ==============================
+    //       UG_1: EVENTS
+    // ==============================
 
-    /// @notice                      Caps updated event
-    /// @param minCapUsd             Minimum cap in USD
-    /// @param maxCapUsd             Maximum cap in USD
+    /// @notice                  Caps updated event
+    /// @param minCapUsd         Minimum cap in USD
+    /// @param maxCapUsd         Maximum cap in USD
     event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
 
-    /// @notice                      Rate-limit / config events
-    /// @param oldDuration           Previous epoch duration: Duration of the epoch before the update.
-    /// @param newDuration           New epoch duration: Duration of the epoch after the update.
+    /// @notice                  Epoch duration updated event
+    /// @param oldDuration       Previous epoch duration
+    /// @param newDuration       New epoch duration
     event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
 
-    /// @notice                     Token limit threshold updated event
-    /// @param token                Token address
-    /// @param newThreshold         New threshold
+    /// @notice                  Token limit threshold updated event
+    /// @param token             Token address
+    /// @param newThreshold      New threshold
     event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
 
-    /// @notice                     Universal transaction event that originates from external chain.
-    /// @param sender               Sender of the tx on external chain
-    /// @param recipient            Recipient address on Push Chain: for address(0), recipient = sender's UEA on Push Chain.
-    /// @param token                Token address being sent
-    /// @param amount               Amount of token being sent
-    /// @param payload              Payload for arbitrary call on Push Chain: for funds-only tx, payload is empty.
-    /// @param revertRecipient      Fund recipient
-    /// @param txType               Transaction type: TX_TYPE enum
-    /// @param signatureData        Signature data: for signedVerification, signatureData is the signature of the sender.
-    /// @param fromCEA              True if the tx originated from a CEA via sendUniversalTxFromCEA
+    /// @notice                  Universal transaction event that originates from external chain.
+    /// @param sender            Sender of the tx on external chain
+    /// @param recipient         Recipient address on Push Chain: address(0) = sender's UEA
+    /// @param token             Token address being sent
+    /// @param amount            Amount of token being sent
+    /// @param payload           Payload for arbitrary call on Push Chain (empty for funds-only)
+    /// @param revertRecipient   Address to receive funds if the tx is reverted
+    /// @param txType            Transaction type (TX_TYPE enum)
+    /// @param signatureData     Signature data for signedVerification
+    /// @param fromCEA           True if the tx originated from a CEA via sendUniversalTxFromCEA
     event UniversalTx(
         address indexed sender,
         address indexed recipient,
         address token,
         uint256 amount,
-        bytes payload,
+        bytes   payload,
         address revertRecipient,
         TX_TYPE txType,
-        bytes signatureData,
-        bool fromCEA
+        bytes   signatureData,
+        bool    fromCEA
     );
 
-    /// @notice                     Universal tx execution event that is executed on External Chains.
-    /// @param subTxId          Gateway transaction identifier
-    /// @param universalTxId        Universal transaction identifier
-    /// @param pushAccount          Push Chain account (UEA) this transaction is attributed to
-    /// @param target               Target contract address to execute call
-    /// @param token                Token address being sent
-    /// @param amount               Amount of token being sent
-    /// @param data                 Calldata to be executed on target contract on external chain
+    /// @notice                  Universal tx execution event on external chains.
+    /// @param subTxId           Gateway transaction identifier
+    /// @param universalTxId     Universal transaction identifier
+    /// @param pushAccount       Push Chain account (UEA) this transaction is attributed to
+    /// @param target            Target contract address to execute call
+    /// @param token             Token address being sent
+    /// @param amount            Amount of token being sent
+    /// @param data              Calldata to be executed on target contract
     event UniversalTxExecuted(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
@@ -60,25 +60,25 @@ interface IUniversalGateway {
         address target,
         address token,
         uint256 amount,
-        bytes data
+        bytes   data
     );
 
-    /// @notice                      Vault updated event
-    /// @param oldVault              Previous Vault address
-    /// @param newVault              New Vault address
+    /// @notice                  Vault updated event
+    /// @param oldVault          Previous Vault address
+    /// @param newVault          New Vault address
     event VaultUpdated(address indexed oldVault, address indexed newVault);
 
-    /// @notice                      Protocol fee updated event
-    /// @param newFee                New protocol fee in wei
+    /// @notice                  Protocol fee updated event
+    /// @param newFee            New protocol fee in wei
     event ProtocolFeeUpdated(uint256 newFee);
 
-    /// @notice                     Revert withdraw event: For withdrawals/actions during a revert
-    /// @param subTxId                 Gateway transaction identifier
-    /// @param universalTxId        Universal transaction identifier
-    /// @param to                   Recipient address on external chain
-    /// @param token                Token address being reverted
-    /// @param amount               Amount of token being reverted
-    /// @param revertInstruction    Revert settings configuration
+    /// @notice                  Revert withdraw event: for withdrawals/actions during a revert
+    /// @param subTxId           Gateway transaction identifier
+    /// @param universalTxId     Universal transaction identifier
+    /// @param to                Recipient address on external chain
+    /// @param token             Token address being reverted
+    /// @param amount            Amount of token being reverted
+    /// @param revertInstruction Revert settings configuration
     event RevertUniversalTx(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
@@ -88,125 +88,78 @@ interface IUniversalGateway {
         RevertInstructions revertInstruction
     );
 
-    // =========================
-    //  UG_1: UNIVERSAL TRANSACTION
-    // =========================
-    /**
-     * @notice                 Initiate a Universal Transaction using the chain's native token as gas (if any).
-     *
-     * @dev                    Primary entrypoint for all inbound universal transactions that:
-     *                         - Fund a user's UEA on Push Chain with native gas, and/or
-     *                         - Bridge funds (native or ERC20) to Push Chain, and/or
-     *                         - Execute an arbitrary payload via the user's UEA on Push Chain.
-     *
-     *                         The function accepts a single `UniversalTxRequest` which describes: ( see /libraries/Types.sol for more details)
-     *
-     *                         Based on the UniversalTxRequest, the request is classified into one of four
-     *                         supported transaction classes:
-     *
-     *                             1. TX_TYPE.GAS
-     *                                 - No payload, no funds, msg.value > 0
-     *                                 - Pure gas top-up to the caller's UEA on Push Chain.
-     *
-     *                             2. TX_TYPE.GAS_AND_PAYLOAD
-     *                                 - payload present, no funds
-     *                                 - msg.value MAY be 0 (payload-only, using pre-funded UEA gas)
-     *                                   or > 0 (payload + fresh gas).
-     *
-     *                             3. TX_TYPE.FUNDS
-     *                                 - funds present, no payload:
-     *                                     a) Native funds:
-     *                                         - req.token == address(0)
-     *                                         - msg.value == req.amount
-     *                                     b) ERC20 funds:
-     *                                         - req.token != address(0)
-     *                                         - msg.value == 0
-     *
-     *                             4. TX_TYPE.FUNDS_AND_PAYLOAD
-     *                                 - funds present, payload present:
-     *                                     a) No batching (ERC20 funds, no native):
-     *                                     b) Native batching (native funds + native gas):
-     *                                     c) ERC20 + native gas batching:
-     *
-     *                         Routing & rate-limit behavior:
-     *                         --------------------------------
-     *                         - GAS / GAS_AND_PAYLOAD:
-     *                             - Routed to the "instant" Fee Abstraction path via `_sendTxWithGas`.
-     *                             - Enforces Rate Limit Checks:
-     *                                 - `_checkUSDCaps`      (min/max USD caps per transaction)
-     *                                 - `_checkBlockUSDCap`  (per-block USD budget)
-     *
-     *                         - FUNDS / FUNDS_AND_PAYLOAD:
-     *                             - Routed to the Universal Transaction path via `_sendTxWithFunds`.
-     *                             - Enforces per-token epoch rate-limits via `_consumeRateLimit(token, amount)`
-     *
-     * @param req              UniversalTxRequest struct
-     */
+    // ==============================
+    //  UG_2: UNIVERSAL TRANSACTION
+    // ==============================
+
+    /// @notice                  Initiate a Universal Transaction using native token as gas.
+    /// @dev                     Primary entrypoint for all inbound universal transactions that:
+    ///                          - Fund a user's UEA on Push Chain with native gas, and/or
+    ///                          - Bridge funds (native or ERC20) to Push Chain, and/or
+    ///                          - Execute an arbitrary payload via the user's UEA on Push Chain.
+    ///
+    ///                          TX_TYPE is inferred automatically from the request structure:
+    ///
+    ///                              1. TX_TYPE.GAS
+    ///                                  - No payload, no funds, msg.value > 0
+    ///
+    ///                              2. TX_TYPE.GAS_AND_PAYLOAD
+    ///                                  - payload present, no funds
+    ///                                  - msg.value MAY be 0 (payload-only) or > 0
+    ///
+    ///                              3. TX_TYPE.FUNDS
+    ///                                  - funds present, no payload:
+    ///                                      a) Native: req.token == address(0), msg.value == req.amount
+    ///                                      b) ERC20:  req.token != address(0), msg.value == 0
+    ///
+    ///                              4. TX_TYPE.FUNDS_AND_PAYLOAD
+    ///                                  - funds present, payload present:
+    ///                                      a) No batching (ERC20 funds, no native)
+    ///                                      b) Native batching (native funds + native gas)
+    ///                                      c) ERC20 + native gas batching
+    ///
+    ///                          Rate-limit behavior:
+    ///                          - GAS / GAS_AND_PAYLOAD: instant route via _sendTxWithGas
+    ///                            (_checkUSDCaps + _checkBlockUSDCap)
+    ///                          - FUNDS / FUNDS_AND_PAYLOAD: standard route via _sendTxWithFunds
+    ///                            (_consumeRateLimit per-token epoch)
+    /// @param req               UniversalTxRequest struct
     function sendUniversalTx(UniversalTxRequest calldata req) external payable;
 
-    /**
-     * @notice                 Initiate a Universal Transaction using an ERC20 token as gas input.
-     *
-     * @dev                    This overload extends `sendUniversalTx(UniversalTxRequest)` by allowing the
-     *                         caller to pay "gas" in any supported ERC20 (`gasToken`) instead of native ETH.
-     *
-     * @dev                    Note that the fundamental flow remains exactly same as sendUniversalTx(UniversalTxRequest)
-     *
-     * @param reqToken        UniversalTokenTxRequest struct
-     */
+    /// @notice                  Initiate a Universal Transaction using an ERC20 token as gas.
+    /// @dev                     Extends sendUniversalTx(UniversalTxRequest) by allowing the caller
+    ///                          to pay gas in any supported ERC20 (gasToken) instead of native ETH.
+    ///                          The fundamental flow remains exactly the same.
+    /// @param reqToken          UniversalTokenTxRequest struct
     function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable;
 
-    /**
-     * @notice                 Initiate a Universal Transaction from a CEA (Chain Execution Account).
-     *
-     * @dev                    Called by a CEA to send transactions to its linked UEA on Push Chain.
-     *                         Validates CEA identity via CEAFactory, resolves the mapped UEA, and
-     *                         routes directly to _routeUniversalTx with fromCEA=true so Push Chain
-     *                         can route to the correct UEA instead of deploying one for the CEA.
-     *
-     *                         All TX_TYPEs are supported (inferred automatically from req structure):
-     *
-     *                             1. TX_TYPE.GAS
-     *                                - req.amount == 0, req.payload empty, msg.value > 0
-     *                                - Instant route; USD caps apply.
-     *                                - Event emits recipient=mappedUEA, fromCEA=true.
-     *
-     *                             2. TX_TYPE.GAS_AND_PAYLOAD
-     *                                - req.payload non-empty, req.amount == 0
-     *                                - msg.value may be 0 (payload-only) or > 0 (payload + gas top-up).
-     *                                - Instant route; USD caps apply when msg.value > 0.
-     *
-     *                             3. TX_TYPE.FUNDS
-     *                                - req.amount > 0, req.payload empty
-     *                                - Standard route; epoch rate-limits apply.
-     *
-     *                             4. TX_TYPE.FUNDS_AND_PAYLOAD
-     *                                - req.amount > 0, req.payload non-empty
-     *                                - Standard route; epoch rate-limits apply.
-     *                                - Gas batching (Cases 2.2 / 2.3) is allowed:
-     *                                    - Native funds: msg.value > req.amount → gas leg emits
-     *                                      recipient=mappedUEA and fromCEA=true.
-     *                                    - ERC-20 funds + native gas: both legs emit correctly.
-     *
-     *                         Strict validations:
-     *                         - msg.sender must be a valid CEA per CEAFactory.isCEA()
-     *                         - req.recipient must exactly match the mapped UEA from
-     *                           CEAFactory.getPushAccountForCEA() (anti-spoof).
-     *
-     * @param req              UniversalTxRequest struct
-     */
+    /// @notice                  Initiate a Universal Transaction from a CEA (Chain Execution Account).
+    /// @dev                     Called by a CEA to send transactions to its linked UEA on Push Chain.
+    ///                          Validates CEA identity via CEAFactory, resolves the mapped UEA, and
+    ///                          routes with fromCEA=true so Push Chain routes to the correct UEA.
+    ///
+    ///                          All TX_TYPEs are supported (inferred automatically):
+    ///                              1. GAS: instant route, USD caps apply
+    ///                              2. GAS_AND_PAYLOAD: instant route, USD caps apply when msg.value > 0
+    ///                              3. FUNDS: standard route, epoch rate-limits apply
+    ///                              4. FUNDS_AND_PAYLOAD: standard route, gas batching allowed
+    ///
+    ///                          Strict validations:
+    ///                          - msg.sender must be a valid CEA per CEAFactory.isCEA()
+    ///                          - req.recipient must match the mapped UEA (anti-spoof)
+    /// @param req               UniversalTxRequest struct
     function sendUniversalTxFromCEA(UniversalTxRequest calldata req) external payable;
 
-    // =========================
-    //  UG_2: REVERT HANDLING PATHS
-    // =========================
+    // ==============================
+    //  UG_3: REVERT HANDLING PATHS
+    // ==============================
 
-    /// @notice             Revert universal transaction with tokens to the recipient specified in revertInstruction
-    /// @param subTxId         gateway transaction identifier (for replay protection)
-    /// @param universalTxId universal transaction identifier
-    /// @param token        token address to revert
-    /// @param amount       amount of token to revert
-    /// @param revertCFG    revert settings
+    /// @notice                  Revert universal transaction with tokens to the revert recipient
+    /// @param subTxId           Gateway transaction identifier (for replay protection)
+    /// @param universalTxId     Universal transaction identifier
+    /// @param token             Token address to revert
+    /// @param amount            Amount of token to revert
+    /// @param revertCFG         Revert settings
     function revertUniversalTxToken(
         bytes32 subTxId,
         bytes32 universalTxId,
@@ -215,11 +168,11 @@ interface IUniversalGateway {
         RevertInstructions calldata revertCFG
     ) external;
 
-    /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param subTxId         gateway transaction identifier (for replay protection)
-    /// @param universalTxId universal transaction identifier
-    /// @param amount       amount of native token to revert
-    /// @param revertCFG    revert settings
+    /// @notice                  Revert native tokens to the revert recipient
+    /// @param subTxId           Gateway transaction identifier (for replay protection)
+    /// @param universalTxId     Universal transaction identifier
+    /// @param amount            Amount of native token to revert
+    /// @param revertCFG         Revert settings
     function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
@@ -227,34 +180,30 @@ interface IUniversalGateway {
         RevertInstructions calldata revertCFG
     ) external payable;
 
-    // =========================
-    //  UG_3: PUBLIC HELPERS
-    // =========================
+    // ==============================
+    //    UG_4: PUBLIC HELPERS
+    // ==============================
 
-    ///@notice                     Checks if a token is supported by the gateway.
-    ///@param token                Token address to check
-    ///@return                     True if the token is supported, false otherwise
+    /// @notice                  Checks if a token is supported by the gateway.
+    /// @param token             Token address to check
+    /// @return                  True if the token is supported, false otherwise
     function isSupportedToken(address token) external view returns (bool);
 
-    ///@notice                     Computes the minimum and maximum deposit amounts in native ETH (wei) implied by the USD caps.
-    ///@dev                        Uses the current ETH/USD price from {getEthUsdPrice}.
-    ///@return minValue            Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
-    ///@return maxValue            Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
+    /// @notice                  Computes the min and max deposit amounts in native ETH (wei) from USD caps.
+    /// @dev                     Uses the current ETH/USD price from getEthUsdPrice().
+    /// @return minValue         Minimum native amount (in wei) allowed by MIN_CAP_UNIVERSAL_TX_USD
+    /// @return maxValue         Maximum native amount (in wei) allowed by MAX_CAP_UNIVERSAL_TX_USD
     function getMinMaxValueForNative() external view returns (uint256 minValue, uint256 maxValue);
 
-    ///@notice             Returns both the total token amount used and remaining in the current epoch.
-    ///@param token        token address to query (use address(0) for native)
-    ///@return used        amount already consumed in the current epoch (in token's natural units)
-    ///@return remaining   amount still available to send in this epoch (0 if exceeded or unsupported)
+    /// @notice                  Returns both the total token amount used and remaining in the current epoch.
+    /// @param token             Token address to query (use address(0) for native)
+    /// @return used             Amount already consumed in the current epoch (token's natural units)
+    /// @return remaining        Amount still available to send in this epoch (0 if exceeded or unsupported)
     function currentTokenUsage(address token) external view returns (uint256 used, uint256 remaining);
 
-    ///@notice             Flat protocol fee in native token (wei). 0 = disabled.
+    /// @notice                  Flat protocol fee in native token (wei). 0 = disabled.
     function PROTOCOL_FEE() external view returns (uint256);
 
-    ///@notice             Running total of protocol fees collected (native, in wei).
+    /// @notice                  Running total of protocol fees collected (native, in wei).
     function totalProtocolFeesCollected() external view returns (uint256);
-
-    /// @notice            Set the flat protocol fee (in wei). Set to 0 to disable.
-    /// @param fee         New protocol fee in wei
-    function setProtocolFee(uint256 fee) external;
 }
