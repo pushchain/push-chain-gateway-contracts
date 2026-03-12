@@ -271,7 +271,7 @@ pub fn finalize_universal_tx(
 
         // Check if target is gateway itself (CEA → UEA inbound route)
         if target == *ctx.program_id {
-            return send_universal_tx_to_uea(
+            send_universal_tx_to_uea(
                 &mut ctx,
                 sub_tx_id,
                 universal_tx_id,
@@ -279,9 +279,8 @@ pub fn finalize_universal_tx(
                 &ix_data,
                 cea_seeds,
                 token,
-            );
-        }
-
+            )?;
+        } else {
         // Build CPI instruction for target program
         let cpi_metas: Vec<SolanaAccountMeta> = accounts
             .iter()
@@ -302,6 +301,7 @@ pub fn finalize_universal_tx(
         };
 
         invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
+        }
     }
 
     // Emit execution event
@@ -576,16 +576,6 @@ fn send_universal_tx_to_uea(
         tx_type,
         signature_data: vec![],
         from_cea: true,
-    });
-
-    emit!(UniversalTxFinalized {
-        sub_tx_id,
-        universal_tx_id,
-        push_account,
-        target: *ctx.program_id,
-        token,
-        amount: withdraw_amount,
-        payload: vec![],
     });
 
     Ok(())

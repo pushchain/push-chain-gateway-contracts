@@ -322,11 +322,11 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             expect(finalizedEventSol, "UniversalTxFinalized should be emitted for CEA→UEA SOL path").to.exist;
             expect(finalizedEventSol.data.target.toString()).to.equal(gatewayProgram.programId.toString());
             expect(finalizedEventSol.data.token.toString()).to.equal(new anchor.web3.PublicKey(new Uint8Array(32)).toString());
-            expect(finalizedEventSol.data.amount.toString()).to.equal(ceaDrainAmount.toString());
+            expect(finalizedEventSol.data.amount.toString()).to.equal("0"); // outer amount = 0 for CEA→UEA
             expect(Buffer.from(finalizedEventSol.data.subTxId).toString("hex")).to.equal(Buffer.from(txIdWithdraw).toString("hex"));
             expect(Buffer.from(finalizedEventSol.data.universalTxId).toString("hex")).to.equal(Buffer.from(universalTxIdWithdraw).toString("hex"));
             expect(Buffer.from(finalizedEventSol.data.pushAccount).toString("hex")).to.equal(Buffer.from(pushAccount).toString("hex"));
-            expect(finalizedEventSol.data.payload.length).to.equal(0);
+            expect(Buffer.from(finalizedEventSol.data.payload).toString("hex")).to.equal(withdrawIxData.toString("hex"));
 
             const callerBalanceAfterWithdraw = await provider.connection.getBalance(admin.publicKey);
             const actualBalanceChangeWithdraw = callerBalanceAfterWithdraw - callerBalanceBeforeWithdraw;
@@ -500,14 +500,14 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             // token matches (SOL = default pubkey)
             expect(finalizedEvent.data.token.toString(), "token should match").to.equal(new anchor.web3.PublicKey(new Uint8Array(32)).toString());
             // amount matches withdraw_amount (ceaDrainAmountP2)
-            expect(finalizedEvent.data.amount.toString(), "amount should match drain amount").to.equal(ceaDrainAmountP2.toString());
+            expect(finalizedEvent.data.amount.toString(), "amount should be outer amount (0 for CEA→UEA)").to.equal("0");
             // sub_tx_id and universal_tx_id match inputs
             expect(Buffer.from(finalizedEvent.data.subTxId).toString("hex"), "subTxId should match").to.equal(Buffer.from(txIdWithdraw).toString("hex"));
             expect(Buffer.from(finalizedEvent.data.universalTxId).toString("hex"), "universalTxId should match").to.equal(Buffer.from(universalTxIdWithdraw).toString("hex"));
             // push_account matches
             expect(Buffer.from(finalizedEvent.data.pushAccount).toString("hex"), "pushAccount should match").to.equal(Buffer.from(pushAccount).toString("hex"));
             // payload is empty
-            expect(finalizedEvent.data.payload.length, "payload should be empty").to.equal(0);
+            expect(Buffer.from(finalizedEvent.data.payload).toString("hex"), "payload should be outer ix_data").to.equal(withdrawIxData.toString("hex"));
 
             console.log("✅ FundsAndPayload + from_cea=true AND UniversalTxFinalized emitted for CEA→UEA withdrawal with payload");
         });
@@ -690,11 +690,11 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             expect(finalizedEventSpl, "UniversalTxFinalized should be emitted for CEA→UEA SPL path").to.exist;
             expect(finalizedEventSpl.data.target.toString()).to.equal(gatewayProgram.programId.toString());
             expect(finalizedEventSpl.data.token.toString()).to.equal(mockUSDT.mint.publicKey.toString());
-            expect(finalizedEventSpl.data.amount.toString()).to.equal(ceaAtaBefore.value.amount);
+            expect(finalizedEventSpl.data.amount.toString()).to.equal("0"); // outer amount = 0 for CEA→UEA
             expect(Buffer.from(finalizedEventSpl.data.subTxId).toString("hex")).to.equal(Buffer.from(txIdWithdraw).toString("hex"));
             expect(Buffer.from(finalizedEventSpl.data.universalTxId).toString("hex")).to.equal(Buffer.from(universalTxIdWithdraw).toString("hex"));
             expect(Buffer.from(finalizedEventSpl.data.pushAccount).toString("hex")).to.equal(Buffer.from(pushAccount).toString("hex"));
-            expect(finalizedEventSpl.data.payload.length).to.equal(0);
+            expect(Buffer.from(finalizedEventSpl.data.payload).toString("hex")).to.equal(withdrawIxData.toString("hex"));
             // Verify caller received relayer_fee reimbursement (self-withdraw should also pay the caller)
             const callerBalanceAfterWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
             const callerBalanceChangeWithdrawSpl = callerBalanceAfterWithdrawSpl - callerBalanceBeforeWithdrawSpl;
