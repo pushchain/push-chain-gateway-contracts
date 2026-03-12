@@ -75,7 +75,8 @@ TSS authorizes → gateway.finalize_universal_tx(instruction_id=2, destination_p
     ├─ Gateway detects: target == program_id → send_universal_tx_to_uea
     ├─ CEA transfers funds back to vault
     ├─ tx_type = Funds (empty payload) | FundsAndPayload (non-empty payload)
-    └─ emit UniversalTx { sender=CEA, recipient=UEA, fromCEA=true }
+    ├─ emit UniversalTx { sender=CEA, recipient=UEA, fromCEA=true }
+    └─ emit UniversalTxFinalized { target=gateway_program_id, payload=[] }  ← dual-event
 ```
 
 **Authorization:** The TSS signature covers `target_program=gateway_program_id` and `ix_data_buf` (which includes the discriminator and the entire `SendUniversalTxToUEAArgs`). The relayer cannot forge or modify either field. This replaces both EVM guards:
@@ -96,8 +97,8 @@ TSS authorizes → gateway.finalize_universal_tx(instruction_id=2, destination_p
 | Self-authorization mechanism | `msg.sender == address(this)` | Does not exist for PDAs |
 | Gateway identity check | `ICEAFactory.isCEA(msg.sender)` | TSS signature over `target_program` + PDA derivation |
 | Composable Solana-side steps | Yes (arbitrary multicall in one call) | No — each action is a separate TSS-authorized tx |
-| FUNDS route | `sendUniversalTx`, `fromCEA=false` (gateway unaware it's a CEA) | `send_universal_tx_to_uea`, `fromCEA=true` (gateway always knows) |
-| FUNDS_AND_PAYLOAD route | `SendUniversalTxToUEA`, `fromCEA=true` | `send_universal_tx_to_uea`, `fromCEA=true` |
+| FUNDS route | `sendUniversalTx`, `fromCEA=false` (gateway unaware it's a CEA) | `send_universal_tx_to_uea`, `fromCEA=true` + `UniversalTxFinalized { target=gateway }` (dual-event) |
+| FUNDS_AND_PAYLOAD route | `SendUniversalTxToUEA`, `fromCEA=true` | `send_universal_tx_to_uea`, `fromCEA=true` + `UniversalTxFinalized { target=gateway }` (dual-event) |
 | Push Chain payload authorization | CEA executes freely within TSS-authorized multicall scope | TSS explicitly signs over `ix_data_buf` containing the payload |
 | Gas batching on withdrawal | Disallowed | Not applicable |
 

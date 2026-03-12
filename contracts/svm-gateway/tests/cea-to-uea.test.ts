@@ -274,7 +274,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const callerBalanceBeforeWithdraw = await provider.connection.getBalance(admin.publicKey);
             const withdrawWritableFlags = accountsToWritableFlagsOnly([]);
-            await finalizeUniversalTx({
+            const txWithdraw = await finalizeUniversalTx({
                 instructionId: 2,
                 subTxId: txIdWithdraw,
                 universalTxId: universalTxIdWithdraw,
@@ -292,6 +292,41 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             })
                 .signers([admin])
                 .rpc();
+
+            // Verify dual-event: UniversalTx(from_cea=true) + UniversalTxFinalized
+            let txWithdrawDetails = null;
+            for (let attempt = 0; attempt < 10; attempt++) {
+                txWithdrawDetails = await provider.connection.getTransaction(txWithdraw, {
+                    commitment: "confirmed",
+                    maxSupportedTransactionVersion: 0,
+                });
+                if (txWithdrawDetails) break;
+                await new Promise((r) => setTimeout(r, 500));
+            }
+            expect(txWithdrawDetails, "getTransaction returned null after retries").to.exist;
+
+            const eventCoderSol = new anchor.BorshEventCoder(gatewayProgram.idl);
+            const eventsSol = (txWithdrawDetails.meta?.logMessages ?? [])
+                .filter((log) => log.includes("Program data:"))
+                .map((log) => {
+                    try { return eventCoderSol.decode(log.split("Program data: ")[1]); }
+                    catch { return null; }
+                })
+                .filter((e) => e !== null);
+
+            const universalTxEventSol = eventsSol.find((e) => e.name === "universalTx");
+            expect(universalTxEventSol, "UniversalTx should be emitted").to.exist;
+            expect(universalTxEventSol.data.fromCea, "from_cea should be true").to.be.true;
+
+            const finalizedEventSol = eventsSol.find((e) => e.name === "universalTxFinalized");
+            expect(finalizedEventSol, "UniversalTxFinalized should be emitted for CEA→UEA SOL path").to.exist;
+            expect(finalizedEventSol.data.target.toString()).to.equal(gatewayProgram.programId.toString());
+            expect(finalizedEventSol.data.token.toString()).to.equal(new anchor.web3.PublicKey(new Uint8Array(32)).toString());
+            expect(finalizedEventSol.data.amount.toString()).to.equal(ceaDrainAmount.toString());
+            expect(Buffer.from(finalizedEventSol.data.subTxId).toString("hex")).to.equal(Buffer.from(txIdWithdraw).toString("hex"));
+            expect(Buffer.from(finalizedEventSol.data.universalTxId).toString("hex")).to.equal(Buffer.from(universalTxIdWithdraw).toString("hex"));
+            expect(Buffer.from(finalizedEventSol.data.pushAccount).toString("hex")).to.equal(Buffer.from(pushAccount).toString("hex"));
+            expect(finalizedEventSol.data.payload.length).to.equal(0);
 
             const callerBalanceAfterWithdraw = await provider.connection.getBalance(admin.publicKey);
             const actualBalanceChangeWithdraw = callerBalanceAfterWithdraw - callerBalanceBeforeWithdraw;
@@ -457,11 +492,24 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             expect(universalTxEvent.data.fromCea, "from_cea should be true").to.be.true;
             expect(Buffer.from(universalTxEvent.data.payload).toString("hex")).to.equal(ceaPayload.toString("hex"));
 
-            // UniversalTxFinalized should NOT be emitted for CEA withdrawal
-            const executedEvent = events.find((e) => e.name === "universalTxFinalized");
-            expect(executedEvent, "UniversalTxFinalized should not be emitted for CEA withdrawal").to.be.undefined;
+            // UniversalTxFinalized MUST also be emitted for CEA→UEA path (dual-event)
+            const finalizedEvent = events.find((e) => e.name === "universalTxFinalized");
+            expect(finalizedEvent, "UniversalTxFinalized should be emitted for CEA→UEA path").to.exist;
+            // target == gateway program id
+            expect(finalizedEvent.data.target.toString(), "target should be gateway program id").to.equal(gatewayProgram.programId.toString());
+            // token matches (SOL = default pubkey)
+            expect(finalizedEvent.data.token.toString(), "token should match").to.equal(new anchor.web3.PublicKey(new Uint8Array(32)).toString());
+            // amount matches withdraw_amount (ceaDrainAmountP2)
+            expect(finalizedEvent.data.amount.toString(), "amount should match drain amount").to.equal(ceaDrainAmountP2.toString());
+            // sub_tx_id and universal_tx_id match inputs
+            expect(Buffer.from(finalizedEvent.data.subTxId).toString("hex"), "subTxId should match").to.equal(Buffer.from(txIdWithdraw).toString("hex"));
+            expect(Buffer.from(finalizedEvent.data.universalTxId).toString("hex"), "universalTxId should match").to.equal(Buffer.from(universalTxIdWithdraw).toString("hex"));
+            // push_account matches
+            expect(Buffer.from(finalizedEvent.data.pushAccount).toString("hex"), "pushAccount should match").to.equal(Buffer.from(pushAccount).toString("hex"));
+            // payload is empty
+            expect(finalizedEvent.data.payload.length, "payload should be empty").to.equal(0);
 
-            console.log("✅ FundsAndPayload + from_cea=true emitted for CEA withdrawal with payload");
+            console.log("✅ FundsAndPayload + from_cea=true AND UniversalTxFinalized emitted for CEA→UEA withdrawal with payload");
         });
     });
 
@@ -533,7 +581,6 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                 .remainingAccounts(instructionAccountsToRemaining(counterIx))
                 .signers([admin])
                 .rpc();
-            console.log("finalizeUniversalTx (execute SPL) succeeded");
             // Verify caller received relayer_fee reimbursement
             const callerBalanceAfterFund = await provider.connection.getBalance(admin.publicKey);
             const callerBalanceChangeFund = callerBalanceAfterFund - callerBalanceBeforeFund;
@@ -590,8 +637,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
             const callerBalanceBeforeWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
             const withdrawWritableFlagsSpl = accountsToWritableFlagsOnly([]);
-            console.log("finalizeUniversalTx (execute SPL) start");
-            await finalizeUniversalTx({
+            const txWithdrawSpl = await finalizeUniversalTx({
                 instructionId: 2,
                 subTxId: txIdWithdraw,
                 universalTxId: universalTxIdWithdraw,
@@ -615,7 +661,40 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
             })
                 .signers([admin])
                 .rpc();
-            console.log("finalizeUniversalTx (execute SPL) succeeded");
+            // Verify dual-event: UniversalTx(from_cea=true) + UniversalTxFinalized
+            let txWithdrawSplDetails = null;
+            for (let attempt = 0; attempt < 10; attempt++) {
+                txWithdrawSplDetails = await provider.connection.getTransaction(txWithdrawSpl, {
+                    commitment: "confirmed",
+                    maxSupportedTransactionVersion: 0,
+                });
+                if (txWithdrawSplDetails) break;
+                await new Promise((r) => setTimeout(r, 500));
+            }
+            expect(txWithdrawSplDetails, "getTransaction returned null after retries").to.exist;
+
+            const eventCoderSpl = new anchor.BorshEventCoder(gatewayProgram.idl);
+            const eventsSpl = (txWithdrawSplDetails.meta?.logMessages ?? [])
+                .filter((log) => log.includes("Program data:"))
+                .map((log) => {
+                    try { return eventCoderSpl.decode(log.split("Program data: ")[1]); }
+                    catch { return null; }
+                })
+                .filter((e) => e !== null);
+
+            const universalTxEventSpl = eventsSpl.find((e) => e.name === "universalTx");
+            expect(universalTxEventSpl, "UniversalTx should be emitted").to.exist;
+            expect(universalTxEventSpl.data.fromCea, "from_cea should be true").to.be.true;
+
+            const finalizedEventSpl = eventsSpl.find((e) => e.name === "universalTxFinalized");
+            expect(finalizedEventSpl, "UniversalTxFinalized should be emitted for CEA→UEA SPL path").to.exist;
+            expect(finalizedEventSpl.data.target.toString()).to.equal(gatewayProgram.programId.toString());
+            expect(finalizedEventSpl.data.token.toString()).to.equal(mockUSDT.mint.publicKey.toString());
+            expect(finalizedEventSpl.data.amount.toString()).to.equal(ceaAtaBefore.value.amount);
+            expect(Buffer.from(finalizedEventSpl.data.subTxId).toString("hex")).to.equal(Buffer.from(txIdWithdraw).toString("hex"));
+            expect(Buffer.from(finalizedEventSpl.data.universalTxId).toString("hex")).to.equal(Buffer.from(universalTxIdWithdraw).toString("hex"));
+            expect(Buffer.from(finalizedEventSpl.data.pushAccount).toString("hex")).to.equal(Buffer.from(pushAccount).toString("hex"));
+            expect(finalizedEventSpl.data.payload.length).to.equal(0);
             // Verify caller received relayer_fee reimbursement (self-withdraw should also pay the caller)
             const callerBalanceAfterWithdrawSpl = await provider.connection.getBalance(admin.publicKey);
             const callerBalanceChangeWithdrawSpl = callerBalanceAfterWithdrawSpl - callerBalanceBeforeWithdrawSpl;

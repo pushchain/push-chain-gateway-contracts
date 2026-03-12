@@ -220,9 +220,11 @@ deposit succeeds ⟹ exactly 1 or 2 UniversalTx events emitted
 ### 27. Execute Event
 ```
 finalize_universal_tx succeeds (target != gateway) ⟹ exactly 1 UniversalTxFinalized event
-finalize_universal_tx succeeds (target == gateway, CEA withdrawal) ⟹ exactly 1 UniversalTx event (from_cea=true)
+finalize_universal_tx succeeds (target == gateway, CEA withdrawal) ⟹
+  exactly 1 UniversalTx event (from_cea=true)  AND
+  exactly 1 UniversalTxFinalized event (target = gateway_program_id)
 ```
-**Enforcement:** emit! inside send_universal_tx_to_uea for CEA path
+**Enforcement:** emit! inside send_universal_tx_to_uea for CEA path (dual-event)
 
 ### 28. Revert Event
 ```

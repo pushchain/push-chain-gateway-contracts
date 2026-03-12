@@ -47,8 +47,8 @@ pub struct UniversalTxFinalized {
 }
 ```
 
-**Emitted:** After successful withdraw (mode 1) or execute (mode 2) where target != gateway program
-**NOT emitted for CEA withdrawal** (target == gateway): `UniversalTx` is emitted instead (via `send_universal_tx_to_uea`)
+**Emitted:** After successful withdraw (mode 1) or execute (mode 2), including the CEA→UEA path (target == gateway). For the CEA→UEA path, `target` is set to `gateway_program_id` and `payload` is empty.
+**Note:** On the CEA→UEA path, `UniversalTxFinalized` is emitted together with `UniversalTx { from_cea: true }` in the same transaction (dual-event pattern). Indexers can detect this pattern by checking for both events in the same tx.
 **Purpose:** Confirm execution on Solana
 
 ---
@@ -187,6 +187,7 @@ revert_universal_tx() or revert_universal_tx_token()
 ```
 finalize_universal_tx(target=gateway)
   → UniversalTx emitted (Funds or FundsAndPayload, from_cea=true)
+  → UniversalTxFinalized emitted (target=gateway_program_id, payload=empty)
 ```
 
 ---

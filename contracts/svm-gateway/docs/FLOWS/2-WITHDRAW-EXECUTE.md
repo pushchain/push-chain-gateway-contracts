@@ -94,7 +94,7 @@ TSS Request
   │         │    └─ data = ix_data
   │         └─ invoke_signed(cpi_ix, &[cea_seeds])
   │
-  └─ Emit: UniversalTxFinalized event (except CEA withdrawal: emits UniversalTx only, from_cea=true)
+  └─ Emit: UniversalTxFinalized event (for CEA withdrawal: also emits UniversalTx with from_cea=true — dual-event)
 ```
 
 ---
@@ -323,8 +323,8 @@ pub struct UniversalTxFinalized {
 }
 ```
 
-**When Emitted:** After successful withdraw (mode 1) or execute (mode 2) where target != gateway program
-**NOT emitted for CEA withdrawal** (target == gateway): emits `UniversalTx` only (via `send_universal_tx_to_uea`, `from_cea=true`)
+**When Emitted:** After successful withdraw (mode 1) or execute (mode 2), including the CEA→UEA path (target == gateway).
+**CEA→UEA path (target == gateway):** emits BOTH `UniversalTx { from_cea: true }` AND `UniversalTxFinalized { target: gateway_program_id }` — dual-event pattern.
 
 ---
 

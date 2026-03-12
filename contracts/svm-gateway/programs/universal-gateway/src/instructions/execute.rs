@@ -278,6 +278,7 @@ pub fn finalize_universal_tx(
                 push_account,
                 &ix_data,
                 cea_seeds,
+                token,
             );
         }
 
@@ -442,19 +443,13 @@ pub struct SendUniversalTxToUEAArgs {
 /// Called when target_program == gateway itself (instruction_id=2, destination_program=gateway).
 fn send_universal_tx_to_uea(
     ctx: &mut Context<FinalizeUniversalTx>,
-    _sub_tx_id: [u8; 32],
-    _universal_tx_id: [u8; 32],
+    sub_tx_id: [u8; 32],
+    universal_tx_id: [u8; 32],
     push_account: [u8; 20],
     ix_data: &[u8],
     cea_seeds: &[&[u8]],
+    token: Pubkey,
 ) -> Result<()> {
-    // Derive token from mint account (must match parent function's derivation)
-    let token = if ctx.accounts.mint.is_none() {
-        Pubkey::default()
-    } else {
-        ctx.accounts.mint.as_ref().unwrap().key()
-    };
-
     // ix_data must be at least 8 bytes for the Anchor-style discriminator
     require!(ix_data.len() >= 8, GatewayError::InvalidInput);
 
@@ -581,6 +576,16 @@ fn send_universal_tx_to_uea(
         tx_type,
         signature_data: vec![],
         from_cea: true,
+    });
+
+    emit!(UniversalTxFinalized {
+        sub_tx_id,
+        universal_tx_id,
+        push_account,
+        target: *ctx.program_id,
+        token,
+        amount: withdraw_amount,
+        payload: vec![],
     });
 
     Ok(())
