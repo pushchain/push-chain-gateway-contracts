@@ -9,7 +9,8 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 
 import { UniversalGatewayPC } from "../../src/UniversalGatewayPC.sol";
 import { IUniversalGatewayPC } from "../../src/interfaces/IUniversalGatewayPC.sol";
-import { TX_TYPE, UniversalOutboundTxRequest } from "../../src/libraries/Types.sol";
+import { TX_TYPE } from "../../src/libraries/Types.sol";
+import { UniversalOutboundTxRequest } from "../../src/libraries/TypesUGPC.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { MockPRC20 } from "../mocks/MockPRC20.sol";
 import { MockUniversalCoreReal } from "../mocks/MockUniversalCoreReal.sol";

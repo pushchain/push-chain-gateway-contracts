@@ -5,7 +5,8 @@ import { Test, console2 } from "forge-std/Test.sol";
 import { BaseTest } from "../BaseTest.t.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
-import { RevertInstructions, UniversalPayload, TX_TYPE, VerificationType } from "../../src/libraries/Types.sol";
+import { RevertInstructions, TX_TYPE, VerificationType } from "../../src/libraries/Types.sol";
+import { UniversalPayload } from "../../src/libraries/TypesUG.sol";
 import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 

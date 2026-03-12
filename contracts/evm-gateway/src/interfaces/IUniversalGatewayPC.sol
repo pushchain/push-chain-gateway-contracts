@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { TX_TYPE, UniversalOutboundTxRequest } from "../libraries/Types.sol";
+import { TX_TYPE } from "../libraries/Types.sol";
+import { UniversalOutboundTxRequest } from "../libraries/TypesUGPC.sol";
 
 /**
  * @title  IUniversalGatewayPC
@@ -51,6 +52,26 @@ interface IUniversalGatewayPC {
     /// @param newVaultPC        New VaultPC address
     event VaultPCUpdated(address indexed oldVaultPC, address indexed newVaultPC);
 
+    /// @notice                  Emitted when a user initiates a rescue-funds request on Push Chain.
+    /// @param universalTxId     Universal transaction identifier of the stuck funds
+    /// @param prc20             PRC20 token whose source-chain counterpart is locked
+    /// @param chainNamespace    Source chain namespace
+    /// @param sender            User who initiated the rescue on Push Chain
+    /// @param txType            Always TX_TYPE.RESCUE_FUNDS
+    /// @param gasFee            Gas fee charged (in gas-token units)
+    /// @param gasPrice          Gas price on the external chain
+    /// @param gasLimit          Gas limit used for fee calculation
+    event RescueFundsOnSourceChain(
+        bytes32 indexed universalTxId,
+        address indexed prc20,
+        string  chainNamespace,
+        address indexed sender,
+        TX_TYPE txType,
+        uint256 gasFee,
+        uint256 gasPrice,
+        uint256 gasLimit
+    );
+
     // ==============================
     //    UGPC_2: OUTBOUND TX
     // ==============================
@@ -61,6 +82,12 @@ interface IUniversalGatewayPC {
     ///                          TX_TYPE is automatically inferred based on the presence of payload and amount.
     /// @param req               UniversalOutboundTxRequest struct containing all transaction parameters.
     function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external payable;
+
+    /// @notice                  Initiate a rescue-funds request on Push Chain. TSS will release
+    ///                          the locked funds on the source chain's Vault.
+    /// @param universalTxId     Universal transaction identifier of the stuck funds
+    /// @param prc20             PRC20 token whose source-chain counterpart is locked
+    function rescueFundsOnSourceChain(bytes32 universalTxId, address prc20) external payable;
 
     // ==============================
     //    UGPC_3: VIEW FUNCTIONS

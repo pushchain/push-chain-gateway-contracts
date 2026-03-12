@@ -10,8 +10,8 @@ Gas fees are paid in native PC, swapped to the origin chain's gas token PRC20 vi
 
 | Section                       | Description                                           |
 | ----------------------------- | ----------------------------------------------------- |
-| **UGPC_1: Admin Actions**     | `initialize`, `pause`/`unpause`, `setVaultPC`         |
-| **UGPC_2: Outbound TX**       | `sendUniversalTxOutbound` — single public entry point |
+| **UGPC_1: Admin Actions**     | `initialize`, `pause`/`unpause`, `setVaultPC`, `setRescueFundsGasLimit` |
+| **UGPC_2: Outbound TX**       | `sendUniversalTxOutbound`, `rescueFundsOnSourceChain`                    |
 | **UGPC_3: Internal Helpers**  | TX_TYPE inference, fee quoting, swap+burn, PRC20 burn |
 | **UGPC_3: View Functions** *(interface)* | `UNIVERSAL_CORE()` view accessor           |
 
@@ -87,12 +87,38 @@ The gateway never custodies withdrawn value — burning is the canonical on-chai
 
 ---
 
+## 2b. `rescueFundsOnSourceChain` — Rescue Path
+
+`rescueFundsOnSourceChain(bytes32 universalTxId, address prc20)` allows a user on Push Chain to request that TSS releases funds stuck in a source chain's Vault.
+
+**When to use:** When tokens were locked in a Vault via `sendUniversalTxFromCEA` but never minted on Push Chain (edge case).
+
+**Execution flow:**
+
+1. **Validate** — `prc20 != address(0)`, `RESCUE_FUNDS_GAS_LIMIT > 0`.
+2. **Resolve chain** — fetches `chainNamespace` from `IPRC20(prc20).SOURCE_CHAIN_NAMESPACE()`.
+3. **Quote gas** — reads `gasPrice` and `gasToken` from `UniversalCore` for the chain namespace.
+4. **Calculate fee** — `gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT`.
+5. **Swap and burn** — all `msg.value` goes to `_swapAndCollectFees` (no protocol fee).
+6. **Emit `RescueFundsOnSourceChain`** — TSS picks this up and calls `Vault.rescueFunds()` on the source chain.
+
+**Key differences from `sendUniversalTxOutbound`:**
+- No PRC20 burn (tokens are stuck, not held by the user).
+- No protocol fee.
+- No nonce or subTxId.
+- Fixed gas limit via `RESCUE_FUNDS_GAS_LIMIT` (admin-configurable).
+- Emits `TX_TYPE.RESCUE_FUNDS` (value 4).
+
+**Storage variable:** `RESCUE_FUNDS_GAS_LIMIT` — set via `setRescueFundsGasLimit(uint256)` (admin only, whenNotPaused).
+
+---
+
 ## 3. Access Control
 
-| Role                 | Permissions                |
-| -------------------- | -------------------------- |
-| `DEFAULT_ADMIN_ROLE` | `initialize`, `setVaultPC` |
-| `PAUSER_ROLE`        | `pause`, `unpause`         |
+| Role                 | Permissions                                             |
+| -------------------- | ------------------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | `initialize`, `setVaultPC`, `setRescueFundsGasLimit`    |
+| `PAUSER_ROLE`        | `pause`, `unpause`                                      |
 
 ---
 
@@ -104,5 +130,7 @@ The gateway never custodies withdrawn value — burning is the canonical on-chai
 | `IUniversalCore` | `getOutboundTxGasAndFees(token, gasLimit)`                                    | Quote gas fee, protocol fee, gas price, gas token, chain namespace |
 | `IUniversalCore` | `swapAndBurnGas(gasToken, fee, gasFee, deadline, caller)`                     | Swap PC → gas token, burn gasFee                            |
 | `IUniversalCore` | `protocolFeeByToken(token)`                                                   | Protocol fee in native PC for a given token                 |
-| `IPRC20`         | `transferFrom`, `burn`                                                        | Pull and burn PRC20 tokens                                  |
+| `IUniversalCore` | `gasPriceByChainNamespace(chainNamespace)`                                    | Gas price for a chain (used by rescue path)                 |
+| `IUniversalCore` | `gasTokenPRC20ByChainNamespace(chainNamespace)`                               | Gas token PRC20 for a chain (used by rescue path)           |
+| `IPRC20`         | `transferFrom`, `burn`, `SOURCE_CHAIN_NAMESPACE()`                            | Pull/burn PRC20 tokens; resolve chain namespace             |
 | `IVaultPC`       | (address only)                                                                | Receives protocol fee in native PC                          |

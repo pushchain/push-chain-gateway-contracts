@@ -3,13 +3,8 @@ pragma solidity 0.8.26;
 
 import { BaseTest } from "../BaseTest.t.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
-import {
-    TX_TYPE,
-    RevertInstructions,
-    UniversalPayload,
-    UniversalTxRequest,
-    VerificationType
-} from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions, VerificationType } from "../../src/libraries/Types.sol";
+import { UniversalPayload, UniversalTxRequest } from "../../src/libraries/TypesUG.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";

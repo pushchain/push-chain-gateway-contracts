@@ -3,7 +3,8 @@ pragma solidity 0.8.26;
 
 import { BaseTest } from "../BaseTest.t.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
-import { TX_TYPE, UniversalTxRequest, UniversalPayload } from "../../src/libraries/Types.sol";
+import { TX_TYPE } from "../../src/libraries/Types.sol";
+import { UniversalTxRequest, UniversalPayload } from "../../src/libraries/TypesUG.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
