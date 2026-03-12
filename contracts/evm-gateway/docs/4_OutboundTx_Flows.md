@@ -160,7 +160,7 @@ sequenceDiagram
     V->>CF: getCEAForPushAccount(BOB_UEA) [deploy if needed]
     V->>CEA: executeUniversalTx{value:1ETH}(data)
     CEA->>R: call{value:1ETH}("")
-    V-->>TSS: emit VaultUniversalTxFinalized
+    V-->>TSS: emit UniversalTxFinalized
 ```
 
 ---
@@ -215,7 +215,7 @@ sequenceDiagram
     V->>CEA: executeUniversalTx(data)
     CEA->>USDC: transfer(recipientAddress, 1000e6)
     USDC-->>R: +1000 USDC
-    V-->>TSS: emit VaultUniversalTxFinalized
+    V-->>TSS: emit UniversalTxFinalized
 ```
 
 ---
@@ -906,7 +906,7 @@ sequenceDiagram
     V->>GW: revertUniversalTxToken(subTxId, uSubTxId, USDC, amount, revertInstruction)
     GW->>USDC: safeTransfer(revertRecipient, amount)
     GW-->>TSS: emit RevertUniversalTx
-    V-->>TSS: emit VaultUniversalTxReverted
+    V-->>TSS: emit UniversalTxReverted
 ```
 
 ---
@@ -1038,7 +1038,7 @@ sequenceDiagram
     CEA->>MC: delegatecall migrateCEA() [runs in CEA's storage context]
     MC-->>CEA: success (CEA state upgraded)
     CEA-->>V: emit UniversalTxExecuted
-    V-->>TSS: emit VaultUniversalTxFinalized
+    V-->>TSS: emit UniversalTxFinalized
 ```
 
 ### 7.4 Error Conditions

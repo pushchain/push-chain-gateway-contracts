@@ -147,7 +147,7 @@ function finalizeUniversalTx(
 1. Get or deploy CEA for the `pushAccount` (UEA)
 2. Fund CEA with tokens/native
 3. Call `CEA.executeUniversalTx(subTxId, universalTxId, pushAccount, data)`
-4. Emit `VaultUniversalTxFinalized` event
+4. Emit `UniversalTxFinalized` event
 
 **Funding Logic**:
 - **ERC20**: Transfer tokens to CEA first, then call `CEA.executeUniversalTx()`
@@ -170,7 +170,7 @@ function revertUniversalTxToken(
 1. Validate token support and amount
 2. Transfer tokens from Vault to UniversalGateway
 3. Call `gateway.revertUniversalTxToken()` to handle refund logic
-4. Emit `VaultUniversalTxReverted` event
+4. Emit `UniversalTxReverted` event
 
 **Use Case**: Return funds to users when execution fails or is rejected on Push Chain
 
@@ -198,7 +198,7 @@ function revertUniversalTxToken(
 
 | Role                 | Permissions                 | Critical Actions                                    |
 | -------------------- | --------------------------- | --------------------------------------------------- |
-| `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`, `sweep()`               |
+| `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`                           |
 | `TSS_ROLE`           | Execute operations          | `finalizeUniversalTx()`, `revertUniversalTxToken()` |
 | `PAUSER_ROLE`        | Emergency pause             | `pause()`, `unpause()`                              |
 
@@ -206,7 +206,6 @@ function revertUniversalTxToken(
 - ✅ Only TSS can execute withdrawals and executions
 - ✅ Only TSS can trigger reverts
 - ✅ Admin can update TSS address (transfers role atomically)
-- ✅ Admin can sweep stuck tokens (emergency recovery)
 - ✅ Pausable for emergency situations
 - ✅ ReentrancyGuard on all external entry points
 
@@ -224,11 +223,6 @@ function revertUniversalTxToken(
 - Only `DEFAULT_ADMIN_ROLE`
 - Emits `TSSUpdated(old, new)`
 
-**Sweep Tokens** (`sweep`):
-- Emergency recovery of stuck ERC20 tokens
-- Only `DEFAULT_ADMIN_ROLE`
-- Does not support native token sweep (use withdrawal operations)
-
 **Pause/Unpause**:
 - `pause()`: Halts all operations (only `PAUSER_ROLE`)
 - `unpause()`: Resumes operations (only `PAUSER_ROLE`)
@@ -236,7 +230,7 @@ function revertUniversalTxToken(
 ### Events
 
 ```solidity
-event VaultUniversalTxFinalized(
+event UniversalTxFinalized(
     bytes32 indexed subTxId,
     bytes32 indexed universalTxId,
     address indexed pushAccount,
@@ -246,7 +240,7 @@ event VaultUniversalTxFinalized(
     bytes data
 );
 
-event VaultUniversalTxReverted(
+event UniversalTxReverted(
     bytes32 indexed subTxId,
     bytes32 indexed universalTxId,
     address indexed token,
@@ -294,7 +288,7 @@ When testing Vault operations:
 
 **Access Control Tests**:
 - TSS_ROLE exclusivity for executions
-- Admin operations (setGateway, setTSS, sweep)
+- Admin operations (setGateway, setTSS)
 - Pause/unpause functionality
 
 **Security Tests**:

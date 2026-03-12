@@ -111,17 +111,6 @@ contract Vault is
         emit CEAFactoryUpdated(old, newCEAFactory);
     }
 
-    /// @notice                Sweeps stuck ERC20 tokens from the contract.
-    /// @param token           ERC20 token address.
-    /// @param to              Recipient address.
-    /// @param amount          Amount to sweep.
-    function sweep(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (token == address(0) || to == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        IERC20(token).safeTransfer(to, amount);
-    }
-
     // ==============================
     //  Vault_2: WITHDRAW & EXECUTION
     // ==============================
@@ -143,7 +132,7 @@ contract Vault is
 
         _finalizeUniversalTx(subTxId, universalTxId, pushAccount, recipient, token, amount, data, cea);
 
-        emit VaultUniversalTxFinalized(subTxId, universalTxId, pushAccount, recipient, token, amount, data);
+        emit UniversalTxFinalized(subTxId, universalTxId, pushAccount, recipient, token, amount, data);
     }
 
     /// @inheritdoc IVault
@@ -168,7 +157,7 @@ contract Vault is
         IERC20(token).safeTransfer(address(gateway), amount);
         gateway.revertUniversalTxToken(subTxId, universalTxId, token, amount, revertInstruction);
 
-        emit VaultUniversalTxReverted(subTxId, universalTxId, token, amount, revertInstruction);
+        emit UniversalTxReverted(subTxId, universalTxId, token, amount, revertInstruction);
     }
 
     // ==============================

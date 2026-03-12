@@ -35,7 +35,7 @@ interface IVault {
     /// @param token             Token address being sent
     /// @param amount            Amount of token being sent
     /// @param data              Calldata to be executed on target contract on external chain
-    event VaultUniversalTxFinalized(
+    event UniversalTxFinalized(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed pushAccount,
@@ -51,7 +51,7 @@ interface IVault {
     /// @param token             Token address being reverted
     /// @param amount            Amount of token being reverted
     /// @param revertInstruction Revert instruction containing revertRecipient and revertMsg
-    event VaultUniversalTxReverted(
+    event UniversalTxReverted(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed token,

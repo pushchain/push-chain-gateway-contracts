@@ -161,7 +161,7 @@ contract VaultWithdrawalTest is Test {
         // Expect event emission
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxFinalized(
+        emit IVault.UniversalTxFinalized(
             subTxId, universalTxId, originCaller, address(0), address(usdc), amount, expectedPayload
         );
 
@@ -325,7 +325,7 @@ contract VaultWithdrawalTest is Test {
         // Expect event
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(0), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxFinalized(
+        emit IVault.UniversalTxFinalized(
             subTxId, universalTxId, originCaller, address(0), address(0), amount, expectedPayload
         );
 
@@ -582,8 +582,8 @@ contract VaultWithdrawalTest is Test {
     //  5. EVENT EMISSION TESTS
     // =========================
 
-    /// @notice Test that withdrawal emits correct VaultUniversalTxFinalized event
-    function testWithdraw_EmitsVaultUniversalTxFinalized() public {
+    /// @notice Test that withdrawal emits correct UniversalTxFinalized event
+    function testWithdraw_EmitsUniversalTxFinalized() public {
         bytes32 subTxId = keccak256("tx40");
         bytes32 universalTxId = keccak256("utx40");
         address originCaller = user1;
@@ -592,7 +592,7 @@ contract VaultWithdrawalTest is Test {
         // Expect exact event with withdrawal payload
         bytes memory expectedPayload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxFinalized(
+        emit IVault.UniversalTxFinalized(
             subTxId, universalTxId, originCaller, address(0), address(usdc), amount, expectedPayload
         );
 
@@ -603,7 +603,7 @@ contract VaultWithdrawalTest is Test {
     }
 
     /// @notice Test that execution emits correct event with non-empty payload
-    function testExecute_EmitsVaultUniversalTxFinalized() public {
+    function testExecute_EmitsUniversalTxFinalized() public {
         bytes32 subTxId = keccak256("tx41");
         bytes32 universalTxId = keccak256("utx41");
         address originCaller = user1;
@@ -619,7 +619,7 @@ contract VaultWithdrawalTest is Test {
 
         // Expect event with multicall-wrapped payload
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxFinalized(
+        emit IVault.UniversalTxFinalized(
             subTxId,
             universalTxId,
             originCaller,
@@ -879,7 +879,7 @@ contract VaultWithdrawalTest is Test {
         assertEq(cea.lastRecipient(), specificRecipient);
     }
 
-    /// @notice V-R4: VaultUniversalTxFinalized emits correct recipient (ERC20)
+    /// @notice V-R4: UniversalTxFinalized emits correct recipient (ERC20)
     function testWithdraw_RecipientInEvent_ERC20() public {
         bytes32 subTxId = keccak256("txR4");
         bytes32 universalTxId = keccak256("utxR4");
@@ -889,7 +889,7 @@ contract VaultWithdrawalTest is Test {
         bytes memory payload = _withdrawalPayloadDirect(address(usdc), recipient, amount);
 
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxFinalized(
+        emit IVault.UniversalTxFinalized(
             subTxId, universalTxId, originCaller, specificRecipient, address(usdc), amount, payload
         );
 
@@ -899,7 +899,7 @@ contract VaultWithdrawalTest is Test {
         );
     }
 
-    /// @notice V-R5: VaultUniversalTxFinalized emits correct recipient (native)
+    /// @notice V-R5: UniversalTxFinalized emits correct recipient (native)
     function testWithdraw_RecipientInEvent_Native() public {
         bytes32 subTxId = keccak256("txR5");
         bytes32 universalTxId = keccak256("utxR5");
@@ -910,7 +910,7 @@ contract VaultWithdrawalTest is Test {
 
         vm.deal(tss, amount);
         vm.expectEmit(true, true, true, true);
-        emit IVault.VaultUniversalTxFinalized(
+        emit IVault.UniversalTxFinalized(
             subTxId, universalTxId, originCaller, specificRecipient, address(0), amount, payload
         );
 
