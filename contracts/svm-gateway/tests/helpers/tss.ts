@@ -9,6 +9,7 @@ export enum TssInstruction {
   Execute = 2, // Unified execute (vault→CEA→CPI)
   RevertWithdrawSol = 3,
   RevertWithdrawSpl = 4,
+  Rescue = 5, // Emergency rescue (SOL or SPL, no replay guard)
 }
 
 // Default to Devnet cluster pubkey if not specified
@@ -215,4 +216,31 @@ export function buildExecuteAdditionalData(
     accountsBuf, // accounts with length prefix - execute specific
     ixDataBuf, // ix_data with length prefix - execute specific
   ];
+}
+
+// =========================
+// RESCUE MESSAGE HELPERS
+// =========================
+
+/**
+ * Build rescue message additional_data (instruction_id=5 for both SOL and SPL).
+ *
+ * SOL:  [universal_tx_id, recipient, gas_fee]
+ * SPL:  [universal_tx_id, mint, recipient, gas_fee]
+ *
+ * No replay guard (EVM parity) — Push Chain prevents duplicate rescue.
+ */
+export function buildRescueAdditionalData(
+  universalTxId: Uint8Array,
+  recipient: PublicKey,
+  gasFee: bigint = BigInt(0),
+  tokenMint?: PublicKey
+): Uint8Array[] {
+  const gasFeeBuf = Buffer.alloc(8);
+  gasFeeBuf.writeBigUInt64BE(gasFee, 0);
+
+  if (tokenMint) {
+    return [universalTxId, tokenMint.toBuffer(), recipient.toBuffer(), gasFeeBuf];
+  }
+  return [universalTxId, recipient.toBuffer(), gasFeeBuf];
 }

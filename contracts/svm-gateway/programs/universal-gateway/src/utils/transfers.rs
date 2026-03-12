@@ -60,7 +60,7 @@ pub fn pda_spl_transfer<'info>(
 pub fn reimburse_relayer_from_fee_vault<'info>(
     fee_vault: &Account<'info, FeeVault>,
     caller: &AccountInfo<'info>,
-    sub_tx_id: [u8; 32],
+    tx_id: [u8; 32], // sub_tx_id for revert; universal_tx_id for rescue
     gas_fee: u64,
 ) -> Result<()> {
     if gas_fee == 0 {
@@ -79,7 +79,7 @@ pub fn reimburse_relayer_from_fee_vault<'info>(
     **caller.try_borrow_mut_lamports()? += gas_fee;
 
     emit!(ProtocolFeeReimbursed {
-        sub_tx_id,
+        tx_id,
         relayer: *caller.key,
         amount_lamports: gas_fee,
     });

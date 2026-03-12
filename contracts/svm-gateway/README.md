@@ -34,6 +34,12 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 - **`revert_universal_tx`** - Revert failed transactions (SOL)
 - **`revert_universal_tx_token`** - Revert failed transactions (SPL tokens)
 
+### Rescue Function
+- **`rescue_funds`** - TSS-verified emergency release of locked vault funds (EVM parity: `Vault.rescueFunds`)
+  - **instruction_id = 5:** Unified SOL and SPL path (token_mint = None → SOL, Some → SPL)
+  - No on-chain replay guard — Push Chain prevents duplicate rescues
+  - Relayer gas reimbursed from `fee_vault`
+
 ### Admin Functions
 - **`initialize`** - Deploy gateway with admin/pauser authorities
 - **`pause` / `unpause`** - Emergency stop controls

@@ -167,6 +167,33 @@ pub mod universal_gateway {
     }
 
     // =========================
+    //          RESCUE
+    // =========================
+    /// @notice TSS-verified emergency rescue of locked funds from vault.
+    /// @dev    EVM parity: `Vault.rescueFunds(universalTxId, token, amount, recipient)`.
+    ///         SOL path: token_mint = None. SPL path: token_mint = Some.
+    ///         No on-chain replay guard (EVM parity) — Push Chain prevents duplicate rescue.
+    pub fn rescue_funds(
+        ctx: Context<RescueFunds>,
+        universal_tx_id: [u8; 32],
+        amount: u64,
+        gas_fee: u64,
+        signature: [u8; 64],
+        recovery_id: u8,
+        message_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::rescue::rescue_funds(
+            ctx,
+            universal_tx_id,
+            amount,
+            gas_fee,
+            signature,
+            recovery_id,
+            message_hash,
+        )
+    }
+
+    // =========================
     //        REVERT
     // =========================
     /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
@@ -241,6 +268,7 @@ pub use instructions::admin::{
 pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::FinalizeUniversalTx;
 pub use instructions::initialize::Initialize;
+pub use instructions::rescue::RescueFunds;
 pub use instructions::revert::{RevertUniversalTx, RevertUniversalTxToken};
 pub use utils::PriceData;
 
@@ -250,6 +278,7 @@ pub use state::{
     Config,
     ExecutedSubTx,
     FeeVault,
+    FundsRescued,
     GatewayAccountMeta,
     ProtocolFeeCollected,
     ProtocolFeeReimbursed,

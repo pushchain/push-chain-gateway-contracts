@@ -283,6 +283,7 @@ Both EVM and SVM use unified outbound entrypoints with instruction_id routing:
 - `2` = Execute (Vault → CEA → Target Program via CPI)
 - `3` = Revert SOL
 - `4` = Revert SPL
+- `5` = Rescue (SOL or SPL, TSS-verified emergency release, no replay guard)
 
 ### TSS Signature Validation
 
