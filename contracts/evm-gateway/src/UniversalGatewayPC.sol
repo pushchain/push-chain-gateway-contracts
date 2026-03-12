@@ -16,7 +16,9 @@ import { IPRC20 } from "./interfaces/IPRC20.sol";
 import { IVaultPC } from "./interfaces/IVaultPC.sol";
 import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
 import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
-import { TX_TYPE, UniversalOutboundTxRequest } from "./libraries/Types.sol";
+import { TX_TYPE } from "./libraries/Types.sol";
+import { UniversalOutboundTxRequest } from "./libraries/TypesUGPC.sol";
+
 
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -35,6 +37,7 @@ contract UniversalGatewayPC is
     address public UNIVERSAL_CORE;
     IVaultPC public VAULT_PC;
     uint256 public nonce;
+    uint256 public RESCUE_FUNDS_GAS_LIMIT;
 
     // ==============================
     //    UGPC_1: ADMIN ACTIONS
@@ -75,6 +78,16 @@ contract UniversalGatewayPC is
         address oldVaultPC = address(VAULT_PC);
         VAULT_PC = IVaultPC(vaultPC);
         emit VaultPCUpdated(oldVaultPC, vaultPC);
+    }
+
+    /// @notice                Sets the gas limit used for rescue-funds fee calculation.
+    /// @param gasLimit        New gas limit value.
+    function setRescueFundsGasLimit(uint256 gasLimit)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+    {
+        RESCUE_FUNDS_GAS_LIMIT = gasLimit;
     }
 
     // ==============================
@@ -124,9 +137,9 @@ contract UniversalGatewayPC is
         emit UniversalTxOutbound(
             subTxId,
             msg.sender,
-            req.recipient,
             chainNamespace,
             req.token,
+            req.recipient,
             req.amount,
             gasToken,
             gasFee,
@@ -136,6 +149,41 @@ contract UniversalGatewayPC is
             req.revertRecipient,
             txType,
             gasPrice
+        );
+    }
+
+    /// @inheritdoc IUniversalGatewayPC
+    function rescueFundsOnSourceChain(
+        bytes32 universalTxId,
+        address prc20
+    ) external payable whenNotPaused nonReentrant {
+        if (prc20 == address(0)) revert Errors.ZeroAddress();
+        if (RESCUE_FUNDS_GAS_LIMIT == 0) revert Errors.InvalidData();
+
+        string memory chainNamespace =
+            IPRC20(prc20).SOURCE_CHAIN_NAMESPACE();
+
+        uint256 gasPrice = IUniversalCore(UNIVERSAL_CORE)
+            .gasPriceByChainNamespace(chainNamespace);
+        if (gasPrice == 0) revert Errors.InvalidData();
+
+        address gasToken = IUniversalCore(UNIVERSAL_CORE)
+            .gasTokenPRC20ByChainNamespace(chainNamespace);
+        if (gasToken == address(0)) revert Errors.InvalidData();
+
+        uint256 gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT;
+
+        _swapAndCollectFees(gasToken, msg.value, gasFee);
+
+        emit RescueFundsOnSourceChain(
+            universalTxId,
+            prc20,
+            chainNamespace,
+            msg.sender,
+            TX_TYPE.RESCUE_FUNDS,
+            gasFee,
+            gasPrice,
+            RESCUE_FUNDS_GAS_LIMIT
         );
     }
 

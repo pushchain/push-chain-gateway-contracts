@@ -3,13 +3,8 @@ pragma solidity 0.8.26;
 
 import { BaseTest } from "../BaseTest.t.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
-import {
-    TX_TYPE,
-    RevertInstructions,
-    UniversalPayload,
-    UniversalTxRequest,
-    UniversalTokenTxRequest
-} from "../../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions } from "../../src/libraries/Types.sol";
+import { UniversalPayload, UniversalTxRequest, UniversalTokenTxRequest } from "../../src/libraries/TypesUG.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";

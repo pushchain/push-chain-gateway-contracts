@@ -199,7 +199,7 @@ function revertUniversalTxToken(
 | Role                 | Permissions                 | Critical Actions                                    |
 | -------------------- | --------------------------- | --------------------------------------------------- |
 | `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`                           |
-| `TSS_ROLE`           | Execute operations          | `finalizeUniversalTx()`, `revertUniversalTxToken()` |
+| `TSS_ROLE`           | Execute operations          | `finalizeUniversalTx()`, `revertUniversalTxToken()`, `rescueFunds()` |
 | `PAUSER_ROLE`        | Emergency pause             | `pause()`, `unpause()`                              |
 
 **Security Properties**:
@@ -248,6 +248,13 @@ event UniversalTxReverted(
     RevertInstructions revertInstruction
 );
 
+event FundsRescued(
+    bytes32 indexed universalTxId,
+    address indexed token,
+    uint256 amount,
+    address indexed recipient
+);
+
 event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
 event TSSUpdated(address indexed oldTSS, address indexed newTSS);
 ```
@@ -291,6 +298,12 @@ When testing Vault operations:
 - Admin operations (setGateway, setTSS)
 - Pause/unpause functionality
 
+**Rescue Funds Tests** (`test/vault/VaultRescueFunds.t.sol`):
+- ERC20 and native rescue happy paths
+- Delisted token rescue (no support check)
+- Access control (TSS only), pause, zero amount, zero recipient
+- Insufficient balance, native transfer failure
+
 **Security Tests**:
 - Reentrancy protection
 - Token/value invariant enforcement
@@ -299,11 +312,14 @@ When testing Vault operations:
 
 ### Key Components
 
-1. **Transaction Type System** (`src/libraries/Types.sol`)
-   - `TX_TYPE.GAS`: Gas-only deposits to fund Universal Execution Accounts (UEAs)
-   - `TX_TYPE.GAS_AND_PAYLOAD`: Gas + payload execution (instant route)
-   - `TX_TYPE.FUNDS`: High-value fund transfers only
-   - `TX_TYPE.FUNDS_AND_PAYLOAD`: High-value funds + payload execution
+1. **Transaction Type System** (`src/libraries/Types.sol`, `TypesUG.sol`, `TypesUGPC.sol`)
+   - `TX_TYPE.GAS` (0): Gas-only deposits to fund Universal Execution Accounts (UEAs)
+   - `TX_TYPE.GAS_AND_PAYLOAD` (1): Gas + payload execution (instant route)
+   - `TX_TYPE.FUNDS` (2): High-value fund transfers only
+   - `TX_TYPE.FUNDS_AND_PAYLOAD` (3): High-value funds + payload execution
+   - `TX_TYPE.RESCUE_FUNDS` (4): Rescue locked funds from source chain Vault
+
+   Types are split across three files: shared types in `Types.sol`, UG-specific structs in `TypesUG.sol`, UGPC-specific structs in `TypesUGPC.sol`.
 
    **Transaction types are inferred automatically** based on request structure (hasPayload, hasFunds, fundsIsNative, hasNativeValue) - users never explicitly specify TX_TYPE.
 
@@ -540,7 +556,10 @@ Amount validation happens in `_fetchTxType()` which rejects empty transactions (
    - ✅ `TX_TYPE.FUNDS` - Withdraw tokens only
    - ✅ `TX_TYPE.FUNDS_AND_PAYLOAD` - Withdraw + execute
    - ✅ `TX_TYPE.GAS_AND_PAYLOAD` - Execute using existing CEA funds (amount=0)
+   - ✅ `TX_TYPE.RESCUE_FUNDS` - Rescue locked funds via `rescueFundsOnSourceChain`
    - ❌ `TX_TYPE.GAS` - Not supported (inbound only)
+
+5. **`rescueFundsOnSourceChain(bytes32 universalTxId, address prc20)`**: Allows users to request rescue of funds locked in a source chain Vault. Pays gas via native PC (no protocol fee, no PRC20 burn). TSS picks up the emitted `RescueFundsOnSourceChain` event and calls `Vault.rescueFunds()` on the source chain. Gas limit is fixed via admin-set `RESCUE_FUNDS_GAS_LIMIT`.
 
 ### Testing Guidelines
 
@@ -574,7 +593,9 @@ When testing UniversalGatewayPC:
 
 ### Related Files
 
-- `src/UniversalGatewayPC.sol` - `sendUniversalTxOutbound()`, `_swapAndCollectFees()`, `_fetchTxType()`
-- `src/interfaces/IUniversalCore.sol` - `swapAndBurnGas()` interface
+- `src/UniversalGatewayPC.sol` - `sendUniversalTxOutbound()`, `rescueFundsOnSourceChain()`, `_swapAndCollectFees()`, `_fetchTxType()`
+- `src/interfaces/IUniversalCore.sol` - `swapAndBurnGas()`, `gasPriceByChainNamespace()`, `gasTokenPRC20ByChainNamespace()` interface
 - `test/gateway/14_gatewayPC.t.sol` - Comprehensive test suite (82 tests)
+- `test/gateway/17_rescueFundsOnSourceChain.t.sol` - Rescue funds UGPC tests (14 tests)
+- `test/vault/VaultRescueFunds.t.sol` - Vault rescue funds tests (10 tests)
 - `test/gateway/9_sendUniversalTxFetchTxType.t.sol` - TX_TYPE inference tests (27 tests)

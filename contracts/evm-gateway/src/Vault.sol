@@ -160,6 +160,32 @@ contract Vault is
         emit UniversalTxReverted(subTxId, universalTxId, token, amount, revertInstruction);
     }
 
+    /// @inheritdoc IVault
+    function rescueFunds(
+        bytes32 universalTxId,
+        address token,
+        uint256 amount,
+        address recipient
+    ) external nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        if (amount == 0) revert Errors.ZeroAmount();
+        if (recipient == address(0)) revert Errors.InvalidRecipient();
+
+        if (token == address(0)) {
+            if (address(this).balance < amount) {
+                revert Errors.InsufficientBalance();
+            }
+            (bool ok,) = recipient.call{ value: amount }("");
+            if (!ok) revert Errors.WithdrawFailed();
+        } else {
+            if (IERC20(token).balanceOf(address(this)) < amount) {
+                revert Errors.InsufficientBalance();
+            }
+            IERC20(token).safeTransfer(recipient, amount);
+        }
+
+        emit FundsRescued(universalTxId, token, amount, recipient);
+    }
+
     // ==============================
     //    Vault_3: INTERNAL HELPERS
     // ==============================

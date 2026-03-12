@@ -1061,3 +1061,84 @@ sequenceDiagram
 | `delegatecall` to migration contract fails                        | `CEAErrors.ExecutionFailed()`                |
 | CEA not yet deployed (BOB has no CEA)                             | Vault deploys CEA first; migration then runs |
 | Multicall payload accidentally sent instead of migration selector | Routes to `_handleMulticall`, not migration  |
+
+---
+
+## 8. Rescue Funds Flow (`TX_TYPE.RESCUE_FUNDS`)
+
+### 8.1 Problem Statement
+
+When a CEA triggers an inbound call via `UniversalGateway.sendUniversalTxFromCEA()`, tokens are locked in the source chain's Vault. In an edge case where tokens are locked but never minted on Push Chain, there is no standard way to recover them.
+
+### 8.2 Flow Overview
+
+```mermaid
+sequenceDiagram
+    participant BOB as BOB (Push Chain)
+    participant UGPC as UniversalGatewayPC
+    participant UC as UniversalCore
+    participant TSS as TSS Authority
+    participant VAULT as Vault (External Chain)
+
+    BOB->>UGPC: rescueFundsOnSourceChain(universalTxId, prc20) {value: pcForGas}
+    UGPC->>UGPC: Validate prc20, RESCUE_FUNDS_GAS_LIMIT
+    UGPC->>UC: gasPriceByChainNamespace(chainNamespace)
+    UGPC->>UC: gasTokenPRC20ByChainNamespace(chainNamespace)
+    UGPC->>UGPC: gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT
+    UGPC->>UC: swapAndBurnGas(gasToken, msg.value, gasFee)
+    UC-->>BOB: Refund excess PC
+    UGPC->>UGPC: emit RescueFundsOnSourceChain(...)
+
+    Note over TSS: TSS picks up event
+
+    TSS->>VAULT: rescueFunds(universalTxId, token, amount, recipient)
+    VAULT->>VAULT: Transfer token/native to recipient
+    VAULT->>VAULT: emit FundsRescued(...)
+```
+
+### 8.3 Push Chain Side (`UniversalGatewayPC.rescueFundsOnSourceChain`)
+
+**Caller:** Any user (no role required).
+
+**Steps:**
+1. Validate `prc20 != address(0)` and `RESCUE_FUNDS_GAS_LIMIT != 0`.
+2. Resolve `chainNamespace` from the PRC20 token.
+3. Look up `gasPrice` and `gasToken` from `UniversalCore`.
+4. Compute `gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT`.
+5. Swap `msg.value` → gas token via `_swapAndCollectFees`. Excess PC refunded to caller.
+6. Emit `RescueFundsOnSourceChain` with `TX_TYPE.RESCUE_FUNDS`.
+
+**Key differences from `sendUniversalTxOutbound`:**
+- No PRC20 burn.
+- No protocol fee.
+- No nonce or subTxId generation.
+- Fixed gas limit via admin-set `RESCUE_FUNDS_GAS_LIMIT`.
+
+### 8.4 External Chain Side (`Vault.rescueFunds`)
+
+**Caller:** TSS only (`TSS_ROLE`).
+
+**Steps:**
+1. Validate `amount > 0` and `recipient != address(0)`.
+2. Transfer token (ERC20 via `safeTransfer`) or native (via low-level `call`) to `recipient`.
+3. Emit `FundsRescued(universalTxId, token, amount, recipient)`.
+
+**No token support check** — TSS can rescue even delisted tokens.
+
+### 8.5 Error Conditions
+
+| Condition (UGPC)                    | Error            |
+| ----------------------------------- | ---------------- |
+| `prc20 == address(0)`              | `ZeroAddress`    |
+| `RESCUE_FUNDS_GAS_LIMIT == 0`      | `InvalidData`    |
+| `gasPrice == 0` for chain           | `InvalidData`    |
+| `gasToken == address(0)` for chain  | `InvalidData`    |
+| `msg.value == 0`                    | `ZeroAmount`     |
+
+| Condition (Vault)                   | Error                |
+| ----------------------------------- | -------------------- |
+| `amount == 0`                       | `ZeroAmount`         |
+| `recipient == address(0)`           | `InvalidRecipient`   |
+| Insufficient balance                | `InsufficientBalance`|
+| Native transfer fails               | `WithdrawFailed`     |
+| Caller not TSS                      | AccessControl revert |
