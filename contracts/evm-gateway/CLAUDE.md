@@ -564,16 +564,17 @@ When testing UniversalGatewayPC:
 
 ### Gas Fee Swap Flow (exactOutputSingle)
 
-`sendUniversalTxOutbound` accepts native PC as `msg.value`, quotes the required `gasFee` via `_calculateGasFeesWithLimit()`, then calls `_swapAndCollectFees()` which delegates to `UniversalCore.swapPCForGasToken()`:
+`sendUniversalTxOutbound` accepts native PC as `msg.value`, quotes the required `gasFee` and `protocolFee` (native PC, from `UniversalCore.protocolFeeByToken`) via `_fetchOutboundTxGasAndFees()`. The gateway sends `protocolFee` directly to VaultPC as native PC, then calls `_swapAndCollectFees()` which delegates to `UniversalCore.swapAndBurnGas()`:
 
-1. UGPC passes `gasFee` as `requiredGasTokenOut` and `msg.sender` as `caller`
-2. UniversalCore performs an exactOutputSingle swap: produces exactly `requiredGasTokenOut` gas tokens to VaultPC
-3. UniversalCore refunds unused PC directly to `caller` (the original user)
-4. If the swap cannot produce the required output, UniversalCore reverts (no separate check in UGPC)
+1. UGPC sends `protocolFee` to VaultPC as native PC transfer
+2. UGPC passes remaining `msg.value - protocolFee` to `swapAndBurnGas` with `gasFee` as the required gas token output
+3. UniversalCore performs an exactOutputSingle swap: burns exactly `gasFee` worth of gas tokens
+4. UniversalCore refunds unused PC directly to `caller` (the original user)
+5. If the swap cannot produce the required output, UniversalCore reverts (no separate check in UGPC)
 
 ### Related Files
 
 - `src/UniversalGatewayPC.sol` - `sendUniversalTxOutbound()`, `_swapAndCollectFees()`, `_fetchTxType()`
-- `src/interfaces/IUniversalCore.sol` - `swapPCForGasToken()` interface
+- `src/interfaces/IUniversalCore.sol` - `swapAndBurnGas()` interface
 - `test/gateway/14_gatewayPC.t.sol` - Comprehensive test suite (82 tests)
 - `test/gateway/9_sendUniversalTxFetchTxType.t.sol` - TX_TYPE inference tests (27 tests)

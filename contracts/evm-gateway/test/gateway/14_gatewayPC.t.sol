@@ -350,7 +350,7 @@ contract UniversalGatewayPCTest is Test {
         }
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -366,7 +366,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify token balances (exactOutputSingle mints exactly gasFee to vault)
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -441,7 +441,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -457,7 +457,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -554,9 +554,9 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // msg.value = 0 should revert with ZeroAmount
+        // msg.value = 0 but protocolFee > 0 → reverts with InvalidInput (insufficient for protocol fee)
         vm.prank(user1);
-        vm.expectRevert(Errors.ZeroAmount.selector);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.sendUniversalTxOutbound{value: 0}(req);
     }
 
@@ -590,7 +590,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -606,7 +606,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify token balances (exactOutputSingle mints exactly gasFee to vault)
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -684,7 +684,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -700,7 +700,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -711,7 +711,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -727,7 +727,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -747,7 +747,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
@@ -763,7 +763,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify token balances
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -870,9 +870,9 @@ contract UniversalGatewayPCTest is Test {
             revertRecipient
         );
 
-        // msg.value = 0 should revert with ZeroAmount
+        // msg.value = 0 but protocolFee > 0 → reverts with InvalidInput (insufficient for protocol fee)
         vm.prank(user1);
-        vm.expectRevert(Errors.ZeroAmount.selector);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.sendUniversalTxOutbound{value: 0}(req);
     }
 
@@ -1014,7 +1014,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
             bytes(""),
@@ -1029,7 +1029,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify withdrawal succeeded
-        assertEq(gasToken.balanceOf(vaultPC), initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasTokenBalance + DEFAULT_PROTOCOL_FEE);
     }
 
     function testGasFeeCalculationAccuracy() public {
@@ -1046,7 +1046,7 @@ contract UniversalGatewayPCTest is Test {
     function _testGasFeeForLimit(uint256 amount, address revertRecipient, uint256 gasLimit) internal {
         // exactOutputSingle mints exactly the quoted gasFee for the requested gasLimit
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 balanceBefore = gasToken.balanceOf(vaultPC);
+        uint256 balanceBefore = vaultPC.balance;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
             bytes(""),
@@ -1060,7 +1060,7 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
-        uint256 balanceAfter = gasToken.balanceOf(vaultPC);
+        uint256 balanceAfter = vaultPC.balance;
         assertEq(balanceAfter - balanceBefore, DEFAULT_PROTOCOL_FEE);
 
         // Reset for next iteration
@@ -1089,7 +1089,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             unconfiguredChainId,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
@@ -1121,7 +1120,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
@@ -1155,7 +1153,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             chainWithTokenNoPrice,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
@@ -1227,7 +1224,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
@@ -1272,7 +1268,6 @@ contract UniversalGatewayPCTest is Test {
             18,
             SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.PC,
-            DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             ""
         );
@@ -1284,7 +1279,6 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.ERC20,
-            DEFAULT_PROTOCOL_FEE,
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
@@ -1294,6 +1288,12 @@ contract UniversalGatewayPCTest is Test {
         universalCore.setGasPrice(SOURCE_CHAIN_NAMESPACE, DEFAULT_GAS_PRICE);
         vm.prank(uem);
         universalCore.setGasTokenPRC20(SOURCE_CHAIN_NAMESPACE, address(gasToken));
+
+        // Configure protocol fees on UniversalCore
+        vm.prank(uem);
+        universalCore.setProtocolFeeByToken(address(prc20Token), DEFAULT_PROTOCOL_FEE);
+        vm.prank(uem);
+        universalCore.setProtocolFeeByToken(address(gasToken), DEFAULT_PROTOCOL_FEE);
 
         vm.label(address(universalCore), "UniversalCore");
         vm.label(address(prc20Token), "PRC20Token");
@@ -1872,13 +1872,13 @@ contract UniversalGatewayPCTest is Test {
         );
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasBalance = vaultPC.balance;
 
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify gas tokens were minted to vault via swap
-        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasBalance + DEFAULT_PROTOCOL_FEE);
     }
 
     function testGasFee_GAS_AND_PAYLOAD_NotSupportedOnPC() public {
@@ -1897,7 +1897,7 @@ contract UniversalGatewayPCTest is Test {
         );
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasBalance = vaultPC.balance;
         uint256 nonceBefore = gateway.nonce();
 
         vm.prank(user1);
@@ -1905,7 +1905,7 @@ contract UniversalGatewayPCTest is Test {
 
         // Verify transaction succeeded and gas tokens were minted to vault via swap
         assertEq(gateway.nonce(), nonceBefore + 1, "Nonce should increment");
-        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + DEFAULT_PROTOCOL_FEE, "Only protocol fee should go to vault");
+        assertEq(vaultPC.balance, initialGasBalance + DEFAULT_PROTOCOL_FEE, "Only protocol fee should go to vault");
     }
 
     function testGasFee_FUNDS_AND_PAYLOAD_CorrectCalculation() public {
@@ -1924,14 +1924,14 @@ contract UniversalGatewayPCTest is Test {
         );
 
         uint256 expectedGasFee = calculateExpectedGasFee(gasLimit);
-        uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasBalance = vaultPC.balance;
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
 
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify gas tokens minted to vault via swap and PRC20 burned
-        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasBalance + DEFAULT_PROTOCOL_FEE);
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
     }
 
@@ -1977,13 +1977,13 @@ contract UniversalGatewayPCTest is Test {
         );
 
         uint256 expectedGasFee = calculateExpectedGasFee(DEFAULT_GAS_LIMIT);
-        uint256 initialGasBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasBalance = vaultPC.balance;
 
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Verify DEFAULT_GAS_LIMIT was used for fee calculation
-        assertEq(gasToken.balanceOf(vaultPC), initialGasBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialGasBalance + DEFAULT_PROTOCOL_FEE);
     }
 
     function testStruct_EmptyPayloadBytes() public {
@@ -2246,8 +2246,9 @@ contract UniversalGatewayPCTest is Test {
             bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
         );
 
+        // msg.value = 0 but protocolFee > 0 → reverts with InvalidInput (insufficient for protocol fee)
         vm.prank(user1);
-        vm.expectRevert(Errors.ZeroAmount.selector);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.sendUniversalTxOutbound{value: 0}(req);
     }
 
@@ -2260,14 +2261,14 @@ contract UniversalGatewayPCTest is Test {
         );
 
         uint256 initialPrc20Balance = prc20Token.balanceOf(user1);
-        uint256 initialGasTokenBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialGasTokenBalance = vaultPC.balance;
 
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // User's PRC20 burned, gas tokens minted to vault via swap
         assertEq(prc20Token.balanceOf(user1), initialPrc20Balance - amount);
-        assertTrue(gasToken.balanceOf(vaultPC) > initialGasTokenBalance);
+        assertTrue(vaultPC.balance > initialGasTokenBalance);
     }
 
     function testBurnBeforeSwap_Ordering() public {
@@ -2336,7 +2337,7 @@ contract UniversalGatewayPCTest is Test {
         uint256 amount = 1000 * 1e6;
         address revertRecipient = user2;
 
-        uint256 initialVaultBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialVaultBalance = vaultPC.balance;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
             bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
@@ -2346,7 +2347,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Vault should only receive protocolFee, not gasFee
-        assertEq(gasToken.balanceOf(vaultPC), initialVaultBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialVaultBalance + DEFAULT_PROTOCOL_FEE);
     }
 
     function testBurn_GasTokenBurnedNotAccumulated() public {
@@ -2354,7 +2355,7 @@ contract UniversalGatewayPCTest is Test {
         address revertRecipient = user2;
 
         uint256 supplyBefore = gasToken.totalSupply();
-        uint256 initialVaultBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialVaultBalance = vaultPC.balance;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
             bytes(""), address(prc20Token), amount, DEFAULT_GAS_LIMIT, bytes(""), revertRecipient
@@ -2363,10 +2364,10 @@ contract UniversalGatewayPCTest is Test {
         vm.prank(user1);
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
-        // gasFee was minted then burned — net supply change is only protocolFee (minted to vault)
-        assertEq(gasToken.totalSupply(), supplyBefore + DEFAULT_PROTOCOL_FEE);
+        // gasFee was minted then burned — net supply change is zero (protocolFee sent as native PC, not minted)
+        assertEq(gasToken.totalSupply(), supplyBefore);
         // Vault only holds protocolFee
-        assertEq(gasToken.balanceOf(vaultPC), initialVaultBalance + DEFAULT_PROTOCOL_FEE);
+        assertEq(vaultPC.balance, initialVaultBalance + DEFAULT_PROTOCOL_FEE);
     }
 
     function testBurn_ZeroProtocolFee_VaultGetsNothing() public {
@@ -2377,17 +2378,17 @@ contract UniversalGatewayPCTest is Test {
             6,
             SOURCE_CHAIN_NAMESPACE,
             MockPRC20.TokenType.ERC20,
-            0, // zero protocol fee
             address(universalCore),
             SOURCE_TOKEN_ADDRESS
         );
+        // protocolFeeByToken defaults to 0 — no setProtocolFeeByToken call needed
 
         uint256 amount = 1000 * 1e6;
         zeroFeeToken.mint(user1, amount);
         vm.prank(user1);
         zeroFeeToken.approve(address(gateway), amount);
 
-        uint256 initialVaultBalance = gasToken.balanceOf(vaultPC);
+        uint256 initialVaultBalance = vaultPC.balance;
 
         UniversalOutboundTxRequest memory req = _createOutboundRequest(
             bytes(""), address(zeroFeeToken), amount, DEFAULT_GAS_LIMIT, bytes(""), user2
@@ -2397,7 +2398,7 @@ contract UniversalGatewayPCTest is Test {
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
 
         // Vault gets nothing when protocolFee is 0
-        assertEq(gasToken.balanceOf(vaultPC), initialVaultBalance);
+        assertEq(vaultPC.balance, initialVaultBalance);
     }
 
     function testRefund_ForwardFailure_Reverts() public {

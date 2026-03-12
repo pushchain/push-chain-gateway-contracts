@@ -2,7 +2,6 @@
 pragma solidity 0.8.26;
 
 import { IUniversalCore } from "../../src/interfaces/IUniversalCore.sol";
-import { IPRC20 } from "../../src/interfaces/IPRC20.sol";
 import { MockPRC20 } from "./MockPRC20.sol";
 
 /**
@@ -46,6 +45,9 @@ contract MockUniversalCoreReal is IUniversalCore {
 
     /// @notice Base gas limit for the cross-chain outbound transactions.
     uint256 public BASE_GAS_LIMIT = 500_000;
+
+    /// @notice Protocol fee per token in native PC
+    mapping(address => uint256) public protocolFeeByToken;
 
     /// @notice Role for managing gas-related configurations
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
@@ -187,6 +189,10 @@ contract MockUniversalCoreReal is IUniversalCore {
         emit SetGasToken(chainID, prc20);
     }
 
+    function setProtocolFeeByToken(address token, uint256 fee) external onlyRole(MANAGER_ROLE) {
+        protocolFeeByToken[token] = fee;
+    }
+
     // ========= Admin Functions =========
     modifier onlyOwner() {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "MockUniversalCore: caller is not owner");
@@ -256,7 +262,7 @@ contract MockUniversalCoreReal is IUniversalCore {
         view
         returns (address gasToken, uint256 gasFee, uint256 protocolFee, uint256 gasPrice, string memory chainNamespace)
     {
-        chainNamespace = IPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
+        chainNamespace = MockPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
         gasToken = gasTokenPRC20ByChainNamespace[chainNamespace];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
@@ -265,7 +271,7 @@ contract MockUniversalCoreReal is IUniversalCore {
         require(gasPrice != 0, "MockUniversalCore: zero gas price");
 
         gasFee = gasPrice * gasLimit;
-        protocolFee = IPRC20(_prc20).PC_PROTOCOL_FEE();
+        protocolFee = protocolFeeByToken[_prc20];
     }
 
     /// @notice Update the base gas limit for the cross-chain outbound transactions.
@@ -279,32 +285,22 @@ contract MockUniversalCoreReal is IUniversalCore {
     // ========= Swap Functions =========
     function swapAndBurnGas(
         address gasTokenAddr,
-        address vault,
         uint24,
         uint256 gasFee,
-        uint256 protocolFee,
         uint256,
         address caller
     ) external payable returns (uint256 gasTokenOut, uint256 refund) {
-        uint256 totalRequired = gasFee + protocolFee;
-        require(totalRequired > 0, "MockUniversalCore: zero total output");
+        require(gasFee > 0, "MockUniversalCore: zero total output");
 
         // Burn gasFee portion (mint then burn to simulate swap+burn)
-        if (gasFee > 0) {
-            MockPRC20(gasTokenAddr).mint(address(this), gasFee);
-            MockPRC20(gasTokenAddr).burn(gasFee);
-        }
+        MockPRC20(gasTokenAddr).mint(address(this), gasFee);
+        MockPRC20(gasTokenAddr).burn(gasFee);
 
-        // Send protocolFee to vault
-        if (protocolFee > 0) {
-            MockPRC20(gasTokenAddr).mint(vault, protocolFee);
-        }
-
-        gasTokenOut = totalRequired;
+        gasTokenOut = gasFee;
 
         // Refund unused PC directly to the caller (1:1 ratio for mock simplicity)
-        if (msg.value > totalRequired) {
-            refund = msg.value - totalRequired;
+        if (msg.value > gasFee) {
+            refund = msg.value - gasFee;
             (bool ok,) = caller.call{value: refund}("");
             require(ok, "MockUniversalCore: refund failed");
         }

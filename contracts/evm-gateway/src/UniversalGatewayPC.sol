@@ -8,7 +8,7 @@ pragma solidity 0.8.26;
  * @dev    Deployed on Push Chain only. Routes three outbound TX_TYPEs: FUNDS, FUNDS_AND_PAYLOAD,
  *         and GAS_AND_PAYLOAD. PRC20 tokens are burned at request time; gas fees paid in native PC
  *         are swapped via UniversalCore — the gas-cost portion is burned (freeing backing tokens
- *         for TSS relayers) and the protocol-fee portion is sent to VaultPC as revenue.
+ *         for TSS relayers). The protocol fee is collected as native PC and sent directly to VaultPC.
  */
 
 import { Errors } from "./libraries/Errors.sol";
@@ -105,7 +105,12 @@ contract UniversalGatewayPC is
             _burnPRC20(msg.sender, req.token, req.amount);
         }
 
-        _swapAndCollectFees(gasToken, msg.value, gasFee, protocolFee);
+        if (msg.value < protocolFee) revert Errors.InvalidInput();
+        if (protocolFee > 0) {
+            (bool ok,) = address(VAULT_PC).call{ value: protocolFee }("");
+            if (!ok) revert Errors.InvalidInput();
+        }
+        _swapAndCollectFees(gasToken, msg.value - protocolFee, gasFee);
 
         uint256 currentNonce = nonce;
         nonce = currentNonce + 1;
@@ -173,7 +178,7 @@ contract UniversalGatewayPC is
     /// @return gasToken        Gas token PRC20 address for the target chain.
     /// @return gasFee          Gas cost in gas token units (excludes protocol fee).
     /// @return gasLimitUsed    Gas limit actually used for the quote.
-    /// @return protocolFee     Flat protocol fee in gas token units.
+    /// @return protocolFee     Protocol fee in native PC (from UniversalCore.protocolFeeByToken mapping).
     /// @return gasPrice        Gas price on the external chain (wei per gas unit).
     /// @return chainNamespace  Chain namespace string for the target chain.
     function _fetchOutboundTxGasAndFees(address token, uint256 gasLimit)
@@ -199,19 +204,14 @@ contract UniversalGatewayPC is
     }
 
     /// @dev                    Swap native PC → gas token PRC20 via UniversalCore.
-    ///                         Burns gasFee, sends protocolFee to VaultPC. Refunds unused PC to caller.
+    ///                         Burns gasFee. Refunds unused PC to caller.
     /// @param gasToken         Gas token PRC20 address (e.g., pETH).
-    /// @param pcAmount         Native PC amount (msg.value) to swap.
+    /// @param pcAmount         Native PC amount (msg.value minus protocolFee) to swap.
     /// @param gasFee           Gas cost portion to burn (in gas token units).
-    /// @param protocolFee      Protocol fee portion to send to VaultPC (in gas token units).
-    function _swapAndCollectFees(address gasToken, uint256 pcAmount, uint256 gasFee, uint256 protocolFee) internal {
+    function _swapAndCollectFees(address gasToken, uint256 pcAmount, uint256 gasFee) internal {
         if (pcAmount == 0) revert Errors.ZeroAmount();
-        address vault = address(VAULT_PC);
-        if (vault == address(0)) revert Errors.ZeroAddress();
 
-        IUniversalCore(UNIVERSAL_CORE).swapAndBurnGas{ value: pcAmount }(
-            gasToken, vault, 0, gasFee, protocolFee, 0, msg.sender
-        );
+        IUniversalCore(UNIVERSAL_CORE).swapAndBurnGas{ value: pcAmount }(gasToken, 0, gasFee, 0, msg.sender);
     }
 
     /// @dev                    Pulls PRC20 from `from` into this contract, then burns them.
