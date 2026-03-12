@@ -162,7 +162,7 @@ pub fn finalize_universal_tx(
     let cea_seeds = [CEA_SEED, push_account.as_ref(), &cea_bump[..]];
 
     stage_assets_to_cea(&ctx, &request, amount, gas_fee, &vault_seeds)?;
-    let should_emit_finalized = dispatch_finalize_action(
+    dispatch_finalize_action(
         &mut ctx,
         &request,
         execute_accounts,
@@ -172,17 +172,15 @@ pub fn finalize_universal_tx(
         &cea_seeds,
     )?;
 
-    if should_emit_finalized {
-        emit!(UniversalTxFinalized {
-            sub_tx_id,
-            universal_tx_id,
-            push_account,
-            target: request.target,
-            token: request.token,
-            amount,
-            payload: ix_data,
-        });
-    }
+    emit!(UniversalTxFinalized {
+        sub_tx_id,
+        universal_tx_id,
+        push_account,
+        target: request.target,
+        token: request.token,
+        amount,
+        payload: ix_data,
+    });
 
     Ok(())
 }
@@ -383,15 +381,15 @@ fn dispatch_finalize_action(
     push_account: [u8; 20],
     ix_data: &[u8],
     cea_seeds: &[&[u8]],
-) -> Result<bool> {
+) -> Result<()> {
     if request.is_withdraw {
         internal_withdraw(ctx, amount, request.token, cea_seeds)?;
-        return Ok(true);
+        return Ok(());
     }
 
     if request.target == *ctx.program_id {
         send_universal_tx_to_uea(ctx, push_account, ix_data, cea_seeds)?;
-        return Ok(false);
+        return Ok(());
     }
 
     let cea_key = ctx.accounts.cea_authority.key();
@@ -415,7 +413,7 @@ fn dispatch_finalize_action(
     };
 
     invoke_signed(&cpi_ix, ctx.remaining_accounts, &[cea_seeds])?;
-    Ok(true)
+    Ok(())
 }
 
 fn reconstruct_accounts_from_flags<'info>(

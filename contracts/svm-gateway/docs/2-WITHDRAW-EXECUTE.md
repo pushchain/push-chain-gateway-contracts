@@ -44,7 +44,7 @@ sub_tx_id[32] | universal_tx_id[32] | push_account[20] | token[32] | gas_fee_be[
 4. `Vault → CEA`: transfer `amount`
 5. `Vault → Caller`: transfer `gas_fee` (relayer reimbursement)
 6. Mode-specific action (see below)
-7. Emit `UniversalTxFinalized` — **except** on the CEA self-withdraw path (`target == gateway`), which emits `UniversalTx` instead and suppresses `UniversalTxFinalized`
+7. Emit `UniversalTxFinalized` (all finalized paths, including CEA self-withdraw)
 
 ---
 
@@ -77,7 +77,10 @@ Args (Borsh):
 }
 ```
 
-The recipient UEA address comes from the `push_account` parameter, not from `ix_data`. Emits `UniversalTx` with `from_cea: true`. Does **not** emit `UniversalTxFinalized`.
+The recipient UEA address comes from the `push_account` parameter, not from `ix_data`.
+This path emits:
+- `UniversalTx` with `from_cea: true` using inner decoded args (`token`, `amount`, `payload`)
+- `UniversalTxFinalized` from parent finalize flow using outer execute fields (`amount`, full `ix_data`)
 
 ---
 

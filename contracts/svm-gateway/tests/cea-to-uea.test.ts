@@ -525,17 +525,32 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
         Buffer.from(universalTxEvent.data.payload).toString("hex")
       ).to.equal(ceaPayload.toString("hex"));
 
-      // UniversalTxFinalized should NOT be emitted for CEA withdrawal
-      const executedEvent = events.find(
+      // UniversalTxFinalized should also be emitted for CEA→UEA path
+      const finalizedEvent = events.find(
         (e) => e.name === "universalTxFinalized"
       );
       expect(
-        executedEvent,
-        "UniversalTxFinalized should not be emitted for CEA withdrawal"
-      ).to.be.undefined;
-
-      console.log(
-        "✅ FundsAndPayload + from_cea=true emitted for CEA withdrawal with payload"
+        finalizedEvent,
+        "UniversalTxFinalized should be emitted for CEA→UEA path"
+      ).to.exist;
+      expect(finalizedEvent.data.target.toString()).to.equal(
+        gatewayProgram.programId.toString()
+      );
+      expect(finalizedEvent.data.token.toString()).to.equal(
+        new anchor.web3.PublicKey(new Uint8Array(32)).toString()
+      );
+      expect(finalizedEvent.data.amount.toString()).to.equal("0");
+      expect(Buffer.from(finalizedEvent.data.subTxId).toString("hex")).to.equal(
+        Buffer.from(txIdWithdraw).toString("hex")
+      );
+      expect(
+        Buffer.from(finalizedEvent.data.universalTxId).toString("hex")
+      ).to.equal(Buffer.from(universalTxIdWithdraw).toString("hex"));
+      expect(
+        Buffer.from(finalizedEvent.data.pushAccount).toString("hex")
+      ).to.equal(Buffer.from(pushAccount).toString("hex"));
+      expect(Buffer.from(finalizedEvent.data.payload).toString("hex")).to.equal(
+        withdrawIxData.toString("hex")
       );
     });
   });

@@ -24,7 +24,7 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
    - **Revert (3/4)**: separate revert functions
 9. Events emitted:
    - Normal withdraw/execute: `UniversalTxFinalized`
-   - CEA self-withdraw (execute with target == gateway): `UniversalTx` with `from_cea: true`
+   - CEA self-withdraw (execute with target == gateway): `UniversalTx` with `from_cea: true` **and** `UniversalTxFinalized`
    - Revert: `RevertUniversalTx`
 
 ### 1.2 Event Structure (Push Chain)
@@ -531,7 +531,10 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `instruction_id = 2`
 - `destination_program`: gateway program ID
 - `ix_data`: `send_universal_tx_to_uea` discriminator + Borsh args (`token`, `amount`, `payload`)
-- Emits `UniversalTx` with `from_cea: true` (does not emit `UniversalTxFinalized`)
+- Emits `UniversalTx` with `from_cea: true` and `UniversalTxFinalized`
+- Semantic split:
+  - `UniversalTx.amount` / `UniversalTx.payload` come from inner decoded args
+  - `UniversalTxFinalized.amount` / `UniversalTxFinalized.payload` come from outer finalize args (`amount`, full `ix_data`)
 
 ### 4.5 Revert Universal Transaction (SOL)
 
@@ -685,12 +688,14 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 
 1. After transaction confirmation, listen for Solana events:
    - **Normal execute/withdraw:** `UniversalTxFinalized` — field order: `sub_tx_id`, `universal_tx_id`, `push_account`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
-   - **CEA self-withdraw (target == gateway):** `UniversalTx` with `from_cea: true` — emitted by `send_universal_tx_to_uea`, NO `UniversalTxFinalized` event
+   - **CEA self-withdraw (target == gateway):** emits both `UniversalTx` (`from_cea: true`) and `UniversalTxFinalized`
+     - `UniversalTx.amount`/`payload` = inner decoded `send_universal_tx_to_uea` args
+     - `UniversalTxFinalized.amount`/`payload` = outer `finalize_universal_tx` args
    - **Revert:** `RevertUniversalTx` — field order: `sub_tx_id`, `universal_tx_id`, `fund_recipient`, `token`, `amount`, `revert_instruction`
 2. Verify event fields match your transaction
 3. Mark transaction as completed
 
-**Important:** CEA→UEA path (execute with destinationProgram == gateway) emits `UniversalTx` and returns early, so `UniversalTxFinalized` is NOT emitted for this flow.
+**Important:** CEA→UEA path emits both events. It no longer suppresses `UniversalTxFinalized`.
 
 ---
 
@@ -792,8 +797,8 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
      - Remaining: decoded accounts from payload (same order, same isWritable flags)
 9. **Submit**: Sign with relayer keypair, send to Solana
 10. **Verify**: Wait for event:
-    - Normal execute: `UniversalTxFinalized` (includes sub_tx_id, universal_tx_id, push_account, target, token, amount, payload)
-    - CEA self-withdraw (destinationProgram == gateway): `UniversalTx` with `from_cea: true` (NO `UniversalTxFinalized`)
+   - Normal execute: `UniversalTxFinalized` (includes sub_tx_id, universal_tx_id, push_account, target, token, amount, payload)
+   - CEA self-withdraw (destinationProgram == gateway): both `UniversalTx` (`from_cea: true`) and `UniversalTxFinalized`
 
 ### Withdraw Flow (instruction_id=1):
 

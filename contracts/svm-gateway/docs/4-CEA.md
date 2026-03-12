@@ -30,10 +30,12 @@ finalize_universal_tx (instruction_id=2, target=gateway)
   → Vault → Caller (gas_fee, relayer reimbursement)
   → CEA → Vault (withdraw_amount)
   → emit UniversalTx (from_cea=true)
-  [UniversalTxFinalized is NOT emitted on this path]
+  → emit UniversalTxFinalized
 ```
 
 The `UniversalTx` event is picked up by Push Chain relayers to credit the user's UEA.
+`UniversalTx` uses inner decoded values from `send_universal_tx_to_uea` args (`amount`, `payload`).
+`UniversalTxFinalized` uses outer `finalize_universal_tx` values (`amount`, full `ix_data`).
 
 `from_cea` is always `true` on this path. This differs from EVM where FUNDS-only CEA withdrawals emit `from_cea=false` — an artifact of EVM routing that does not apply to SVM, where the gateway always knows it is handling a CEA withdrawal.
 
