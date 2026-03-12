@@ -17,10 +17,10 @@ interface IUniversalGatewayPC {
     /// @notice                  Single event covering both flows (funds-only and funds+payload).
     /// @param subTxId           Unique sub-transaction identifier
     /// @param sender            EVM sender on Push Chain (burn initiator)
-    /// @param recipient         Raw destination address on the source chain (bytes for SVM compat);
-    ///                          bytes("") means park funds in the caller's CEA
     /// @param chainNamespace    Origin chain namespace string, fetched from PRC20
     /// @param token             PRC20 token address being withdrawn (represents origin ERC20/native)
+    /// @param recipient         Raw destination address on the source chain (bytes for SVM compat);
+    ///                          bytes("") means park funds in the caller's CEA
     /// @param amount            Amount burned on Push Chain
     /// @param gasToken          PRC20 gas coin used to pay cross-chain execution fees
     /// @param gasFee            Amount of gasToken charged on external chain
@@ -33,9 +33,9 @@ interface IUniversalGatewayPC {
     event UniversalTxOutbound(
         bytes32 indexed subTxId,
         address indexed sender,
-        bytes   recipient,
         string  chainNamespace,
         address indexed token,
+        bytes   recipient,
         uint256 amount,
         address gasToken,
         uint256 gasFee,

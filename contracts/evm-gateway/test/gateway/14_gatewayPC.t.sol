@@ -418,9 +418,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
+            bytes(""), // recipient
             amount, // amount
             address(gasToken), // gasToken
             expectedGasFee, // gasFee
@@ -660,9 +660,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
+            bytes(""), // recipient
             amount, // amount
             address(gasToken), // gasToken
             expectedGasFee, // gasFee
@@ -1375,9 +1375,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
+            bytes(""), // recipient
             amount, // amount
             address(gasToken), // gasToken
             expectedGasFee, // gasFee
@@ -1418,9 +1418,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1, // sender
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE, // chainId
             address(prc20Token), // token
+            bytes(""), // recipient
             amount, // amount
             address(gasToken), // gasToken
             expectedGasFee, // gasFee
@@ -1584,9 +1584,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1,
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
+            bytes(""), // recipient
             amount,
             address(gasToken),
             expectedGasFee,
@@ -1710,9 +1710,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1,
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
+            bytes(""), // recipient
             amount,
             address(gasToken),
             expectedGasFee,
@@ -1777,9 +1777,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId, // subTxId
             user1,
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
+            bytes(""), // recipient
             amount,
             address(gasToken),
             expectedGasFee,
@@ -2041,9 +2041,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId1,
             user1,
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
+            bytes(""), // recipient
             amount,
             address(gasToken),
             calculateExpectedGasFee(DEFAULT_GAS_LIMIT),
@@ -2088,9 +2088,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId2,
             user1,
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
+            bytes(""), // recipient
             amount,
             address(gasToken),
             calculateExpectedGasFee(DEFAULT_GAS_LIMIT),
@@ -2130,9 +2130,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId,
             user1,
-            bytes(""), // recipient
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
+            bytes(""), // recipient
             amount,
             address(gasToken),
             expectedGasFee,
@@ -2167,9 +2167,9 @@ contract UniversalGatewayPCTest is Test {
         emit IUniversalGatewayPC.UniversalTxOutbound(
             expectedsubTxId,
             user1,
-            arbitraryRecipient, // recipient emitted verbatim
             SOURCE_CHAIN_NAMESPACE,
             address(prc20Token),
+            arbitraryRecipient, // recipient emitted verbatim
             amount,
             address(gasToken),
             expectedGasFee,

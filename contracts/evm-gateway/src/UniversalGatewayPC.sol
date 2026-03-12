@@ -137,9 +137,9 @@ contract UniversalGatewayPC is
         emit UniversalTxOutbound(
             subTxId,
             msg.sender,
-            req.recipient,
             chainNamespace,
             req.token,
+            req.recipient,
             req.amount,
             gasToken,
             gasFee,
