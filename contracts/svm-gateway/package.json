@@ -31,6 +31,7 @@
     "test:admin": "TEST_FILE=tests/admin.test.ts anchor test",
     "test:rate-limit": "TEST_FILE=tests/rate-limit.test.ts anchor test",
     "test:universal-tx": "TEST_FILE=tests/universal-tx.test.ts anchor test",
+    "test:rescue": "TEST_FILE=tests/rescue.test.ts anchor test",
     "devnet:test": "ts-node app/gateway-test.ts"
   },
   "dependencies": {

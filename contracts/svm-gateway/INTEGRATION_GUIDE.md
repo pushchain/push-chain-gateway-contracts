@@ -220,6 +220,7 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
    - `2` = Execute (SOL or SPL; unified, vault→CEA→CPI)
    - `3` = Revert SOL
    - `4` = Revert SPL
+   - `5` = Rescue (SOL or SPL; TSS-verified emergency release, no replay guard)
 2. `chain_id`: UTF-8 bytes (see 3.1.2 above) - **NO length prefix**
 3. `amount`: u64 BE (8 bytes) - present for all instructions
 
@@ -265,6 +266,21 @@ gas_fee (u64 BE)
 **For Revert SPL (4):**
 ```
 sub_tx_id (32 bytes)
+universal_tx_id (32 bytes)
+mint_pubkey (32 bytes)
+recipient_pubkey (32 bytes)
+gas_fee (u64 BE)
+```
+
+**For Rescue SOL (5):**
+```
+universal_tx_id (32 bytes)
+recipient_pubkey (32 bytes)
+gas_fee (u64 BE)
+```
+
+**For Rescue SPL (5, with mint):**
+```
 universal_tx_id (32 bytes)
 mint_pubkey (32 bytes)
 recipient_pubkey (32 bytes)
@@ -815,9 +831,24 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
        - SOL: `[sub_tx_id, universal_tx_id, recipient_pubkey, gas_fee_buf]`
        - SPL: `[sub_tx_id, universal_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
    - **Note**: `signTssMessage()` does **not** auto-include `sub_tx_id` / `universal_tx_id`. Include them in `additional` as specified.
-3. **Sign and submit**: 
+3. **Sign and submit**:
    - `signTssMessage()` returns signature, recovery_id, message_hash
    - See account structs: `RevertUniversalTx` or `RevertUniversalTxToken` in `revert.rs`
+
+### Rescue Flow (emergency only):
+
+1. **Trigger**: Push Chain determines funds are locked and unreachable; emits rescue authorization
+2. **Build TSS message** (instruction_id = 5 for both SOL and SPL):
+   - Call `buildRescueAdditionalData(universalTxId, recipient, gasFee, tokenMint?)` from `tests/helpers/tss.ts`
+   - SOL additional: `[universal_tx_id, recipient_pubkey, gas_fee_buf]`
+   - SPL additional: `[universal_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
+3. **Sign**: `signTssMessage({ instruction: TssInstruction.Rescue, amount, additional })`
+4. **Submit** `rescue_funds` with accounts:
+   - Always required: `config`, `vault`, `fee_vault`, `tss_pda`, `recipient`, `caller`, `system_program`
+   - SOL only: `token_vault=null`, `recipient_token_account=null`, `token_mint=null`, `token_program=null`
+   - SPL only: `token_vault` (vault ATA), `recipient_token_account` (recipient ATA), `token_mint`, `token_program`
+5. **No replay guard** — Push Chain is the source of truth for deduplication
+6. **Events emitted**: `FundsRescued`, `ProtocolFeeReimbursed`
 
 ---
 
@@ -857,12 +888,16 @@ Before production:
 - `buildWithdrawAdditionalData()` - Constructs additional fields for withdraw (instruction_id=1)
   - Format: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target]
   - **Common fields first**, then withdraw-specific (target)
+- `buildRescueAdditionalData()` - Constructs additional fields for rescue (instruction_id=5)
+  - SOL: `[universal_tx_id, recipient, gas_fee]`
+  - SPL: `[universal_tx_id, mint, recipient, gas_fee]`
 
 **Instruction IDs** (TssInstruction enum):
 - `TssInstruction.Withdraw = 1` - Unified withdraw (SOL/SPL)
 - `TssInstruction.Execute = 2` - Unified execute (SOL/SPL)
 - `TssInstruction.RevertWithdrawSol = 3` - Revert SOL
 - `TssInstruction.RevertWithdrawSpl = 4` - Revert SPL
+- `TssInstruction.Rescue = 5` - Emergency rescue (SOL or SPL, no replay guard)
 
 **Usage**: See test file `contracts/svm-gateway/tests/execute.test.ts` (search for `signTssMessage` or `buildExecuteAdditionalData`)
 
@@ -932,6 +967,9 @@ Before production:
 **Revert Structs** (see `revert.rs`):
 - `RevertUniversalTx` - Required accounts for SOL revert (instruction_id=3)
 - `RevertUniversalTxToken` - Required accounts for SPL revert (instruction_id=4)
+
+**Rescue Struct** (see `rescue.rs`):
+- `RescueFunds` - Unified accounts for SOL and SPL rescue (instruction_id=5); SPL accounts are optional
 
 **State Structures** (see `state.rs`):
 - `GatewayAccountMeta` - Account metadata (pubkey + is_writable)
