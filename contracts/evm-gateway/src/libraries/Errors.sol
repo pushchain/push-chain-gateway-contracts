@@ -1,33 +1,35 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+/// @title  Errors
+/// @notice Shared custom errors used across all gateway and vault contracts.
 library Errors {
-    // =========================
-    //           Common ERRORS
-    // =========================
+    // ==============================
+    //        COMMON ERRORS
+    // ==============================
+
     error ZeroAddress();
+    error ZeroAmount();
     error InvalidData();
     error InvalidInput();
     error InvalidAmount();
     error InvalidTxType();
     error InvalidCapRange();
+    error InvalidRecipient();
     error PayloadExecuted();
+    error Unauthorized();
 
-    // =========================
-    //           UniversalGateway ERRORS
-    // =========================
+    // ==============================
+    //     GATEWAY ERRORS
+    // ==============================
+
     error NotSupported();
     error DepositFailed();
     error WithdrawFailed();
-    error ExecutionFailed();
-    error InvalidRecipient();
     error RateLimitExceeded();
     error BlockCapLimitExceeded();
     error SlippageExceededOrExpired();
-    error TokenBurnFailed(address token, uint256 amount);
-    error GasFeeTransferFailed(address token, address from, uint256 amount);
     error InsufficientBalance();
-    error Unauthorized();
     error InsufficientProtocolFee();
-    error ZeroAmount();
+    error TokenBurnFailed(address token, uint256 amount);
 }

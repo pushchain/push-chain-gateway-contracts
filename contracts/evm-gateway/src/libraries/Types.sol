@@ -1,92 +1,94 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-/// @notice Transaction Types in Universal Gateway
+/// @notice Transaction types in Universal Gateway.
 enum TX_TYPE {
-    /// @dev        only for funding the UEA on Push Chain with GAS
-    ///             doesn't support movement of high value funds or payload for execution.
+    /// @dev    Only for funding the UEA on Push Chain with gas.
+    ///         Does not support movement of high-value funds or payload execution.
     GAS,
-    /// @dev        for funding UEA and execute a payload instantly via UEA on Push Chain. versal transaction route.
-    ///             allows movement of funds between CAP_RANGES ( low fund size ) & requires lower block confirmations.
+    /// @dev    For funding UEA and executing a payload instantly via UEA on Push Chain.
+    ///         Allows movement of funds between cap ranges (low fund size)
+    ///         and requires lower block confirmations.
     GAS_AND_PAYLOAD,
-    /// @dev        for bridging of large funds only from external chain to Push Chain.
-    ///             doesn't support arbitrary payload movement and requires longer block confirmations.
+    /// @dev    For bridging large funds only from external chain to Push Chain.
+    ///         Does not support arbitrary payload and requires longer block confirmations.
     FUNDS,
-    /// @dev        for bridging both funds and payload to Push Chain for execution.
-    ///             no strict cap ranges for fund amount and requires longer block confirmations.
+    /// @dev    For bridging both funds and payload to Push Chain for execution.
+    ///         No strict cap ranges for fund amount and requires longer block confirmations.
     FUNDS_AND_PAYLOAD
 }
 
+/// @notice Revert/refund instructions for failed transactions.
 struct RevertInstructions {
-    ///             where funds go in revert / refund cases
-    address revertRecipient;
-    ///             arbitrary message for relayers/UEA
-    bytes revertMsg;
+    address revertRecipient;         // where funds go in revert/refund cases
+    bytes   revertMsg;               // arbitrary message for relayers/UEA
 }
 
-/// @notice         Multicall structure for CEA execution
+/// @notice Multicall structure for CEA execution.
 struct Multicall {
-    address to;      // Target contract address
-    uint256 value;   // Native token amount to send with call
-    bytes data;      // Call data to execute
+    address to;                      // target contract address
+    uint256 value;                   // native token amount to send with call
+    bytes   data;                    // call data to execute
 }
 
-/// @notice         Packed per-token usage for the current epoch only (no on-chain history kept).
+/// @notice Packed per-token usage for the current epoch only (no on-chain history kept).
 struct EpochUsage {
-    uint64 epoch;   // epoch index = block.timestamp / epochDurationSec
-    uint192 used;   // amount consumed in this epoch (token's natural units)
+    uint64  epoch;                   // epoch index = block.timestamp / epochDurationSec
+    uint192 used;                    // amount consumed in this epoch (token's natural units)
 }
 
-/// @notice         Signature verification types
+/// @notice Signature verification types.
+/// @dev    NOT used by any src/ contract — only consumed by tests and UEA contracts.
 enum VerificationType {
     signedVerification,
     universalTxVerification
 }
 
-/// @notice         Universal payload for execution on Push Chain
+/// @notice Universal payload for execution on Push Chain.
+/// @dev    NOT used by any src/ contract — only consumed by tests and UEA contracts.
 struct UniversalPayload {
-    address to;                     // Target contract address to call
-    uint256 value;                  // Native token amount to send
-    bytes data;                     // Call data for the function execution
-    uint256 gasLimit;               // Maximum gas to be used for this tx (caps refund amount)
-    uint256 maxFeePerGas;           // Maximum fee per gas unit
-    uint256 maxPriorityFeePerGas;   // Maximum priority fee per gas unit
-    uint256 nonce;                  // Nonce for the transaction
-    uint256 deadline;               // Timestamp after which this payload is invalid
-    VerificationType vType;         // Type of verification (signedVerification or universalTxVerification)
+    address          to;             // target contract address to call
+    uint256          value;          // native token amount to send
+    bytes            data;           // call data for the function execution
+    uint256          gasLimit;       // maximum gas to be used for this tx
+    uint256          maxFeePerGas;   // maximum fee per gas unit
+    uint256 maxPriorityFeePerGas;    // maximum priority fee per gas unit
+    uint256          nonce;          // nonce for the transaction
+    uint256          deadline;       // timestamp after which this payload is invalid
+    VerificationType vType;          // signedVerification or universalTxVerification
 }
 
-/// @notice         Universal transaction request for native token as GAS
+/// @notice Universal transaction request for native token as gas.
 struct UniversalTxRequest {
-    address recipient;                      // address(0) => credit to UEA on Push
-    address token;                          // address(0) => native path (gas-only)
-    uint256 amount;                         // native amount or ERC20 amount
-    bytes   payload;                        // call data / memo = UNIVERSAL PAYLOAD
-    address revertRecipient;                  // address to receive funds in case of revert
-    bytes   signatureData;                  // signature data for further verification
+    address recipient;               // address(0) => credit to UEA on Push
+    address token;                   // address(0) => native path (gas-only)
+    uint256 amount;                  // native amount or ERC20 amount
+    bytes   payload;                 // call data / memo = UNIVERSAL PAYLOAD
+    address revertRecipient;         // address to receive funds in case of revert
+    bytes   signatureData;           // signature data for further verification
 }
 
-/// @notice         Universal transaction request for ERC20 token as GAS
+/// @notice Universal transaction request for ERC20 token as gas.
 struct UniversalTokenTxRequest {
-    address recipient;                      // address(0) => credit to UEA on Push
-    address token;                          // address(0) => native path (gas-only)
-    uint256 amount;                         // native amount or ERC20 amount
-    address gasToken;                       // token used for paying GAS
-    uint256 gasAmount;                      // amount of the token to be used as GAS.
-    bytes   payload;                        // call data / memo = UNIVERSAL PAYLOAD
-    address revertRecipient;                  // address to receive funds in case of revert
-    bytes   signatureData;                  // signature data for further verification
-	uint256 amountOutMinETH;                // minimum amount of ETH to receive
-    uint256 deadline;                       // timestamp after which this request is invalid
+    address recipient;               // address(0) => credit to UEA on Push
+    address token;                   // address(0) => native path (gas-only)
+    uint256 amount;                  // native amount or ERC20 amount
+    address gasToken;                // token used for paying gas
+    uint256 gasAmount;               // amount of the token to be used as gas
+    bytes   payload;                 // call data / memo = UNIVERSAL PAYLOAD
+    address revertRecipient;         // address to receive funds in case of revert
+    bytes   signatureData;           // signature data for further verification
+    uint256 amountOutMinETH;         // minimum amount of ETH to receive
+    uint256 deadline;                // timestamp after which this request is invalid
 }
 
-/// @notice         Universal outbound transaction request for Push Chain
+/// @notice Universal outbound transaction request for Push Chain.
 struct UniversalOutboundTxRequest {
-    bytes   recipient;                      // raw destination address on source chain (bytes for SVM compat)
-                                            // bytes("") → park funds in caller's CEA (FUNDS withdrawal-to-self)
-    address token;                          // PRC20 token address on Push Chain
-    uint256 amount;                         // amount to withdraw (burn on Push, unlock at origin)
-    uint256 gasLimit;                       // gas limit to use for fee quote; if 0, uses default BASE_GAS_LIMIT
-    bytes   payload;                        // ABI-encoded calldata to execute on the origin chain (empty for funds-only)
-    address revertRecipient;                // address to receive funds in case of revert
+    bytes   recipient;               // raw destination address on source chain (bytes for SVM compat)
+                                     // bytes("") => park funds in caller's CEA
+    address token;                   // PRC20 token address on Push Chain
+    uint256 amount;                  // amount to withdraw (burn on Push, unlock at origin)
+    uint256 gasLimit;                // gas limit for fee quote; 0 = default BASE_GAS_LIMIT
+    bytes   payload;                 // ABI-encoded calldata to execute on origin chain (empty for funds-only)
+    address revertRecipient;         // address to receive funds in case of revert
 }

@@ -1,57 +1,72 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertInstructions, TX_TYPE, UniversalOutboundTxRequest } from "../libraries/Types.sol";
+import { TX_TYPE, UniversalOutboundTxRequest } from "../libraries/Types.sol";
 
 /**
- * @title   IUniversalGatewayPC
- * @notice  Interface for UniversalGatewayPC contract
- * @dev     Defines all public functions and events for the Push Chain outbound gateway
+ * @title  IUniversalGatewayPC
+ * @notice Interface for UniversalGatewayPC contract
+ * @dev    Defines all public functions and events for the Push Chain outbound gateway
  */
 interface IUniversalGatewayPC {
-    // ========= Events =========
+    // ==============================
+    //      UGPC_1: EVENTS
+    // ==============================
 
-    /// @notice                 Single event covering both flows (funds-only and funds+payload).
-    /// @param sender           EVM sender on Push Chain (burn initiator) on Push Chain
-    /// @param recipient        Raw destination address on the source chain (bytes for SVM compat);
-    ///                         bytes("") means park funds in the caller's CEA
-    /// @param chainNamespace   Origin chain namespace string, fetched from PRC20 on external chain
-    /// @param token            PRC20 token address being withdrawn (represents origin ERC20/native) on external chain
-    /// @param amount           Amount burned on Push Chain
-    /// @param gasToken         PRC20 gas coin used to pay cross-chain execution fees on external chain
-    /// @param gasFee           Amount of gasToken charged on external chain
-    /// @param gasLimit         Gas limit used for fee quote on external chain
-    /// @param payload          Optional payload for arbitrary call on origin chain (empty for funds-only) on external chain
-    /// @param protocolFee      Flat protocol fee portion (as defined by PRC20), included inside gasFee on external chain
+    /// @notice                  Single event covering both flows (funds-only and funds+payload).
+    /// @param subTxId           Unique sub-transaction identifier
+    /// @param sender            EVM sender on Push Chain (burn initiator)
+    /// @param recipient         Raw destination address on the source chain (bytes for SVM compat);
+    ///                          bytes("") means park funds in the caller's CEA
+    /// @param chainNamespace    Origin chain namespace string, fetched from PRC20
+    /// @param token             PRC20 token address being withdrawn (represents origin ERC20/native)
+    /// @param amount            Amount burned on Push Chain
+    /// @param gasToken          PRC20 gas coin used to pay cross-chain execution fees
+    /// @param gasFee            Amount of gasToken charged on external chain
+    /// @param gasLimit          Gas limit used for fee quote on external chain
+    /// @param payload           Optional payload for arbitrary call on origin chain (empty for funds-only)
+    /// @param protocolFee       Flat protocol fee portion (as defined by PRC20)
+    /// @param revertRecipient   Address to receive funds in case of revert
+    /// @param txType            Inferred transaction type
+    /// @param gasPrice          Gas price on the external chain (wei per gas unit)
     event UniversalTxOutbound(
         bytes32 indexed subTxId,
         address indexed sender,
         bytes   recipient,
-        string chainNamespace,
+        string  chainNamespace,
         address indexed token,
         uint256 amount,
         address gasToken,
         uint256 gasFee,
         uint256 gasLimit,
-        bytes payload,
+        bytes   payload,
         uint256 protocolFee,
         address revertRecipient,
         TX_TYPE txType,
         uint256 gasPrice
     );
 
-    /// @notice                 Emitted when VaultPC address is updated
-    /// @param oldVaultPC       Previous VaultPC address
-    /// @param newVaultPC       New VaultPC address
+    /// @notice                  Emitted when VaultPC address is updated
+    /// @param oldVaultPC        Previous VaultPC address
+    /// @param newVaultPC        New VaultPC address
     event VaultPCUpdated(address indexed oldVaultPC, address indexed newVaultPC);
-    /**
-     * @notice                   Send a universal outbound transaction from Push Chain to origin chain.
-     * @dev                      Unified function for all outbound transaction types (FUNDS, FUNDS_AND_PAYLOAD, GAS_AND_PAYLOAD).
-     *                           TX_TYPE is automatically inferred based on the presence of payload and amount.
-     * @param req                UniversalOutboundTxRequest struct containing all transaction parameters.
-     */
+
+    // ==============================
+    //    UGPC_2: OUTBOUND TX
+    // ==============================
+
+    /// @notice                  Send a universal outbound transaction from Push Chain to origin chain.
+    /// @dev                     Unified function for all outbound transaction types
+    ///                          (FUNDS, FUNDS_AND_PAYLOAD, GAS_AND_PAYLOAD).
+    ///                          TX_TYPE is automatically inferred based on the presence of payload and amount.
+    /// @param req               UniversalOutboundTxRequest struct containing all transaction parameters.
     function sendUniversalTxOutbound(UniversalOutboundTxRequest calldata req) external payable;
 
-    // ========= View Functions =========
+    // ==============================
+    //    UGPC_3: VIEW FUNCTIONS
+    // ==============================
+
+    /// @notice                  Returns the UniversalCore contract address.
+    /// @return                  Address of the UniversalCore contract.
     function UNIVERSAL_CORE() external view returns (address);
 }
