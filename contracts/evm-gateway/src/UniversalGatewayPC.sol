@@ -8,7 +8,7 @@ pragma solidity 0.8.26;
  * @dev    Deployed on Push Chain only. Routes three outbound TX_TYPEs: FUNDS, FUNDS_AND_PAYLOAD,
  *         and GAS_AND_PAYLOAD. PRC20 tokens are burned at request time; gas fees paid in native PC
  *         are swapped via UniversalCore — the gas-cost portion is burned (freeing backing tokens
- *         for TSS relayers) and the protocol-fee portion is sent to VaultPC as revenue.
+ *         for TSS relayers). The protocol fee is collected as native PC and sent directly to VaultPC.
  */
 
 import { Errors } from "./libraries/Errors.sol";
@@ -16,7 +16,9 @@ import { IPRC20 } from "./interfaces/IPRC20.sol";
 import { IVaultPC } from "./interfaces/IVaultPC.sol";
 import { IUniversalCore } from "./interfaces/IUniversalCore.sol";
 import { IUniversalGatewayPC } from "./interfaces/IUniversalGatewayPC.sol";
-import { TX_TYPE, UniversalOutboundTxRequest } from "./libraries/Types.sol";
+import { TX_TYPE } from "./libraries/Types.sol";
+import { UniversalOutboundTxRequest } from "./libraries/TypesUGPC.sol";
+
 
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -35,6 +37,7 @@ contract UniversalGatewayPC is
     address public UNIVERSAL_CORE;
     IVaultPC public VAULT_PC;
     uint256 public nonce;
+    uint256 public RESCUE_FUNDS_GAS_LIMIT;
 
     // ==============================
     //    UGPC_1: ADMIN ACTIONS
@@ -77,6 +80,16 @@ contract UniversalGatewayPC is
         emit VaultPCUpdated(oldVaultPC, vaultPC);
     }
 
+    /// @notice                Sets the gas limit used for rescue-funds fee calculation.
+    /// @param gasLimit        New gas limit value.
+    function setRescueFundsGasLimit(uint256 gasLimit)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+    {
+        RESCUE_FUNDS_GAS_LIMIT = gasLimit;
+    }
+
     // ==============================
     //    UGPC_2: OUTBOUND TX
     // ==============================
@@ -105,7 +118,12 @@ contract UniversalGatewayPC is
             _burnPRC20(msg.sender, req.token, req.amount);
         }
 
-        _swapAndCollectFees(gasToken, msg.value, gasFee, protocolFee);
+        if (msg.value < protocolFee) revert Errors.InvalidInput();
+        if (protocolFee > 0) {
+            (bool ok,) = address(VAULT_PC).call{ value: protocolFee }("");
+            if (!ok) revert Errors.InvalidInput();
+        }
+        _swapAndCollectFees(gasToken, msg.value - protocolFee, gasFee);
 
         uint256 currentNonce = nonce;
         nonce = currentNonce + 1;
@@ -119,9 +137,9 @@ contract UniversalGatewayPC is
         emit UniversalTxOutbound(
             subTxId,
             msg.sender,
-            req.recipient,
             chainNamespace,
             req.token,
+            req.recipient,
             req.amount,
             gasToken,
             gasFee,
@@ -131,6 +149,41 @@ contract UniversalGatewayPC is
             req.revertRecipient,
             txType,
             gasPrice
+        );
+    }
+
+    /// @inheritdoc IUniversalGatewayPC
+    function rescueFundsOnSourceChain(
+        bytes32 universalTxId,
+        address prc20
+    ) external payable whenNotPaused nonReentrant {
+        if (prc20 == address(0)) revert Errors.ZeroAddress();
+        if (RESCUE_FUNDS_GAS_LIMIT == 0) revert Errors.InvalidData();
+
+        string memory chainNamespace =
+            IPRC20(prc20).SOURCE_CHAIN_NAMESPACE();
+
+        uint256 gasPrice = IUniversalCore(UNIVERSAL_CORE)
+            .gasPriceByChainNamespace(chainNamespace);
+        if (gasPrice == 0) revert Errors.InvalidData();
+
+        address gasToken = IUniversalCore(UNIVERSAL_CORE)
+            .gasTokenPRC20ByChainNamespace(chainNamespace);
+        if (gasToken == address(0)) revert Errors.InvalidData();
+
+        uint256 gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT;
+
+        _swapAndCollectFees(gasToken, msg.value, gasFee);
+
+        emit RescueFundsOnSourceChain(
+            universalTxId,
+            prc20,
+            chainNamespace,
+            msg.sender,
+            TX_TYPE.RESCUE_FUNDS,
+            gasFee,
+            gasPrice,
+            RESCUE_FUNDS_GAS_LIMIT
         );
     }
 
@@ -173,7 +226,7 @@ contract UniversalGatewayPC is
     /// @return gasToken        Gas token PRC20 address for the target chain.
     /// @return gasFee          Gas cost in gas token units (excludes protocol fee).
     /// @return gasLimitUsed    Gas limit actually used for the quote.
-    /// @return protocolFee     Flat protocol fee in gas token units.
+    /// @return protocolFee     Protocol fee in native PC (from UniversalCore.protocolFeeByToken mapping).
     /// @return gasPrice        Gas price on the external chain (wei per gas unit).
     /// @return chainNamespace  Chain namespace string for the target chain.
     function _fetchOutboundTxGasAndFees(address token, uint256 gasLimit)
@@ -199,19 +252,14 @@ contract UniversalGatewayPC is
     }
 
     /// @dev                    Swap native PC → gas token PRC20 via UniversalCore.
-    ///                         Burns gasFee, sends protocolFee to VaultPC. Refunds unused PC to caller.
+    ///                         Burns gasFee. Refunds unused PC to caller.
     /// @param gasToken         Gas token PRC20 address (e.g., pETH).
-    /// @param pcAmount         Native PC amount (msg.value) to swap.
+    /// @param pcAmount         Native PC amount (msg.value minus protocolFee) to swap.
     /// @param gasFee           Gas cost portion to burn (in gas token units).
-    /// @param protocolFee      Protocol fee portion to send to VaultPC (in gas token units).
-    function _swapAndCollectFees(address gasToken, uint256 pcAmount, uint256 gasFee, uint256 protocolFee) internal {
+    function _swapAndCollectFees(address gasToken, uint256 pcAmount, uint256 gasFee) internal {
         if (pcAmount == 0) revert Errors.ZeroAmount();
-        address vault = address(VAULT_PC);
-        if (vault == address(0)) revert Errors.ZeroAddress();
 
-        IUniversalCore(UNIVERSAL_CORE).swapAndBurnGas{ value: pcAmount }(
-            gasToken, vault, 0, gasFee, protocolFee, 0, msg.sender
-        );
+        IUniversalCore(UNIVERSAL_CORE).swapAndBurnGas{ value: pcAmount }(gasToken, 0, gasFee, 0, msg.sender);
     }
 
     /// @dev                    Pulls PRC20 from `from` into this contract, then burns them.

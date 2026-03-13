@@ -10,13 +10,8 @@ import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/trans
 
 import { UniversalGateway } from "../src/UniversalGateway.sol";
 import { IUniversalGateway } from "../src/interfaces/IUniversalGateway.sol";
-import {
-    TX_TYPE,
-    RevertInstructions,
-    UniversalPayload,
-    VerificationType,
-    UniversalTxRequest
-} from "../src/libraries/Types.sol";
+import { TX_TYPE, RevertInstructions, VerificationType } from "../src/libraries/Types.sol";
+import { UniversalPayload, UniversalTxRequest } from "../src/libraries/TypesUG.sol";
 import { Errors } from "../src/libraries/Errors.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { MockWETH } from "./mocks/MockWETH.sol";

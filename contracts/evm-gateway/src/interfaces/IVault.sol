@@ -35,7 +35,7 @@ interface IVault {
     /// @param token             Token address being sent
     /// @param amount            Amount of token being sent
     /// @param data              Calldata to be executed on target contract on external chain
-    event VaultUniversalTxFinalized(
+    event UniversalTxFinalized(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed pushAccount,
@@ -51,12 +51,24 @@ interface IVault {
     /// @param token             Token address being reverted
     /// @param amount            Amount of token being reverted
     /// @param revertInstruction Revert instruction containing revertRecipient and revertMsg
-    event VaultUniversalTxReverted(
+    event UniversalTxReverted(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed token,
         uint256 amount,
         RevertInstructions revertInstruction
+    );
+
+    /// @notice                  Funds rescued from the vault
+    /// @param universalTxId     Universal transaction identifier
+    /// @param token             Token address rescued
+    /// @param amount            Amount rescued
+    /// @param recipient         Recipient of rescued funds
+    event FundsRescued(
+        bytes32 indexed universalTxId,
+        address indexed token,
+        uint256 amount,
+        address indexed recipient
     );
 
     // =========================
@@ -98,5 +110,18 @@ interface IVault {
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
+    ) external;
+
+    /// @notice                  TSS-only rescue path for funds locked in the vault.
+    /// @dev                     No token support check — TSS can rescue even delisted tokens.
+    /// @param universalTxId     Universal transaction identifier
+    /// @param token             Token address (address(0) for native)
+    /// @param amount            Amount to rescue
+    /// @param recipient         Recipient of rescued funds
+    function rescueFunds(
+        bytes32 universalTxId,
+        address token,
+        uint256 amount,
+        address recipient
     ) external;
 }

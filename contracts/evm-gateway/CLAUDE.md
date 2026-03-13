@@ -147,7 +147,7 @@ function finalizeUniversalTx(
 1. Get or deploy CEA for the `pushAccount` (UEA)
 2. Fund CEA with tokens/native
 3. Call `CEA.executeUniversalTx(subTxId, universalTxId, pushAccount, data)`
-4. Emit `VaultUniversalTxFinalized` event
+4. Emit `UniversalTxFinalized` event
 
 **Funding Logic**:
 - **ERC20**: Transfer tokens to CEA first, then call `CEA.executeUniversalTx()`
@@ -170,7 +170,7 @@ function revertUniversalTxToken(
 1. Validate token support and amount
 2. Transfer tokens from Vault to UniversalGateway
 3. Call `gateway.revertUniversalTxToken()` to handle refund logic
-4. Emit `VaultUniversalTxReverted` event
+4. Emit `UniversalTxReverted` event
 
 **Use Case**: Return funds to users when execution fails or is rejected on Push Chain
 
@@ -198,15 +198,14 @@ function revertUniversalTxToken(
 
 | Role                 | Permissions                 | Critical Actions                                    |
 | -------------------- | --------------------------- | --------------------------------------------------- |
-| `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`, `sweep()`               |
-| `TSS_ROLE`           | Execute operations          | `finalizeUniversalTx()`, `revertUniversalTxToken()` |
+| `DEFAULT_ADMIN_ROLE` | Full administrative control | `setGateway()`, `setTSS()`                           |
+| `TSS_ROLE`           | Execute operations          | `finalizeUniversalTx()`, `revertUniversalTxToken()`, `rescueFunds()` |
 | `PAUSER_ROLE`        | Emergency pause             | `pause()`, `unpause()`                              |
 
 **Security Properties**:
 - ✅ Only TSS can execute withdrawals and executions
 - ✅ Only TSS can trigger reverts
 - ✅ Admin can update TSS address (transfers role atomically)
-- ✅ Admin can sweep stuck tokens (emergency recovery)
 - ✅ Pausable for emergency situations
 - ✅ ReentrancyGuard on all external entry points
 
@@ -224,11 +223,6 @@ function revertUniversalTxToken(
 - Only `DEFAULT_ADMIN_ROLE`
 - Emits `TSSUpdated(old, new)`
 
-**Sweep Tokens** (`sweep`):
-- Emergency recovery of stuck ERC20 tokens
-- Only `DEFAULT_ADMIN_ROLE`
-- Does not support native token sweep (use withdrawal operations)
-
 **Pause/Unpause**:
 - `pause()`: Halts all operations (only `PAUSER_ROLE`)
 - `unpause()`: Resumes operations (only `PAUSER_ROLE`)
@@ -236,7 +230,7 @@ function revertUniversalTxToken(
 ### Events
 
 ```solidity
-event VaultUniversalTxFinalized(
+event UniversalTxFinalized(
     bytes32 indexed subTxId,
     bytes32 indexed universalTxId,
     address indexed pushAccount,
@@ -246,12 +240,19 @@ event VaultUniversalTxFinalized(
     bytes data
 );
 
-event VaultUniversalTxReverted(
+event UniversalTxReverted(
     bytes32 indexed subTxId,
     bytes32 indexed universalTxId,
     address indexed token,
     uint256 amount,
     RevertInstructions revertInstruction
+);
+
+event FundsRescued(
+    bytes32 indexed universalTxId,
+    address indexed token,
+    uint256 amount,
+    address indexed recipient
 );
 
 event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
@@ -294,8 +295,14 @@ When testing Vault operations:
 
 **Access Control Tests**:
 - TSS_ROLE exclusivity for executions
-- Admin operations (setGateway, setTSS, sweep)
+- Admin operations (setGateway, setTSS)
 - Pause/unpause functionality
+
+**Rescue Funds Tests** (`test/vault/VaultRescueFunds.t.sol`):
+- ERC20 and native rescue happy paths
+- Delisted token rescue (no support check)
+- Access control (TSS only), pause, zero amount, zero recipient
+- Insufficient balance, native transfer failure
 
 **Security Tests**:
 - Reentrancy protection
@@ -305,11 +312,14 @@ When testing Vault operations:
 
 ### Key Components
 
-1. **Transaction Type System** (`src/libraries/Types.sol`)
-   - `TX_TYPE.GAS`: Gas-only deposits to fund Universal Execution Accounts (UEAs)
-   - `TX_TYPE.GAS_AND_PAYLOAD`: Gas + payload execution (instant route)
-   - `TX_TYPE.FUNDS`: High-value fund transfers only
-   - `TX_TYPE.FUNDS_AND_PAYLOAD`: High-value funds + payload execution
+1. **Transaction Type System** (`src/libraries/Types.sol`, `TypesUG.sol`, `TypesUGPC.sol`)
+   - `TX_TYPE.GAS` (0): Gas-only deposits to fund Universal Execution Accounts (UEAs)
+   - `TX_TYPE.GAS_AND_PAYLOAD` (1): Gas + payload execution (instant route)
+   - `TX_TYPE.FUNDS` (2): High-value fund transfers only
+   - `TX_TYPE.FUNDS_AND_PAYLOAD` (3): High-value funds + payload execution
+   - `TX_TYPE.RESCUE_FUNDS` (4): Rescue locked funds from source chain Vault
+
+   Types are split across three files: shared types in `Types.sol`, UG-specific structs in `TypesUG.sol`, UGPC-specific structs in `TypesUGPC.sol`.
 
    **Transaction types are inferred automatically** based on request structure (hasPayload, hasFunds, fundsIsNative, hasNativeValue) - users never explicitly specify TX_TYPE.
 
@@ -546,7 +556,10 @@ Amount validation happens in `_fetchTxType()` which rejects empty transactions (
    - ✅ `TX_TYPE.FUNDS` - Withdraw tokens only
    - ✅ `TX_TYPE.FUNDS_AND_PAYLOAD` - Withdraw + execute
    - ✅ `TX_TYPE.GAS_AND_PAYLOAD` - Execute using existing CEA funds (amount=0)
+   - ✅ `TX_TYPE.RESCUE_FUNDS` - Rescue locked funds via `rescueFundsOnSourceChain`
    - ❌ `TX_TYPE.GAS` - Not supported (inbound only)
+
+5. **`rescueFundsOnSourceChain(bytes32 universalTxId, address prc20)`**: Allows users to request rescue of funds locked in a source chain Vault. Pays gas via native PC (no protocol fee, no PRC20 burn). TSS picks up the emitted `RescueFundsOnSourceChain` event and calls `Vault.rescueFunds()` on the source chain. Gas limit is fixed via admin-set `RESCUE_FUNDS_GAS_LIMIT`.
 
 ### Testing Guidelines
 
@@ -570,16 +583,19 @@ When testing UniversalGatewayPC:
 
 ### Gas Fee Swap Flow (exactOutputSingle)
 
-`sendUniversalTxOutbound` accepts native PC as `msg.value`, quotes the required `gasFee` via `_calculateGasFeesWithLimit()`, then calls `_swapAndCollectFees()` which delegates to `UniversalCore.swapPCForGasToken()`:
+`sendUniversalTxOutbound` accepts native PC as `msg.value`, quotes the required `gasFee` and `protocolFee` (native PC, from `UniversalCore.protocolFeeByToken`) via `_fetchOutboundTxGasAndFees()`. The gateway sends `protocolFee` directly to VaultPC as native PC, then calls `_swapAndCollectFees()` which delegates to `UniversalCore.swapAndBurnGas()`:
 
-1. UGPC passes `gasFee` as `requiredGasTokenOut` and `msg.sender` as `caller`
-2. UniversalCore performs an exactOutputSingle swap: produces exactly `requiredGasTokenOut` gas tokens to VaultPC
-3. UniversalCore refunds unused PC directly to `caller` (the original user)
-4. If the swap cannot produce the required output, UniversalCore reverts (no separate check in UGPC)
+1. UGPC sends `protocolFee` to VaultPC as native PC transfer
+2. UGPC passes remaining `msg.value - protocolFee` to `swapAndBurnGas` with `gasFee` as the required gas token output
+3. UniversalCore performs an exactOutputSingle swap: burns exactly `gasFee` worth of gas tokens
+4. UniversalCore refunds unused PC directly to `caller` (the original user)
+5. If the swap cannot produce the required output, UniversalCore reverts (no separate check in UGPC)
 
 ### Related Files
 
-- `src/UniversalGatewayPC.sol` - `sendUniversalTxOutbound()`, `_swapAndCollectFees()`, `_fetchTxType()`
-- `src/interfaces/IUniversalCore.sol` - `swapPCForGasToken()` interface
+- `src/UniversalGatewayPC.sol` - `sendUniversalTxOutbound()`, `rescueFundsOnSourceChain()`, `_swapAndCollectFees()`, `_fetchTxType()`
+- `src/interfaces/IUniversalCore.sol` - `swapAndBurnGas()`, `gasPriceByChainNamespace()`, `gasTokenPRC20ByChainNamespace()` interface
 - `test/gateway/14_gatewayPC.t.sol` - Comprehensive test suite (82 tests)
+- `test/gateway/17_rescueFundsOnSourceChain.t.sol` - Rescue funds UGPC tests (14 tests)
+- `test/vault/VaultRescueFunds.t.sol` - Vault rescue funds tests (10 tests)
 - `test/gateway/9_sendUniversalTxFetchTxType.t.sol` - TX_TYPE inference tests (27 tests)

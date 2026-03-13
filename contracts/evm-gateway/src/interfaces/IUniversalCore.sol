@@ -15,7 +15,7 @@ interface IUniversalCore {
      * @param gasLimit Gas limit (0 = use BASE_GAS_LIMIT)
      * @return gasToken Gas token address
      * @return gasFee Gas fee (gasPrice * effective gas limit)
-     * @return protocolFee Protocol fee from PRC20
+     * @return protocolFee Protocol fee in native PC (from protocolFeeByToken mapping)
      * @return gasPrice Gas price on the external chain
      * @return chainNamespace Source chain namespace
      */
@@ -26,11 +26,15 @@ interface IUniversalCore {
 
     function swapAndBurnGas(
         address gasToken,
-        address vault,
         uint24 fee,
         uint256 gasFee,
-        uint256 protocolFee,
         uint256 deadline,
         address caller
     ) external payable returns (uint256 gasTokenOut, uint256 refund);
+
+    function protocolFeeByToken(address token) external view returns (uint256);
+
+    function gasPriceByChainNamespace(string calldata chainNamespace) external view returns (uint256);
+
+    function gasTokenPRC20ByChainNamespace(string calldata chainNamespace) external view returns (address);
 }

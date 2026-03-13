@@ -53,7 +53,6 @@ contract VaultPCTest is Test {
             18,
             "1",
             MockPRC20.TokenType.NATIVE,
-            100e18, // protocol fee
             address(universalCore),
             "0x0000000000000000000000000000000000000000"
         );
@@ -64,7 +63,6 @@ contract VaultPCTest is Test {
             18,
             "56",
             MockPRC20.TokenType.NATIVE,
-            50e18, // protocol fee
             address(universalCore),
             "0x0000000000000000000000000000000000000000"
         );

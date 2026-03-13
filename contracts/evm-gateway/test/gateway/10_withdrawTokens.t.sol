@@ -5,7 +5,8 @@ import { Test, console2 } from "forge-std/Test.sol";
 import { BaseTest } from "../BaseTest.t.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
 import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
-import { RevertInstructions, UniversalPayload, TX_TYPE } from "../../src/libraries/Types.sol";
+import { RevertInstructions, TX_TYPE } from "../../src/libraries/Types.sol";
+import { UniversalPayload } from "../../src/libraries/TypesUG.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 

@@ -39,7 +39,7 @@ contract VaultTest is Test {
     // Events
     event GatewayUpdated(address indexed oldGateway, address indexed newGateway);
     event TSSUpdated(address indexed oldTss, address indexed newTss);
-    event VaultUniversalTxFinalized(
+    event UniversalTxFinalized(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed pushAccount,
@@ -48,7 +48,7 @@ contract VaultTest is Test {
         uint256 amount,
         bytes data
     );
-    event VaultUniversalTxReverted(
+    event UniversalTxReverted(
         bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed token,
@@ -827,7 +827,7 @@ contract VaultTest is Test {
         RevertInstructions memory revertInstr = RevertInstructions(user1, "test revert message");
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxReverted(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
+        emit UniversalTxReverted(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
 
         vm.prank(tss);
         vault.revertUniversalTxToken(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
@@ -1384,7 +1384,7 @@ contract VaultTest is Test {
         bytes memory data = _externalCallPayload(address(mockTarget), 0, rawCalldata);
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(
+        emit UniversalTxFinalized(
             _tx(335), bytes32(uint256(3335)), uea, address(0), address(token), amount, data
         );
 
@@ -1403,7 +1403,7 @@ contract VaultTest is Test {
         vm.deal(tss, amount);
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(
+        emit UniversalTxFinalized(
             _tx(336), bytes32(uint256(3336)), uea, address(0), address(0), amount, data
         );
 
@@ -1419,7 +1419,7 @@ contract VaultTest is Test {
         bytes memory data = "";
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(
+        emit UniversalTxFinalized(
             _tx(337), bytes32(uint256(3337)), uea, address(0), address(token), amount, data
         );
 
@@ -1436,7 +1436,7 @@ contract VaultTest is Test {
         bytes memory data = _externalCallPayload(address(mockTarget), 0, rawCalldata);
 
         vm.expectEmit(true, true, true, true);
-        emit VaultUniversalTxFinalized(
+        emit UniversalTxFinalized(
             _tx(338), bytes32(uint256(3338)), uea, address(0), address(token), amount, data
         );
 
@@ -1444,53 +1444,6 @@ contract VaultTest is Test {
         vault.finalizeUniversalTx(
             _tx(338), bytes32(uint256(3338)), uea, address(0), address(token), amount, data
         );
-    }
-
-    // ============================================================================
-    // SWEEP TESTS
-    // ============================================================================
-
-    function test_Sweep_OnlyAdminCanCall() public {
-        vm.prank(admin);
-        vault.sweep(address(token), user1, 100e18);
-        assertEq(token.balanceOf(user1), 100e18);
-    }
-
-    function test_Sweep_NonAdminReverts() public {
-        vm.prank(user1);
-        vm.expectRevert();
-        vault.sweep(address(token), user1, 100e18);
-    }
-
-    function test_Sweep_ZeroTokenReverts() public {
-        vm.prank(admin);
-        vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.sweep(address(0), user1, 100e18);
-    }
-
-    function test_Sweep_ZeroRecipientReverts() public {
-        vm.prank(admin);
-        vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.sweep(address(token), address(0), 100e18);
-    }
-
-    function test_Sweep_StandardToken_Success() public {
-        uint256 amount = 500e18;
-
-        vm.prank(admin);
-        vault.sweep(address(token), user1, amount);
-
-        assertEq(token.balanceOf(user1), amount);
-    }
-
-    function test_Sweep_NoReturnToken_Success() public {
-        variantToken.setApprovalBehavior(MockTokenApprovalVariants.ApprovalBehavior.NO_RETURN_DATA);
-
-        uint256 amount = 500e18;
-
-        vm.prank(admin);
-        vault.sweep(address(variantToken), user1, amount);
-        assertEq(variantToken.balanceOf(user1), amount);
     }
 
     // ============================================================================
@@ -1848,20 +1801,6 @@ contract VaultTest is Test {
     }
 
     // ============================================================================
-    // PAUSE GATING: SWEEP BEHAVIOR
-    // ============================================================================
-
-    function test_Sweep_AllowedWhenPaused() public {
-        vm.prank(pauser);
-        vault.pause();
-
-        // Sweep should still work when paused (admin emergency function)
-        vm.prank(admin);
-        vault.sweep(address(token), user1, 100e18);
-        assertEq(token.balanceOf(user1), 100e18);
-    }
-
-    // ============================================================================
     // GATEWAY POINTER CHANGES TESTS
     // ============================================================================
 
@@ -2147,7 +2086,7 @@ contract VaultTest is Test {
     // 3. EVENT EMISSION ON REVERT TESTS
     // ----------------------------------------------------------------------------
 
-    /// @notice Test that VaultUniversalTxFinalized event is NOT emitted when CEA reverts
+    /// @notice Test that UniversalTxFinalized event is NOT emitted when CEA reverts
     /// @dev Events should only emit on success, not on revert
     function test_Event_NoEmissionOnCEARevert_ERC20() public {
         address uea = makeAddr("noEventERC20Uea");
@@ -2176,17 +2115,17 @@ contract VaultTest is Test {
             _withdrawalPayloadDirect(address(token), user1, amount)
         );
 
-        // Verify NO VaultUniversalTxFinalized event was emitted
+        // Verify NO UniversalTxFinalized event was emitted
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {
-            // VaultUniversalTxFinalized signature
+            // UniversalTxFinalized signature
             bytes32 eventSignature =
-                keccak256("VaultUniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
-            assertFalse(logs[i].topics[0] == eventSignature, "VaultUniversalTxFinalized should not emit on revert");
+                keccak256("UniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
+            assertFalse(logs[i].topics[0] == eventSignature, "UniversalTxFinalized should not emit on revert");
         }
     }
 
-    /// @notice Test that VaultUniversalTxFinalized event is NOT emitted when CEA reverts (native path)
+    /// @notice Test that UniversalTxFinalized event is NOT emitted when CEA reverts (native path)
     function test_Event_NoEmissionOnCEARevert_Native() public {
         address uea = makeAddr("noEventNativeUea");
         uint256 amount = 2 ether;
@@ -2217,12 +2156,12 @@ contract VaultTest is Test {
             _withdrawalPayloadDirect(address(0), user1, amount)
         );
 
-        // Verify NO VaultUniversalTxFinalized event was emitted
+        // Verify NO UniversalTxFinalized event was emitted
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {
             bytes32 eventSignature =
-                keccak256("VaultUniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
-            assertFalse(logs[i].topics[0] == eventSignature, "VaultUniversalTxFinalized should not emit on revert");
+                keccak256("UniversalTxFinalized(bytes32,bytes32,address,address,address,uint256,bytes)");
+            assertFalse(logs[i].topics[0] == eventSignature, "UniversalTxFinalized should not emit on revert");
         }
     }
 

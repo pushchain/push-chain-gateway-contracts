@@ -687,7 +687,7 @@ sequenceDiagram
     GW->>USDC: safeTransfer(revertRecipient, amount)
     USDC-->>R: +amount USDC
     GW-->>TSS: emit RevertUniversalTx
-    V-->>TSS: emit VaultUniversalTxReverted
+    V-->>TSS: emit UniversalTxReverted
 ```
 
 ---

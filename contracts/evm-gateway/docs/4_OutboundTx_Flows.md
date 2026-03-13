@@ -33,9 +33,9 @@ external EVM chain (Ethereum, Base, Arbitrum, etc.).
 PRC20 tokens are wrapped representations of external chain tokens on Push Chain.
 
 - **Outbound withdrawal**: When `amount > 0`, `UniversalGatewayPC` burns PRC20 tokens from BOB. The corresponding tokens are released from `Vault` on the external chain.
-- **Gas fees**: Paid in **native PC** via `msg.value`. The gateway swaps PC → gas token PRC20 via `UniversalCore.swapAndBurnGas()`:
+- **Gas fees**: Paid in **native PC** via `msg.value`. The gateway sends `protocolFee` (native PC) directly to VaultPC, then swaps the remainder via `UniversalCore.swapAndBurnGas()`:
+  - **`protocolFee`** (flat fee in native PC, from `UniversalCore.protocolFeeByToken`) is **sent to VaultPC** as protocol revenue before the swap.
   - **`gasFee`** (gas cost = `gasPrice × gasLimit`) is **burned** — freeing backing tokens on the origin chain for TSS relayers to spend on execution gas.
-  - **`protocolFee`** (flat fee in gas token units) is **sent to VaultPC** as protocol revenue.
   - **Unused PC** is refunded directly to the caller.
 
 ### 1.4 TX_TYPE Reference
@@ -150,7 +150,8 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=1ETH, payload="")
     GPC->>GPC: burn 1 PRC20-ETH from BOB
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -160,7 +161,7 @@ sequenceDiagram
     V->>CF: getCEAForPushAccount(BOB_UEA) [deploy if needed]
     V->>CEA: executeUniversalTx{value:1ETH}(data)
     CEA->>R: call{value:1ETH}("")
-    V-->>TSS: emit VaultUniversalTxFinalized
+    V-->>TSS: emit UniversalTxFinalized
 ```
 
 ---
@@ -203,7 +204,8 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=1000e6, payload="")
     GPC->>GPC: burn 1000e6 PRC20-USDC from BOB
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -215,7 +217,7 @@ sequenceDiagram
     V->>CEA: executeUniversalTx(data)
     CEA->>USDC: transfer(recipientAddress, 1000e6)
     USDC-->>R: +1000 USDC
-    V-->>TSS: emit VaultUniversalTxFinalized
+    V-->>TSS: emit UniversalTxFinalized
 ```
 
 ---
@@ -256,7 +258,8 @@ sequenceDiagram
     Note over CEA: CEA holds 0.5 ETH (pre-existing)
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=multicallCalldata)
     Note over GPC: No burn (amount == 0)
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -309,7 +312,8 @@ sequenceDiagram
     Note over CEA: CEA holds 200e6 USDC (pre-existing)
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=multicallCalldata)
     Note over GPC: No burn (amount == 0)
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -370,7 +374,8 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=1ETH, payload=swapCalldata)
     GPC->>GPC: burn 1 PRC20-ETH from BOB
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -418,7 +423,8 @@ sequenceDiagram
     Note over CEA: CEA already holds 0.5 ETH
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=targetCalldata)
     Note over GPC: No burn
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -464,7 +470,8 @@ sequenceDiagram
     Note over CEA: CEA holds 0.3 ETH pre-existing
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=0.5ETH, payload=targetCalldata)
     GPC->>GPC: burn 0.5 PRC20-ETH from BOB
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -510,7 +517,8 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=500e6, payload=aaveCalldata)
     GPC->>GPC: burn 500e6 PRC20-USDC from BOB
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -631,7 +639,8 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=ethAmount, payload=multicallData)
     GPC->>GPC: burn ethAmount PRC20-ETH from BOB
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -695,7 +704,8 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=500e6, payload=multicallData)
     GPC->>GPC: burn 500e6 PRC20-USDC from BOB
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -906,7 +916,7 @@ sequenceDiagram
     V->>GW: revertUniversalTxToken(subTxId, uSubTxId, USDC, amount, revertInstruction)
     GW->>USDC: safeTransfer(revertRecipient, amount)
     GW-->>TSS: emit RevertUniversalTx
-    V-->>TSS: emit VaultUniversalTxReverted
+    V-->>TSS: emit UniversalTxReverted
 ```
 
 ---
@@ -1024,7 +1034,8 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=MIGRATION_SELECTOR)
     Note over GPC: No burn (amount == 0)
-    GPC->>UC: swapAndBurnGas{value: pcFee}(pETH, vault, gasFee, protocolFee)
+    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
     UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
@@ -1038,7 +1049,7 @@ sequenceDiagram
     CEA->>MC: delegatecall migrateCEA() [runs in CEA's storage context]
     MC-->>CEA: success (CEA state upgraded)
     CEA-->>V: emit UniversalTxExecuted
-    V-->>TSS: emit VaultUniversalTxFinalized
+    V-->>TSS: emit UniversalTxFinalized
 ```
 
 ### 7.4 Error Conditions
@@ -1050,3 +1061,84 @@ sequenceDiagram
 | `delegatecall` to migration contract fails                        | `CEAErrors.ExecutionFailed()`                |
 | CEA not yet deployed (BOB has no CEA)                             | Vault deploys CEA first; migration then runs |
 | Multicall payload accidentally sent instead of migration selector | Routes to `_handleMulticall`, not migration  |
+
+---
+
+## 8. Rescue Funds Flow (`TX_TYPE.RESCUE_FUNDS`)
+
+### 8.1 Problem Statement
+
+When a CEA triggers an inbound call via `UniversalGateway.sendUniversalTxFromCEA()`, tokens are locked in the source chain's Vault. In an edge case where tokens are locked but never minted on Push Chain, there is no standard way to recover them.
+
+### 8.2 Flow Overview
+
+```mermaid
+sequenceDiagram
+    participant BOB as BOB (Push Chain)
+    participant UGPC as UniversalGatewayPC
+    participant UC as UniversalCore
+    participant TSS as TSS Authority
+    participant VAULT as Vault (External Chain)
+
+    BOB->>UGPC: rescueFundsOnSourceChain(universalTxId, prc20) {value: pcForGas}
+    UGPC->>UGPC: Validate prc20, RESCUE_FUNDS_GAS_LIMIT
+    UGPC->>UC: gasPriceByChainNamespace(chainNamespace)
+    UGPC->>UC: gasTokenPRC20ByChainNamespace(chainNamespace)
+    UGPC->>UGPC: gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT
+    UGPC->>UC: swapAndBurnGas(gasToken, msg.value, gasFee)
+    UC-->>BOB: Refund excess PC
+    UGPC->>UGPC: emit RescueFundsOnSourceChain(...)
+
+    Note over TSS: TSS picks up event
+
+    TSS->>VAULT: rescueFunds(universalTxId, token, amount, recipient)
+    VAULT->>VAULT: Transfer token/native to recipient
+    VAULT->>VAULT: emit FundsRescued(...)
+```
+
+### 8.3 Push Chain Side (`UniversalGatewayPC.rescueFundsOnSourceChain`)
+
+**Caller:** Any user (no role required).
+
+**Steps:**
+1. Validate `prc20 != address(0)` and `RESCUE_FUNDS_GAS_LIMIT != 0`.
+2. Resolve `chainNamespace` from the PRC20 token.
+3. Look up `gasPrice` and `gasToken` from `UniversalCore`.
+4. Compute `gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT`.
+5. Swap `msg.value` → gas token via `_swapAndCollectFees`. Excess PC refunded to caller.
+6. Emit `RescueFundsOnSourceChain` with `TX_TYPE.RESCUE_FUNDS`.
+
+**Key differences from `sendUniversalTxOutbound`:**
+- No PRC20 burn.
+- No protocol fee.
+- No nonce or subTxId generation.
+- Fixed gas limit via admin-set `RESCUE_FUNDS_GAS_LIMIT`.
+
+### 8.4 External Chain Side (`Vault.rescueFunds`)
+
+**Caller:** TSS only (`TSS_ROLE`).
+
+**Steps:**
+1. Validate `amount > 0` and `recipient != address(0)`.
+2. Transfer token (ERC20 via `safeTransfer`) or native (via low-level `call`) to `recipient`.
+3. Emit `FundsRescued(universalTxId, token, amount, recipient)`.
+
+**No token support check** — TSS can rescue even delisted tokens.
+
+### 8.5 Error Conditions
+
+| Condition (UGPC)                    | Error            |
+| ----------------------------------- | ---------------- |
+| `prc20 == address(0)`              | `ZeroAddress`    |
+| `RESCUE_FUNDS_GAS_LIMIT == 0`      | `InvalidData`    |
+| `gasPrice == 0` for chain           | `InvalidData`    |
+| `gasToken == address(0)` for chain  | `InvalidData`    |
+| `msg.value == 0`                    | `ZeroAmount`     |
+
+| Condition (Vault)                   | Error                |
+| ----------------------------------- | -------------------- |
+| `amount == 0`                       | `ZeroAmount`         |
+| `recipient == address(0)`           | `InvalidRecipient`   |
+| Insufficient balance                | `InsufficientBalance`|
+| Native transfer fails               | `WithdrawFailed`     |
+| Caller not TSS                      | AccessControl revert |

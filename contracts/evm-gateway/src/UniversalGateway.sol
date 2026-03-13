@@ -27,13 +27,8 @@ import { Errors } from "./libraries/Errors.sol";
 import { ICEAFactory } from "./interfaces/ICEAFactory.sol";
 import { IUniversalGateway } from "./interfaces/IUniversalGateway.sol";
 import { IWETH } from "./interfaces/IWETH.sol";
-import {
-    RevertInstructions,
-    TX_TYPE,
-    EpochUsage,
-    UniversalTxRequest,
-    UniversalTokenTxRequest
-} from "./libraries/Types.sol";
+import { RevertInstructions, TX_TYPE, EpochUsage } from "./libraries/Types.sol";
+import { UniversalTxRequest, UniversalTokenTxRequest } from "./libraries/TypesUG.sol";
 
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { IUniswapV3Factory } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
