@@ -140,11 +140,6 @@ contract UniversalGateway is
         epochDurationSec = 6 hours;
     }
 
-    /// @dev Reverts if caller does not hold TSS_ROLE.
-    modifier onlyTSS() {
-        if (!hasRole(TSS_ROLE, _msgSender())) revert Errors.Unauthorized();
-        _;
-    }
 
     // ==============================
     //     UG_1: ADMIN ACTIONS
@@ -580,12 +575,12 @@ contract UniversalGateway is
     }
 
     /// @inheritdoc IUniversalGateway
-    function revertUniversalTx(
+    function revertUniversalTxNative(
         bytes32 subTxId,
         bytes32 universalTxId,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external payable nonReentrant whenNotPaused onlyTSS {
+    ) external payable nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
         if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
 
         if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();

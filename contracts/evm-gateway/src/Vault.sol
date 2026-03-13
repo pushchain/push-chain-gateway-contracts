@@ -136,28 +136,38 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function revertUniversalTxToken(
+    function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
-        if (token == address(0)) revert Errors.ZeroAddress();
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
         if (amount == 0) revert Errors.InvalidAmount();
         if (revertInstruction.revertRecipient == address(0)) {
             revert Errors.InvalidRecipient();
         }
-        _enforceSupported(token);
 
-        if (IERC20(token).balanceOf(address(this)) < amount) {
-            revert Errors.InvalidAmount();
+        if (token == address(0)) {
+            if (msg.value != amount) revert Errors.InvalidAmount();
+            gateway.revertUniversalTxNative{ value: amount }(
+                subTxId, universalTxId, amount, revertInstruction
+            );
+        } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+            _enforceSupported(token);
+            if (IERC20(token).balanceOf(address(this)) < amount) {
+                revert Errors.InsufficientBalance();
+            }
+            IERC20(token).safeTransfer(address(gateway), amount);
+            gateway.revertUniversalTxToken(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
         }
 
-        IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.revertUniversalTxToken(subTxId, universalTxId, token, amount, revertInstruction);
-
-        emit UniversalTxReverted(subTxId, universalTxId, token, amount, revertInstruction);
+        emit UniversalTxReverted(
+            subTxId, universalTxId, token, amount, revertInstruction
+        );
     }
 
     /// @inheritdoc IVault

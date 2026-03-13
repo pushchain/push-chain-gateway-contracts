@@ -484,7 +484,7 @@ contract VaultTest is Test {
     function test_RevertWithdraw_OnlyTSSCanCall() public {
         vm.prank(user1);
         vm.expectRevert();
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, "")
         );
     }
@@ -516,7 +516,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, "")
         );
     }
@@ -599,7 +599,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert(Errors.NotSupported.selector);
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(2), bytes32(uint256(3000 + 2)), address(unsupportedToken), 100e18, RevertInstructions(user1, "")
         );
     }
@@ -660,10 +660,10 @@ contract VaultTest is Test {
     // NOTE: Removed test_Withdraw_ZeroTokenAddressReverts - address(0) is now valid (native token)
     // Unsupported token testing is already covered by test_Withdraw_UnsupportedTokenReverts at line 454
 
-    function test_RevertWithdraw_ZeroTokenAddressReverts() public {
+    function test_RevertWithdraw_NativeToken_MsgValueMismatchReverts() public {
         vm.prank(tss);
-        vm.expectRevert(Errors.ZeroAddress.selector);
-        vault.revertUniversalTxToken(
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.revertUniversalTx(
             _tx(3), bytes32(uint256(3000 + 3)), address(0), 100e18, RevertInstructions(user1, "")
         );
     }
@@ -814,7 +814,7 @@ contract VaultTest is Test {
         uint256 amount = 1000e18;
 
         vm.prank(tss);
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(4), bytes32(uint256(3000 + 4)), address(token), amount, RevertInstructions(user1, "")
         );
 
@@ -830,7 +830,7 @@ contract VaultTest is Test {
         emit UniversalTxReverted(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
 
         vm.prank(tss);
-        vault.revertUniversalTxToken(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
+        vault.revertUniversalTx(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
 
         assertEq(token.balanceOf(user1), amount);
     }
@@ -838,7 +838,7 @@ contract VaultTest is Test {
     function test_RevertWithdraw_ZeroAmountReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(6), bytes32(uint256(3000 + 6)), address(token), 0, RevertInstructions(user1, "")
         );
     }
@@ -846,7 +846,7 @@ contract VaultTest is Test {
     function test_RevertWithdraw_ZeroRecipientReverts() public {
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(7), bytes32(uint256(3000 + 7)), address(token), 100e18, RevertInstructions(address(0), "")
         );
     }
@@ -855,8 +855,8 @@ contract VaultTest is Test {
         uint256 vaultBalance = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertUniversalTxToken(
+        vm.expectRevert(Errors.InsufficientBalance.selector);
+        vault.revertUniversalTx(
             _tx(8), bytes32(uint256(3000 + 8)), address(token), vaultBalance + 1, RevertInstructions(user1, "")
         );
     }
@@ -867,7 +867,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(1), bytes32(uint256(3000 + 1)), address(token), 100e18, RevertInstructions(user1, "")
         );
     }
@@ -1540,8 +1540,8 @@ contract VaultTest is Test {
     function test_RevertWithdraw_VariantToken_InsufficientBalance() public {
         uint256 vaultBalance = variantToken.balanceOf(address(vault));
         vm.prank(tss);
-        vm.expectRevert(Errors.InvalidAmount.selector);
-        vault.revertUniversalTxToken(
+        vm.expectRevert(Errors.InsufficientBalance.selector);
+        vault.revertUniversalTx(
             _tx(504), bytes32(uint256(3504)), address(variantToken), vaultBalance + 1, RevertInstructions(user1, "")
         );
     }
@@ -1551,7 +1551,7 @@ contract VaultTest is Test {
         uint256 vaultBalanceBefore = token.balanceOf(address(vault));
 
         vm.prank(tss);
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             _tx(505), bytes32(uint256(3505)), address(token), amount, RevertInstructions(user1, "")
         );
 
@@ -1940,7 +1940,7 @@ contract VaultTest is Test {
 
         vm.prank(tss);
         // Event VaultRevert was removed - test now verifies revertWithdraw functionality
-        vault.revertUniversalTxToken(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
+        vault.revertUniversalTx(_tx(5), bytes32(uint256(3000 + 5)), address(token), amount, revertInstr);
         assertEq(token.balanceOf(user1), amount);
     }
 
@@ -2169,8 +2169,8 @@ contract VaultTest is Test {
     // 4. REVERTUNIVERSALTXTOKEN ROLLBACK TESTS
     // ----------------------------------------------------------------------------
 
-    /// @notice Test that revertUniversalTxToken completes successfully with proper token flow
-    /// @dev Verifies vault→gateway→recipient atomic flow in revertUniversalTxToken
+    /// @notice Test that revertUniversalTx completes successfully with proper token flow
+    /// @dev Verifies vault→gateway→recipient atomic flow in revertUniversalTx
     function test_RevertTx_AtomicFlowToRecipient() public {
         uint256 amount = 100e18;
         bytes32 subTxId = keccak256("revertRollback");
@@ -2181,7 +2181,7 @@ contract VaultTest is Test {
 
         // Execute revert withdraw - tokens flow: vault → gateway → user1 (atomically)
         vm.prank(tss);
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             subTxId,
             universalTxId,
             address(token),
@@ -2253,13 +2253,13 @@ contract VaultTest is Test {
     // 6. REENTRANCY VIA REVERTUNIVERSALTXTOKEN TEST
     // ----------------------------------------------------------------------------
 
-    /// @notice Test that reentrancy via revertUniversalTxToken is blocked
+    /// @notice Test that reentrancy via revertUniversalTx is blocked
     /// @dev Verifies nonReentrant modifier protects revert path
     function test_Reentrancy_RevertTxPath_Protected() public {
-        // This test verifies that revertUniversalTxToken has nonReentrant protection
+        // This test verifies that revertUniversalTx has nonReentrant protection
         // A full reentrancy test would require a malicious gateway that attempts re-entry
 
-        // Baseline: normal revertUniversalTxToken works
+        // Baseline: normal revertUniversalTx works
         bytes32 subTxId = keccak256("reentrancyRevertTest");
         bytes32 universalTxId = keccak256("utxReentrancyTest");
         uint256 amount = 50e18;
@@ -2267,7 +2267,7 @@ contract VaultTest is Test {
         uint256 user1BalanceBefore = token.balanceOf(user1);
 
         vm.prank(tss);
-        vault.revertUniversalTxToken(
+        vault.revertUniversalTx(
             subTxId,
             universalTxId,
             address(token),

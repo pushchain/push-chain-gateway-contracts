@@ -169,12 +169,12 @@ interface IUniversalGateway {
         RevertInstructions calldata revertCFG
     ) external;
 
-    /// @notice                  Revert native tokens to the revert recipient
+    /// @notice                  Revert native tokens to the revert recipient (Vault-only)
     /// @param subTxId           Gateway transaction identifier (for replay protection)
     /// @param universalTxId     Universal transaction identifier
     /// @param amount            Amount of native token to revert
     /// @param revertCFG         Revert settings
-    function revertUniversalTx(
+    function revertUniversalTxNative(
         bytes32 subTxId,
         bytes32 universalTxId,
         uint256 amount,
