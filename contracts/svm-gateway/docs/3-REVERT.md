@@ -1,6 +1,6 @@
 # Revert (Outbound Recovery)
 
-**Functions:** `revert_universal_tx` (SOL), `revert_universal_tx_token` (SPL)
+**Function:** `revert_universal_tx` (unified SOL + SPL)
 **Direction:** Vault → Recipient
 **Authorization:** TSS ECDSA secp256k1 signature
 
@@ -34,7 +34,7 @@ hash = keccak256(message)
 sub_tx_id[32] | universal_tx_id[32] | recipient[32] | gas_fee (8 BE)
 ```
 
-### SPL Revert (instruction_id=4) — additional_data
+### SPL Revert (instruction_id=3) — additional_data
 ```
 sub_tx_id[32] | universal_tx_id[32] | mint[32] | recipient[32] | gas_fee (8 BE)
 ```

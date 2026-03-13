@@ -179,11 +179,11 @@ pub mod universal_gateway {
     //          RESCUE
     // =========================
     /// @notice TSS-verified emergency rescue of locked funds from vault.
-    /// @dev    EVM parity: `Vault.rescueFunds(universalTxId, token, amount, recipient)`.
     ///         SOL path: token_mint = None. SPL path: token_mint = Some.
-    ///         No on-chain replay guard (EVM parity) — Push Chain prevents duplicate rescue.
+    ///         Replay-protected via ExecutedSubTx PDA
     pub fn rescue_funds(
         ctx: Context<RescueFunds>,
+        sub_tx_id: [u8; 32],
         universal_tx_id: [u8; 32],
         amount: u64,
         gas_fee: u64,
@@ -193,6 +193,7 @@ pub mod universal_gateway {
     ) -> Result<()> {
         instructions::rescue::rescue_funds(
             ctx,
+            sub_tx_id,
             universal_tx_id,
             amount,
             gas_fee,
@@ -205,7 +206,8 @@ pub mod universal_gateway {
     // =========================
     //        REVERT
     // =========================
-    /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
+    /// @notice TSS-verified unified revert (SOL and SPL) — EVM parity: `revertUniversalTx`.
+    ///         SOL path: token_mint = None. SPL path: token_mint = Some.
     pub fn revert_universal_tx(
         ctx: Context<RevertUniversalTx>,
         sub_tx_id: [u8; 32],
@@ -218,31 +220,6 @@ pub mod universal_gateway {
         message_hash: [u8; 32],
     ) -> Result<()> {
         instructions::revert::revert_universal_tx(
-            ctx,
-            sub_tx_id,
-            universal_tx_id,
-            amount,
-            revert_instruction,
-            gas_fee,
-            signature,
-            recovery_id,
-            message_hash,
-        )
-    }
-
-    /// @notice TSS-verified revert withdraw for SPL tokens (EVM parity: `revertUniversalTxToken`)
-    pub fn revert_universal_tx_token(
-        ctx: Context<RevertUniversalTxToken>,
-        sub_tx_id: [u8; 32],
-        universal_tx_id: [u8; 32],
-        amount: u64,
-        revert_instruction: RevertInstructions,
-        gas_fee: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-    ) -> Result<()> {
-        instructions::revert::revert_universal_tx_token(
             ctx,
             sub_tx_id,
             universal_tx_id,
@@ -278,7 +255,7 @@ pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::FinalizeUniversalTx;
 pub use instructions::initialize::Initialize;
 pub use instructions::rescue::RescueFunds;
-pub use instructions::revert::{RevertUniversalTx, RevertUniversalTxToken};
+pub use instructions::revert::RevertUniversalTx;
 pub use utils::PriceData;
 
 pub use state::{

@@ -660,7 +660,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // Include subTxId, universalTxId, recipient, and gas_fee in additional array
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSol,
+                instruction: TssInstruction.Revert,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -688,6 +688,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: null,
+                    recipientTokenAccount: null,
+                    tokenMint: null,
+                    tokenProgram: null,
                 })
                 .signers([relayer])
                 .rpc();
@@ -716,7 +720,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             };
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSol,
+                instruction: TssInstruction.Revert,
                 amount: BigInt(revertAmount),
                 additional: [
                     new Uint8Array(subTxId),
@@ -747,6 +751,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -772,7 +780,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // Include subTxId, universalTxId, mint, fund_recipient, and gas_fee in additional array
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSpl,
+                instruction: TssInstruction.Revert,
                 amount: revertRaw,
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -780,7 +788,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const callerBalanceBefore = await provider.connection.getBalance(relayer.publicKey);
 
             await program.methods
-                .revertUniversalTxToken(
+                .revertUniversalTx(
                     subTxId,
                     universalTxId,
                     new anchor.BN(Number(revertRaw)),
@@ -793,15 +801,16 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenVault: vaultUsdtAccount,
                     feeVault: feeVaultPda,
                     tssPda,
-                    recipientTokenAccount: recipientRevertAccount,
-                    tokenMint: mockUSDT.mint.publicKey,
+                    recipient: recipient.publicKey,
                     executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
-                    tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: vaultUsdtAccount,
+                    recipientTokenAccount: recipientRevertAccount,
+                    tokenMint: mockUSDT.mint.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
                 })
                 .signers([relayer])
                 .rpc();
@@ -1170,7 +1179,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             };
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSol,
+                instruction: TssInstruction.Revert,
                 amount: BigInt(0),
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1196,6 +1205,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -1215,7 +1228,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             };
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSol,
+                instruction: TssInstruction.Revert,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1243,6 +1256,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc();
@@ -1280,7 +1297,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             };
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSol,
+                instruction: TssInstruction.Revert,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1306,6 +1323,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: null,
+                    recipientTokenAccount: null,
+                    tokenMint: null,
+                    tokenProgram: null,
                 })
                 .signers([relayer])
                 .rpc();
@@ -1318,7 +1339,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // Second revert with same subTxId should fail
             const signature2 = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSol,
+                instruction: TssInstruction.Revert,
                 amount: BigInt(revertAmount),
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
@@ -1344,6 +1365,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc();
@@ -1379,14 +1404,14 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSpl,
+                instruction: TssInstruction.Revert,
                 amount: BigInt(0),
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             await expectRejection(
                 program.methods
-                    .revertUniversalTxToken(
+                    .revertUniversalTx(
                         subTxId,
                         universalTxId,
                         new anchor.BN(0),
@@ -1399,15 +1424,16 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenVault: vaultUsdtAccount,
                         feeVault: feeVaultPda,
                         tssPda,
-                        recipientTokenAccount: recipientRevertAccount,
-                        tokenMint: mockUSDT.mint.publicKey,
+                        recipient: recipient.publicKey,
                         executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
-                        tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: vaultUsdtAccount,
+                        recipientTokenAccount: recipientRevertAccount,
+                        tokenMint: mockUSDT.mint.publicKey,
+                        tokenProgram: TOKEN_PROGRAM_ID,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -1430,14 +1456,14 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSpl,
+                instruction: TssInstruction.Revert,
                 amount: revertRaw,
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(mockUSDT.mint.publicKey), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             await expectRejection(
                 program.methods
-                    .revertUniversalTxToken(
+                    .revertUniversalTx(
                         subTxId,
                         universalTxId,
                         new anchor.BN(Number(revertRaw)),
@@ -1450,15 +1476,16 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenVault: vaultUsdtAccount,
                         feeVault: feeVaultPda,
                         tssPda,
-                        recipientTokenAccount: recipientRevertAccount,
-                        tokenMint: mockUSDT.mint.publicKey,
+                        recipient: recipient.publicKey,
                         executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
-                        tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: vaultUsdtAccount,
+                        recipientTokenAccount: recipientRevertAccount,
+                        tokenMint: mockUSDT.mint.publicKey,
+                        tokenProgram: TOKEN_PROGRAM_ID,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -1482,14 +1509,14 @@ describe("Universal Gateway - Withdraw Tests", () => {
             const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
 
             const signature = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSpl,
+                instruction: TssInstruction.Revert,
                 amount: revertRaw,
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             // First revert should succeed
             await program.methods
-                .revertUniversalTxToken(
+                .revertUniversalTx(
                     subTxId,
                     universalTxId,
                     new anchor.BN(Number(revertRaw)),
@@ -1502,15 +1529,16 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 .accounts({
                     config: configPda,
                     vault: vaultPda,
-                    tokenVault: vaultUsdtAccount,
                     feeVault: feeVaultPda,
                     tssPda,
-                    recipientTokenAccount: recipientRevertAccount,
-                    tokenMint: mockUSDT.mint.publicKey,
+                    recipient: recipient.publicKey,
                     executedSubTx: executedTxPda,
                     caller: relayer.publicKey,
-                    tokenProgram: TOKEN_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,
+                    tokenVault: vaultUsdtAccount,
+                    recipientTokenAccount: recipientRevertAccount,
+                    tokenMint: mockUSDT.mint.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
                 })
                 .signers([relayer])
                 .rpc();
@@ -1523,14 +1551,14 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             // Second revert with same subTxId should fail
             const signature2 = await signTssMessageWithChainId({
-                instruction: TssInstruction.RevertWithdrawSpl,
+                instruction: TssInstruction.Revert,
                 amount: revertRaw,
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(mockUSDT.mint.publicKey), toBytes(revertInstruction.fundRecipient), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
             try {
                 await program.methods
-                    .revertUniversalTxToken(
+                    .revertUniversalTx(
                         subTxId,
                         universalTxId,
                         new anchor.BN(Number(revertRaw)),
@@ -1543,15 +1571,16 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     .accounts({
                         config: configPda,
                         vault: vaultPda,
-                        tokenVault: vaultUsdtAccount,
                         feeVault: feeVaultPda,
                         tssPda,
-                        recipientTokenAccount: recipientRevertAccount,
-                        tokenMint: mockUSDT.mint.publicKey,
+                        recipient: recipient.publicKey,
                         executedSubTx: executedTxPda,
                         caller: relayer.publicKey,
-                        tokenProgram: TOKEN_PROGRAM_ID,
                         systemProgram: SystemProgram.programId,
+                        tokenVault: vaultUsdtAccount,
+                        recipientTokenAccount: recipientRevertAccount,
+                        tokenMint: mockUSDT.mint.publicKey,
+                        tokenProgram: TOKEN_PROGRAM_ID,
                     })
                     .signers([relayer])
                     .rpc();
