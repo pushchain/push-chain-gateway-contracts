@@ -3582,6 +3582,10 @@ async function run() {
         executedSubTx: executedTxPdaRevert,
         caller: admin, // The caller/relayer who pays for the transaction
         systemProgram: SystemProgram.programId,
+        tokenVault: null,
+        recipientTokenAccount: null,
+        tokenMint: null,
+        tokenProgram: null,
       })
       .signers([adminKeypair])
       .rpc();

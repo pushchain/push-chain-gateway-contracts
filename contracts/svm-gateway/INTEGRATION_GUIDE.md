@@ -218,9 +218,8 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
 1. `instruction_id`: 1 byte (unsigned integer)
    - `1` = Withdraw (SOL or SPL; unified, vault→CEA→recipient)
    - `2` = Execute (SOL or SPL; unified, vault→CEA→CPI)
-   - `3` = Revert SOL
-   - `4` = Revert SPL
-   - `5` = Rescue (SOL or SPL; TSS-verified emergency release, no replay guard)
+   - `3` = Revert (SOL or SPL; unified)
+   - `5` = Rescue (SOL or SPL; TSS-verified emergency release, replay-protected with `sub_tx_id`)
 2. `chain_id`: UTF-8 bytes (see 3.1.2 above) - **NO length prefix**
 3. `amount`: u64 BE (8 bytes) - present for all instructions
 
@@ -263,7 +262,7 @@ recipient_pubkey (32 bytes)
 gas_fee (u64 BE)
 ```
 
-**For Revert SPL (4):**
+**For Revert SPL (3):**
 ```
 sub_tx_id (32 bytes)
 universal_tx_id (32 bytes)
@@ -274,6 +273,7 @@ gas_fee (u64 BE)
 
 **For Rescue SOL (5):**
 ```
+sub_tx_id (32 bytes)
 universal_tx_id (32 bytes)
 recipient_pubkey (32 bytes)
 gas_fee (u64 BE)
@@ -281,6 +281,7 @@ gas_fee (u64 BE)
 
 **For Rescue SPL (5, with mint):**
 ```
+sub_tx_id (32 bytes)
 universal_tx_id (32 bytes)
 mint_pubkey (32 bytes)
 recipient_pubkey (32 bytes)
@@ -536,7 +537,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
   - `UniversalTx.amount` / `UniversalTx.payload` come from inner decoded args
   - `UniversalTxFinalized.amount` / `UniversalTxFinalized.payload` come from outer finalize args (`amount`, full `ix_data`)
 
-### 4.5 Revert Universal Transaction (SOL)
+### 4.5 Revert Universal Transaction (Unified SOL/SPL)
 
 **Function**: `revert_universal_tx`
 
@@ -554,11 +555,12 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `fund_recipient`: Pubkey (32 bytes) - where to send reverted funds
 - `revert_msg`: Vec<u8> - revert message (can be empty)
 
-### 4.6 Revert Universal Transaction (SPL Token)
+### 4.6 Revert Universal Transaction (SPL Token via unified function)
 
-**Function**: `revert_universal_tx_token`
+**Function**: `revert_universal_tx`
 
-**Additional Required Accounts**: Same as SPL withdraw (token_vault, recipient_token_account, token_mint, token_program)
+**Additional Required Accounts**: Same as SPL withdraw (token_vault, recipient_token_account, token_mint, token_program).  
+For SOL path, pass these accounts as `null`.
 
 ---
 
@@ -830,7 +832,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 
 1. **Event received**: Revert instruction from Push Chain
 2. **Build TSS message**:
-   - instruction_id = 3 (SOL) or 4 (SPL)
+   - instruction_id = 3 (both SOL and SPL)
    - Call `signTssMessage()` with:
      - `additional`:
        - SOL: `[sub_tx_id, universal_tx_id, recipient_pubkey, gas_fee_buf]`
@@ -838,22 +840,25 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
    - **Note**: `signTssMessage()` does **not** auto-include `sub_tx_id` / `universal_tx_id`. Include them in `additional` as specified.
 3. **Sign and submit**:
    - `signTssMessage()` returns signature, recovery_id, message_hash
-   - See account structs: `RevertUniversalTx` or `RevertUniversalTxToken` in `revert.rs`
+   - See account struct: `RevertUniversalTx` (unified SOL/SPL) in `revert.rs`
 
 ### Rescue Flow (emergency only):
 
 1. **Trigger**: Push Chain determines funds are locked and unreachable; emits rescue authorization
 2. **Build TSS message** (instruction_id = 5 for both SOL and SPL):
-   - Call `buildRescueAdditionalData(universalTxId, recipient, gasFee, tokenMint?)` from `tests/helpers/tss.ts`
-   - SOL additional: `[universal_tx_id, recipient_pubkey, gas_fee_buf]`
-   - SPL additional: `[universal_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
+   - Call `buildRescueAdditionalData(subTxId, universalTxId, recipient, gasFee, tokenMint?)` from `tests/helpers/tss.ts`
+   - SOL additional: `[sub_tx_id, universal_tx_id, recipient_pubkey, gas_fee_buf]`
+   - SPL additional: `[sub_tx_id, universal_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
 3. **Sign**: `signTssMessage({ instruction: TssInstruction.Rescue, amount, additional })`
 4. **Submit** `rescue_funds` with accounts:
-   - Always required: `config`, `vault`, `fee_vault`, `tss_pda`, `recipient`, `caller`, `system_program`
+   - Always required: `config`, `vault`, `fee_vault`, `tss_pda`, `recipient`, `executed_sub_tx`, `caller`, `system_program`
    - SOL only: `token_vault=null`, `recipient_token_account=null`, `token_mint=null`, `token_program=null`
    - SPL only: `token_vault` (vault ATA), `recipient_token_account` (recipient ATA), `token_mint`, `token_program`
-5. **No replay guard** — Push Chain is the source of truth for deduplication
-6. **Events emitted**: `FundsRescued`, `ProtocolFeeReimbursed`
+5. **Replay guard** — `ExecutedSubTx` PDA keyed by `sub_tx_id` prevents duplicate rescue execution
+6. **Events emitted**:
+   - `FundsRescued { sub_tx_id, universal_tx_id, token, amount, revert_instruction }`
+   - For rescue, `revert_instruction.fund_recipient = recipient` and `revert_instruction.revert_msg = []`
+   - `ProtocolFeeReimbursed { sub_tx_id, relayer, amount_lamports }`
 
 ---
 
@@ -893,16 +898,15 @@ Before production:
 - `buildWithdrawAdditionalData()` - Constructs additional fields for withdraw (instruction_id=1)
   - Format: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, target]
   - **Common fields first**, then withdraw-specific (target)
-- `buildRescueAdditionalData()` - Constructs additional fields for rescue (instruction_id=5)
-  - SOL: `[universal_tx_id, recipient, gas_fee]`
-  - SPL: `[universal_tx_id, mint, recipient, gas_fee]`
+- `buildRescueAdditionalData()` - Constructs additional fields for rescue (instruction_id=4)
+  - SOL: `[sub_tx_id, universal_tx_id, recipient, gas_fee]`
+  - SPL: `[sub_tx_id, universal_tx_id, mint, recipient, gas_fee]`
 
 **Instruction IDs** (TssInstruction enum):
 - `TssInstruction.Withdraw = 1` - Unified withdraw (SOL/SPL)
 - `TssInstruction.Execute = 2` - Unified execute (SOL/SPL)
-- `TssInstruction.RevertWithdrawSol = 3` - Revert SOL
-- `TssInstruction.RevertWithdrawSpl = 4` - Revert SPL
-- `TssInstruction.Rescue = 5` - Emergency rescue (SOL or SPL, no replay guard)
+- `TssInstruction.Revert = 3` - Unified revert (SOL/SPL)
+- `TssInstruction.Rescue = 4` - Emergency rescue (SOL/SPL, replay-protected with `sub_tx_id`)
 
 **Usage**: See test file `contracts/svm-gateway/tests/execute.test.ts` (search for `signTssMessage` or `buildExecuteAdditionalData`)
 
@@ -915,8 +919,7 @@ Before production:
 
 **Withdraw / Revert Functions**:
 - `contracts/svm-gateway/programs/universal-gateway/src/instructions/revert.rs`
-  - `revert_universal_tx()` - SOL revert handler
-  - `revert_universal_tx_token()` - SPL token revert handler
+  - `revert_universal_tx()` - unified SOL/SPL revert handler
 
 **Deposit Functions**:
 - `contracts/svm-gateway/programs/universal-gateway/src/instructions/deposit.rs`
@@ -970,11 +973,10 @@ Before production:
   - **Withdraw mode**: `destination_program` = SystemProgram.programId, `recipient` set, remaining_accounts empty
 
 **Revert Structs** (see `revert.rs`):
-- `RevertUniversalTx` - Required accounts for SOL revert (instruction_id=3)
-- `RevertUniversalTxToken` - Required accounts for SPL revert (instruction_id=4)
+- `RevertUniversalTx` - Unified required accounts for SOL and SPL revert (instruction_id=3)
 
 **Rescue Struct** (see `rescue.rs`):
-- `RescueFunds` - Unified accounts for SOL and SPL rescue (instruction_id=5); SPL accounts are optional
+- `RescueFunds` - Unified accounts for SOL and SPL rescue (instruction_id=4); SPL accounts are optional
 
 **State Structures** (see `state.rs`):
 - `GatewayAccountMeta` - Account metadata (pubkey + is_writable)

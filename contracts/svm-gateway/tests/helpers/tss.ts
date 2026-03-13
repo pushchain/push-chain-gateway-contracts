@@ -7,9 +7,8 @@ import * as secp from "@noble/secp256k1";
 export enum TssInstruction {
   Withdraw = 1, // Unified withdraw (vault→CEA→recipient)
   Execute = 2, // Unified execute (vault→CEA→CPI)
-  RevertWithdrawSol = 3,
-  RevertWithdrawSpl = 4,
-  Rescue = 5, // Emergency rescue (SOL or SPL, no replay guard)
+  Revert = 3,  // Unified revert (SOL or SPL)
+  Rescue = 4,  // Emergency rescue (SOL or SPL)
 }
 
 // Default to Devnet cluster pubkey if not specified
@@ -223,14 +222,15 @@ export function buildExecuteAdditionalData(
 // =========================
 
 /**
- * Build rescue message additional_data (instruction_id=5 for both SOL and SPL).
+ * Build rescue message additional_data (instruction_id=4 for both SOL and SPL).
  *
- * SOL:  [universal_tx_id, recipient, gas_fee]
- * SPL:  [universal_tx_id, mint, recipient, gas_fee]
+ * SOL:  [sub_tx_id, universal_tx_id, recipient, gas_fee]
+ * SPL:  [sub_tx_id, universal_tx_id, mint, recipient, gas_fee]
  *
- * No replay guard (EVM parity) — Push Chain prevents duplicate rescue.
+ * Replay-protected via ExecutedSubTx PDA (EVM parity: isExecuted[subTxId]).
  */
 export function buildRescueAdditionalData(
+  subTxId: Uint8Array,
   universalTxId: Uint8Array,
   recipient: PublicKey,
   gasFee: bigint = BigInt(0),
@@ -240,7 +240,7 @@ export function buildRescueAdditionalData(
   gasFeeBuf.writeBigUInt64BE(gasFee, 0);
 
   if (tokenMint) {
-    return [universalTxId, tokenMint.toBuffer(), recipient.toBuffer(), gasFeeBuf];
+    return [subTxId, universalTxId, tokenMint.toBuffer(), recipient.toBuffer(), gasFeeBuf];
   }
-  return [universalTxId, recipient.toBuffer(), gasFeeBuf];
+  return [subTxId, universalTxId, recipient.toBuffer(), gasFeeBuf];
 }

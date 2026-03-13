@@ -1,14 +1,15 @@
 /**
  * rescue.test.ts
  *
- * Tests for rescue_funds instruction (EVM parity: Vault.rescueFunds).
+ * Tests for rescue_funds instruction (EVM parity: rescueFunds with subTxId).
  * Covers SOL and SPL token rescue via unified entrypoint.
  *
  * SVM deviations from EVM (intentional):
  *   - Auth: ECDSA TSS signature verification (not onlyRole)
  *   - gas_fee: relayer reimbursement from fee_vault
- *   - No on-chain replay guard — Push Chain prevents duplicate rescue
  *   - recipient derived from accounts, not a separate param
+ *
+ * Replay protection: ExecutedSubTx PDA (EVM parity: isExecuted[subTxId])
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -28,6 +29,8 @@ import { ensureTestSetup } from "./helpers/test-setup";
 import {
     TOKEN_MULTIPLIER,
     asTokenAmount,
+    makeTxIdGenerator,
+    getExecutedTxPda as _getExecutedTxPda,
     getTokenRateLimitPda as _getTokenRateLimitPda,
 } from "./helpers/test-utils";
 
@@ -66,6 +69,10 @@ describe("Universal Gateway - Rescue Tests", () => {
 
     const getTokenRateLimitPda = (tokenMint: PublicKey) =>
         _getTokenRateLimitPda(tokenMint, program.programId);
+
+    const generateTxId = makeTxIdGenerator();
+    const getExecutedTxPda = (subTxId: number[]) =>
+        _getExecutedTxPda(subTxId, program.programId);
 
     const signTssMessageWithChainId = async (params: {
         instruction: TssInstruction;
@@ -252,9 +259,12 @@ describe("Universal Gateway - Rescue Tests", () => {
     describe("rescue_funds (SOL)", () => {
         it("rescues SOL with a valid TSS signature", async () => {
             const rescueAmount = anchor.web3.LAMPORTS_PER_SOL;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -271,6 +281,7 @@ describe("Universal Gateway - Rescue Tests", () => {
 
             await program.methods
                 .rescueFunds(
+                    Array.from(subTxId),
                     Array.from(universalTxId),
                     new anchor.BN(rescueAmount),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -284,11 +295,13 @@ describe("Universal Gateway - Rescue Tests", () => {
                     feeVault: feeVaultPda,
                     tssPda,
                     recipient: recipient.publicKey,
+                    executedSubTx: executedSubTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                     tokenVault: null,
                     recipientTokenAccount: null,
                     tokenMint: null,
+                    tokenProgram: null,
                 })
                 .signers([relayer])
                 .rpc();
@@ -299,16 +312,20 @@ describe("Universal Gateway - Rescue Tests", () => {
 
             expect(vaultAfter).to.equal(vaultBefore - rescueAmount);
             expect(recipientAfter).to.equal(recipientBefore + rescueAmount);
-            // Relayer receives gas_fee from fee_vault (no replay PDA rent deduction)
+            // Relayer receives gas_fee from fee_vault, pays ExecutedSubTx PDA rent
+            const actualRentForExecutedTx = 890880;
             const callerDelta = callerAfter - callerBefore;
-            expect(callerDelta).to.be.closeTo(Number(DEFAULT_GAS_FEE), 50_000);
+            expect(callerDelta).to.be.closeTo(Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx, 100_000);
         });
 
         it("rejects a tampered TSS signature", async () => {
             const rescueAmount = anchor.web3.LAMPORTS_PER_SOL;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -325,6 +342,7 @@ describe("Universal Gateway - Rescue Tests", () => {
             await expectRejection(
                 program.methods
                     .rescueFunds(
+                        Array.from(subTxId),
                         Array.from(universalTxId),
                         new anchor.BN(rescueAmount),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -338,11 +356,13 @@ describe("Universal Gateway - Rescue Tests", () => {
                         feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                         tokenVault: null,
                         recipientTokenAccount: null,
                         tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -351,9 +371,12 @@ describe("Universal Gateway - Rescue Tests", () => {
         });
 
         it("rejects zero amount", async () => {
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -367,6 +390,7 @@ describe("Universal Gateway - Rescue Tests", () => {
             await expectRejection(
                 program.methods
                     .rescueFunds(
+                        Array.from(subTxId),
                         Array.from(universalTxId),
                         new anchor.BN(0),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -380,11 +404,13 @@ describe("Universal Gateway - Rescue Tests", () => {
                         feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                         tokenVault: null,
                         recipientTokenAccount: null,
                         tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -400,9 +426,12 @@ describe("Universal Gateway - Rescue Tests", () => {
                 .rpc();
 
             const rescueAmount = anchor.web3.LAMPORTS_PER_SOL;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE
@@ -416,6 +445,7 @@ describe("Universal Gateway - Rescue Tests", () => {
             await expectRejection(
                 program.methods
                     .rescueFunds(
+                        Array.from(subTxId),
                         Array.from(universalTxId),
                         new anchor.BN(rescueAmount),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -429,11 +459,13 @@ describe("Universal Gateway - Rescue Tests", () => {
                         feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                         tokenVault: null,
                         recipientTokenAccount: null,
                         tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
@@ -451,9 +483,12 @@ describe("Universal Gateway - Rescue Tests", () => {
             const rescueAmount = 1;
             // 100 SOL is guaranteed to exceed any fee_vault balance in test environments.
             const tooLargeGasFee = BigInt(100 * anchor.web3.LAMPORTS_PER_SOL);
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 tooLargeGasFee
@@ -467,6 +502,7 @@ describe("Universal Gateway - Rescue Tests", () => {
             await expectRejection(
                 program.methods
                     .rescueFunds(
+                        Array.from(subTxId),
                         Array.from(universalTxId),
                         new anchor.BN(rescueAmount),
                         new anchor.BN(Number(tooLargeGasFee)),
@@ -480,16 +516,105 @@ describe("Universal Gateway - Rescue Tests", () => {
                         feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                         tokenVault: null,
                         recipientTokenAccount: null,
                         tokenMint: null,
+                        tokenProgram: null,
                     })
                     .signers([relayer])
                     .rpc(),
                 "InsufficientFeePool"
             );
+        });
+
+        it("rejects duplicate subTxId (replay protection)", async () => {
+            const rescueAmount = anchor.web3.LAMPORTS_PER_SOL / 10;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
+            const universalTxId = generateUniversalTxId();
+
+            const additional = buildRescueAdditionalData(
+                subTxId,
+                universalTxId,
+                recipient.publicKey,
+                DEFAULT_GAS_FEE
+            );
+            const sig = await signTssMessageWithChainId({
+                instruction: TssInstruction.Rescue,
+                amount: BigInt(rescueAmount),
+                additional,
+            });
+
+            // First call succeeds
+            await program.methods
+                .rescueFunds(
+                    Array.from(subTxId),
+                    Array.from(universalTxId),
+                    new anchor.BN(rescueAmount),
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig.signature,
+                    sig.recoveryId,
+                    sig.messageHash,
+                )
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    feeVault: feeVaultPda,
+                    tssPda,
+                    recipient: recipient.publicKey,
+                    executedSubTx: executedSubTxPda,
+                    caller: relayer.publicKey,
+                    systemProgram: SystemProgram.programId,
+                    tokenVault: null,
+                    recipientTokenAccount: null,
+                    tokenMint: null,
+                    tokenProgram: null,
+                })
+                .signers([relayer])
+                .rpc();
+
+            // Second call with same subTxId must fail
+            try {
+                await program.methods
+                    .rescueFunds(
+                        Array.from(subTxId),
+                        Array.from(universalTxId),
+                        new anchor.BN(rescueAmount),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                        sig.signature,
+                        sig.recoveryId,
+                        sig.messageHash,
+                    )
+                    .accounts({
+                        config: configPda,
+                        vault: vaultPda,
+                        feeVault: feeVaultPda,
+                        tssPda,
+                        recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
+                        caller: relayer.publicKey,
+                        systemProgram: SystemProgram.programId,
+                        tokenVault: null,
+                        recipientTokenAccount: null,
+                        tokenMint: null,
+                        tokenProgram: null,
+                    })
+                    .signers([relayer])
+                    .rpc();
+                expect.fail("Should have rejected duplicate subTxId");
+            } catch (error: any) {
+                const errorStr = error.toString();
+                const allLogs = Array.isArray(error.logs) ? error.logs.join(' ') : '';
+                const isReplayError =
+                    errorStr.includes("already in use") ||
+                    allLogs.includes("already in use") ||
+                    errorStr.includes("AccountDiscriminatorAlreadySet") ||
+                    allLogs.includes("AccountDiscriminatorAlreadySet");
+                expect(isReplayError).to.be.true;
+            }
         });
     });
 
@@ -499,9 +624,12 @@ describe("Universal Gateway - Rescue Tests", () => {
         it("rescues SPL tokens with a valid TSS signature", async () => {
             const rescueTokens = 500;
             const rescueRaw = BigInt(rescueTokens) * TOKEN_MULTIPLIER;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE,
@@ -519,6 +647,7 @@ describe("Universal Gateway - Rescue Tests", () => {
 
             await program.methods
                 .rescueFunds(
+                    Array.from(subTxId),
                     Array.from(universalTxId),
                     new anchor.BN(Number(rescueRaw)),
                     new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -532,6 +661,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                     feeVault: feeVaultPda,
                     tssPda,
                     recipient: recipient.publicKey,
+                    executedSubTx: executedSubTxPda,
                     caller: relayer.publicKey,
                     systemProgram: SystemProgram.programId,
                     tokenVault: vaultUsdtAccount,
@@ -548,15 +678,20 @@ describe("Universal Gateway - Rescue Tests", () => {
 
             expect(vaultUsdtAfter).to.equal(vaultUsdtBefore - rescueTokens);
             expect(recipientUsdtAfter).to.equal(recipientUsdtBefore + rescueTokens);
+            // Relayer receives gas_fee from fee_vault, pays ExecutedSubTx PDA rent
+            const actualRentForExecutedTx = 890880;
             const callerDelta = callerAfter - callerBefore;
-            expect(callerDelta).to.be.closeTo(Number(DEFAULT_GAS_FEE), 50_000);
+            expect(callerDelta).to.be.closeTo(Number(DEFAULT_GAS_FEE) - actualRentForExecutedTx, 100_000);
         });
 
         it("rejects a tampered TSS signature", async () => {
             const rescueRaw = BigInt(100) * TOKEN_MULTIPLIER;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE,
@@ -574,6 +709,7 @@ describe("Universal Gateway - Rescue Tests", () => {
             await expectRejection(
                 program.methods
                     .rescueFunds(
+                        Array.from(subTxId),
                         Array.from(universalTxId),
                         new anchor.BN(Number(rescueRaw)),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -587,6 +723,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                         tokenVault: vaultUsdtAccount,
@@ -602,11 +739,14 @@ describe("Universal Gateway - Rescue Tests", () => {
 
         it("rejects SPL rescue with wrong recipient (token account owner mismatch)", async () => {
             const rescueRaw = BigInt(100) * TOKEN_MULTIPLIER;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
             const wrongRecipient = Keypair.generate();
 
             // Sign for the correct recipient
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE,
@@ -622,6 +762,7 @@ describe("Universal Gateway - Rescue Tests", () => {
             await expectRejection(
                 program.methods
                     .rescueFunds(
+                        Array.from(subTxId),
                         Array.from(universalTxId),
                         new anchor.BN(Number(rescueRaw)),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -635,6 +776,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                         tokenVault: vaultUsdtAccount,
@@ -650,11 +792,14 @@ describe("Universal Gateway - Rescue Tests", () => {
 
         it("rejects SPL rescue when TSS was signed for a different mint", async () => {
             const rescueRaw = BigInt(100) * TOKEN_MULTIPLIER;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
             const universalTxId = generateUniversalTxId();
 
             // Sign for a fake random mint
             const fakeMint = Keypair.generate().publicKey;
             const additional = buildRescueAdditionalData(
+                subTxId,
                 universalTxId,
                 recipient.publicKey,
                 DEFAULT_GAS_FEE,
@@ -673,6 +818,7 @@ describe("Universal Gateway - Rescue Tests", () => {
             await expectRejection(
                 program.methods
                     .rescueFunds(
+                        Array.from(subTxId),
                         Array.from(universalTxId),
                         new anchor.BN(Number(rescueRaw)),
                         new anchor.BN(Number(DEFAULT_GAS_FEE)),
@@ -686,6 +832,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         feeVault: feeVaultPda,
                         tssPda,
                         recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
                         caller: relayer.publicKey,
                         systemProgram: SystemProgram.programId,
                         tokenVault: vaultUsdtAccount,
@@ -697,6 +844,95 @@ describe("Universal Gateway - Rescue Tests", () => {
                     .rpc(),
                 "MessageHashMismatch"
             );
+        });
+
+        it("rejects duplicate subTxId (replay protection)", async () => {
+            const rescueTokens = 50;
+            const rescueRaw = BigInt(rescueTokens) * TOKEN_MULTIPLIER;
+            const subTxId = generateTxId();
+            const executedSubTxPda = getExecutedTxPda(subTxId);
+            const universalTxId = generateUniversalTxId();
+
+            const additional = buildRescueAdditionalData(
+                subTxId,
+                universalTxId,
+                recipient.publicKey,
+                DEFAULT_GAS_FEE,
+                mockUSDT.mint.publicKey
+            );
+            const sig = await signTssMessageWithChainId({
+                instruction: TssInstruction.Rescue,
+                amount: rescueRaw,
+                additional,
+            });
+
+            // First call succeeds
+            await program.methods
+                .rescueFunds(
+                    Array.from(subTxId),
+                    Array.from(universalTxId),
+                    new anchor.BN(Number(rescueRaw)),
+                    new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                    sig.signature,
+                    sig.recoveryId,
+                    sig.messageHash,
+                )
+                .accounts({
+                    config: configPda,
+                    vault: vaultPda,
+                    feeVault: feeVaultPda,
+                    tssPda,
+                    recipient: recipient.publicKey,
+                    executedSubTx: executedSubTxPda,
+                    caller: relayer.publicKey,
+                    systemProgram: SystemProgram.programId,
+                    tokenVault: vaultUsdtAccount,
+                    recipientTokenAccount: recipientUsdtAccount,
+                    tokenMint: mockUSDT.mint.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                })
+                .signers([relayer])
+                .rpc();
+
+            // Second call with same subTxId must fail
+            try {
+                await program.methods
+                    .rescueFunds(
+                        Array.from(subTxId),
+                        Array.from(universalTxId),
+                        new anchor.BN(Number(rescueRaw)),
+                        new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                        sig.signature,
+                        sig.recoveryId,
+                        sig.messageHash,
+                    )
+                    .accounts({
+                        config: configPda,
+                        vault: vaultPda,
+                        feeVault: feeVaultPda,
+                        tssPda,
+                        recipient: recipient.publicKey,
+                        executedSubTx: executedSubTxPda,
+                        caller: relayer.publicKey,
+                        systemProgram: SystemProgram.programId,
+                        tokenVault: vaultUsdtAccount,
+                        recipientTokenAccount: recipientUsdtAccount,
+                        tokenMint: mockUSDT.mint.publicKey,
+                        tokenProgram: TOKEN_PROGRAM_ID,
+                    })
+                    .signers([relayer])
+                    .rpc();
+                expect.fail("Should have rejected duplicate subTxId");
+            } catch (error: any) {
+                const errorStr = error.toString();
+                const allLogs = Array.isArray(error.logs) ? error.logs.join(' ') : '';
+                const isReplayError =
+                    errorStr.includes("already in use") ||
+                    allLogs.includes("already in use") ||
+                    errorStr.includes("AccountDiscriminatorAlreadySet") ||
+                    allLogs.includes("AccountDiscriminatorAlreadySet");
+                expect(isReplayError).to.be.true;
+            }
         });
     });
 });

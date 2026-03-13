@@ -245,18 +245,17 @@ pub struct ProtocolFeeCollected {
 
 #[event]
 pub struct ProtocolFeeReimbursed {
-    pub tx_id: [u8; 32], // sub_tx_id for revert; universal_tx_id for rescue
+    pub sub_tx_id: [u8; 32],
     pub relayer: Pubkey,
     pub amount_lamports: u64,
 }
 
 /// Emitted when locked funds are rescued back to recipient via TSS-verified rescue instruction.
-/// EVM parity: `FundsRescued(universalTxId, token, amount, recipient)`.
-/// No replay guard on-chain (EVM parity) — Push Chain is responsible for preventing duplicate rescue.
 #[event]
 pub struct FundsRescued {
-    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
-    pub token: Pubkey,             // Token (Pubkey::default() for native SOL)
-    pub amount: u64,               // Amount rescued
-    pub recipient: Pubkey,         // Destination of rescued funds
+    pub sub_tx_id: [u8; 32],
+    pub universal_tx_id: [u8; 32],
+    pub token: Pubkey,
+    pub amount: u64,
+    pub revert_instruction: RevertInstructions,
 }

@@ -7,19 +7,19 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 // =========================
 //   TSS RESCUE FUNCTION
 // =========================
-// EVM parity: Vault.rescueFunds() — TSS-only emergency release of locked funds.
+// EVM parity: UniversalGateway.rescueFunds() — TSS-only emergency release of locked funds.
 // Single entrypoint handles both SOL (token_mint = None) and SPL (token_mint = Some).
 //
 // SVM deviations from EVM (intentional):
 //   1. Auth: ECDSA TSS signature verification instead of onlyRole(TSS_ROLE).
 //   2. gas_fee: relayer reimbursement from fee_vault (EVM rescue has no equivalent).
-//   3. No on-chain replay guard (EVM parity) — Push Chain prevents duplicate rescue.
 //
 // TSS message format (instruction_id = 5 for both modes):
-//   SOL: amount || [universal_tx_id, recipient, gas_fee]
-//   SPL: amount || [universal_tx_id, mint, recipient, gas_fee]
+//   SOL: amount || [sub_tx_id, universal_tx_id, recipient, gas_fee]
+//   SPL: amount || [sub_tx_id, universal_tx_id, mint, recipient, gas_fee]
 
 #[derive(Accounts)]
+#[instruction(sub_tx_id: [u8; 32])]
 pub struct RescueFunds<'info> {
     #[account(
         seeds = [CONFIG_SEED],
@@ -43,6 +43,16 @@ pub struct RescueFunds<'info> {
     /// recipient_token_account.owner and used as the canonical identity in the TSS message.
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
+
+    /// Replay protection (EVM parity: isExecuted[subTxId]).
+    #[account(
+        init,
+        payer = caller,
+        space = ExecutedSubTx::LEN,
+        seeds = [EXECUTED_SUB_TX_SEED, &sub_tx_id],
+        bump
+    )]
+    pub executed_sub_tx: Account<'info, ExecutedSubTx>,
 
     /// The caller/relayer — pays transaction fees, receives gas_fee reimbursement.
     #[account(mut)]
@@ -68,6 +78,7 @@ pub struct RescueFunds<'info> {
 
 pub fn rescue_funds(
     ctx: Context<RescueFunds>,
+    sub_tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     amount: u64,
     gas_fee: u64,
@@ -85,12 +96,15 @@ pub fn rescue_funds(
     // --- Account presence + cross-account consistency ---
     if is_native {
         require!(
-            ctx.accounts.token_vault.is_none() && ctx.accounts.recipient_token_account.is_none(),
+            ctx.accounts.token_vault.is_none()
+                && ctx.accounts.recipient_token_account.is_none()
+                && ctx.accounts.token_program.is_none(),
             GatewayError::InvalidAccount
         );
     } else {
         let token_vault = ctx.accounts.token_vault.as_ref().ok_or(error!(GatewayError::InvalidAccount))?;
         let recipient_ta = ctx.accounts.recipient_token_account.as_ref().ok_or(error!(GatewayError::InvalidAccount))?;
+        require!(ctx.accounts.token_program.is_some(), GatewayError::InvalidAccount);
         let mint_key = ctx.accounts.token_mint.as_ref().unwrap().key(); // Safe: !is_native ⟹ token_mint.is_some()
         require!(token_vault.mint == mint_key, GatewayError::InvalidMint);
         require!(token_vault.owner == ctx.accounts.vault.key(), GatewayError::InvalidAccount);
@@ -98,16 +112,16 @@ pub fn rescue_funds(
         require!(recipient_ta.owner == recipient, GatewayError::InvalidRecipient);
     }
 
-    // TSS message: instruction_id=5 || amount || [universal_tx_id, (mint,) recipient, gas_fee]
+    // TSS message: instruction_id=4 || amount || [sub_tx_id, universal_tx_id, (mint,) recipient, gas_fee]
     let gas_fee_buf = encode_u64_be(gas_fee);
     let recipient_bytes = recipient.to_bytes();
     if is_native {
-        let additional: [&[u8]; 3] = [&universal_tx_id, &recipient_bytes, &gas_fee_buf];
-        validate_message(&mut ctx.accounts.tss_pda, 5, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
+        let additional: [&[u8]; 4] = [&sub_tx_id, &universal_tx_id, &recipient_bytes, &gas_fee_buf];
+        validate_message(&mut ctx.accounts.tss_pda, 4, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
     } else {
         let mint_bytes = ctx.accounts.token_mint.as_ref().unwrap().key().to_bytes();
-        let additional: [&[u8]; 4] = [&universal_tx_id, &mint_bytes, &recipient_bytes, &gas_fee_buf];
-        validate_message(&mut ctx.accounts.tss_pda, 5, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
+        let additional: [&[u8]; 5] = [&sub_tx_id, &universal_tx_id, &mint_bytes, &recipient_bytes, &gas_fee_buf];
+        validate_message(&mut ctx.accounts.tss_pda, 4, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
     }
 
     let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
@@ -131,19 +145,22 @@ pub fn rescue_funds(
     }
 
     emit!(crate::state::FundsRescued {
+        sub_tx_id,
         universal_tx_id,
         token: ctx.accounts.token_mint.as_ref().map_or(Pubkey::default(), |m| m.key()),
         amount,
-        recipient,
+        revert_instruction: RevertInstructions {
+            fund_recipient: recipient,
+            revert_msg: vec![],
+        },
     });
 
     reimburse_relayer_from_fee_vault(
         &ctx.accounts.fee_vault,
         &ctx.accounts.caller.to_account_info(),
-        universal_tx_id,
+        sub_tx_id,
         gas_fee,
     )?;
 
     Ok(())
 }
-
