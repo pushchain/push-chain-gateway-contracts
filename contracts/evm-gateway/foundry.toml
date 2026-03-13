@@ -26,6 +26,9 @@ debug = ["*"]
 cache = true
 cache_path = "cache"
 
+# coverage — only report on active source contracts
+no_match_coverage = "^(script/|test/|src/libraries/|src/interfaces/|src/UniversalGatewayV0|src/UniversalCore_temp)"
+
 # security & permissions
 ffi = false
 allow_paths = ["lib", "src", "test", "script"]
