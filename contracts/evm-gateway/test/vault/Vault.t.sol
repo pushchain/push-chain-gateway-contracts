@@ -2307,5 +2307,123 @@ contract VaultTest is Test {
         // Verify success: user1 received tokens (payload executed correctly)
         assertEq(token.balanceOf(user1), amount, "User should receive tokens despite vault as target");
     }
+
+    // ============================================================================
+    // setCEAFactory TESTS
+    // ============================================================================
+
+    event CEAFactoryUpdated(address indexed oldCEAFactory, address indexed newCEAFactory);
+
+    function test_SetCEAFactory_Success() public {
+        MockCEAFactory newFactory = new MockCEAFactory();
+
+        vm.prank(admin);
+        vm.expectEmit(true, true, false, false);
+        emit CEAFactoryUpdated(address(ceaFactory), address(newFactory));
+        vault.setCEAFactory(address(newFactory));
+
+        assertEq(address(vault.CEAFactory()), address(newFactory));
+    }
+
+    function test_SetCEAFactory_ZeroAddressReverts() public {
+        vm.prank(admin);
+        vm.expectRevert(Errors.ZeroAddress.selector);
+        vault.setCEAFactory(address(0));
+    }
+
+    function test_SetCEAFactory_NonAdminReverts() public {
+        vm.prank(user1);
+        vm.expectRevert();
+        vault.setCEAFactory(address(ceaFactory));
+    }
+
+    function test_SetTSS_WhenOldTSSAlreadyRevokedRole() public {
+        // Revoke TSS_ROLE from old TSS via admin before calling setTSS
+        vm.startPrank(admin);
+        vault.revokeRole(vault.TSS_ROLE(), tss);
+        assertFalse(vault.hasRole(vault.TSS_ROLE(), tss));
+
+        // Call setTSS — the hasRole(TSS_ROLE, old) check returns false
+        address newTSS = makeAddr("newTSS2");
+        vault.setTSS(newTSS);
+        vm.stopPrank();
+
+        assertEq(vault.TSS_ADDRESS(), newTSS);
+        assertTrue(vault.hasRole(vault.TSS_ROLE(), newTSS));
+    }
+
+    // ============================================================================
+    // revertUniversalTx — NATIVE PATH TESTS
+    // ============================================================================
+
+    function test_RevertWithdraw_NativeToken_Success() public {
+        uint256 amount = 1 ether;
+        vm.deal(tss, amount);
+
+        uint256 user1BalanceBefore = user1.balance;
+
+        vm.prank(tss);
+        vault.revertUniversalTx{ value: amount }(
+            _tx(20),
+            bytes32(uint256(3020)),
+            address(0),
+            amount,
+            RevertInstructions(user1, "native revert")
+        );
+
+        assertEq(
+            user1.balance,
+            user1BalanceBefore + amount,
+            "User should receive native tokens"
+        );
+    }
+
+    function test_RevertWithdraw_NativeToken_MsgValueMismatch_Reverts()
+        public
+    {
+        vm.deal(tss, 2 ether);
+
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.revertUniversalTx{ value: 0.5 ether }(
+            _tx(21),
+            bytes32(uint256(3021)),
+            address(0),
+            1 ether,
+            RevertInstructions(user1, "")
+        );
+    }
+
+    function test_RevertWithdraw_ERC20_InsufficientBalance_Reverts()
+        public
+    {
+        uint256 vaultBalance = token.balanceOf(address(vault));
+
+        vm.prank(tss);
+        vm.expectRevert(Errors.InsufficientBalance.selector);
+        vault.revertUniversalTx(
+            _tx(22),
+            bytes32(uint256(3022)),
+            address(token),
+            vaultBalance + 1,
+            RevertInstructions(user1, "")
+        );
+    }
+
+    function test_RevertWithdraw_ERC20_NonZeroMsgValue_Reverts()
+        public
+    {
+        vm.deal(tss, 1 ether);
+
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.revertUniversalTx{ value: 0.1 ether }(
+            _tx(23),
+            bytes32(uint256(3023)),
+            address(token),
+            100e18,
+            RevertInstructions(user1, "")
+        );
+    }
 }
 

@@ -412,6 +412,38 @@ contract VaultPCTest is Test {
     }
 
     // ============================================================================
+    // WITHDRAW NATIVE — TRANSFER FAILURE TEST
+    // ============================================================================
+
+    function test_Withdraw_Native_FailedTransfer_Reverts() public {
+        VaultPCEthRejecter rejecter = new VaultPCEthRejecter();
+        uint256 amount = 5 ether;
+        vm.deal(address(vault), amount);
+
+        vm.prank(fundManager);
+        vm.expectRevert(Errors.DepositFailed.selector);
+        vault.withdraw(address(rejecter), amount);
+    }
+
+    function test_Withdraw_Native_ReceiveThenWithdraw() public {
+        uint256 amount = 10 ether;
+        vm.deal(user1, amount);
+
+        // Receive native via receive()
+        vm.prank(user1);
+        (bool ok,) = address(vault).call{ value: amount }("");
+        assertTrue(ok);
+        assertEq(address(vault).balance, amount);
+
+        // Withdraw it
+        vm.prank(fundManager);
+        vault.withdraw(user2, amount);
+
+        assertEq(user2.balance, amount);
+        assertEq(address(vault).balance, 0);
+    }
+
+    // ============================================================================
     // EDGE CASE & ADDITIONAL COVERAGE TESTS
     // ============================================================================
 
@@ -438,5 +470,12 @@ contract VaultPCTest is Test {
         vault.withdrawToken(address(prc20Token), user1, 3e18);
 
         assertEq(prc20Token.balanceOf(user1), 6e18);
+    }
+}
+
+/// @dev Contract that rejects all ETH transfers (for VaultPC withdraw failure test)
+contract VaultPCEthRejecter {
+    receive() external payable {
+        revert("no ETH");
     }
 }

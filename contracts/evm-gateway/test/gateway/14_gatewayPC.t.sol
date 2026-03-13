@@ -2422,6 +2422,94 @@ contract UniversalGatewayPCTest is Test {
         vm.expectRevert("MockUniversalCore: refund failed");
         gateway.sendUniversalTxOutbound{value: PC_FEE}(req);
     }
+
+    // ============================================================
+    //  msg.value < protocolFee
+    // ============================================================
+
+    function testVaultPCTransferFailure_Reverts() public {
+        // Deploy a contract that rejects ETH as VaultPC
+        ETHRejecter rejectingVault = new ETHRejecter();
+
+        vm.prank(admin);
+        gateway.setVaultPC(address(rejectingVault));
+
+        uint256 amount = 1000 * 1e6;
+        prc20Token.mint(user1, amount);
+        vm.prank(user1);
+        prc20Token.approve(address(gateway), amount);
+
+        UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
+            address(prc20Token),
+            amount,
+            DEFAULT_GAS_LIMIT,
+            bytes(""),
+            user2
+        );
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gateway.sendUniversalTxOutbound{ value: PC_FEE }(req);
+    }
+
+    function testZeroProtocolFee_VaultGetsNothing() public {
+        // Token with no protocol fee set (defaults to 0)
+        MockPRC20 noFeeToken = new MockPRC20(
+            "No Fee Token",
+            "NFT",
+            6,
+            SOURCE_CHAIN_NAMESPACE,
+            MockPRC20.TokenType.ERC20,
+            address(universalCore),
+            SOURCE_TOKEN_ADDRESS
+        );
+
+        uint256 amount = 1000 * 1e6;
+        noFeeToken.mint(user1, amount);
+        vm.prank(user1);
+        noFeeToken.approve(address(gateway), amount);
+
+        uint256 vaultBalBefore = vaultPC.balance;
+
+        UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
+            address(noFeeToken),
+            amount,
+            DEFAULT_GAS_LIMIT,
+            bytes(""),
+            user2
+        );
+
+        vm.prank(user1);
+        gateway.sendUniversalTxOutbound{ value: PC_FEE }(req);
+
+        // VaultPC should NOT have received any protocolFee
+        assertEq(vaultPC.balance, vaultBalBefore);
+    }
+
+    function testRevert_InsufficientMsgValueForProtocolFee() public {
+        uint256 amount = 1000 * 1e6;
+
+        prc20Token.mint(user1, amount);
+        vm.prank(user1);
+        prc20Token.approve(address(gateway), amount);
+
+        UniversalOutboundTxRequest memory req = _createOutboundRequest(
+            bytes(""),
+            address(prc20Token),
+            amount,
+            DEFAULT_GAS_LIMIT,
+            bytes(""),
+            user2
+        );
+
+        // protocolFee = DEFAULT_PROTOCOL_FEE = 0.01 ether
+        // Send less than protocolFee
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gateway.sendUniversalTxOutbound{ value: 0.001 ether }(req);
+    }
 }
 
 /// @dev Helper contract that rejects native token transfers (for testing refund failure)
