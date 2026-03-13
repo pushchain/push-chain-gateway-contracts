@@ -13,6 +13,7 @@
     "config:show": " ts-node app/config-cli.ts config:show",
     "config:tss-init": " ts-node app/config-cli.ts tss:init",
     "config:tss-update": " ts-node app/config-cli.ts tss:update",
+    "config:authority-set": " ts-node app/config-cli.ts authority:set",
     "config:pause": " ts-node app/config-cli.ts pause",
     "config:unpause": " ts-node app/config-cli.ts unpause",
     "config:fee-init": " ts-node app/config-cli.ts fee:init",

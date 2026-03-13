@@ -142,7 +142,7 @@ export async function ensureTestSetup(): Promise<void> {
             if (!storedAddress.equals(expectedAddress) || existingTss.chainId !== expectedChainId) {
                 await program.methods
                     .updateTss(expectedTssEthAddress, expectedChainId)
-                    .accounts({ tssPda, authority: admin.publicKey })
+                    .accounts({ tssPda, config: configPda, authority: admin.publicKey })
                     .signers([admin])
                     .rpc();
             }

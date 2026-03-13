@@ -49,6 +49,22 @@ Only the current admin can update TSS. The TSS address is stored in `TssPda` and
 
 ---
 
+## Authority Rotation
+
+### Update admin and/or pauser
+
+```bash
+npm run config:authority-set -- --new-admin <new-admin-pubkey>
+npm run config:authority-set -- --new-pauser <new-pauser-pubkey>
+npm run config:authority-set -- --new-admin <new-admin-pubkey> --new-pauser <new-pauser-pubkey>
+```
+
+If admin is changed, `Config.admin` is updated immediately. `update_tss` authorization follows `Config.admin`.
+
+After rotating admin, update your operator signer/keypair used by CLI before running additional admin commands.
+
+---
+
 ## USD Caps (GAS route)
 
 Caps are in Pyth 8-decimal USD format: `1_00000000` = $1.00
@@ -141,7 +157,7 @@ npm run config:pause
 npm run config:unpause
 ```
 
-Only the `pauser` address (set during `initialize`) can call these. Admin and pauser can be the same or different keypairs.
+Either the configured `pauser` or the current `admin` can call these. Admin and pauser can be the same or different keypairs.
 
 ---
 

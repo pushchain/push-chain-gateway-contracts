@@ -97,6 +97,96 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
         });
 
+        it("Rotates admin authority", async () => {
+            // Rotate admin -> newAdmin
+            await program.methods
+                .setAuthorities(newAdmin.publicKey, null)
+                .accounts({
+                    config: configPda,
+                    admin: admin.publicKey,
+                })
+                .signers([admin])
+                .rpc();
+
+            let config = await program.account.config.fetch(configPda);
+            expect(config.admin.toString()).to.equal(newAdmin.publicKey.toString());
+
+            // Old admin should now fail admin-only action
+            try {
+                await program.methods
+                    .setCapsUsd(new anchor.BN(100_000_000), new anchor.BN(1_000_000_000))
+                    .accounts({
+                        admin: admin.publicKey,
+                        config: configPda,
+                    })
+                    .signers([admin])
+                    .rpc();
+                expect.fail("Old admin should not have access after rotation");
+            } catch (error: any) {
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("Unauthorized");
+            }
+
+            // Rotate back to original admin to keep suite stable
+            await program.methods
+                .setAuthorities(admin.publicKey, null)
+                .accounts({
+                    config: configPda,
+                    admin: newAdmin.publicKey,
+                })
+                .signers([newAdmin])
+                .rpc();
+
+            config = await program.account.config.fetch(configPda);
+            expect(config.admin.toString()).to.equal(admin.publicKey.toString());
+        });
+
+        it("Updates pauser authority", async () => {
+            await program.methods
+                .setAuthorities(null, newPauser.publicKey)
+                .accounts({
+                    config: configPda,
+                    admin: admin.publicKey,
+                })
+                .signers([admin])
+                .rpc();
+
+            let config = await program.account.config.fetch(configPda);
+            expect(config.pauser.toString()).to.equal(newPauser.publicKey.toString());
+
+            // New pauser can pause/unpause
+            await program.methods
+                .pause()
+                .accounts({
+                    pauser: newPauser.publicKey,
+                    config: configPda,
+                })
+                .signers([newPauser])
+                .rpc();
+
+            await program.methods
+                .unpause()
+                .accounts({
+                    pauser: newPauser.publicKey,
+                    config: configPda,
+                })
+                .signers([newPauser])
+                .rpc();
+
+            // Restore original pauser for remaining tests
+            await program.methods
+                .setAuthorities(null, pauser.publicKey)
+                .accounts({
+                    config: configPda,
+                    admin: admin.publicKey,
+                })
+                .signers([admin])
+                .rpc();
+
+            config = await program.account.config.fetch(configPda);
+            expect(config.pauser.toString()).to.equal(pauser.publicKey.toString());
+        });
+
         it("Updates USD caps", async () => {
 
             const newMinCap = new anchor.BN(150_000_000);
@@ -115,6 +205,40 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             expect(config.minCapUniversalTxUsd.toString()).to.equal(newMinCap.toString());
             expect(config.maxCapUniversalTxUsd.toString()).to.equal(newMaxCap.toString());
 
+        });
+
+        it("Rejects set_authorities from non-admin", async () => {
+            try {
+                await program.methods
+                    .setAuthorities(unauthorizedUser.publicKey, null)
+                    .accounts({
+                        config: configPda,
+                        admin: unauthorizedUser.publicKey,
+                    })
+                    .signers([unauthorizedUser])
+                    .rpc();
+                expect.fail("Unauthorized set_authorities should have failed");
+            } catch (error: any) {
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("Unauthorized");
+            }
+        });
+
+        it("Rejects set_authorities with both args null", async () => {
+            try {
+                await program.methods
+                    .setAuthorities(null, null)
+                    .accounts({
+                        config: configPda,
+                        admin: admin.publicKey,
+                    })
+                    .signers([admin])
+                    .rpc();
+                expect.fail("set_authorities with both null should have failed");
+            } catch (error: any) {
+                const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
+                expect(errorCode).to.equal("InvalidInput");
+            }
         });
 
         it("Rejects unauthorized admin operations", async () => {
@@ -359,6 +483,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                         .accounts({
                             authority: unauthorizedUser.publicKey,
                             tssPda: actualTssPda,
+                            config: configPda,
                         })
                         .signers([unauthorizedUser])
                         .rpc();
@@ -366,9 +491,8 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                     expect.fail("Unauthorized TSS update should have failed");
                 } catch (error: any) {
                     expect(error).to.exist;
-                    // Constraint returns ConstraintRaw when validation fails
                     const errorCode = error.error?.errorCode?.code || error.errorCode?.code || error.code || error.error?.code;
-                    expect(errorCode).to.equal("ConstraintRaw");
+                    expect(errorCode).to.equal("Unauthorized");
                 }
             } else {
                 // TSS doesn't exist, test that non-admin can't initialize it
@@ -435,6 +559,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 .accounts({
                     authority: admin.publicKey,
                     tssPda: tssPda,
+                    config: configPda,
                 })
                 .signers([admin])
                 .rpc();
@@ -492,6 +617,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             .updateTss(expectedTssEthAddress, TSS_CHAIN_ID)
             .accounts({
                 tssPda,
+                config: configPda,
                 authority: admin.publicKey,
             })
             .signers([admin])

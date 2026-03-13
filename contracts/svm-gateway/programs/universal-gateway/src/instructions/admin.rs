@@ -15,6 +15,21 @@ pub struct AdminAction<'info> {
     pub admin: Signer<'info>,
 }
 
+/// Authority update action (available while paused).
+/// Updates admin and/or pauser in one instruction.
+#[derive(Accounts)]
+pub struct SetAuthoritiesAction<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == admin.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+
+    pub admin: Signer<'info>,
+}
+
 #[derive(Accounts)]
 pub struct PauseAction<'info> {
     #[account(
@@ -35,6 +50,31 @@ pub fn pause(ctx: Context<PauseAction>) -> Result<()> {
 
 pub fn unpause(ctx: Context<PauseAction>) -> Result<()> {
     ctx.accounts.config.paused = false;
+    Ok(())
+}
+
+pub fn set_authorities(
+    ctx: Context<SetAuthoritiesAction>,
+    new_admin: Option<Pubkey>,
+    new_pauser: Option<Pubkey>,
+) -> Result<()> {
+    require!(
+        new_admin.is_some() || new_pauser.is_some(),
+        GatewayError::InvalidInput
+    );
+
+    let config = &mut ctx.accounts.config;
+
+    if let Some(next) = new_admin {
+        require!(next != Pubkey::default(), GatewayError::ZeroAddress);
+        config.admin = next;
+    }
+
+    if let Some(next) = new_pauser {
+        require!(next != Pubkey::default(), GatewayError::ZeroAddress);
+        config.pauser = next;
+    }
+
     Ok(())
 }
 

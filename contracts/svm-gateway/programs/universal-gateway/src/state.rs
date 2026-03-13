@@ -134,6 +134,8 @@ impl TokenRateLimit {
 pub struct TssPda {
     pub tss_eth_address: [u8; 20],
     pub chain_id: String, // Solana cluster pubkey (e.g., "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" for mainnet)
+    /// Legacy field — set at init_tss but no longer used for authorization.
+    /// update_tss now checks config.admin. Kept for account layout compatibility.
     pub authority: Pubkey,
     pub bump: u8,
 }
@@ -206,12 +208,6 @@ pub struct RevertUniversalTx {
 }
 
 #[event]
-pub struct TSSAddressUpdated {
-    pub old_tss: Pubkey,
-    pub new_tss: Pubkey,
-}
-
-#[event]
 pub struct CapsUpdated {
     pub min_cap_usd: u128,
     pub max_cap_usd: u128,
@@ -264,5 +260,3 @@ pub struct FundsRescued {
     pub amount: u64,               // Amount rescued
     pub recipient: Pubkey,         // Destination of rescued funds
 }
-
-// Keep legacy if referenced; prefer TxWithGas above

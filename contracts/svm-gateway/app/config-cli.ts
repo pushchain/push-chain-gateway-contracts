@@ -169,6 +169,7 @@ program_cli
             const ethAddress = parseEthAddress(options.eth);
             const chainId = options.chainId;
 
+            const configPda = deriveConfigPda();
             const tssPda = deriveTssPda();
 
             console.log(`New TSS ETH Address: 0x${Buffer.from(ethAddress).toString("hex")}`);
@@ -179,6 +180,7 @@ program_cli
                 .updateTss(ethAddress, chainId)
                 .accounts({
                     tssPda: tssPda,
+                    config: configPda,
                     authority: adminKeypair.publicKey,
                 })
                 .signers([adminKeypair])
@@ -244,6 +246,54 @@ program_cli
             console.log(`   Transaction: ${tx}\n`);
         } catch (error: any) {
             console.error(`❌ Error unpausing gateway: ${error.message}`);
+            process.exit(1);
+        }
+    });
+
+// ============================================
+//           AUTHORITY COMMANDS
+// ============================================
+
+program_cli
+    .command("authority:set")
+    .description("Update admin and/or pauser authority")
+    .option("--new-admin <pubkey>", "New admin public key")
+    .option("--new-pauser <pubkey>", "New pauser public key")
+    .action(async (options) => {
+        try {
+            if (!options.newAdmin && !options.newPauser) {
+                throw new Error("Provide at least one of --new-admin or --new-pauser");
+            }
+
+            console.log("=== SETTING AUTHORITIES ===\n");
+
+            const newAdmin = options.newAdmin ? new PublicKey(options.newAdmin) : null;
+            const newPauser = options.newPauser ? new PublicKey(options.newPauser) : null;
+            const configPda = deriveConfigPda();
+
+            console.log(`Current signer (admin): ${adminKeypair.publicKey.toBase58()}`);
+            if (newAdmin) {
+                console.log(`New admin: ${newAdmin.toBase58()}`);
+            }
+            if (newPauser) {
+                console.log(`New pauser: ${newPauser.toBase58()}`);
+            }
+            console.log(`Config PDA: ${configPda.toBase58()}`);
+            console.log();
+
+            const tx = await program.methods
+                .setAuthorities(newAdmin, newPauser)
+                .accounts({
+                    config: configPda,
+                    admin: adminKeypair.publicKey,
+                })
+                .signers([adminKeypair])
+                .rpc();
+
+            console.log(`✅ Authorities updated successfully!`);
+            console.log(`   Transaction: ${tx}\n`);
+        } catch (error: any) {
+            console.error(`❌ Error setting authorities: ${error.message}`);
             process.exit(1);
         }
     });

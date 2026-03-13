@@ -63,6 +63,15 @@ pub mod universal_gateway {
         instructions::admin::unpause(ctx)
     }
 
+    /// @notice Update admin and/or pauser authority.
+    pub fn set_authorities(
+        ctx: Context<SetAuthoritiesAction>,
+        new_admin: Option<Pubkey>,
+        new_pauser: Option<Pubkey>,
+    ) -> Result<()> {
+        instructions::admin::set_authorities(ctx, new_admin, new_pauser)
+    }
+
     /// @notice Set USD caps
     pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap: u128, max_cap: u128) -> Result<()> {
         instructions::admin::set_caps_usd(ctx, min_cap, max_cap)
@@ -263,7 +272,7 @@ pub struct GetSolPrice<'info> {
 
 // Re-export account structs and types
 pub use instructions::admin::{
-    AdminAction, FeeVaultAdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
+    AdminAction, FeeVaultAdminAction, PauseAction, RateLimitConfigAction, SetAuthoritiesAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
 pub use instructions::execute::FinalizeUniversalTx;
@@ -284,7 +293,6 @@ pub use state::{
     ProtocolFeeReimbursed,
     ProtocolFeeUpdated,
     RevertInstructions,
-    TSSAddressUpdated,
     TxType,
     UniversalTx,
     UniversalTxFinalized,
