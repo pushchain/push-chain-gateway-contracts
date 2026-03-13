@@ -614,4 +614,28 @@ contract GatewayFetchTxTypeTest is BaseTest {
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: nativeValue }(req2);
     }
+
+    // =========================
+    //  NATIVE FUNDS / FUNDS_AND_PAYLOAD WITH ZERO NATIVE VALUE
+    // =========================
+
+    /// @notice Native FUNDS (token=address(0), amount>0) with nativeValue=0 reverts
+    /// @dev Hits the revert at line 923: fundsIsNative=true, hasNativeValue=false
+    function test_FetchTxType_NativeFunds_ZeroNativeValue_Reverts() public {
+        UniversalTxRequest memory req = makeReq(bytes(""), 1 ether, address(0));
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+    }
+
+    /// @notice Native FUNDS_AND_PAYLOAD (token=address(0), amount>0, payload) with nativeValue=0 reverts
+    /// @dev Hits the revert at line 937: fundsIsNative=true, hasNativeValue=false
+    function test_FetchTxType_NativeFundsAndPayload_ZeroNativeValue_Reverts() public {
+        UniversalTxRequest memory req = makeReq(nonEmptyPayload(), 1 ether, address(0));
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.InvalidInput.selector);
+        gatewayTemp.sendUniversalTx{ value: 0 }(req);
+    }
 }

@@ -502,4 +502,32 @@ contract ProtocolFeeTest is BaseTest {
 
         assertEq(gw.totalProtocolFeesCollected(), 0);
     }
+
+    // =========================
+    //  GROUP 9: TSS TRANSFER FAILURE
+    // =========================
+
+    /// @notice When TSS is a contract that rejects ETH, _collectProtocolFee reverts
+    function testFeeForward_TSSRejectsETH_Reverts() public {
+        // Set fee on gw
+        vm.prank(admin);
+        gw.setProtocolFee(PROTOCOL_FEE_WEI);
+
+        // Replace TSS with a contract that rejects ETH
+        ProtocolFeeEthRejecter rejecter = new ProtocolFeeEthRejecter();
+        vm.prank(admin);
+        gw.setTSS(address(rejecter));
+
+        UniversalTxRequest memory req = _buildReq(address(0), 0, bytes(""));
+        vm.prank(user1);
+        vm.expectRevert(Errors.DepositFailed.selector);
+        gw.sendUniversalTx{ value: GAS_AMOUNT + PROTOCOL_FEE_WEI }(req);
+    }
+}
+
+/// @dev Contract that rejects all ETH transfers
+contract ProtocolFeeEthRejecter {
+    receive() external payable {
+        revert("ETH rejected");
+    }
 }
