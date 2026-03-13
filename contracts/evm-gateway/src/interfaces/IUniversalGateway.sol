@@ -89,6 +89,20 @@ interface IUniversalGateway {
         RevertInstructions revertInstruction
     );
 
+    /// @notice                  Funds rescued via gateway routing
+    /// @param subTxId           Gateway transaction identifier (for replay protection)
+    /// @param universalTxId     Universal transaction identifier
+    /// @param token             Token address rescued (address(0) for native)
+    /// @param amount            Amount rescued
+    /// @param revertInstruction Revert settings containing recipient and message
+    event FundsRescued(
+        bytes32 indexed subTxId,
+        bytes32 indexed universalTxId,
+        address indexed token,
+        uint256 amount,
+        RevertInstructions revertInstruction
+    );
+
     // ==============================
     //  UG_2: UNIVERSAL TRANSACTION
     // ==============================
@@ -155,30 +169,32 @@ interface IUniversalGateway {
     //  UG_3: REVERT HANDLING PATHS
     // ==============================
 
-    /// @notice                  Revert universal transaction with tokens to the revert recipient
+    /// @notice                  Revert universal transaction (Vault-only). Handles both native and ERC20.
     /// @param subTxId           Gateway transaction identifier (for replay protection)
     /// @param universalTxId     Universal transaction identifier
-    /// @param token             Token address to revert
-    /// @param amount            Amount of token to revert
-    /// @param revertCFG         Revert settings
-    function revertUniversalTxToken(
+    /// @param token             Token address (address(0) for native)
+    /// @param amount            Amount to revert
+    /// @param revertInstruction Revert settings
+    function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
-        RevertInstructions calldata revertCFG
-    ) external;
+        RevertInstructions calldata revertInstruction
+    ) external payable;
 
-    /// @notice                  Revert native tokens to the revert recipient (Vault-only)
+    /// @notice                  Rescue funds routed through the gateway (Vault-only)
     /// @param subTxId           Gateway transaction identifier (for replay protection)
     /// @param universalTxId     Universal transaction identifier
-    /// @param amount            Amount of native token to revert
-    /// @param revertCFG         Revert settings
-    function revertUniversalTxNative(
+    /// @param token             Token address (address(0) for native)
+    /// @param amount            Amount to rescue
+    /// @param revertInstruction Revert settings containing recipient and message
+    function rescueFunds(
         bytes32 subTxId,
         bytes32 universalTxId,
+        address token,
         uint256 amount,
-        RevertInstructions calldata revertCFG
+        RevertInstructions calldata revertInstruction
     ) external payable;
 
     // ==============================
