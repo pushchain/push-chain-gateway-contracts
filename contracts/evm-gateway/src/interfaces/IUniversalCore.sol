@@ -37,4 +37,15 @@ interface IUniversalCore {
     function gasPriceByChainNamespace(string calldata chainNamespace) external view returns (uint256);
 
     function gasTokenPRC20ByChainNamespace(string calldata chainNamespace) external view returns (address);
+
+    function getRescueFundsGasLimit(address _prc20)
+        external
+        view
+        returns (
+            address gasToken,
+            uint256 gasFee,
+            uint256 rescueGasLimit,
+            uint256 gasPrice,
+            string memory chainNamespace
+        );
 }
