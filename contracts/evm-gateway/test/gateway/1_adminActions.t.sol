@@ -497,7 +497,7 @@ contract GatewayAdminSettersTest is BaseTest {
         bytes32 universalTxId = bytes32(uint256(1001));
         vm.prank(tss);
         vm.expectRevert();
-        gateway.revertUniversalTx(subTxId, universalTxId, 1, RevertInstructions(user2, ""));
+        gateway.revertUniversalTx(subTxId, universalTxId, address(0), 1, RevertInstructions(user2, ""));
     }
 
     // =========================

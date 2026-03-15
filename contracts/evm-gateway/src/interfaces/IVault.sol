@@ -59,16 +59,18 @@ interface IVault {
         RevertInstructions revertInstruction
     );
 
-    /// @notice                  Funds rescued from the vault
+    /// @notice                  Funds rescued from the vault via gateway routing
+    /// @param subTxId           Gateway transaction identifier (for replay protection)
     /// @param universalTxId     Universal transaction identifier
-    /// @param token             Token address rescued
+    /// @param token             Token address rescued (address(0) for native)
     /// @param amount            Amount rescued
-    /// @param recipient         Recipient of rescued funds
+    /// @param revertInstruction Revert settings containing recipient and message
     event FundsRescued(
+        bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed token,
         uint256 amount,
-        address indexed recipient
+        RevertInstructions revertInstruction
     );
 
     // =========================
@@ -97,31 +99,36 @@ interface IVault {
         bytes calldata data
     ) external payable;
 
-    /// @notice                  TSS-only refund path (e.g., failed outbound flow) to a designated recipient
-    /// @dev                     Moves token to gateway contract and then transfers to recipient or executes the payload.
+    /// @notice                  TSS-only unified revert path for both native and ERC20 tokens.
+    /// @dev                     Routes based on token:
+    ///                          - token == address(0): native revert (TSS forwards msg.value)
+    ///                          - token != address(0): ERC20 revert (Vault transfers to gateway)
     /// @param subTxId           Gateway transaction identifier (for replay protection)
     /// @param universalTxId     Universal transaction identifier
-    /// @param token             ERC20 token to refund (must be supported) on external chain
+    /// @param token             Token address (address(0) for native, ERC20 address otherwise)
     /// @param amount            Amount to refund on external chain
     /// @param revertInstruction Revert instruction containing revertRecipient and revertMsg
-    function revertUniversalTxToken(
+    function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external;
+    ) external payable;
 
     /// @notice                  TSS-only rescue path for funds locked in the vault.
-    /// @dev                     No token support check — TSS can rescue even delisted tokens.
+    /// @dev                     Routes through Gateway for replay protection and event tracking.
+    ///                          Enforces token support for ERC20 (unlike direct rescue).
+    /// @param subTxId           Gateway transaction identifier (for replay protection)
     /// @param universalTxId     Universal transaction identifier
     /// @param token             Token address (address(0) for native)
     /// @param amount            Amount to rescue
-    /// @param recipient         Recipient of rescued funds
+    /// @param revertInstruction Revert settings containing recipient and message
     function rescueFunds(
+        bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
-        address recipient
-    ) external;
+        RevertInstructions calldata revertInstruction
+    ) external payable;
 }

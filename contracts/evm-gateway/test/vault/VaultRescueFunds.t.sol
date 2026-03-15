@@ -4,8 +4,10 @@ pragma solidity 0.8.26;
 import "forge-std/Test.sol";
 import { Vault } from "../../src/Vault.sol";
 import { IVault } from "../../src/interfaces/IVault.sol";
+import { IUniversalGateway } from "../../src/interfaces/IUniversalGateway.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { Errors } from "../../src/libraries/Errors.sol";
+import { RevertInstructions } from "../../src/libraries/Types.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -30,13 +32,15 @@ contract VaultRescueFundsTest is Test {
     address public attacker;
     address public weth;
 
+    bytes32 constant SUB_TX_ID = bytes32(uint256(99));
     bytes32 constant UNIVERSAL_TX_ID = bytes32(uint256(42));
 
     event FundsRescued(
+        bytes32 indexed subTxId,
         bytes32 indexed universalTxId,
         address indexed token,
         uint256 amount,
-        address indexed recipient
+        RevertInstructions revertInstruction
     );
 
     function setUp() public {
@@ -47,13 +51,34 @@ contract VaultRescueFundsTest is Test {
         attacker = makeAddr("attacker");
         weth = makeAddr("weth");
 
-        // Deploy UniversalGateway
+        // Deploy CEAFactory
+        ceaFactory = new MockCEAFactory();
+
+        // Deploy Vault impl + proxy (use temporary gateway placeholder)
+        Vault vaultImpl = new Vault();
+        // We need the vault address before deploying gateway, so use a placeholder
+        // and update later. Deploy vault first to get its address.
+        bytes memory vaultInitData = abi.encodeWithSelector(
+            Vault.initialize.selector,
+            admin,
+            pauser,
+            tss,
+            address(1), // placeholder gateway
+            address(ceaFactory)
+        );
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(
+            address(vaultImpl),
+            vaultInitData
+        );
+        vault = Vault(payable(address(vaultProxy)));
+
+        // Deploy UniversalGateway with vault address so VAULT_ROLE is granted
         UniversalGateway gatewayImpl = new UniversalGateway();
         bytes memory gatewayInitData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
             tss,
-            address(this),
+            address(vault),
             1e18,
             10e18,
             address(0),
@@ -66,33 +91,17 @@ contract VaultRescueFundsTest is Test {
         );
         gateway = UniversalGateway(payable(address(gatewayProxy)));
 
-        // Deploy CEAFactory
-        ceaFactory = new MockCEAFactory();
-
-        // Deploy Vault
-        Vault vaultImpl = new Vault();
-        bytes memory vaultInitData = abi.encodeWithSelector(
-            Vault.initialize.selector,
-            admin,
-            pauser,
-            tss,
-            address(gateway),
-            address(ceaFactory)
-        );
-        ERC1967Proxy vaultProxy = new ERC1967Proxy(
-            address(vaultImpl),
-            vaultInitData
-        );
-        vault = Vault(address(vaultProxy));
+        // Update vault to point to the real gateway
+        vm.prank(admin);
+        vault.setGateway(address(gateway));
 
         // Deploy tokens
         token = new MockERC20("Test Token", "TST", 18, 1_000_000e18);
         delistedToken = new MockERC20("Delisted", "DEL", 18, 1_000_000e18);
 
-        // Fund vault
+        // Fund vault with ERC20
         token.mint(address(vault), 100_000e18);
         delistedToken.mint(address(vault), 100_000e18);
-        vm.deal(address(vault), 100 ether);
 
         // Support token in gateway (but NOT delistedToken)
         address[] memory tokens = new address[](2);
@@ -105,15 +114,20 @@ contract VaultRescueFundsTest is Test {
         gateway.setTokenLimitThresholds(tokens, thresholds);
     }
 
+    // ==============================
+    //       HAPPY PATH TESTS
+    // ==============================
+
     function testRescueFundsERC20Success() public {
         uint256 amount = 1000e18;
         uint256 vaultBefore = token.balanceOf(address(vault));
         uint256 recipientBefore = token.balanceOf(recipient);
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
 
         vm.prank(tss);
         vm.expectEmit(true, true, true, true);
-        emit FundsRescued(UNIVERSAL_TX_ID, address(token), amount, recipient);
-        vault.rescueFunds(UNIVERSAL_TX_ID, address(token), amount, recipient);
+        emit FundsRescued(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), amount, ri);
+        vault.rescueFunds(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), amount, ri);
 
         assertEq(token.balanceOf(address(vault)), vaultBefore - amount);
         assertEq(token.balanceOf(recipient), recipientBefore + amount);
@@ -121,100 +135,143 @@ contract VaultRescueFundsTest is Test {
 
     function testRescueFundsNativeSuccess() public {
         uint256 amount = 5 ether;
-        uint256 vaultBefore = address(vault).balance;
         uint256 recipientBefore = recipient.balance;
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
 
+        vm.deal(tss, amount);
         vm.prank(tss);
         vm.expectEmit(true, true, true, true);
-        emit FundsRescued(UNIVERSAL_TX_ID, address(0), amount, recipient);
-        vault.rescueFunds(UNIVERSAL_TX_ID, address(0), amount, recipient);
+        emit FundsRescued(SUB_TX_ID, UNIVERSAL_TX_ID, address(0), amount, ri);
+        vault.rescueFunds{ value: amount }(
+            SUB_TX_ID, UNIVERSAL_TX_ID, address(0), amount, ri
+        );
 
-        assertEq(address(vault).balance, vaultBefore - amount);
         assertEq(recipient.balance, recipientBefore + amount);
     }
 
+    // ==============================
+    //      ACCESS CONTROL TESTS
+    // ==============================
+
     function testRescueFundsRevertNotTSS() public {
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
+
         vm.prank(attacker);
         vm.expectRevert();
-        vault.rescueFunds(UNIVERSAL_TX_ID, address(token), 100e18, recipient);
+        vault.rescueFunds(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), 100e18, ri);
     }
 
     function testRescueFundsRevertWhenPaused() public {
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
+
         vm.prank(pauser);
         vault.pause();
 
         vm.prank(tss);
         vm.expectRevert();
-        vault.rescueFunds(UNIVERSAL_TX_ID, address(token), 100e18, recipient);
+        vault.rescueFunds(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), 100e18, ri);
     }
 
+    // ==============================
+    //      VALIDATION TESTS
+    // ==============================
+
     function testRescueFundsRevertZeroAmount() public {
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
+
         vm.prank(tss);
-        vm.expectRevert(Errors.ZeroAmount.selector);
-        vault.rescueFunds(UNIVERSAL_TX_ID, address(token), 0, recipient);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.rescueFunds(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), 0, ri);
     }
 
     function testRescueFundsRevertZeroRecipient() public {
+        RevertInstructions memory ri = RevertInstructions(address(0), "");
+
         vm.prank(tss);
         vm.expectRevert(Errors.InvalidRecipient.selector);
-        vault.rescueFunds(UNIVERSAL_TX_ID, address(token), 100e18, address(0));
+        vault.rescueFunds(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), 100e18, ri);
     }
 
     function testRescueFundsRevertInsufficientBalanceERC20() public {
         uint256 vaultBalance = token.balanceOf(address(vault));
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
 
         vm.prank(tss);
         vm.expectRevert(Errors.InsufficientBalance.selector);
         vault.rescueFunds(
-            UNIVERSAL_TX_ID,
-            address(token),
-            vaultBalance + 1,
-            recipient
+            SUB_TX_ID, UNIVERSAL_TX_ID, address(token), vaultBalance + 1, ri
         );
     }
 
-    function testRescueFundsRevertInsufficientBalanceNative() public {
-        uint256 vaultBalance = address(vault).balance;
+    // ==============================
+    //    TOKEN SUPPORT TESTS
+    // ==============================
+
+    function testRescueFundsDelistedTokenReverts() public {
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
 
         vm.prank(tss);
-        vm.expectRevert(Errors.InsufficientBalance.selector);
+        vm.expectRevert(Errors.NotSupported.selector);
         vault.rescueFunds(
-            UNIVERSAL_TX_ID,
-            address(0),
-            vaultBalance + 1,
-            recipient
+            SUB_TX_ID, UNIVERSAL_TX_ID, address(delistedToken), 500e18, ri
         );
     }
 
-    function testRescueFundsDelistedToken() public {
-        uint256 amount = 500e18;
-        uint256 vaultBefore = delistedToken.balanceOf(address(vault));
+    // ==============================
+    //     MSG.VALUE MISMATCH TESTS
+    // ==============================
+
+    function testRescueFundsNativeWrongValueReverts() public {
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
+
+        vm.deal(tss, 10 ether);
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.rescueFunds{ value: 3 ether }(
+            SUB_TX_ID, UNIVERSAL_TX_ID, address(0), 5 ether, ri
+        );
+    }
+
+    function testRescueFundsERC20NonZeroValueReverts() public {
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
+
+        vm.deal(tss, 1 ether);
+        vm.prank(tss);
+        vm.expectRevert(Errors.InvalidAmount.selector);
+        vault.rescueFunds{ value: 1 ether }(
+            SUB_TX_ID, UNIVERSAL_TX_ID, address(token), 100e18, ri
+        );
+    }
+
+    // ==============================
+    //     REPLAY PROTECTION TESTS
+    // ==============================
+
+    function testRescueFundsReplayProtection() public {
+        uint256 amount = 100e18;
+        RevertInstructions memory ri = RevertInstructions(recipient, "");
 
         vm.prank(tss);
-        vault.rescueFunds(
-            UNIVERSAL_TX_ID,
-            address(delistedToken),
-            amount,
-            recipient
-        );
+        vault.rescueFunds(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), amount, ri);
 
-        assertEq(
-            delistedToken.balanceOf(address(vault)),
-            vaultBefore - amount
-        );
-        assertEq(delistedToken.balanceOf(recipient), amount);
+        vm.prank(tss);
+        vm.expectRevert(Errors.PayloadExecuted.selector);
+        vault.rescueFunds(SUB_TX_ID, UNIVERSAL_TX_ID, address(token), amount, ri);
     }
+
+    // ==============================
+    //   NATIVE TRANSFER FAILURE TEST
+    // ==============================
 
     function testRescueFundsNativeTransferFailure() public {
         EthRejecter rejecter = new EthRejecter();
+        RevertInstructions memory ri = RevertInstructions(address(rejecter), "");
 
+        vm.deal(tss, 1 ether);
         vm.prank(tss);
         vm.expectRevert(Errors.WithdrawFailed.selector);
-        vault.rescueFunds(
-            UNIVERSAL_TX_ID,
-            address(0),
-            1 ether,
-            address(rejecter)
+        vault.rescueFunds{ value: 1 ether }(
+            SUB_TX_ID, UNIVERSAL_TX_ID, address(0), 1 ether, ri
         );
     }
 }

@@ -671,4 +671,29 @@ contract GatewaySendUniversalTxWithFundsTest is BaseTest {
         vm.prank(user1);
         gatewayTemp.sendUniversalTx{ value: fundsAmount }(req);
     }
+
+    // ============================================================
+    //  _handleDeposits — Unsupported ERC20 Token (threshold == 0)
+    // ============================================================
+
+    /// @notice FUNDS with an ERC20 whose tokenToLimitThreshold == 0 reverts NotSupported
+    function test_SendTxWithFunds_UnsupportedERC20_Reverts() public {
+        MockERC20 unsupported = new MockERC20("Unsupported", "UNS", 18, 0);
+        unsupported.mint(user1, 1000 ether);
+        vm.prank(user1);
+        unsupported.approve(address(gatewayTemp), type(uint256).max);
+
+        UniversalTxRequest memory req = UniversalTxRequest({
+            recipient: address(0),
+            token: address(unsupported),
+            amount: 100 ether,
+            payload: bytes(""),
+            revertRecipient: address(0x456),
+            signatureData: bytes("")
+        });
+
+        vm.prank(user1);
+        vm.expectRevert(Errors.NotSupported.selector);
+        gatewayTemp.sendUniversalTx(req);
+    }
 }

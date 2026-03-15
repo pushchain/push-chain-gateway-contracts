@@ -49,6 +49,9 @@ contract MockUniversalCoreReal is IUniversalCore {
     /// @notice Protocol fee per token in native PC
     mapping(address => uint256) public protocolFeeByToken;
 
+    /// @notice Rescue funds gas limit per chain namespace
+    mapping(string => uint256) public rescueFundsGasLimitByChainNamespace;
+
     /// @notice Role for managing gas-related configurations
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
@@ -193,6 +196,13 @@ contract MockUniversalCoreReal is IUniversalCore {
         protocolFeeByToken[token] = fee;
     }
 
+    function setRescueFundsGasLimitByChain(string memory chainNamespace, uint256 gasLimit)
+        external
+        onlyRole(MANAGER_ROLE)
+    {
+        rescueFundsGasLimitByChainNamespace[chainNamespace] = gasLimit;
+    }
+
     // ========= Admin Functions =========
     modifier onlyOwner() {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "MockUniversalCore: caller is not owner");
@@ -272,6 +282,31 @@ contract MockUniversalCoreReal is IUniversalCore {
 
         gasFee = gasPrice * gasLimit;
         protocolFee = protocolFeeByToken[_prc20];
+    }
+
+    function getRescueFundsGasLimit(address _prc20)
+        public
+        view
+        returns (
+            address gasToken,
+            uint256 gasFee,
+            uint256 rescueGasLimit,
+            uint256 gasPrice,
+            string memory chainNamespace
+        )
+    {
+        chainNamespace = MockPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
+
+        rescueGasLimit = rescueFundsGasLimitByChainNamespace[chainNamespace];
+        require(rescueGasLimit != 0, "MockUniversalCore: zero rescue gas limit");
+
+        gasToken = gasTokenPRC20ByChainNamespace[chainNamespace];
+        require(gasToken != address(0), "MockUniversalCore: zero gas token");
+
+        gasPrice = gasPriceByChainNamespace[chainNamespace];
+        require(gasPrice != 0, "MockUniversalCore: zero gas price");
+
+        gasFee = gasPrice * rescueGasLimit;
     }
 
     /// @notice Update the base gas limit for the cross-chain outbound transactions.

@@ -136,59 +136,78 @@ contract Vault is
     }
 
     /// @inheritdoc IVault
-    function revertUniversalTxToken(
+    function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
-        if (token == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
-        if (revertInstruction.revertRecipient == address(0)) {
-            revert Errors.InvalidRecipient();
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        _validateRevertParams(amount, revertInstruction.revertRecipient);
+
+        if (token == address(0)) {
+            if (msg.value != amount) revert Errors.InvalidAmount();
+            gateway.revertUniversalTx{ value: amount }(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
+        } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+            _enforceSupported(token);
+            if (IERC20(token).balanceOf(address(this)) < amount) {
+                revert Errors.InsufficientBalance();
+            }
+            IERC20(token).safeTransfer(address(gateway), amount);
+            gateway.revertUniversalTx(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
         }
-        _enforceSupported(token);
 
-        if (IERC20(token).balanceOf(address(this)) < amount) {
-            revert Errors.InvalidAmount();
-        }
-
-        IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.revertUniversalTxToken(subTxId, universalTxId, token, amount, revertInstruction);
-
-        emit UniversalTxReverted(subTxId, universalTxId, token, amount, revertInstruction);
+        emit UniversalTxReverted(
+            subTxId, universalTxId, token, amount, revertInstruction
+        );
     }
 
     /// @inheritdoc IVault
     function rescueFunds(
+        bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
-        address recipient
-    ) external nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
-        if (amount == 0) revert Errors.ZeroAmount();
-        if (recipient == address(0)) revert Errors.InvalidRecipient();
+        RevertInstructions calldata revertInstruction
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        _validateRevertParams(amount, revertInstruction.revertRecipient);
 
         if (token == address(0)) {
-            if (address(this).balance < amount) {
-                revert Errors.InsufficientBalance();
-            }
-            (bool ok,) = recipient.call{ value: amount }("");
-            if (!ok) revert Errors.WithdrawFailed();
+            if (msg.value != amount) revert Errors.InvalidAmount();
+            gateway.rescueFunds{ value: amount }(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
         } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+            _enforceSupported(token);
             if (IERC20(token).balanceOf(address(this)) < amount) {
                 revert Errors.InsufficientBalance();
             }
-            IERC20(token).safeTransfer(recipient, amount);
+            IERC20(token).safeTransfer(address(gateway), amount);
+            gateway.rescueFunds(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
         }
 
-        emit FundsRescued(universalTxId, token, amount, recipient);
+        emit FundsRescued(
+            subTxId, universalTxId, token, amount, revertInstruction
+        );
     }
 
     // ==============================
     //    Vault_3: INTERNAL HELPERS
     // ==============================
+
+    /// @dev Validates common revert/rescue parameters.
+    function _validateRevertParams(uint256 amount, address revertRecipient) private pure {
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
+    }
 
     /// @dev                   Checks token is supported via the gateway.
     /// @param token           Token address to validate.

@@ -140,12 +140,6 @@ contract UniversalGateway is
         epochDurationSec = 6 hours;
     }
 
-    /// @dev Reverts if caller does not hold TSS_ROLE.
-    modifier onlyTSS() {
-        if (!hasRole(TSS_ROLE, _msgSender())) revert Errors.Unauthorized();
-        _;
-    }
-
     // ==============================
     //     UG_1: ADMIN ACTIONS
     // ==============================
@@ -562,17 +556,21 @@ contract UniversalGateway is
     // ==============================
 
     /// @inheritdoc IUniversalGateway
-    function revertUniversalTxToken(
+    function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+    ) external payable nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        _validateRevertParams(subTxId, amount, token, revertInstruction.revertRecipient);
 
-        isExecuted[subTxId] = true;
-        IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
+        if (token == address(0)) {
+            (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
+            if (!ok) revert Errors.WithdrawFailed();
+        } else {
+            IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
+        }
 
         emit RevertUniversalTx(
             subTxId, universalTxId, revertInstruction.revertRecipient, token, amount, revertInstruction
@@ -580,24 +578,32 @@ contract UniversalGateway is
     }
 
     /// @inheritdoc IUniversalGateway
-    function revertUniversalTx(
+    function rescueFunds(
         bytes32 subTxId,
         bytes32 universalTxId,
+        address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+    ) external payable nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        _validateRevertParams(subTxId, amount, token, revertInstruction.revertRecipient);
 
-        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
-        if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
+        if (token == address(0)) {
+            (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
+            if (!ok) revert Errors.WithdrawFailed();
+        } else {
+            IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
+        }
+
+        emit FundsRescued(subTxId, universalTxId, token, amount, revertInstruction);
+    }
+
+    /// @dev Validates common revert/rescue parameters and marks subTxId as executed.
+    function _validateRevertParams(bytes32 subTxId, uint256 amount, address token, address revertRecipient) private {
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+        if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (amount == 0 || (token == address(0) && msg.value != amount)) revert Errors.InvalidAmount();
 
         isExecuted[subTxId] = true;
-        (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
-        if (!ok) revert Errors.WithdrawFailed();
-
-        emit RevertUniversalTx(
-            subTxId, universalTxId, revertInstruction.revertRecipient, address(0), amount, revertInstruction
-        );
     }
 
     // ==============================
