@@ -79,21 +79,9 @@ pub enum GatewayError {
     #[msg("Unexpected outer signer in remaining accounts")]
     UnexpectedOuterSigner,
 
-    #[msg("Target program mismatch")]
-    TargetProgramMismatch,
-
     #[msg("Destination program is not executable")]
     InvalidProgram,
-
-    #[msg("Payload already executed")]
-    PayloadExecuted,
-
-    #[msg("Serialization error")]
-    SerializationError,
-
-    #[msg("No writable recipient found in accounts")]
-    NoWritableRecipient,
-
+    
     #[msg("Invalid instruction")]
     InvalidInstruction,
 
