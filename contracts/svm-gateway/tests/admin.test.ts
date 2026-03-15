@@ -101,7 +101,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // Rotate admin -> newAdmin
             await program.methods
                 .setAuthorities(newAdmin.publicKey, null)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: admin.publicKey,
                 })
@@ -115,7 +115,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             try {
                 await program.methods
                     .setCapsUsd(new anchor.BN(100_000_000), new anchor.BN(1_000_000_000))
-                    .accounts({
+                    .accountsPartial({
                         admin: admin.publicKey,
                         config: configPda,
                     })
@@ -130,7 +130,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // Rotate back to original admin to keep suite stable
             await program.methods
                 .setAuthorities(admin.publicKey, null)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: newAdmin.publicKey,
                 })
@@ -144,7 +144,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         it("Updates pauser authority", async () => {
             await program.methods
                 .setAuthorities(null, newPauser.publicKey)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: admin.publicKey,
                 })
@@ -157,7 +157,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // New pauser can pause/unpause
             await program.methods
                 .pause()
-                .accounts({
+                .accountsPartial({
                     pauser: newPauser.publicKey,
                     config: configPda,
                 })
@@ -166,7 +166,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .unpause()
-                .accounts({
+                .accountsPartial({
                     pauser: newPauser.publicKey,
                     config: configPda,
                 })
@@ -176,7 +176,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // Restore original pauser for remaining tests
             await program.methods
                 .setAuthorities(null, pauser.publicKey)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: admin.publicKey,
                 })
@@ -194,7 +194,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .setCapsUsd(newMinCap, newMaxCap)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                 })
@@ -211,7 +211,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             try {
                 await program.methods
                     .setAuthorities(unauthorizedUser.publicKey, null)
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         admin: unauthorizedUser.publicKey,
                     })
@@ -228,7 +228,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             try {
                 await program.methods
                     .setAuthorities(null, null)
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         admin: admin.publicKey,
                     })
@@ -248,7 +248,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
                 await program.methods
                     .setCapsUsd(newMinCap, newMaxCap)
-                    .accounts({
+                    .accountsPartial({
                         admin: unauthorizedUser.publicKey,
                         config: configPda,
                     })
@@ -269,7 +269,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .pause()
-                .accounts({
+                .accountsPartial({
                     pauser: pauser.publicKey,
                     config: configPda,
                 })
@@ -285,7 +285,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .unpause()
-                .accounts({
+                .accountsPartial({
                     pauser: pauser.publicKey,
                     config: configPda,
                 })
@@ -301,7 +301,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             try {
                 await program.methods
                     .pause()
-                    .accounts({
+                    .accountsPartial({
                         pauser: unauthorizedUser.publicKey,
                         config: configPda,
                     })
@@ -318,7 +318,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             try {
                 await program.methods
                     .unpause()
-                    .accounts({
+                    .accountsPartial({
                         pauser: unauthorizedUser.publicKey,
                         config: configPda,
                     })
@@ -342,7 +342,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .setCapsUsd(newMinCap, newMaxCap)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                 })
@@ -362,7 +362,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // Update price feed
             await program.methods
                 .setPythPriceFeed(newPriceFeed)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                 })
@@ -372,7 +372,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // Update confidence threshold
             await program.methods
                 .setPythConfidenceThreshold(newConfidenceThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                 })
@@ -386,7 +386,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             // Restore original price feed for other tests
             await program.methods
                 .setPythPriceFeed(mockPriceFeed)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                 })
@@ -401,7 +401,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .setBlockUsdCap(newBlockCap)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -412,7 +412,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .updateEpochDuration(newEpochDuration)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -440,7 +440,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .setTokenRateLimit(limitThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit: tokenRateLimitPda,
@@ -480,7 +480,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 try {
                     await program.methods
                         .updateTss(newTssEthAddress, "999")
-                        .accounts({
+                        .accountsPartial({
                             authority: unauthorizedUser.publicKey,
                             tssPda: actualTssPda,
                             config: configPda,
@@ -503,7 +503,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
                 try {
                     await program.methods
                         .initTss(expectedTssEthAddress, chainId)
-                        .accounts({
+                        .accountsPartial({
                             authority: unauthorizedUser.publicKey,
                             tssPda: actualTssPda,
                             config: configPda,
@@ -537,7 +537,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .initTss(expectedTssEthAddress, chainId)
-                .accounts({
+                .accountsPartial({
                     authority: admin.publicKey,
                     tssPda: tssPda,
                     config: configPda,
@@ -556,7 +556,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
 
             await program.methods
                 .updateTss(newTssEthAddress, newChainId)
-                .accounts({
+                .accountsPartial({
                     authority: admin.publicKey,
                     tssPda: tssPda,
                     config: configPda,
@@ -575,7 +575,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         it("Gets SOL price from Pyth oracle", async () => {
             const priceData = await program.methods
                 .getSolPrice()
-                .accounts({
+                .accountsPartial({
                     priceUpdate: mockPriceFeed,
                 })
                 .view();
@@ -594,7 +594,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
             try {
                 await program.methods
                     .setCapsUsd(invalidMinCap, invalidMaxCap)
-                    .accounts({
+                    .accountsPartial({
                         admin: admin.publicKey,
                         config: configPda,
                     })
@@ -615,7 +615,7 @@ describe("Universal Gateway - Admin Functions Tests", () => {
         const expectedTssEthAddress = getTssEthAddress();
         await program.methods
             .updateTss(expectedTssEthAddress, TSS_CHAIN_ID)
-            .accounts({
+            .accountsPartial({
                 tssPda,
                 config: configPda,
                 authority: admin.publicKey,

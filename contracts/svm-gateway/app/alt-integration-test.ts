@@ -317,7 +317,7 @@ async function main() {
         recoveryId,
         Array.from(messageHash),
       )
-      .accounts({
+      .accountsPartial({
         caller: provider.wallet.publicKey,
         config: configPda,
         vaultSol,
@@ -468,7 +468,7 @@ async function main() {
             splSig.recoveryId,
             Array.from(splSig.messageHash),
           )
-          .accounts({
+          .accountsPartial({
             caller: provider.wallet.publicKey,
             config: configPda,
             vaultSol,

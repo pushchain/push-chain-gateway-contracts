@@ -24,7 +24,6 @@ import {
   USDT_DECIMALS,
   TOKEN_MULTIPLIER,
   COMPUTE_BUFFER,
-  BASE_RENT_FEE,
   asLamports,
   asTokenAmount,
   computeDiscriminator,
@@ -131,7 +130,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
     ] as [PublicKey, PublicKey][]) {
       await gatewayProgram.methods
         .setTokenRateLimit(veryLargeThreshold)
-        .accounts({
+        .accountsPartial({
           config: configPda,
           tokenRateLimit: pda,
           tokenMint: mint,
@@ -189,11 +188,9 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
     try {
       await counterProgram.methods
         .initialize(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
-          rateLimitConfig: null,
-          tokenRateLimit: null,
           systemProgram: SystemProgram.programId,
         })
         .signers([counterAuthority])
@@ -221,7 +218,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
       const fundAmount = asLamports(1);
       const counterIx = await counterProgram.methods
         .increment(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -374,7 +371,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
       const fundAmount = asLamports(1);
       const counterIx = await counterProgram.methods
         .increment(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -579,7 +576,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
 
       const counterIx = await counterProgram.methods
         .increment(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })

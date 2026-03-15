@@ -42,10 +42,12 @@ export interface TssSignature {
   messageHash: number[];
 }
 
+type BytesLike = Uint8Array | number[];
+
 interface SignParams {
   instruction: TssInstruction;
   amount?: bigint;
-  additional: Uint8Array[];
+  additional: BytesLike[];
   chainId?: string;
 }
 
@@ -101,9 +103,11 @@ export function pubkeyToBytes(pubkey: PublicKey): Uint8Array {
  * Generate a universal transaction ID (32 bytes) for testing
  * In production, this comes from the source chain (EVM/Push Chain)
  */
-export function generateUniversalTxId(): Uint8Array {
-  return Buffer.from(
+export function generateUniversalTxId(): number[] {
+  return Array.from(
+    Buffer.from(
     Array.from({ length: 32 }, () => Math.floor(Math.random() * 256))
+    )
   );
 }
 
@@ -123,13 +127,13 @@ export function generateUniversalTxId(): Uint8Array {
  * 6. target (32 bytes) - withdraw specific
  */
 export function buildWithdrawAdditionalData(
-  universalTxId: Uint8Array,
-  subTxId: Uint8Array,
-  pushAccount: Uint8Array,
+  universalTxId: BytesLike,
+  subTxId: BytesLike,
+  pushAccount: BytesLike,
   token: PublicKey,
   target: PublicKey,
   gasFee: bigint = BigInt(0)
-): Uint8Array[] {
+): BytesLike[] {
   const gasFeeBuf = Buffer.alloc(8);
   gasFeeBuf.writeBigUInt64BE(gasFee, 0);
 
@@ -169,15 +173,15 @@ export interface GatewayAccountMeta {
  * 8. ix_data_buf (variable) - execute specific
  */
 export function buildExecuteAdditionalData(
-  universalTxId: Uint8Array,
-  subTxId: Uint8Array,
+  universalTxId: BytesLike,
+  subTxId: BytesLike,
   targetProgramFromPayload: PublicKey, // ← MUST come from decoded payload
-  pushAccount: Uint8Array,
+  pushAccount: BytesLike,
   accounts: GatewayAccountMeta[],
   ixData: Uint8Array,
   gasFee: bigint = BigInt(0),
   token: PublicKey = PublicKey.default
-): Uint8Array[] {
+): BytesLike[] {
   // Build accounts buffer with length prefix (u32 BE)
   const accountsCount = Buffer.alloc(4);
   accountsCount.writeUInt32BE(accounts.length, 0);
@@ -230,12 +234,12 @@ export function buildExecuteAdditionalData(
  * Replay-protected via ExecutedSubTx PDA (EVM parity: isExecuted[subTxId]).
  */
 export function buildRescueAdditionalData(
-  subTxId: Uint8Array,
-  universalTxId: Uint8Array,
+  subTxId: BytesLike,
+  universalTxId: BytesLike,
   recipient: PublicKey,
   gasFee: bigint = BigInt(0),
   tokenMint?: PublicKey
-): Uint8Array[] {
+): BytesLike[] {
   const gasFeeBuf = Buffer.alloc(8);
   gasFeeBuf.writeBigUInt64BE(gasFee, 0);
 

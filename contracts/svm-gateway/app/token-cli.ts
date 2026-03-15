@@ -439,7 +439,7 @@ program_cli
             const veryLargeThreshold = new anchor.BN(threshold.toString());
             await program.methods
                 .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
+                .accountsPartial({
                     admin,
                     config: configPda,
                     tokenRateLimit: tokenRateLimitPda,
@@ -498,7 +498,7 @@ program_cli
             console.log(`Setting rate limit threshold to 0...`);
             await program.methods
                 .setTokenRateLimit(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin,
                     config: configPda,
                     tokenRateLimit: tokenRateLimitPda,

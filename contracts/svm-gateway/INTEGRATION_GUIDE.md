@@ -732,7 +732,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 **Pubkeys and Order:**
 - MUST match exactly: Same pubkeys in same order between TSS message hash and `remaining_accounts`
 
-**Writable Flags - One-Way Rule** (utils.rs:247):
+**Writable Flags - One-Way Rule** (`utils/validation.rs`):
 - If signed metadata (in `accounts_buf`) marks account as writable → actual account MUST be writable
 - If signed metadata marks account as read-only → actual account CAN be writable OR read-only
 - **NOT allowed:** Signed metadata says writable, but actual account is read-only
@@ -845,7 +845,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 ### Rescue Flow (emergency only):
 
 1. **Trigger**: Push Chain determines funds are locked and unreachable; emits rescue authorization
-2. **Build TSS message** (instruction_id = 5 for both SOL and SPL):
+2. **Build TSS message** (instruction_id = 4 for both SOL and SPL):
    - Call `buildRescueAdditionalData(subTxId, universalTxId, recipient, gasFee, tokenMint?)` from `tests/helpers/tss.ts`
    - SOL additional: `[sub_tx_id, universal_tx_id, recipient_pubkey, gas_fee_buf]`
    - SPL additional: `[sub_tx_id, universal_tx_id, mint_pubkey, recipient_pubkey, gas_fee_buf]`
@@ -931,8 +931,9 @@ Before production:
   - `validate_message()` - Validates TSS signature and message hash
 
 **Utilities**:
-- `contracts/svm-gateway/programs/universal-gateway/src/utils.rs`
+- `contracts/svm-gateway/programs/universal-gateway/src/utils/validation.rs`
   - `validate_remaining_accounts()` - Validates account list and rejects outer signers
+- `contracts/svm-gateway/programs/universal-gateway/src/utils/pricing.rs`
   - `calculate_sol_price()` - Pyth price oracle integration
 
 ### 11.4 Test Examples

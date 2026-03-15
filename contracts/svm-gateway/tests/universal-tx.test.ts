@@ -124,7 +124,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
   const setProtocolFee = async (feeLamports: number) => {
     await program.methods
       .setProtocolFee(new anchor.BN(feeLamports))
-      .accounts({
+      .accountsPartial({
         config: configPda,
         feeVault: feeVaultPda,
         admin: admin.publicKey,
@@ -184,7 +184,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
     ]) {
       await program.methods
         .setTokenRateLimit(veryLargeThreshold)
-        .accounts({
+        .accountsPartial({
           admin: admin.publicKey,
           config: configPda,
           tokenRateLimit: getTokenRateLimitPda(tokenMint),
@@ -220,7 +220,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(gasAmount))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -266,7 +266,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       // Should succeed and route to GAS_AND_PAYLOAD (fetchTxType logic)
       await program.methods
         .sendUniversalTx(req, withProtocolFee(gasAmount))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -309,7 +309,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(gasAmount))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -346,7 +346,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       // Should succeed with 0 native amount
       await program.methods
         .sendUniversalTx(req, withProtocolFee(0))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -385,7 +385,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(fundsAmount))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -425,7 +425,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(fundsAmount))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -464,7 +464,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .sendUniversalTx(req, withProtocolFee(wrongNativeAmount))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -521,7 +521,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(0)) // Fee-only native amount for SPL FUNDS
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -571,7 +571,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
         // user1 signs but victimTokenAccount is owned by victim — must be rejected
         await program.methods
           .sendUniversalTx(req, withProtocolFee(0))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -621,7 +621,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .sendUniversalTx(req, withProtocolFee(nativeAmount))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -686,7 +686,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(totalAmount))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -726,7 +726,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .sendUniversalTx(req, withProtocolFee(insufficientNative))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -787,7 +787,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       // With protocol fee enabled, this route sends only fee as native amount.
       await program.methods
         .sendUniversalTx(req, withProtocolFee(0))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -861,7 +861,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(gasAmount))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -919,7 +919,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .sendUniversalTx(req, withProtocolFee(0))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -950,7 +950,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
     it("Should reject when paused", async () => {
       await program.methods
         .pause()
-        .accounts({ pauser: pauser.publicKey, config: configPda })
+        .accountsPartial({ pauser: pauser.publicKey, config: configPda })
         .signers([pauser])
         .rpc();
 
@@ -971,7 +971,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .sendUniversalTx(req, new anchor.BN(gasAmount))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -994,7 +994,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .unpause()
-        .accounts({ pauser: pauser.publicKey, config: configPda })
+        .accountsPartial({ pauser: pauser.publicKey, config: configPda })
         .signers([pauser])
         .rpc();
     });
@@ -1008,7 +1008,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .setCapsUsd(new anchor.BN(100_000_000), new anchor.BN(1_000_000_000)) // $1 min / $10 max
-        .accounts({ admin: admin.publicKey, config: configPda })
+        .accountsPartial({ admin: admin.publicKey, config: configPda })
         .signers([admin])
         .rpc();
 
@@ -1032,7 +1032,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
           try {
             await program.methods
               .sendUniversalTx(req, withProtocolFee(gasAmount))
-              .accounts({
+              .accountsPartial({
                 config: configPda,
                 vault: vaultPda,
                 feeVault: feeVaultPda,
@@ -1056,7 +1056,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       } finally {
         await program.methods
           .setCapsUsd(prevMin, prevMax)
-          .accounts({ admin: admin.publicKey, config: configPda })
+          .accountsPartial({ admin: admin.publicKey, config: configPda })
           .signers([admin])
           .rpc();
       }
@@ -1079,7 +1079,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .sendUniversalTx(req, withProtocolFee(0))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -1135,12 +1135,12 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
       await program.methods
         .sendUniversalTx(req, withProtocolFee(gasAmount))
-        .accounts(accounts)
+        .accountsPartial(accounts)
         .signers([user1])
         .rpc();
       await program.methods
         .sendUniversalTx(req, withProtocolFee(gasAmount))
-        .accounts(accounts)
+        .accountsPartial(accounts)
         .signers([user1])
         .rpc();
 
@@ -1152,7 +1152,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .setProtocolFee(new anchor.BN(123_456))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             feeVault: feeVaultPda,
             admin: user1.publicKey,
@@ -1183,7 +1183,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       try {
         await program.methods
           .sendUniversalTx(req, new anchor.BN(DEFAULT_PROTOCOL_FEE_LAMPORTS - 1))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -1238,7 +1238,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
 
         await program.methods
           .sendUniversalTx(req, new anchor.BN(0))
-          .accounts({
+          .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,
@@ -1274,7 +1274,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       if (config.paused) {
         await program.methods
           .unpause()
-          .accounts({ pauser: pauser.publicKey, config: configPda })
+          .accountsPartial({ pauser: pauser.publicKey, config: configPda })
           .signers([pauser])
           .rpc();
       }
@@ -1289,7 +1289,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       // Disable epoch duration
       await program.methods
         .updateEpochDuration(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           admin: admin.publicKey,
           config: configPda,
           rateLimitConfig: rateLimitConfigPda,
@@ -1305,7 +1305,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       );
       await program.methods
         .setTokenRateLimit(veryLargeThreshold)
-        .accounts({
+        .accountsPartial({
           admin: admin.publicKey,
           config: configPda,
           tokenRateLimit: nativeSolTokenRateLimitPda,

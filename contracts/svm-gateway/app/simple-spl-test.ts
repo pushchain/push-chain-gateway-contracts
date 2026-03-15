@@ -10,7 +10,7 @@ import {
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
-import type { Pushsolanagateway } from "../target/types/pushsolanagateway";
+import type { UniversalGateway } from "../target/types/universal_gateway";
 import * as spl from "@solana/spl-token";
 import { Command } from "commander";
 
@@ -41,9 +41,9 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 anchor.setProvider(adminProvider);
 
 // Load IDL
-const idl = JSON.parse(fs.readFileSync("./target/idl/pushsolanagateway.json", "utf8"));
-const program = new Program(idl as Pushsolanagateway, adminProvider);
-const userProgram = new Program(idl as Pushsolanagateway, userProvider);
+const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
+const program = new Program(idl as UniversalGateway, adminProvider);
+const userProgram = new Program(idl as UniversalGateway, userProvider);
 
 // Helper function to load token info from file
 function loadTokenInfo(tokenSymbol: string): any {
@@ -94,7 +94,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     // Get price feed from config (or use dummy if not set)
     let priceFeed: PublicKey;
     try {
-        const config = await program.account.config.fetch(configPda);
+        const config = await (program.account as any).config.fetch(configPda);
         priceFeed = config.pythPriceFeed;
     } catch {
         // If config doesn't exist or price feed not set, use a dummy
@@ -172,14 +172,14 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
 
     // Initialize token rate limit if needed (with very large threshold to effectively disable)
     try {
-        await program.account.tokenRateLimit.fetch(splTokenRateLimitPda);
+        await (program.account as any).tokenRateLimit.fetch(splTokenRateLimitPda);
     } catch {
         // Not initialized, create it
         const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
         try {
             await program.methods
                 .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     tokenRateLimit: splTokenRateLimitPda,
                     tokenMint: mint,
@@ -196,7 +196,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     // Perform the deposit using sendUniversalTx
     const depositTx = await userProgram.methods
         .sendUniversalTx(fundsReq, new anchor.BN(0)) // No native SOL for SPL funds
-        .accounts({
+        .accountsPartial({
             config: configPda,
             vault: vaultPda,
             feeVault: feeVaultPda,

@@ -110,7 +110,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
       try {
         await counterProgram.methods
           .initialize(new anchor.BN(0))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
             systemProgram: SystemProgram.programId,
@@ -184,7 +184,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
       // Build accounts for batch_operation
       const batchIx = await counterProgram.methods
         .batchOperation(new anchor.BN(operationId), largeData)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -264,7 +264,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
       const batchIx = await counterProgram.methods
         .batchOperation(new anchor.BN(operationId), largeData)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -347,7 +347,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
       const batchIx = await counterProgram.methods
         .batchOperation(new anchor.BN(operationId), largeData)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -431,7 +431,7 @@ describe("Universal Gateway - Heavy Transaction Benchmarking", () => {
 
       const batchIx = await counterProgram.methods
         .batchOperation(new anchor.BN(operationId), largeData)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })

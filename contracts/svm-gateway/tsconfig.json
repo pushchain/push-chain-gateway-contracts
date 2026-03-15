@@ -6,7 +6,8 @@
     "target": "es2020",
     "module": "commonjs",
     "esModuleInterop": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "skipLibCheck": true
 
   }
 }

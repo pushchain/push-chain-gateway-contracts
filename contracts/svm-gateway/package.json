@@ -24,7 +24,7 @@
     "config:rate-set-epoch": " ts-node app/config-cli.ts rate:set-epoch",
     "config:rate-set-token": " ts-node app/config-cli.ts rate:set-token",
     "test": "anchor test",
-    "test:setup": "TEST_FILE=tests/00-setup.test.ts anchor test",
+    "typecheck": "tsc --noEmit",
     "test:execute": "TEST_FILE=tests/execute.test.ts anchor test",
     "test:execute-heavy": "TEST_FILE=tests/execute-heavy.test.ts anchor test",
     "test:cea-to-uea": "TEST_FILE=tests/cea-to-uea.test.ts anchor test",

@@ -77,7 +77,7 @@ describe("Universal Gateway - Rescue Tests", () => {
     const signTssMessageWithChainId = async (params: {
         instruction: TssInstruction;
         amount?: bigint;
-        additional: Uint8Array[];
+        additional: (Uint8Array | number[])[];
     }) => {
         const tssAccount = await program.account.tssPda.fetch(tssPda);
         return signTssMessage({ ...params, chainId: tssAccount.chainId });
@@ -133,7 +133,7 @@ describe("Universal Gateway - Rescue Tests", () => {
         // Disable protocol fee so vault seeding is deterministic.
         await program.methods
             .setProtocolFee(new anchor.BN(0))
-            .accounts({ config: configPda, feeVault: feeVaultPda, admin: admin.publicKey, systemProgram: SystemProgram.programId })
+            .accountsPartial({ config: configPda, feeVault: feeVaultPda, admin: admin.publicKey, systemProgram: SystemProgram.programId })
             .signers([admin])
             .rpc();
 
@@ -161,7 +161,7 @@ describe("Universal Gateway - Rescue Tests", () => {
         const nativeSolRateLimitPda = getTokenRateLimitPda(PublicKey.default);
         await program.methods
             .setTokenRateLimit(new anchor.BN("1000000000000000000000"))
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 tokenRateLimit: nativeSolRateLimitPda,
                 tokenMint: PublicKey.default,
@@ -184,7 +184,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                 },
                 new anchor.BN(solDepositAmount)
             )
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 vault: vaultPda,
                 feeVault: feeVaultPda,
@@ -214,7 +214,7 @@ describe("Universal Gateway - Rescue Tests", () => {
         const splRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
         await program.methods
             .setTokenRateLimit(new anchor.BN("1000000000000000000000"))
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 tokenRateLimit: splRateLimitPda,
                 tokenMint: mockUSDT.mint.publicKey,
@@ -237,7 +237,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                 },
                 new anchor.BN(0)
             )
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 vault: vaultPda,
                 feeVault: feeVaultPda,
@@ -289,7 +289,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                     sig.recoveryId,
                     sig.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -350,7 +350,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         valid.recoveryId,
                         valid.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -398,7 +398,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         sig.recoveryId,
                         sig.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -421,7 +421,7 @@ describe("Universal Gateway - Rescue Tests", () => {
         it("rejects rescue while paused", async () => {
             await program.methods
                 .pause()
-                .accounts({ pauser: pauser.publicKey, config: configPda })
+                .accountsPartial({ pauser: pauser.publicKey, config: configPda })
                 .signers([pauser])
                 .rpc();
 
@@ -453,7 +453,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         sig.recoveryId,
                         sig.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -474,7 +474,7 @@ describe("Universal Gateway - Rescue Tests", () => {
 
             await program.methods
                 .unpause()
-                .accounts({ pauser: pauser.publicKey, config: configPda })
+                .accountsPartial({ pauser: pauser.publicKey, config: configPda })
                 .signers([pauser])
                 .rpc();
         });
@@ -510,7 +510,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         sig.recoveryId,
                         sig.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -559,7 +559,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                     sig.recoveryId,
                     sig.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -588,7 +588,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         sig.recoveryId,
                         sig.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -655,7 +655,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                     sig.recoveryId,
                     sig.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -717,7 +717,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         valid.recoveryId,
                         valid.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -770,7 +770,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         sig.recoveryId,
                         sig.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -826,7 +826,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         sig.recoveryId,
                         sig.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -877,7 +877,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                     sig.recoveryId,
                     sig.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -906,7 +906,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                         sig.recoveryId,
                         sig.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,

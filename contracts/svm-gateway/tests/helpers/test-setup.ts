@@ -123,7 +123,7 @@ export async function ensureTestSetup(): Promise<void> {
                     new anchor.BN(1_000_000_000),
                     mockPriceFeed
                 )
-                .accounts({ admin: admin.publicKey })
+                .accountsPartial({ admin: admin.publicKey })
                 .signers([admin])
                 .rpc();
             configAccount = await program.account.config.fetch(configPda);
@@ -142,14 +142,14 @@ export async function ensureTestSetup(): Promise<void> {
             if (!storedAddress.equals(expectedAddress) || existingTss.chainId !== expectedChainId) {
                 await program.methods
                     .updateTss(expectedTssEthAddress, expectedChainId)
-                    .accounts({ tssPda, config: configPda, authority: admin.publicKey })
+                    .accountsPartial({ tssPda, config: configPda, authority: admin.publicKey })
                     .signers([admin])
                     .rpc();
             }
         } catch {
             await program.methods
                 .initTss(expectedTssEthAddress, expectedChainId)
-                .accounts({
+                .accountsPartial({
                     tssPda,
                     authority: admin.publicKey,
                     config: configPda,
@@ -166,7 +166,7 @@ export async function ensureTestSetup(): Promise<void> {
             // Not initialized, create it by calling set_block_usd_cap (which uses init_if_needed)
             await program.methods
                 .setBlockUsdCap(new anchor.BN(1_000_000_000)) // 1 billion USD cap
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -179,7 +179,7 @@ export async function ensureTestSetup(): Promise<void> {
         // Step 9: Ensure fee_vault exists (devnet-safe path) and starts disabled
         await program.methods
             .setProtocolFee(new anchor.BN(0))
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 feeVault: feeVaultPda,
                 admin: admin.publicKey,
@@ -191,7 +191,7 @@ export async function ensureTestSetup(): Promise<void> {
         // Step 10: Normalize rate-limit state so suites don't inherit stale 0-threshold config
         await program.methods
             .updateEpochDuration(new anchor.BN(0))
-            .accounts({
+            .accountsPartial({
                 admin: admin.publicKey,
                 config: configPda,
                 rateLimitConfig: rateLimitConfigPda,
@@ -208,7 +208,7 @@ export async function ensureTestSetup(): Promise<void> {
         ] as const) {
             await program.methods
                 .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit,

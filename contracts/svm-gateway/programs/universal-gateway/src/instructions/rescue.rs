@@ -14,7 +14,7 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 //   1. Auth: ECDSA TSS signature verification instead of onlyRole(TSS_ROLE).
 //   2. gas_fee: relayer reimbursement from fee_vault (EVM rescue has no equivalent).
 //
-// TSS message format (instruction_id = 5 for both modes):
+// TSS message format (instruction_id = 4 for both modes):
 //   SOL: amount || [sub_tx_id, universal_tx_id, recipient, gas_fee]
 //   SPL: amount || [sub_tx_id, universal_tx_id, mint, recipient, gas_fee]
 
@@ -72,7 +72,6 @@ pub struct RescueFunds<'info> {
 
     pub token_mint: Option<Account<'info, Mint>>,
 
-    /// Must be present for SPL path — Solana CPI requires the invoked program in the tx accounts.
     pub token_program: Option<Program<'info, Token>>,
 }
 
@@ -104,7 +103,6 @@ pub fn rescue_funds(
     } else {
         let token_vault = ctx.accounts.token_vault.as_ref().ok_or(error!(GatewayError::InvalidAccount))?;
         let recipient_ta = ctx.accounts.recipient_token_account.as_ref().ok_or(error!(GatewayError::InvalidAccount))?;
-        require!(ctx.accounts.token_program.is_some(), GatewayError::InvalidAccount);
         let mint_key = ctx.accounts.token_mint.as_ref().unwrap().key(); // Safe: !is_native ⟹ token_mint.is_some()
         require!(token_vault.mint == mint_key, GatewayError::InvalidMint);
         require!(token_vault.owner == ctx.accounts.vault.key(), GatewayError::InvalidAccount);

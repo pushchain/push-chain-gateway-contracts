@@ -35,7 +35,7 @@ Production-ready Solana program for bidirectional cross-chain bridging between P
 
 ### Rescue Function
 - **`rescue_funds`** - TSS-verified emergency release of locked vault funds (EVM parity: `UniversalGateway.rescueFunds`)
-  - **instruction_id = 5:** Unified SOL and SPL path (token_mint = None → SOL, Some → SPL)
+  - **instruction_id = 4:** Unified SOL and SPL path (token_mint = None → SOL, Some → SPL)
   - Replay-protected by `ExecutedSubTx` PDA using `sub_tx_id`
   - Relayer gas reimbursed from `fee_vault`
 
@@ -101,7 +101,7 @@ npm run token:create -- -n "Test Token" -s "TEST" -d "Test token description"
 npm run token:mint -- -m TEST -r <ADDRESS> -a 1000
 
 # Set rate limit (enable token)
-npm run token:set-rate-limit -- -m <MINT> -t 1000000000
+npm run config:rate-set-token -- --mint <MINT> --threshold 1000000000
 
 # List all tokens
 npm run token:list
@@ -458,13 +458,14 @@ contracts/svm-gateway/
 │           │   ├── deposit.rs            # send_universal_tx (inbound)
 │           │   ├── execute.rs            # finalize_universal_tx (outbound)
 │           │   ├── revert.rs             # revert functions
+│           │   ├── rescue.rs             # rescue_funds
 │           │   ├── tss.rs                # TSS signature validation
 │           │   ├── admin.rs              # Admin functions
 │           │   ├── initialize.rs         # Gateway initialization
 │           │   └── mod.rs                # Module exports
 │           ├── state.rs                  # Account structs
 │           ├── errors.rs                 # Error codes
-│           └── utils.rs                  # Helper functions
+│           └── utils/                    # Helper modules
 ├── tests/                                # Test suites
 ├── scripts/                              # CLI utilities
 ├── app/                                  # Integration helpers

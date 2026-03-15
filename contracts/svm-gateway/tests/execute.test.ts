@@ -297,7 +297,7 @@ describe("Universal Gateway - Execute Tests", () => {
     ] as [PublicKey, PublicKey][]) {
       await gatewayProgram.methods
         .setTokenRateLimit(veryLargeThreshold)
-        .accounts({
+        .accountsPartial({
           config: configPda,
           tokenRateLimit: pda,
           tokenMint: mint,
@@ -368,7 +368,7 @@ describe("Universal Gateway - Execute Tests", () => {
     try {
       await counterProgram.methods
         .initialize(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
           systemProgram: SystemProgram.programId,
@@ -408,7 +408,7 @@ describe("Universal Gateway - Execute Tests", () => {
       // Build instruction data for test-counter.increment
       const counterIx = await counterProgram.methods
         .increment(incrementAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -468,7 +468,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -535,7 +535,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const preseedUniversalTxId = generateUniversalTxId();
       const preseedIx = await counterProgram.methods
         .increment(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -576,7 +576,7 @@ describe("Universal Gateway - Execute Tests", () => {
           preseedSig.recoveryId,
           Array.from(preseedSig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -605,7 +605,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const transferUniversalTxId = generateUniversalTxId();
       const transferIx = await counterProgram.methods
         .receiveSol(new anchor.BN(totalTransferLamports))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           recipient: recipient.publicKey,
           ceaAuthority,
@@ -650,7 +650,7 @@ describe("Universal Gateway - Execute Tests", () => {
           transferSig.recoveryId,
           Array.from(transferSig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -747,7 +747,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -846,7 +846,7 @@ describe("Universal Gateway - Execute Tests", () => {
             transferSig.recoveryId,
             Array.from(transferSig.messageHash)
           )
-          .accounts({
+          .accountsPartial({
             caller: admin.publicKey,
             config: configPda,
             vaultSol: vaultPda,
@@ -895,7 +895,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
       const counterIx = await counterProgram.methods
         .increment(new anchor.BN(1))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -938,7 +938,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig1.recoveryId,
           Array.from(sig1.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -995,7 +995,7 @@ describe("Universal Gateway - Execute Tests", () => {
             sig2.recoveryId,
             Array.from(sig2.messageHash)
           )
-          .accounts({
+          .accountsPartial({
             caller: admin.publicKey,
             config: configPda,
             vaultSol: vaultPda,
@@ -1036,7 +1036,7 @@ describe("Universal Gateway - Execute Tests", () => {
       // Build instruction data for test-counter.receive_spl
       const counterIx = await counterProgram.methods
         .receiveSpl(amount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           ceaAta: await getCeaAta(pushAccount, mockUSDT.mint.publicKey),
           recipientAta: recipientUsdtAccount,
@@ -1108,7 +1108,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -1194,7 +1194,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const preseedUniversalTxId = generateUniversalTxId();
       const preseedIx = await counterProgram.methods
         .increment(new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -1237,7 +1237,7 @@ describe("Universal Gateway - Execute Tests", () => {
           preseedSig.recoveryId,
           Array.from(preseedSig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -1266,7 +1266,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const transferUniversalTxId = generateUniversalTxId();
       const transferIx = await counterProgram.methods
         .receiveSpl(totalTransferTokens)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           ceaAta,
           recipientAta: recipientUsdtAccount,
@@ -1314,7 +1314,7 @@ describe("Universal Gateway - Execute Tests", () => {
           transferSig.recoveryId,
           Array.from(transferSig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -1425,7 +1425,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -1540,7 +1540,7 @@ describe("Universal Gateway - Execute Tests", () => {
             transferSig.recoveryId,
             Array.from(transferSig.messageHash)
           )
-          .accounts({
+          .accountsPartial({
             caller: admin.publicKey,
             config: configPda,
             vaultAta: vaultUsdtAccount,
@@ -1587,7 +1587,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
       const counterIx = await counterProgram.methods
         .receiveSpl(amount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           ceaAta: await getCeaAta(pushAccount, mockUSDT.mint.publicKey),
           recipientAta: recipientUsdtAccount,
@@ -1660,7 +1660,7 @@ describe("Universal Gateway - Execute Tests", () => {
             sig.recoveryId,
             Array.from(sig.messageHash)
           )
-          .accounts({
+          .accountsPartial({
             caller: admin.publicKey,
             config: configPda,
             vaultAta: vaultUsdtAccount,
@@ -1706,7 +1706,7 @@ describe("Universal Gateway - Execute Tests", () => {
       // Use increment instead of decrement to avoid underflow
       const counterIx = await counterProgram.methods
         .increment(incrementAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -1771,7 +1771,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -1848,7 +1848,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
       const counterIx = await counterProgram.methods
         .increment(incrementAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: counterAuthority.publicKey,
         })
@@ -1925,7 +1925,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -1987,7 +1987,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
       const counterIx = await counterProgram.methods
         .receiveSpl(amount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           ceaAta: await getCeaAta(pushAccount, mockUSDT.mint.publicKey),
           recipientAta: recipientUsdtAccount,
@@ -2083,7 +2083,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -2184,7 +2184,7 @@ describe("Universal Gateway - Execute Tests", () => {
         // Build a valid instruction
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -2242,7 +2242,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2277,7 +2277,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -2332,7 +2332,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2367,7 +2367,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -2424,7 +2424,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2459,7 +2459,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -2515,7 +2515,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2582,7 +2582,7 @@ describe("Universal Gateway - Execute Tests", () => {
               0,
               dummyHash
             )
-            .accounts({
+            .accountsPartial({
               caller: admin.publicKey,
               config: configPda,
               vaultSol: vaultPda,
@@ -2625,7 +2625,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -2679,7 +2679,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2714,7 +2714,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -2768,7 +2768,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 tamperedHash // Tampered!
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2852,7 +2852,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2893,7 +2893,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -2942,7 +2942,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -2977,7 +2977,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -3035,7 +3035,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -3071,7 +3071,7 @@ describe("Universal Gateway - Execute Tests", () => {
 
         const counterIx = await counterProgram.methods
           .increment(new anchor.BN(1))
-          .accounts({
+          .accountsPartial({
             counter: counterPda,
             authority: counterAuthority.publicKey,
           })
@@ -3144,7 +3144,7 @@ describe("Universal Gateway - Execute Tests", () => {
                 sig.recoveryId,
                 Array.from(sig.messageHash)
               )
-              .accounts({
+              .accountsPartial({
                 caller: admin.publicKey,
                 config: configPda,
                 vaultSol: vaultPda,
@@ -3250,7 +3250,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const universalTxId1 = generateUniversalTxId();
       const stakeIx = await counterProgram.methods
         .stakeSol(stakeAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user1Cea,
           stake: user1Stake,
@@ -3311,7 +3311,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig1.recoveryId,
           Array.from(sig1.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -3364,7 +3364,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const stakeAmount2 = asLamports(0.5); // 0.5 SOL more
       const stakeIx2 = await counterProgram.methods
         .stakeSol(stakeAmount2)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user1Cea,
           stake: user1Stake,
@@ -3414,7 +3414,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig2.recoveryId,
           Array.from(sig2.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -3473,7 +3473,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const universalTxId = generateUniversalTxId();
       const unstakeIx = await counterProgram.methods
         .unstakeSol(unstakeAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user1Cea,
           stake: user1Stake,
@@ -3517,7 +3517,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -3620,7 +3620,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const universalTxId = generateUniversalTxId();
       const stakeIx = await counterProgram.methods
         .stakeSol(stakeAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user2Cea,
           stake: user2Stake,
@@ -3678,7 +3678,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -3724,7 +3724,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const universalTxId = generateUniversalTxId();
       const unstakeIx = await counterProgram.methods
         .unstakeSol(unstakeAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user2Cea,
           stake: user2Stake,
@@ -3769,7 +3769,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultSol: vaultPda,
@@ -3839,7 +3839,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const universalTxId = generateUniversalTxId();
       const stakeIx = await counterProgram.methods
         .stakeSpl(stakeAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user3Cea,
           stake: user3Stake,
@@ -3894,7 +3894,7 @@ describe("Universal Gateway - Execute Tests", () => {
         .preInstructions([
           ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
         ])
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -3938,7 +3938,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const universalTxId = generateUniversalTxId();
       const unstakeIx = await counterProgram.methods
         .unstakeSpl(unstakeAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user3Cea,
           stake: user3Stake,
@@ -3997,7 +3997,7 @@ describe("Universal Gateway - Execute Tests", () => {
           sig.recoveryId,
           Array.from(sig.messageHash)
         )
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -4154,7 +4154,7 @@ describe("Universal Gateway - Execute Tests", () => {
       const universalTxId1 = generateUniversalTxId();
       const stakeIx = await counterProgram.methods
         .stakeSpl(stakeAmount)
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user4Cea,
           stake: user4Stake,
@@ -4208,7 +4208,7 @@ describe("Universal Gateway - Execute Tests", () => {
         .preInstructions([
           ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
         ])
-        .accounts({
+        .accountsPartial({
           caller: admin.publicKey,
           config: configPda,
           vaultAta: vaultUsdtAccount,
@@ -4248,7 +4248,7 @@ describe("Universal Gateway - Execute Tests", () => {
       // Build unstakeSpl targeting User3's stake but signed by User4's CEA
       const crossUnstakeIx = await counterProgram.methods
         .unstakeSpl(new anchor.BN(1))
-        .accounts({
+        .accountsPartial({
           counter: counterPda,
           authority: user4Cea, // User4's CEA — wrong authority for User3's stake
           stake: user3Stake, // User3's stake PDA
@@ -4303,7 +4303,7 @@ describe("Universal Gateway - Execute Tests", () => {
           .preInstructions([
             ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
           ])
-          .accounts({
+          .accountsPartial({
             caller: admin.publicKey,
             config: configPda,
             vaultAta: vaultUsdtAccount,

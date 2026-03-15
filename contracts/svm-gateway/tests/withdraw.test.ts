@@ -67,7 +67,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
     const signTssMessageWithChainId = async (params: {
         instruction: TssInstruction;
         amount?: bigint;
-        additional: Uint8Array[];
+        additional: (Uint8Array | number[])[];
     }) => {
         const tssAccount = await program.account.tssPda.fetch(tssPda);
         return signTssMessage({ ...params, chainId: tssAccount.chainId });
@@ -129,7 +129,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         // Ensure protocol fee is disabled for deterministic seeding in this suite.
         await program.methods
             .setProtocolFee(new anchor.BN(0))
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 feeVault: feeVaultPda,
                 admin: admin.publicKey,
@@ -168,7 +168,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
         await program.methods
             .setTokenRateLimit(veryLargeThreshold)
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 tokenRateLimit: nativeSolTokenRateLimitPda,
                 tokenMint: PublicKey.default,
@@ -199,7 +199,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         try {
             await program.methods
                 .sendUniversalTx(solFundsReq, new anchor.BN(solDepositAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -251,7 +251,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         // Force a known non-zero threshold even if another suite previously set 0.
         await program.methods
             .setTokenRateLimit(veryLargeThreshold)
-            .accounts({
+            .accountsPartial({
                 config: configPda,
                 tokenRateLimit: splTokenRateLimitPda,
                 tokenMint: mockUSDT.mint.publicKey,
@@ -267,7 +267,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         try {
             await program.methods
                 .sendUniversalTx(fundsReq, new anchor.BN(0)) // No native SOL for SPL funds
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -406,7 +406,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
         it("rejects withdrawals while paused", async () => {
             await program.methods
                 .pause()
-                .accounts({ pauser: pauser.publicKey, config: configPda })
+                .accountsPartial({ pauser: pauser.publicKey, config: configPda })
                 .signers([pauser])
                 .rpc();
 
@@ -451,7 +451,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
 
             await program.methods
                 .unpause()
-                .accounts({ pauser: pauser.publicKey, config: configPda })
+                .accountsPartial({ pauser: pauser.publicKey, config: configPda })
                 .signers([pauser])
                 .rpc();
         });
@@ -562,7 +562,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Caller should receive gas_fee minus executed_sub_tx rent, optional CEA ATA rent, and tx fee
             const callerBalanceChange = callerBalanceAfter - callerBalanceBefore;
             await provider.connection.confirmTransaction(sig, "confirmed");
-            let tx = null as anchor.web3.TransactionResponse | null;
+            let tx = null as Awaited<ReturnType<typeof provider.connection.getTransaction>>;
             for (let i = 0; i < 5 && !tx; i++) {
                 tx = await provider.connection.getTransaction(sig, {
                     commitment: "confirmed",
@@ -576,7 +576,13 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 throw new Error("Missing transaction metadata for fee accounting");
             }
 
-            const relayerIndex = tx.transaction.message.accountKeys.findIndex((k) =>
+            const accountKeys = tx.transaction.message
+                .getAccountKeys({
+                    accountKeysFromLookups: tx.meta.loadedAddresses,
+                })
+                .keySegments()
+                .flat();
+            const relayerIndex = accountKeys.findIndex((k) =>
                 k.equals(relayer.publicKey)
             );
             if (relayerIndex === -1) {
@@ -679,7 +685,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.recoveryId,
                     signature.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -742,7 +748,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.recoveryId,
                         signature.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -798,7 +804,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.recoveryId,
                     signature.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -1196,7 +1202,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.recoveryId,
                         signature.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -1247,7 +1253,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.recoveryId,
                         signature.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -1314,7 +1320,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.recoveryId,
                     signature.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -1356,7 +1362,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature2.recoveryId,
                         signature2.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -1421,7 +1427,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.recoveryId,
                         signature.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -1473,7 +1479,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature.recoveryId,
                         signature.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -1526,7 +1532,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     signature.recoveryId,
                     signature.messageHash,
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -1568,7 +1574,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                         signature2.recoveryId,
                         signature2.messageHash,
                     )
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,

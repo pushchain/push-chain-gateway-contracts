@@ -90,7 +90,7 @@ export const makeFinalizeUniversalTxBuilder =
         sig.recoveryId,
         Array.from(sig.messageHash)
       )
-      .accounts({
+      .accountsPartial({
         caller,
         config: configPda,
         vaultSol: vaultPda,

@@ -201,7 +201,7 @@ async function getDynamicGasAmount(
   try {
     const solPriceResult = await program.methods
       .getSolPrice()
-      .accounts({
+      .accountsPartial({
         priceUpdate: PRICE_ACCOUNT,
       })
       .view();
@@ -429,7 +429,7 @@ async function run() {
         new anchor.BN(1_000_000_000), // max_cap_usd ($10 with 8 decimals = 10e8)
         new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE") // pyth_price_feed (SOL/USD feed ID)
       )
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         admin: admin,
@@ -454,7 +454,7 @@ async function run() {
     // Initialize by setting block USD cap to 0 (disabled, but creates the account)
     await program.methods
       .setBlockUsdCap(new anchor.BN(0))
-      .accounts({
+      .accountsPartial({
         admin: admin,
         config: configPda,
         rateLimitConfig: rateLimitConfigPda,
@@ -475,7 +475,7 @@ async function run() {
   } catch {
     await program.methods
       .setTokenRateLimit(veryLargeThreshold)
-      .accounts({
+      .accountsPartial({
         admin: admin,
         config: configPda,
         rateLimitConfig: rateLimitConfigPda,
@@ -510,7 +510,7 @@ async function run() {
   const newMaxCap = new anchor.BN(1_000_000_000); // $10 with 8 decimals = 10e8
   const capsTx = await program.methods
     .setCapsUsd(newMinCap, newMaxCap)
-    .accounts({
+    .accountsPartial({
       config: configPda,
       admin: admin,
     })
@@ -606,7 +606,7 @@ async function run() {
     } catch {
       await program.methods
         .setTokenRateLimit(veryLargeThreshold)
-        .accounts({
+        .accountsPartial({
           admin: admin,
           config: configPda,
           rateLimitConfig: rateLimitConfigPda,
@@ -643,7 +643,7 @@ async function run() {
 
   const gasUniversalTx = await userProgram.methods
     .sendUniversalTx(gasReq, universalGasAmount)
-    .accounts({
+    .accountsPartial({
       config: configPda,
       vault: vaultPda,
       feeVault: feeVaultPda,
@@ -689,7 +689,7 @@ async function run() {
   const initialVaultBalanceGasPayload = await connection.getBalance(vaultPda);
   const gasPayloadTx = await userProgram.methods
     .sendUniversalTx(gasPayloadReq, universalGasPayloadAmount)
-    .accounts({
+    .accountsPartial({
       config: configPda,
       vault: vaultPda,
       feeVault: feeVaultPda,
@@ -743,7 +743,7 @@ async function run() {
 
   const fundsTx = await userProgram.methods
     .sendUniversalTx(fundsReq, fundsAmount) // native_amount == amount for native FUNDS
-    .accounts({
+    .accountsPartial({
       config: configPda,
       vault: vaultPda,
       feeVault: feeVaultPda,
@@ -808,7 +808,7 @@ async function run() {
     const splTokenRateLimitPda = getTokenRateLimitPda(mint);
     const splFundsTx = await userProgram.methods
       .sendUniversalTx(splFundsReq, new anchor.BN(0)) // No native SOL for SPL funds
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -880,7 +880,7 @@ async function run() {
   const initialVaultBalanceFundsPayload = await connection.getBalance(vaultPda);
   const fundsPayloadTx = await userProgram.methods
     .sendUniversalTx(fundsPayloadReq, totalNativeAmount) // native_amount = bridge + gas
-    .accounts({
+    .accountsPartial({
       config: configPda,
       vault: vaultPda,
       feeVault: feeVaultPda,
@@ -969,7 +969,7 @@ async function run() {
 
     const ix = await userProgram.methods
       .sendUniversalTx(splFundsPayloadReq, splFundsPayloadGasAmount)
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -1074,7 +1074,7 @@ async function run() {
   try {
     const payloadOnlyTx = await userProgram.methods
       .sendUniversalTx(payloadOnlyReq, new anchor.BN(0)) // 0 native amount
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -1127,7 +1127,7 @@ async function run() {
         mismatchedFundsReq,
         new anchor.BN(0.005 * LAMPORTS_PER_SOL)
       ) // Different amount
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -1183,7 +1183,7 @@ async function run() {
           invalidSplFundsReq,
           new anchor.BN(0.001 * LAMPORTS_PER_SOL)
         ) // Native SOL provided
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -1232,7 +1232,7 @@ async function run() {
         invalidRecipientReq,
         await getDynamicGasAmount(2.5, 0.01)
       )
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -1287,7 +1287,7 @@ async function run() {
         mismatchedNativeReq,
         new anchor.BN(0.02 * LAMPORTS_PER_SOL)
       ) // native != amount
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -1340,7 +1340,7 @@ async function run() {
         insufficientNativeReq,
         new anchor.BN(0.005 * LAMPORTS_PER_SOL)
       ) // native < amount
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -1394,7 +1394,7 @@ async function run() {
     try {
       await userProgram.methods
         .sendUniversalTx(maliciousSplFundsReq, new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -1448,7 +1448,7 @@ async function run() {
           maliciousSplFundsPayloadReq,
           await getDynamicGasAmount(1.5, 0.01)
         )
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -1510,7 +1510,7 @@ async function run() {
     try {
       await userProgram.methods
         .sendUniversalTx(wrongMintReq, new anchor.BN(0))
-        .accounts({
+        .accountsPartial({
           config: configPda,
           vault: vaultPda,
           feeVault: feeVaultPda,
@@ -1552,7 +1552,7 @@ async function run() {
   try {
     const pauseTx = await program.methods
       .pause()
-      .accounts({
+      .accountsPartial({
         config: configPda,
         pauser: admin,
       })
@@ -1583,7 +1583,7 @@ async function run() {
   try {
     await userProgram.methods
       .sendUniversalTx(gasReqPaused, gasAmountPaused)
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,
@@ -1610,7 +1610,7 @@ async function run() {
   try {
     const unpauseTx = await program.methods
       .unpause()
-      .accounts({
+      .accountsPartial({
         config: configPda,
         pauser: admin,
       })
@@ -1648,7 +1648,7 @@ async function run() {
           Array.from(ethAddrBytes) as any,
           "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
         ) // Devnet cluster pubkey
-        .accounts({
+        .accountsPartial({
           tssPda: tssPda,
           authority: admin,
           config: configPda,
@@ -1667,7 +1667,7 @@ async function run() {
         Array.from(ethAddrBytes) as any,
         "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
       )
-      .accounts({
+      .accountsPartial({
         tssPda: tssPda,
         authority: admin,
         config: configPda,
@@ -1753,7 +1753,7 @@ async function run() {
       recoveryId,
       Array.from(messageHash) as any
     )
-    .accounts({
+    .accountsPartial({
       caller: admin, // The caller/relayer who pays for the transaction
       config: configPda,
       vaultSol: vaultPda,
@@ -1918,7 +1918,7 @@ async function run() {
           recoveryIdSPL,
           Array.from(messageHashSPL) as any
         )
-        .accounts({
+        .accountsPartial({
           caller: admin, // The caller/relayer who pays for the transaction
           config: configPda,
           vaultSol: vaultPda,
@@ -2000,7 +2000,7 @@ async function run() {
   } catch {
     const initCounterTx = await counterProgram.methods
       .initialize(new anchor.BN(0))
-      .accounts({
+      .accountsPartial({
         counter: counterPda,
         authority: admin, // Admin is authority, but relayer signs execute txs
         systemProgram: SystemProgram.programId,
@@ -2041,7 +2041,7 @@ async function run() {
     const pushAccountBytes = Buffer.alloc(20, 0x11);
     const incrementIx = await counterProgram.methods
       .increment(new anchor.BN(3))
-      .accounts({
+      .accountsPartial({
         counter: counterPda,
         authority: admin, // Admin is authority, but relayer signs the execute tx
       })
@@ -2088,8 +2088,7 @@ async function run() {
         pushAccountBytes,
         decoded.accounts,
         decoded.ixData,
-        gasFee, // From fee calculation
-        BigInt(0) // From payload
+        gasFee // From fee calculation
       ),
     });
 
@@ -2130,7 +2129,7 @@ async function run() {
         sig.recoveryId,
         sig.messageHash
       )
-      .accounts({
+      .accountsPartial({
         caller: relayer, // Relayer is now both fee payer and caller
         config: configPda,
         vaultSol: vaultPda,
@@ -2219,7 +2218,7 @@ async function run() {
 
     const receiveSplIx = await counterProgram.methods
       .receiveSpl(executeAmount)
-      .accounts({
+      .accountsPartial({
         counter: counterPda,
         ceaAta: ceaAtaForSpl, // CEA ATA
         recipientAta: executeRecipientAta.address,
@@ -2269,7 +2268,6 @@ async function run() {
         decoded.accounts,
         decoded.ixData,
         gasFee, // From fee calculation
-        BigInt(0), // From payload
         mint
       ),
     });
@@ -2314,7 +2312,7 @@ async function run() {
         sig.recoveryId,
         sig.messageHash
       )
-      .accounts({
+      .accountsPartial({
         caller: relayer, // Relayer is now both fee payer and caller
         config: configPda,
         vaultSol: vaultPda, // Vault SOL PDA for fee transfers
@@ -2466,7 +2464,7 @@ async function run() {
         sig.recoveryId,
         Array.from(sig.messageHash)
       )
-      .accounts({
+      .accountsPartial({
         caller: relayer,
         config: configPda,
         vaultSol: vaultPda,
@@ -2560,7 +2558,7 @@ async function run() {
 
   const securityCounterIx = await counterProgram.methods
     .increment(new anchor.BN(1))
-    .accounts({
+    .accountsPartial({
       counter: counterPda,
       authority: admin,
     })
@@ -2618,7 +2616,7 @@ async function run() {
           securitySig1.recoveryId,
           securitySig1.messageHash
         )
-        .accounts({
+        .accountsPartial({
           caller: relayer,
           config: configPda,
           vaultSol: vaultPda,
@@ -2652,7 +2650,7 @@ async function run() {
 
   const securityCounterIx2 = await counterProgram.methods
     .increment(new anchor.BN(1))
-    .accounts({
+    .accountsPartial({
       counter: counterPda,
       authority: admin,
     })
@@ -2707,7 +2705,7 @@ async function run() {
           securitySig2.recoveryId,
           securitySig2.messageHash
         )
-        .accounts({
+        .accountsPartial({
           caller: relayer,
           config: configPda,
           vaultSol: vaultPda,
@@ -2747,7 +2745,7 @@ async function run() {
 
   const securityCounterIx4 = await counterProgram.methods
     .increment(new anchor.BN(1))
-    .accounts({
+    .accountsPartial({
       counter: counterPda,
       authority: admin,
     })
@@ -2807,7 +2805,7 @@ async function run() {
           securitySig4.recoveryId,
           securitySig4.messageHash
         )
-        .accounts({
+        .accountsPartial({
           caller: relayer,
           config: configPda,
           vaultSol: vaultPda,
@@ -2863,7 +2861,7 @@ async function run() {
 
     const batchIx = await counterProgram.methods
       .batchOperation(new anchor.BN(12345), testData)
-      .accounts({
+      .accountsPartial({
         counter: counterPda,
         authority: admin,
       })
@@ -2956,7 +2954,7 @@ async function run() {
           sig.recoveryId,
           sig.messageHash
         )
-        .accounts({
+        .accountsPartial({
           ...baseAccounts,
           vaultAta: vaultAta.address,
           ceaAta: ceaAta,
@@ -2989,7 +2987,7 @@ async function run() {
           sig.recoveryId,
           sig.messageHash
         )
-        .accounts(baseAccounts)
+        .accountsPartial(baseAccounts)
         .remainingAccounts(
           accounts.map((a) => ({
             pubkey: a.pubkey,
@@ -3197,7 +3195,7 @@ async function run() {
 
   const batchIx = await counterProgram.methods
     .batchOperation(new anchor.BN(operationId), largeData)
-    .accounts({
+    .accountsPartial({
       counter: counterPda,
       authority: admin,
     })
@@ -3257,7 +3255,7 @@ async function run() {
         heavySig.recoveryId,
         heavySig.messageHash
       )
-      .accounts({
+      .accountsPartial({
         caller: relayer,
         config: configPda,
         vaultSol: vaultPda,
@@ -3329,7 +3327,7 @@ async function run() {
 
   const batchIxSpl = await counterProgram.methods
     .batchOperation(new anchor.BN(operationIdSpl), largeDataSpl)
-    .accounts({
+    .accountsPartial({
       counter: counterPda,
       authority: admin,
     })
@@ -3389,7 +3387,7 @@ async function run() {
         heavySigSpl.recoveryId,
         heavySigSpl.messageHash
       )
-      .accounts({
+      .accountsPartial({
         caller: relayer,
         config: configPda,
         vaultSol: vaultPda,
@@ -3573,7 +3571,7 @@ async function run() {
         recoveryId,
         Array.from(messageHash)
       )
-      .accounts({
+      .accountsPartial({
         config: configPda,
         vault: vaultPda,
         feeVault: feeVaultPda,

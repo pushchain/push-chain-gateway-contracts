@@ -140,7 +140,7 @@ program_cli
 
             const tx = await program.methods
                 .initTss(ethAddress, chainId)
-                .accounts({
+                .accountsPartial({
                     tssPda: tssPda,
                     config: configPda,
                     authority: adminKeypair.publicKey,
@@ -178,7 +178,7 @@ program_cli
 
             const tx = await program.methods
                 .updateTss(ethAddress, chainId)
-                .accounts({
+                .accountsPartial({
                     tssPda: tssPda,
                     config: configPda,
                     authority: adminKeypair.publicKey,
@@ -209,7 +209,7 @@ program_cli
 
             const tx = await program.methods
                 .pause()
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     pauser: pauserKeypair.publicKey,
                 })
@@ -235,7 +235,7 @@ program_cli
 
             const tx = await program.methods
                 .unpause()
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     pauser: pauserKeypair.publicKey,
                 })
@@ -283,7 +283,7 @@ program_cli
 
             const tx = await program.methods
                 .setAuthorities(newAdmin, newPauser)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: adminKeypair.publicKey,
                 })
@@ -320,7 +320,7 @@ program_cli
 
             const tx = await program.methods
                 .setProtocolFee(new anchor.BN(feeLamports.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     feeVault: feeVaultPda,
                     admin: adminKeypair.publicKey,
@@ -367,7 +367,7 @@ program_cli
                     new anchor.BN(minCap.toString()),
                     new anchor.BN(maxCap.toString())
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: adminKeypair.publicKey,
                 })
@@ -401,7 +401,7 @@ program_cli
 
             const tx = await program.methods
                 .setPythPriceFeed(feed)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: adminKeypair.publicKey,
                 })
@@ -431,7 +431,7 @@ program_cli
 
             const tx = await program.methods
                 .setPythConfidenceThreshold(new anchor.BN(threshold.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: adminKeypair.publicKey,
                 })
@@ -466,7 +466,7 @@ program_cli
 
             const tx = await program.methods
                 .setBlockUsdCap(new anchor.BN(cap.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
                     admin: adminKeypair.publicKey,
@@ -499,7 +499,7 @@ program_cli
 
             const tx = await program.methods
                 .updateEpochDuration(new anchor.BN(seconds.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
                     admin: adminKeypair.publicKey,
@@ -539,7 +539,7 @@ program_cli
 
             const tx = await program.methods
                 .setTokenRateLimit(new anchor.BN(threshold.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     tokenRateLimit: tokenRateLimitPda,
                     tokenMint: mint,

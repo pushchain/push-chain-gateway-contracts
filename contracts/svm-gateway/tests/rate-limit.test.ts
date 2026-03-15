@@ -64,7 +64,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
         const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
         await program.methods
             .setTokenRateLimit(veryLargeThreshold)
-            .accounts({
+            .accountsPartial({
                 admin: admin.publicKey,
                 config: configPda,
                 tokenRateLimit: nativeSolTokenRateLimitPda,
@@ -84,7 +84,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .setBlockUsdCap(blockCapLamports)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -111,7 +111,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // First transaction should succeed (consumes $3, under $4 cap)
             await program.methods
                 .sendUniversalTx(req1, new anchor.BN(gasAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -150,7 +150,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             try {
                 await program.methods
                     .sendUniversalTx(req1, new anchor.BN(gasAmount))
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -220,7 +220,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Disable block cap for other tests
             await program.methods
                 .setBlockUsdCap(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -237,7 +237,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .setBlockUsdCap(blockCapLamports)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -263,7 +263,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // First transaction
             await program.methods
                 .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -289,7 +289,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Second transaction in new slot should reset consumed amount
             await program.methods
                 .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -324,7 +324,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Disable block cap
             await program.methods
                 .setBlockUsdCap(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -338,7 +338,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Ensure block cap is disabled
             await program.methods
                 .setBlockUsdCap(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -362,7 +362,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Should succeed even with multiple transactions
             await program.methods
                 .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -381,7 +381,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Second transaction should also succeed (cap disabled)
             await program.methods
                 .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -404,7 +404,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Enable epoch duration (1 hour = 3600 seconds)
             await program.methods
                 .updateEpochDuration(new anchor.BN(3600))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -419,7 +419,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .setTokenRateLimit(limitThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
@@ -442,7 +442,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .sendUniversalTx(req1, new anchor.BN(fundsAmount1))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -470,7 +470,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .sendUniversalTx(req2, new anchor.BN(fundsAmount1))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -500,7 +500,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             try {
                 await program.methods
                     .sendUniversalTx(req3, new anchor.BN(fundsAmount3))
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -534,7 +534,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .setTokenRateLimit(limitThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit: usdtTokenRateLimitPda,
@@ -557,7 +557,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .sendUniversalTx(req1, new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -585,7 +585,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .sendUniversalTx(req2, new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -615,7 +615,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             try {
                 await program.methods
                     .sendUniversalTx(req3, new anchor.BN(0))
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -643,7 +643,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .setTokenRateLimit(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
@@ -667,7 +667,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             try {
                 await program.methods
                     .sendUniversalTx(req, new anchor.BN(largeAmount))
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -693,7 +693,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Disable epoch duration
             await program.methods
                 .updateEpochDuration(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -708,7 +708,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .setTokenRateLimit(limitThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
@@ -734,7 +734,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .sendUniversalTx(req, new anchor.BN(largeAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -757,7 +757,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Enable rate limiting
             await program.methods
                 .updateEpochDuration(new anchor.BN(3600))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -771,7 +771,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
 
             await program.methods
                 .setTokenRateLimit(limitThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,
@@ -800,7 +800,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Should succeed (funds = 0.3 SOL, under 0.5 SOL limit)
             await program.methods
                 .sendUniversalTx(req, new anchor.BN(totalAmount))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     vault: vaultPda,
                     feeVault: feeVaultPda,
@@ -829,7 +829,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             try {
                 await program.methods
                     .sendUniversalTx(req2, new anchor.BN(totalAmount))
-                    .accounts({
+                    .accountsPartial({
                         config: configPda,
                         vault: vaultPda,
                         feeVault: feeVaultPda,
@@ -858,7 +858,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Disable block USD cap
             await program.methods
                 .setBlockUsdCap(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -870,7 +870,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             // Disable epoch duration
             await program.methods
                 .updateEpochDuration(new anchor.BN(0))
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
@@ -884,7 +884,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
             const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
             await program.methods
                 .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
+                .accountsPartial({
                     admin: admin.publicKey,
                     config: configPda,
                     tokenRateLimit: nativeSolTokenRateLimitPda,

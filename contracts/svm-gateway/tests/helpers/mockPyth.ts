@@ -1,6 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey, Keypair, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction, TransactionInstruction } from "@solana/web3.js";
-import { sendAndConfirmTransaction } from "@solana/spl-token"; // Import for sendAndConfirmTransaction
 
 const debug = (...args: unknown[]) => {
     if (process.env.DEBUG_TESTS === "1") {
