@@ -254,10 +254,12 @@ contract Vault is
         _validateParams(pushAccount, token, amount);
 
         if (token != address(0)) {
-            if (IERC20(token).balanceOf(address(this)) < amount) {
-                revert Errors.InvalidAmount();
+            if (amount > 0) {
+                if (IERC20(token).balanceOf(address(this)) < amount) {
+                    revert Errors.InvalidAmount();
+                }
+                IERC20(token).safeTransfer(cea, amount);
             }
-            IERC20(token).safeTransfer(cea, amount);
             ICEA(cea).executeUniversalTx(subTxId, universalTxId, pushAccount, recipient, data);
         } else {
             ICEA(cea).executeUniversalTx{ value: amount }(subTxId, universalTxId, pushAccount, recipient, data);
