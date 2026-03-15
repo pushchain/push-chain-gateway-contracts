@@ -2,21 +2,20 @@
 pragma solidity 0.8.26;
 
 import { IUniversalCore } from "../../src/interfaces/IUniversalCore.sol";
-import { IPRC20 } from "../../src/interfaces/IPRC20.sol";
 
 /**
  * @title MockPRC20
  * @notice Accurate mock implementation of PRC20 for testing
  * @dev This mock closely follows the real PRC20 implementation from pc-core-2nd
  */
-contract MockPRC20 is IPRC20 {
+contract MockPRC20 {
     // ========= Constants =========
     /// @notice The protocol's privileged executor module (auth & fee sink)
     address public immutable UNIVERSAL_EXECUTOR_MODULE = 0x14191Ea54B4c176fCf86f51b0FAc7CB1E71Df7d7;
 
     // ========= State =========
     /// @notice Source chain this PRC20 mirrors (used for oracle lookups)
-    string public SOURCE_CHAIN_ID;
+    string public SOURCE_CHAIN_NAMESPACE;
     /// @notice Source Chain ERC20 address of the PRC20
     string public SOURCE_TOKEN_ADDRESS;
 
@@ -32,9 +31,6 @@ contract MockPRC20 is IPRC20 {
     /// @notice UniversalCore contract providing gas oracles (gas coin token & gas price)
     address public UNIVERSAL_CORE;
 
-    /// @notice Flat fee (absolute units in gas coin PRC20), NOT basis points
-    uint256 public PC_PROTOCOL_FEE;
-
     string private _name;
     string private _symbol;
     uint8 private _decimals;
@@ -49,8 +45,6 @@ contract MockPRC20 is IPRC20 {
     event Deposit(bytes indexed from, address indexed to, uint256 amount);
     event Withdrawal(address indexed from, bytes indexed to, uint256 amount, uint256 gasFee, uint256 protocolFee);
     event UpdatedUniversalCore(address addr);
-    event UpdatedProtocolFlatFee(uint256 protocolFlatFee);
-
     //*** MODIFIERS ***//
 
     /// @notice Restricts to the Universal Executor Module (protocol owner)
@@ -68,7 +62,6 @@ contract MockPRC20 is IPRC20 {
         uint8 decimals_,
         string memory sourceChainId_,
         TokenType tokenType_,
-        uint256 protocolFlatFee_,
         address universalCore_,
         string memory sourceTokenAddress_
     ) {
@@ -78,9 +71,8 @@ contract MockPRC20 is IPRC20 {
         _symbol = symbol_;
         _decimals = decimals_;
 
-        SOURCE_CHAIN_ID = sourceChainId_;
+        SOURCE_CHAIN_NAMESPACE = sourceChainId_;
         TOKEN_TYPE = tokenType_;
-        PC_PROTOCOL_FEE = protocolFlatFee_;
         UNIVERSAL_CORE = universalCore_;
         SOURCE_TOKEN_ADDRESS = sourceTokenAddress_;
     }
@@ -149,10 +141,7 @@ contract MockPRC20 is IPRC20 {
     /// @param to       Recipient on Push EVM
     /// @param amount   Amount to mint
     function deposit(address to, uint256 amount) external returns (bool) {
-        require(
-            msg.sender == UNIVERSAL_CORE || msg.sender == UNIVERSAL_EXECUTOR_MODULE,
-            "MockPRC20: Invalid sender"
-        );
+        require(msg.sender == UNIVERSAL_CORE || msg.sender == UNIVERSAL_EXECUTOR_MODULE, "MockPRC20: Invalid sender");
 
         _mint(to, amount);
 
@@ -168,8 +157,12 @@ contract MockPRC20 is IPRC20 {
     }
 
     /// @notice Get gas fee with custom gas limit (delegates to UniversalCore)
-    function withdrawGasFeeWithGasLimit(uint256 gasLimit) external view returns (address gasToken, uint256 gasFee) {
-        return IUniversalCore(UNIVERSAL_CORE).withdrawGasFeeWithGasLimit(address(this), gasLimit);
+    function withdrawGasFeeWithGasLimit(uint256 gasLimit)
+        external
+        view
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, uint256 gasPrice, string memory chainNamespace)
+    {
+        return IUniversalCore(UNIVERSAL_CORE).getOutboundTxGasAndFees(address(this), gasLimit);
     }
 
     //*** ADMIN FUNCTIONS ***//
@@ -180,12 +173,6 @@ contract MockPRC20 is IPRC20 {
         require(addr != address(0), "MockPRC20: zero address");
         UNIVERSAL_CORE = addr;
         emit UpdatedUniversalCore(addr);
-    }
-
-    /// @notice Update flat protocol fee (absolute units in gas coin PRC20)
-    function updateProtocolFlatFee(uint256 protocolFlatFee_) external onlyUniversalExecutor {
-        PC_PROTOCOL_FEE = protocolFlatFee_;
-        emit UpdatedProtocolFlatFee(protocolFlatFee_);
     }
 
     /// @notice Update token name

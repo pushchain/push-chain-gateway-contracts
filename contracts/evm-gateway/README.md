@@ -1,6 +1,6 @@
 ## Universal Gateway
 
-The Universal Gateway is the on-chain entrypoint for bridging funds and executing payloads from EVM chains into Push Chain. It supports both fee-abstraction (gas funded in native or arbitrary ERC-20) and universal transaction routes (movement of high-value funds with or without payload), with strong safety guarantees (oracle checks, rate limits, pausability, and role-gated withdrawals).
+The Universal Gateway is the on-chain entrypoint for bridging funds and executing payloads from EVM chains into Push Chain. It supports fee-abstraction (gas funded in native or arbitrary ERC-20) and universal transaction routes (movement of high-value funds with or without payload), with strong safety guarantees (oracle checks, rate limits, pausability, and role-gated withdrawals).
 
 This package contains the core `src/UniversalGateway.sol` implementation, its public `src/interfaces/IUniversalGateway.sol`, and a comprehensive Foundry test suite under `test/`.
 
@@ -22,201 +22,233 @@ This package contains the core `src/UniversalGateway.sol` implementation, its pu
 
 ## Overview
 
-The gateway exposes two categories of routes:
+The gateway exposes a single entry point `sendUniversalTx` (and its CEA variant `sendUniversalTxFromCEA`) that automatically infers the transaction type from the request structure. All successful deposits emit a single unified event: `UniversalTx`.
 
-- Fee Abstraction Route
-  - `sendTxWithGas(payload, revertInstruction, signatureData)` (native ETH)
-  - `sendTxWithGas(tokenIn, amountIn, payload, revertInstruction, amountOutMinETH, deadline, signatureData)` (gas paid in arbitrary ERC-20 → swapped to native)
-- Universal Transaction Route
-  - `sendFunds(recipient, bridgeToken, bridgeAmount, revertInstruction)`
-  - `sendTxWithFunds(bridgeToken, bridgeAmount, payload, revertInstruction, signatureData)` (gas in native)
-  - `sendTxWithFunds(bridgeToken, bridgeAmount, gasToken, gasAmount, amountOutMinETH, deadline, payload, revertInstruction, signatureData)` (gas paid in ERC-20)
+Transaction types (inferred automatically — never set explicitly by callers):
 
-All successful deposits emit a single, unified event: `UniversalTx`.
+| TX_TYPE             | Condition                             | Route                         |
+| ------------------- | ------------------------------------- | ----------------------------- |
+| `GAS`               | No payload, no funds, `msg.value > 0` | Instant (low confirmations)   |
+| `GAS_AND_PAYLOAD`   | Payload present, no funds             | Instant                       |
+| `FUNDS`             | Funds present, no payload             | Standard (high confirmations) |
+| `FUNDS_AND_PAYLOAD` | Funds present, payload present        | Standard                      |
 
 ## Architecture and Roles
 
-`UniversalGateway` is an upgradeable, access-controlled contract composed of:
+`UniversalGateway` is an upgradeable, access-controlled contract built on:
 
-- OpenZeppelin upgradeable base contracts: `Initializable`, `ContextUpgradeable`, `PausableUpgradeable`, `ReentrancyGuardUpgradeable`, `AccessControlUpgradeable`.
-- Roles
-  - `DEFAULT_ADMIN_ROLE`: admin for all config
+- OpenZeppelin upgradeable base contracts: `Initializable`, `ContextUpgradeable`, `PausableUpgradeable`, `ReentrancyGuardUpgradeable`, `AccessControlUpgradeable`
+- Roles:
+  - `DEFAULT_ADMIN_ROLE`: full administrative control
   - `PAUSER_ROLE`: can pause/unpause
-  - `TSS_ROLE`: Push Chain TSS authority; only TSS can withdraw or revert-withdraw
+  - `TSS_ROLE`: Push Chain TSS authority; only TSS can revert-withdraw
+  - `VAULT_ROLE`: granted to the `Vault` contract; required to call `revertUniversalTxToken`
 
 Key storage:
 - `TSS_ADDRESS`: current TSS address
-- USD caps for fee-abstraction gas route: `MIN_CAP_UNIVERSAL_TX_USD`, `MAX_CAP_UNIVERSAL_TX_USD`
-- Per-block USD budget for gas route: `BLOCK_USD_CAP`
-- Per-token epoch limits: `tokenToLimitThreshold[token]` with usage tracked in `_usage[token]`
-- Uniswap v3 config: `WETH`, `uniV3Router`, `uniV3Factory`, `v3FeeOrder`, `defaultSwapDeadlineSec`
-- Chainlink config: `ethUsdFeed`, `chainlinkEthUsdDecimals`, `chainlinkStalePeriod`, `l2SequencerFeed`, `l2SequencerGracePeriodSec`
+- `VAULT`: Vault contract address
+- `CEA_FACTORY`: CEAFactory address for CEA identity validation
+- USD caps for gas route: `MIN_CAP_UNIVERSAL_TX_USD`, `MAX_CAP_UNIVERSAL_TX_USD`
+- Per-block USD budget: `BLOCK_USD_CAP`
+- Per-token epoch limits: `tokenToLimitThreshold[token]` with usage in `_usage[token]`
+- Uniswap v3: `WETH`, `uniV3Router`, `uniV3Factory`, `v3FeeOrder`, `defaultSwapDeadlineSec`
+- Chainlink: `ethUsdFeed`, `chainlinkEthUsdDecimals`, `chainlinkStalePeriod`, `l2SequencerFeed`, `l2SequencerGracePeriodSec`
 
 ## Transaction Routes
 
-### Fee Abstraction Route
+### Entry Points
 
-For quick funding or payload execution that can finalize with lower block confirmations. Strict USD caps enforced on the gas leg.
+```solidity
+// Native gas payment
+function sendUniversalTx(UniversalTxRequest calldata req) external payable;
 
-- Native ETH gas:
-  - `sendTxWithGas(payload, revertInstruction, signatureData)` (payable)
-- ERC-20 gas (swap to native via Uniswap v3):
-  - `sendTxWithGas(tokenIn, amountIn, payload, revertInstruction, amountOutMinETH, deadline, signatureData)`
+// ERC-20 gas payment (swapped to native via Uniswap v3)
+function sendUniversalTx(UniversalTokenTxRequest calldata reqToken) external payable;
 
-Both paths internally call `_sendTxWithGas(...)`, perform USD cap checks (`_checkUSDCaps`), optional per-block budget (`_checkBlockUSDCap`), forward native to `TSS_ADDRESS`, and emit `UniversalTx`.
+// CEA-originated transaction (CEA contracts only)
+function sendUniversalTxFromCEA(UniversalTxRequest calldata req) external payable;
+```
 
-### Universal Transaction Route
+### Instant Route (GAS / GAS_AND_PAYLOAD)
 
-For moving high-value funds (with or without payload). No strict USD caps; uses per-token epoch rate-limits.
+For quick funding or payload execution with lower block confirmation requirements.
 
-- Funds only (to arbitrary recipient):
-  - `sendFunds(recipient, bridgeToken, bridgeAmount, revertInstruction)`
-- Funds + payload to user’s UEA (recipient implicit = 0):
-  - `sendTxWithFunds(bridgeToken, bridgeAmount, payload, revertInstruction, signatureData)` (gas in native)
-  - `sendTxWithFunds(bridgeToken, bridgeAmount, gasToken, gasAmount, amountOutMinETH, deadline, payload, revertInstruction, signatureData)` (gas paid in ERC-20)
+- USD cap range enforced per transaction: `_checkUSDCaps`
+- Optional per-block USD budget enforced: `_checkBlockUSDCap`
+- Native ETH forwarded to `TSS_ADDRESS`
+- Emits `UniversalTx`
 
-All paths call `_sendTxWithFunds(...)` and emit `UniversalTx`.
+### Standard Route (FUNDS / FUNDS_AND_PAYLOAD)
+
+For moving high-value funds with or without payload.
+
+- Per-token epoch rate-limits enforced: `_consumeRateLimit(token, amount)`
+- Native ETH forwarded to `TSS_ADDRESS`; ERC-20 transferred to `VAULT`
+- Batching supported: `FUNDS_AND_PAYLOAD` can include a gas top-up in the same call
+- Emits `UniversalTx` (one event per leg when batching)
+
+### CEA Route (`sendUniversalTxFromCEA`)
+
+Called by CEA contracts to send transactions to their mapped UEA on Push Chain.
+
+- Validates caller is a registered CEA via `CEAFactory.isCEA()`
+- Resolves mapped UEA via `CEAFactory.getUEAForCEA()`, enforces `req.recipient == mappedUEA`
+- Supports all four TX_TYPEs; emits events with `fromCEA=true` and `recipient=mappedUEA`
 
 ## Events and Types
 
 From `IUniversalGateway.sol`:
 
-- `event UniversalTx(address indexed sender, address indexed recipient, address token, uint256 amount, bytes payload, RevertInstructions revertInstruction, TX_TYPE txType, bytes signatureData)`
-- `event WithdrawFunds(address indexed recipient, uint256 amount, address tokenAddress)`
-- `event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd)`
-- `event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration)`
-- `event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold)`
+```solidity
+event UniversalTx(
+    address indexed sender,
+    address indexed recipient,  // address(0) = attribute to sender's UEA
+    address token,
+    uint256 amount,
+    bytes payload,
+    address revertRecipient,
+    TX_TYPE txType,
+    bytes signatureData,
+    bool fromCEA
+);
+
+event RevertUniversalTx(
+    bytes32 indexed subTxId,
+    bytes32 indexed universalTxId,
+    address indexed to,
+    address token,
+    uint256 amount,
+    RevertInstructions revertInstruction
+);
+
+event VaultUpdated(address indexed oldVault, address indexed newVault);
+event CapsUpdated(uint256 minCapUsd, uint256 maxCapUsd);
+event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
+event TokenLimitThresholdUpdated(address indexed token, uint256 newThreshold);
+```
 
 Core structs and enums in `src/libraries/Types.sol`:
 - `TX_TYPE`: `GAS`, `GAS_AND_PAYLOAD`, `FUNDS`, `FUNDS_AND_PAYLOAD`
-- `RevertInstructions { address fundRecipient; bytes revertContext; }`
-- `UniversalPayload { to, value, data, gasLimit, maxFeePerGas, maxPriorityFeePerGas, nonce, deadline, vType }`
+- `RevertInstructions { address revertRecipient; bytes revertMsg; }`
+- `UniversalTxRequest { address recipient; address token; uint256 amount; bytes payload; address revertRecipient; bytes signatureData; }`
 - `EpochUsage { uint64 epoch; uint192 used; }`
 
 ## Safety and Rate Limits
 
-Rate limiting protects the protocol across both routes. All USD values below are scaled to 1e18 (USD with 18 decimals).
+All USD values are scaled to 1e18 (USD with 18 decimals).
 
-### Fee Abstraction Route (Instant / Low Confirmations)
+### Instant Route (GAS / GAS_AND_PAYLOAD)
 
-- Transaction-level USD cap range
-  - Enforced by `_checkUSDCaps(amountWei)` using Chainlink price via `quoteEthAmountInUsd1e18(amountWei)`.
-  - Configured bounds (inclusive): `MIN_CAP_UNIVERSAL_TX_USD` and `MAX_CAP_UNIVERSAL_TX_USD`.
-  - Applies to the gas leg for both native and ERC-20 gas flows (after swap-to-native).
+- **Per-transaction USD cap range**: `_checkUSDCaps(amountWei)` using Chainlink price. Bounds (inclusive): `MIN_CAP_UNIVERSAL_TX_USD` and `MAX_CAP_UNIVERSAL_TX_USD`.
+- **Per-block USD budget** (optional): `_checkBlockUSDCap(amountWei)`. Configured by `BLOCK_USD_CAP`. Set to 0 to disable. Resets automatically each block.
 
-- Per-block USD budget (optional)
-  - Enforced by `_checkBlockUSDCap(amountWei)`.
-  - Configured by `BLOCK_USD_CAP` (USD 1e18). When set to 0, feature is disabled.
-  - Tracks the total USD consumed in the current block; resets automatically on new blocks.
+### Standard Route (FUNDS / FUNDS_AND_PAYLOAD)
 
-- Where applied
-  - Both overloads of `sendTxWithGas(...)` call internal `_sendTxWithGas(...)`, which performs:
-    - `_checkUSDCaps`, `_checkBlockUSDCap`, `_handleNativeDeposit`, then emits `UniversalTx`.
-
-### Universal Transaction Route (Standard Confirmations)
-
-- Epoch-based per-token rate limiting
-  - Enforced by `_consumeRateLimit(token, amount)`.
-  - Thresholds configured in `tokenToLimitThreshold[token]` (natural token units). A value of 0 means the token is unsupported.
-  - Epoch length configured by `epochDurationSec`. Epoch index is `uint64(block.timestamp / epochDurationSec)`.
-  - Usage state tracked in `EpochUsage { uint64 epoch; uint192 used; }` and resets on epoch rollover (no carryover).
-  - Read current usage via `currentTokenUsage(token) -> (used, remaining)`.
-
-- Where applied
-  - `sendFunds` and both `sendTxWithFunds` overloads call `_consumeRateLimit(...)` on the relevant bridge token (and native for funds when applicable) before depositing.
-  - After limits are consumed, `_handleTokenDeposit` or `_handleNativeDeposit` is invoked, followed by `_sendTxWithFunds(...)` which emits `UniversalTx`.
-
-### Admin configuration (summarized)
-
-- Fee abstraction caps: `setCapsUSD(minCapUsd, maxCapUsd)`
-- Per-block budget: `setBlockUsdCap(cap1e18)`
-- Per-token epoch thresholds: `setTokenLimitThresholds(tokens[], thresholds[])`, `updateTokenLimitThreshold(tokens[], thresholds[])`
-- Epoch duration: `updateEpochDuration(newDurationSec)`
+- **Epoch-based per-token rate limiting**: `_consumeRateLimit(token, amount)`. Thresholds in `tokenToLimitThreshold[token]` (natural units; 0 = unsupported). Epoch index: `uint64(block.timestamp / epochDurationSec)`. Usage resets on epoch rollover. Read current usage via `currentTokenUsage(token)`.
 
 ### Additional Safety
 
-- Pausable: critical functions gated by `whenNotPaused`.
-- Reentrancy: deposit/withdraw paths are `nonReentrant`.
+- Pausable: all deposit paths gated by `whenNotPaused`
+- Reentrancy: all entry points are `nonReentrant`
+- CEA blocking: `sendUniversalTx` reverts if called by a registered CEA
 
 ## Oracle Integration
 
-`getEthUsdPrice()` reads Chainlink’s ETH/USD feed and returns USD(1e18) per 1 ETH. Safety checks include:
-- positive price
+`getEthUsdPrice()` reads the Chainlink ETH/USD feed and returns USD(1e18) per 1 ETH. Safety checks:
+- Positive price
 - `answeredInRound >= roundId`
-- freshness vs. `chainlinkStalePeriod`
-- optional L2 sequencer uptime + grace window enforcement
+- Freshness check vs. `chainlinkStalePeriod`
+- Optional L2 sequencer uptime + grace window enforcement
 
-`quoteEthAmountInUsd1e18(amountWei)` converts wei to USD(1e18) using current price.
+`quoteEthAmountInUsd1e18(amountWei)` converts wei to USD(1e18) using the current price.
 
 ## Uniswap v3 Integration
 
 `swapToNative(tokenIn, amountIn, amountOutMinETH, deadline)`:
-- If `tokenIn == WETH`, unwraps to native
-- Otherwise, finds a direct `tokenIn/WETH` pool across `v3FeeOrder` and calls `exactInputSingle`
-- Enforces `amountOutMinETH` post-unwrap
+- If `tokenIn == WETH`: unwraps directly to native
+- Otherwise: finds a direct `tokenIn/WETH` pool across `v3FeeOrder` fee tiers and calls `exactInputSingle`
+- Enforces `amountOutMinETH` post-unwrap as slippage bound
 
 Helper: `_findV3PoolWithNative(tokenIn)` scans configured fee tiers and returns the first existing pool with WETH.
 
 ## Public API (Interface)
 
-See `src/interfaces/IUniversalGateway.sol` for the complete specification of:
-- Events
-- Fee Abstraction functions: two `sendTxWithGas` overloads
-- Universal Transaction functions: `sendFunds`, and two `sendTxWithFunds` overloads
-- Withdrawals: `withdrawFunds`, `revertWithdrawFunds`
+See `src/interfaces/IUniversalGateway.sol` for the complete specification.
+
+Key functions:
+- `sendUniversalTx(UniversalTxRequest)` — native gas
+- `sendUniversalTx(UniversalTokenTxRequest)` — ERC-20 gas (swap to native)
+- `sendUniversalTxFromCEA(UniversalTxRequest)` — CEA-originated
+- `revertUniversalTxToken(subTxId, universalTxId, token, amount, revertCFG)` — ERC-20 revert (Vault only)
+- `revertUniversalTx(subTxId, universalTxId, amount, revertCFG)` — native revert (TSS only)
+- `isSupportedToken(token)` — token support check
+- `getMinMaxValueForNative()` — current min/max native amounts
+- `currentTokenUsage(token)` — epoch usage query
 
 ## Admin and Operations
 
-Administrative setters (all `onlyRole(DEFAULT_ADMIN_ROLE)` and `whenNotPaused` unless noted):
+Administrative setters (all `onlyRole(DEFAULT_ADMIN_ROLE)` unless noted):
 
-- Pausing: `pause()` / `unpause()` (`PAUSER_ROLE`)
+- Pausing: `pause()` / `unpause()` — `DEFAULT_ADMIN_ROLE`
 - TSS: `setTSS(address)`
+- Vault: `setVault(address)` — requires `whenPaused`
+- CEAFactory: `setCEAFactory(address)`
 - Caps: `setCapsUSD(min, max)`; block budget: `setBlockUsdCap(cap1e18)`
-- Uniswap: `setRouters(factory, router)`, `setV3FeeOrder(a, b, c)`, `setDefaultSwapDeadline(deadlineSec)`
+- Uniswap: `setRouters(factory, router)`, `setV3FeeOrder(a, b, c)`, `setDefaultSwapDeadline(sec)`
 - Chainlink: `setEthUsdFeed(addr)`, `setChainlinkStalePeriod(sec)`, `setL2SequencerFeed(addr)`, `setL2SequencerGracePeriod(sec)`
-- Rate limits: `setTokenLimitThresholds(tokens[], thresholds[])`, `updateTokenLimitThreshold(tokens[], thresholds[])`, `updateEpochDuration(sec)`
+- Rate limits: `setTokenLimitThresholds(tokens[], thresholds[])`, `updateEpochDuration(sec)`
 
-Withdrawals (TSS only):
-- `withdrawFunds(recipient, token, amount)`
-- `revertWithdrawFunds(token, amount, revertInstruction)`
+Revert paths (role-gated):
+- `revertUniversalTxToken(...)` — `VAULT_ROLE`
+- `revertUniversalTx(...)` — `TSS_ROLE`
 
 ## Testing and Coverage
 
-Foundry test suites are under `test/`:
-- `test/gateway/` — admin setters, native and ERC-20 deposit flows, TSS-only functions
-- `test/oracle/` — oracle sanity, staleness, receive/fallback behavior
+Foundry test suites under `test/`:
+
+| File                                          | Coverage                             |
+| --------------------------------------------- | ------------------------------------ |
+| `test/gateway/1_adminActions.t.sol`           | Admin setters, role checks           |
+| `test/gateway/2-9_sendUniversalTx*.t.sol`     | All TX_TYPE routing paths            |
+| `test/gateway/10_withdrawTokens.t.sol`        | Revert/refund paths                  |
+| `test/gateway/12_rateLimit_BlockBased.t.sol`  | Per-block USD cap                    |
+| `test/gateway/13_rateLimit_EpochBased.t.sol`  | Epoch rate limits                    |
+| `test/gateway/14_gatewayPC.t.sol`             | UniversalGatewayPC (Push Chain side) |
+| `test/gateway/15_sendUniversalTxViaCEA.t.sol` | CEA route (`sendUniversalTxFromCEA`) |
+| `test/vault/Vault.t.sol`                      | Vault finalization, CEA deployment   |
+| `test/vault/VaultWithdrawal.t.sol`            | Vault withdrawal paths               |
+| `test/vault/VaultPC.t.sol`                    | VaultPC (Push Chain side)            |
+| `test/oracle/OracleTest.t.sol`                | Oracle price feed, sequencer checks  |
 
 Run tests:
 ```bash
 forge test -vv
 ```
 
-Coverage (works around stack issues with IR modes):
+Coverage:
 ```bash
 forge coverage --ir-minimum
+```
+
+Gas report:
+```bash
+forge test --gas-report
 ```
 
 ## Local Development
 
-Prerequisites:
-- Foundry (forge/cast)
+Prerequisites: Foundry (`forge`, `cast`)
 
-Install dependencies (managed via `foundry.toml` remappings and included libs in `lib/`):
+Build:
 ```bash
 forge build
 ```
 
-Useful targets:
-```bash
-forge test -vv
-forge coverage --ir-minimum
-```
-
 ## Deployment and Verification
 
-See `script/` and `script/DeployCommands.md` for example commands. Example (Sepolia):
+See `script/` and `script/DeployCommands.md` for example commands.
 
-Deploy (proxy + implementation + admin via script):
+Deploy proxy + implementation (Sepolia):
 ```bash
 forge script script/1_DeployGatewayWithProxy.sol:DeployGatewayWithProxy \
   --rpc-url $SEPOLIA_RPC_URL --private-key $KEY --broadcast
@@ -228,14 +260,13 @@ forge script script/3_UpgradeGatewayNewImpl.sol:UpgradeGatewayNewImpl \
   --rpc-url $SEPOLIA_RPC_URL --private-key $KEY --broadcast
 ```
 
-Verification examples are listed in `script/DeployCommands.md`.
-
 ## Security Notes
 
-- Only `TSS_ROLE` may withdraw or revert-withdraw
-- All deposit paths are non-reentrant and paused when needed
-- Oracle and swap safety checks are enforced
-- Rate-limit and budget controls protect fee-abstraction paths
+- Only `TSS_ROLE` may trigger native reverts; only `VAULT_ROLE` may trigger ERC-20 reverts
+- CEA contracts cannot call `sendUniversalTx` directly — must use `sendUniversalTxFromCEA`
+- All deposit paths are `nonReentrant` and pausable
+- Oracle and swap safety checks enforced on all gas-route paths
+- Rate-limit and per-block budget controls protect instant routes
 
 ## License
 

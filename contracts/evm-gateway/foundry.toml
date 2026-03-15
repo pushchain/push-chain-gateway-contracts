@@ -26,6 +26,9 @@ debug = ["*"]
 cache = true
 cache_path = "cache"
 
+# coverage — only report on active source contracts
+no_match_coverage = "^(script/|test/|src/libraries/|src/interfaces/|src/testnetV0/|src/UniversalCore_temp)"
+
 # security & permissions
 ffi = false
 allow_paths = ["lib", "src", "test", "script"]
@@ -33,7 +36,7 @@ fs_permissions = [
     { access = "read", path = "./out" },
     { access = "read", path = "./lib" },
     { access = "read", path = "./src" },
-    { access = "read", path = "./test" }
+    { access = "read", path = "./test" },
 ]
 
 # remappings
@@ -47,9 +50,22 @@ remappings = [
     "@chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/",
 ]
 
+# rpc endpoints
+[rpc_endpoints]
+
+
 # etherscan configuration
 [etherscan]
-sepolia = { key = "${process.env.ETHERSCAN_API_KEY}" }
+mainnet = { key = "${ETHERSCAN_API_KEY}" }
+sepolia = { key = "${ETHERSCAN_API_KEY}" }
+polygon = { key = "${POLYGON_SCAN_API_KEY}", url = "https://api.polygonscan.com/api" }
+polygon-testnet = { key = "${POLYGON_SCAN_API_KEY}", url = "https://api-amoy.polygonscan.com/api" }
+bsc = { key = "${BSC_SCAN_API_KEY}", url = "https://api.bscscan.com/api" }
+bsc-testnet = { key = "${BSC_SCAN_API_KEY}", url = "https://api-testnet.bscscan.com/api" }
+arbitrum = { key = "${ARB_SCAN_API_KEY}", url = "https://api.arbiscan.io/api" }
+arbitrum-testnet = { key = "${ARB_SCAN_API_KEY}", url = "https://api-sepolia.arbiscan.io/api" }
+base = { key = "${BASE_SCAN_API_KEY}", url = "https://api.basescan.org/api" }
+base-testnet = { key = "${BASE_SCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
 # FUZZ TESTING CONFIGURATION     fuzz testing configuration
 
 [fuzz]

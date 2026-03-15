@@ -1,8 +1,10 @@
 use crate::errors::GatewayError;
 use crate::state::{
-    Config, EpochUsage, RateLimitConfig, TokenRateLimit, UniversalPayload, FEED_ID, RATE_LIMIT_SEED,
+    Config, EpochUsage, GatewayAccountMeta, RateLimitConfig, TokenRateLimit,
+    UniversalPayload, FEED_ID, RATE_LIMIT_SEED, VAULT_SEED,
 };
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::keccak;
 use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -85,34 +87,36 @@ pub fn check_usd_caps(
 }
 
 /// Calculate USD amount from SOL amount using price data (matching EVM implementation)
+/// @dev Pyth price format: actual_price = price * 10^exponent
+///      For SOL/USD: price = 15025000000, exponent = -8 → actual_price = 150.25 USD
+///      Result is in 8 decimals (matching EVM's 18 decimals but scaled to 8 for consistency)
+///      Formula: USD_8dec = (lamports * price * 10^(exponent + 8)) / 1e9
 pub fn calculate_usd_amount(lamports: u64, price_data: &PriceData) -> Result<u128> {
-    // Convert lamports to SOL (1 SOL = 1e9 lamports)
-    let sol_amount = lamports as u128;
+    let lamports_u128 = lamports as u128;
+    let price_u128 = price_data.price as u128;
 
-    // Apply price with exponent
-    let price = if price_data.exponent >= 0 {
-        price_data.price as u128 * 10u128.pow(price_data.exponent as u32)
+    // Multiply first to preserve precision, then apply exponent adjustment
+    // For exponent = -8: we need to multiply by 10^(exponent + 8) = 10^0 = 1
+    let product = lamports_u128
+        .checked_mul(price_u128)
+        .ok_or(GatewayError::InvalidAmount)?;
+
+    // Apply exponent: multiply by 10^(exponent + 8) to get result in 8 decimals
+    let exponent_adjustment = (price_data.exponent + 8) as i32;
+
+    let usd_amount = if exponent_adjustment >= 0 {
+        product
+            .checked_mul(10u128.pow(exponent_adjustment as u32))
+            .and_then(|x| x.checked_div(1_000_000_000))
+            .ok_or(GatewayError::InvalidAmount)?
     } else {
-        price_data.price as u128 / 10u128.pow((-price_data.exponent) as u32)
+        product
+            .checked_div(10u128.pow((-exponent_adjustment) as u32))
+            .and_then(|x| x.checked_div(1_000_000_000))
+            .ok_or(GatewayError::InvalidAmount)?
     };
 
-    // Calculate USD amount: (SOL * price) / 1e9
-    // Price is in 8 decimals (Pyth format), so result is in 8 decimals
-    let usd_amount = (sol_amount * price) / 1_000_000_000;
-
     Ok(usd_amount)
-}
-
-// Calculate payload hash (matching ETH contract keccak256(abi.encode(payload)))
-pub fn payload_hash(payload: &UniversalPayload) -> [u8; 32] {
-    // Use Solana's sha256 to hash the serialized payload (closest to keccak256)
-    let serialized = payload.try_to_vec().unwrap_or_default();
-    anchor_lang::solana_program::hash::hash(&serialized).to_bytes()
-}
-
-// Convert payload to bytes (matching ETH contract)
-pub fn payload_to_bytes(payload: &UniversalPayload) -> Vec<u8> {
-    payload.try_to_vec().unwrap_or_default()
 }
 
 // =========================
@@ -132,8 +136,10 @@ pub fn check_block_usd_cap(
     let clock = Clock::get()?;
     let current_slot = clock.slot;
 
-    // Reset if new block
-    if current_slot > rate_limit_config.last_slot {
+    // Reset if new slot (matching EVM: block.number != _lastBlockNumber)
+    // Note: Multiple transactions can execute in the same slot in Solana.
+    // Account serialization ensures writes are atomic, preventing race conditions.
+    if current_slot != rate_limit_config.last_slot {
         rate_limit_config.consumed_usd_in_block = 0;
         rate_limit_config.last_slot = current_slot;
     }
@@ -177,63 +183,120 @@ pub fn consume_rate_limit(
     Ok(())
 }
 
-/// Get or create rate limit config account (backward compatible)
-pub fn get_or_create_rate_limit_config<'info>(
-    accounts: &'info [AccountInfo<'info>],
-    program_id: &Pubkey,
-) -> Result<Option<Account<'info, RateLimitConfig>>> {
-    let (rate_limit_config_pda, _bump) =
-        Pubkey::find_program_address(&[crate::state::RATE_LIMIT_CONFIG_SEED], program_id);
+/// Validate token support and consume rate limit if enabled (EVM v0 parity)
+/// @dev Checks if token is supported (limit_threshold > 0) and optionally consumes rate limit
+///      if epoch_duration > 0. This consolidates the threshold check used in send_universal_tx routes.
+pub fn validate_token_and_consume_rate_limit(
+    token_rate_limit: &mut Account<TokenRateLimit>,
+    expected_token_mint: Pubkey,
+    amount: u128,
+    rate_limit_config: &Account<RateLimitConfig>,
+) -> Result<()> {
+    // Validate token_rate_limit account matches expected token
+    require!(
+        token_rate_limit.token_mint == expected_token_mint,
+        GatewayError::InvalidToken
+    );
 
-    // Find the rate limit config account in the accounts list
-    let rate_limit_config_account = accounts
-        .iter()
-        .find(|account| account.key() == rate_limit_config_pda);
+    // Threshold-based token support check (EVM v0 parity)
+    // If limit_threshold == 0, token is not supported
+    require!(
+        token_rate_limit.limit_threshold > 0,
+        GatewayError::NotSupported
+    );
 
-    match rate_limit_config_account {
-        Some(account) => {
-            if account.data_is_empty() {
-                // Account doesn't exist, rate limiting is disabled
-                Ok(None)
-            } else {
-                // Account exists, load it
-                Ok(Some(Account::<RateLimitConfig>::try_from(account)?))
-            }
-        }
-        None => {
-            // Account not provided, rate limiting is disabled
-            Ok(None)
-        }
+    // Epoch-based token rate limit (skip if disabled: epoch_duration == 0)
+    let epoch_duration = rate_limit_config.epoch_duration_sec;
+    if epoch_duration > 0 {
+        consume_rate_limit(token_rate_limit, amount, epoch_duration)?;
     }
+
+    Ok(())
 }
 
-/// Get or create token rate limit account (matching EVM pattern)
-pub fn get_or_create_token_rate_limit<'info>(
-    token_mint: Pubkey,
-    limit_threshold: u128,
-    accounts: &'info [AccountInfo<'info>],
-    program_id: &Pubkey,
-) -> Result<Account<'info, TokenRateLimit>> {
-    let (rate_limit_pda, bump) =
-        Pubkey::find_program_address(&[RATE_LIMIT_SEED, token_mint.as_ref()], program_id);
+// =========================
+// EXECUTE VALIDATION
+// =========================
+// Note: Execute functions now use the unified validate_message from tss.rs
+// This ensures a single standard for all TSS-signed messages (withdraw, revert, execute)
 
-    // Find the rate limit account in the accounts list
-    let rate_limit_account = accounts
-        .iter()
-        .find(|account| account.key() == rate_limit_pda)
-        .ok_or(GatewayError::InvalidAccount)?;
+/// Validate remaining_accounts match signed accounts.
+/// CRITICAL: No account in remaining_accounts can have is_signer == true.
+/// Only gateway PDAs (vault, cea_authority) become signers via invoke_signed.
+pub fn validate_remaining_accounts(
+    signed_accounts: &[GatewayAccountMeta],
+    remaining: &[AccountInfo],
+) -> Result<()> {
+    require!(
+        remaining.len() == signed_accounts.len(),
+        GatewayError::AccountListLengthMismatch
+    );
 
-    // Check if account exists and is initialized
-    if rate_limit_account.data_is_empty() {
-        // Account doesn't exist, create it
-        let mut rate_limit = Account::<TokenRateLimit>::try_from(rate_limit_account)?;
-        rate_limit.token_mint = token_mint;
-        rate_limit.limit_threshold = limit_threshold;
-        rate_limit.epoch_usage = EpochUsage { epoch: 0, used: 0 };
-        rate_limit.bump = bump;
-        Ok(rate_limit)
-    } else {
-        // Account exists, load it
-        Account::<TokenRateLimit>::try_from(rate_limit_account)
+    for (signed, actual) in signed_accounts.iter().zip(remaining.iter()) {
+        // Validate pubkey matches
+        require!(
+            actual.key == &signed.pubkey,
+            GatewayError::AccountPubkeyMismatch
+        );
+
+        // Validate writable flag matches
+        // Signed metadata requires the account to be writable -> actual must also be writable.
+        // It's safe if actual is writable while signed metadata marks it read-only;
+        // CPI metas are built from signed metadata, so the target instruction won't
+        // gain extra write privileges.
+        if signed.is_writable && !actual.is_writable {
+            msg!(
+                "Account writable mismatch: {} expected writable",
+                signed.pubkey
+            );
+            return err!(GatewayError::AccountWritableFlagMismatch);
+        }
+
+        // CRITICAL: No outer signer allowed in target account list
+        // cea_authority becomes signer only via invoke_signed, not here
+        require!(!actual.is_signer, GatewayError::UnexpectedOuterSigner);
     }
+
+    Ok(())
+}
+
+// =========================
+// GAS FEE TRANSFER HELPER
+// =========================
+
+/// Transfer gas fee from vault to caller (relayer reimbursement)
+/// Used by withdraw_and_execute and revert functions
+pub fn transfer_gas_fee_to_caller<'info>(
+    vault_sol: &AccountInfo<'info>,
+    caller: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    gas_fee: u64,
+    vault_bump: u8,
+) -> Result<()> {
+    if gas_fee > 0 {
+        let vault_seeds: &[&[u8]] = &[VAULT_SEED, &[vault_bump]];
+        let fee_transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
+            vault_sol.key,
+            caller.key,
+            gas_fee,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &fee_transfer_ix,
+            &[vault_sol.clone(), caller.clone(), system_program.clone()],
+            &[vault_seeds],
+        )?;
+    }
+    Ok(())
+}
+
+// =========================
+// PRICE VIEW FUNCTION
+// =========================
+
+/// View function for SOL price (locker-compatible)
+/// Anyone can fetch SOL price in USD
+/// This is the core utility function - the Anchor account struct wrapper is in instructions/price.rs
+pub fn get_sol_price(price_update: &Account<PriceUpdateV2>) -> Result<PriceData> {
+    calculate_sol_price(price_update)
 }

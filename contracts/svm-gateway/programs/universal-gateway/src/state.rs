@@ -3,10 +3,11 @@ use anchor_lang::prelude::*;
 // PDA seeds
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const VAULT_SEED: &[u8] = b"vault";
-pub const WHITELIST_SEED: &[u8] = b"whitelist";
-pub const TSS_SEED: &[u8] = b"tss";
+pub const TSS_SEED: &[u8] = b"tsspda";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
+pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
+pub const CEA_SEED: &[u8] = b"push_identity";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
 pub const FEED_ID: &str = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
@@ -61,12 +62,23 @@ pub struct RevertInstructions {
     pub revert_msg: Vec<u8>,
 }
 
+/// Universal transaction request (parity with EVM `UniversalTxRequest`).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct UniversalTxRequest {
+    pub recipient: [u8; 20], // [0u8; 20] => credit to UEA on Push
+    pub token: Pubkey,       // Pubkey::default() => native SOL
+    pub amount: u64,         // native or SPL amount for bridging - Funds
+    pub payload: Vec<u8>,    // serialized payload (may be empty)
+    pub revert_instruction: RevertInstructions,
+    pub signature_data: Vec<u8>,
+}
+
 /// Gateway configuration state (authorities, caps, oracle).
 /// PDA: `[b"config"]`. Holds USD caps (8 decimals) for gas-route deposits and oracle config.
 #[account]
 pub struct Config {
     pub admin: Pubkey,
-    pub tss_address: Pubkey,
+    pub tss_address: Pubkey, // Not used - TODO: Remove
     pub pauser: Pubkey,
     pub min_cap_universal_tx_usd: u128, // 1e8 = $1 (Pyth format)
     pub max_cap_universal_tx_usd: u128, // 1e8 = $10 (Pyth format)
@@ -82,18 +94,6 @@ impl Config {
     // discriminator + fields + padding
     // 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100
     pub const LEN: usize = 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100;
-}
-
-/// SPL token whitelist state.
-/// PDA: `[b"whitelist"]`. Simple list of supported SPL mints.
-#[account]
-pub struct TokenWhitelist {
-    pub tokens: Vec<Pubkey>,
-    pub bump: u8,
-}
-
-impl TokenWhitelist {
-    pub const LEN: usize = 8 + 4 + (32 * 50) + 1 + 100; // discriminator + vec length + 50 tokens max + bump + padding
 }
 
 /// Rate limiting configuration (separate account for backward compatibility)
@@ -126,18 +126,55 @@ impl TokenRateLimit {
 }
 
 /// TSS state PDA for ECDSA verification (Ethereum-style secp256k1).
-/// Stores 20-byte ETH address, chain id, and replay-protection nonce.
+/// Stores 20-byte ETH address, chain id (Solana cluster pubkey as String), and replay-protection nonce.
 #[account]
 pub struct TssPda {
     pub tss_eth_address: [u8; 20],
-    pub chain_id: u64,
+    pub chain_id: String, // Solana cluster pubkey (e.g., "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" for mainnet)
     pub nonce: u64,
     pub authority: Pubkey,
     pub bump: u8,
 }
 
 impl TssPda {
-    pub const LEN: usize = 8 + 20 + 8 + 8 + 32 + 1;
+    // discriminator (8) + tss_eth_address (20) + chain_id String (4 + 64 max) + nonce (8) + authority (32) + bump (1)
+    // String: 4 bytes length prefix + up to 64 bytes for cluster pubkey (base58, max ~44 chars, but allow buffer)
+    pub const LEN: usize = 8 + 20 + 4 + 64 + 8 + 32 + 1;
+}
+
+/// Executed transaction tracker (parity with EVM `isExecuted[txID]` mapping).
+/// PDA: `[b"executed_tx", tx_id]`.
+/// Account existence = transaction executed (replay protection via `init` constraint).
+#[account]
+pub struct ExecutedTx {}
+
+impl ExecutedTx {
+    // discriminator (8) only - account existence is the flag
+    pub const LEN: usize = 8;
+}
+
+// ============================================
+//    EXECUTE ARBITRARY CALLS (NEW)
+// ============================================
+
+/// Account metadata for execute messages (no isSigner in payload).
+/// Off-chain builds this from target instruction's account list.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct GatewayAccountMeta {
+    pub pubkey: Pubkey,
+    pub is_writable: bool,
+}
+
+/// Execute event (parity with EVM `UniversalTxExecuted`).
+#[event]
+pub struct UniversalTxExecuted {
+    pub tx_id: [u8; 32],
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub sender: [u8; 20],          // EVM address (same as origin_caller in EVM)
+    pub target: Pubkey,            // Target program
+    pub token: Pubkey,             // Token (Pubkey::default() for SOL)
+    pub amount: u64,
+    pub payload: Vec<u8>, // ix_data
 }
 
 /// Universal transaction event (parity with EVM V0 `UniversalTx`).
@@ -154,28 +191,21 @@ pub struct UniversalTx {
     pub signature_data: Vec<u8>,
 }
 
-/// Withdraw event (parity with EVM `WithdrawFunds`).
+/// Revert withdraw event (parity with EVM `RevertUniversalTx`).
 #[event]
-pub struct WithdrawFunds {
-    pub recipient: Pubkey,
-    pub amount: u64,
-    pub token: Pubkey,
+pub struct RevertUniversalTx {
+    pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub tx_id: [u8; 32],           // Transaction ID
+    pub fund_recipient: Pubkey,    // Recipient of reverted funds
+    pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
+    pub amount: u64,               // Amount
+    pub revert_instruction: RevertInstructions,
 }
 
 #[event]
 pub struct TSSAddressUpdated {
     pub old_tss: Pubkey,
     pub new_tss: Pubkey,
-}
-
-#[event]
-pub struct TokenWhitelisted {
-    pub token_address: Pubkey,
-}
-
-#[event]
-pub struct TokenRemovedFromWhitelist {
-    pub token_address: Pubkey,
 }
 
 #[event]

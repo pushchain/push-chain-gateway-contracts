@@ -2,13 +2,13 @@
 pragma solidity 0.8.26;
 
 import "forge-std/Test.sol";
-import {VaultPC} from "../../src/VaultPC.sol";
-import {Errors} from "../../src/libraries/Errors.sol";
-import {MockPRC20} from "../mocks/MockPRC20.sol";
-import {MockUniversalCoreReal} from "../mocks/MockUniversalCoreReal.sol";
-import {MockReentrantContract} from "../mocks/MockReentrantContract.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { VaultPC } from "../../src/VaultPC.sol";
+import { Errors } from "../../src/libraries/Errors.sol";
+import { MockPRC20 } from "../mocks/MockPRC20.sol";
+import { MockUniversalCoreReal } from "../mocks/MockUniversalCoreReal.sol";
+import { MockReentrantContract } from "../mocks/MockReentrantContract.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VaultPCTest is Test {
     VaultPC public vault;
@@ -42,12 +42,7 @@ contract VaultPCTest is Test {
 
         // Deploy VaultPC implementation and proxy
         vaultImpl = new VaultPC();
-        bytes memory vaultInitData = abi.encodeWithSelector(
-            VaultPC.initialize.selector,
-            admin,
-            pauser,
-            fundManager
-        );
+        bytes memory vaultInitData = abi.encodeWithSelector(VaultPC.initialize.selector, admin, pauser, fundManager);
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), vaultInitData);
         vault = VaultPC(payable(address(vaultProxy)));
 
@@ -58,18 +53,16 @@ contract VaultPCTest is Test {
             18,
             "1",
             MockPRC20.TokenType.NATIVE,
-            100e18, // protocol fee
             address(universalCore),
             "0x0000000000000000000000000000000000000000"
         );
-        
+
         prc20Token2 = new MockPRC20(
             "Push BNB",
             "pBNB",
             18,
             "56",
             MockPRC20.TokenType.NATIVE,
-            50e18, // protocol fee
             address(universalCore),
             "0x0000000000000000000000000000000000000000"
         );
@@ -90,7 +83,7 @@ contract VaultPCTest is Test {
     function test_Initialization_RolesAssigned() public view {
         assertTrue(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(vault.hasRole(vault.PAUSER_ROLE(), pauser));
-        assertTrue(vault.hasRole(vault.FUND_MANAGER_ROLE(), fundManager));
+        assertTrue(vault.hasRole(vault.MANAGER_ROLE(), fundManager));
     }
 
     function test_Initialization_StartsUnpaused() public view {
@@ -99,36 +92,21 @@ contract VaultPCTest is Test {
 
     function test_Initialization_RevertsOnZeroAdmin() public {
         VaultPC newImpl = new VaultPC();
-        bytes memory initData = abi.encodeWithSelector(
-            VaultPC.initialize.selector,
-            address(0),
-            pauser,
-            fundManager
-        );
+        bytes memory initData = abi.encodeWithSelector(VaultPC.initialize.selector, address(0), pauser, fundManager);
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
 
     function test_Initialization_RevertsOnZeroPauser() public {
         VaultPC newImpl = new VaultPC();
-        bytes memory initData = abi.encodeWithSelector(
-            VaultPC.initialize.selector,
-            admin,
-            address(0),
-            fundManager
-        );
+        bytes memory initData = abi.encodeWithSelector(VaultPC.initialize.selector, admin, address(0), fundManager);
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
 
     function test_Initialization_RevertsOnZeroFundManager() public {
         VaultPC newImpl = new VaultPC();
-        bytes memory initData = abi.encodeWithSelector(
-            VaultPC.initialize.selector,
-            admin,
-            pauser,
-            address(0)
-        );
+        bytes memory initData = abi.encodeWithSelector(VaultPC.initialize.selector, admin, pauser, address(0));
         vm.expectRevert(Errors.ZeroAddress.selector);
         new ERC1967Proxy(address(newImpl), initData);
     }
@@ -152,7 +130,7 @@ contract VaultPCTest is Test {
     function test_Unpause_OnlyPauserCanUnpause() public {
         vm.prank(pauser);
         vault.pause();
-        
+
         vm.prank(pauser);
         vault.unpause();
         assertFalse(vault.paused());
@@ -161,7 +139,7 @@ contract VaultPCTest is Test {
     function test_Unpause_NonPauserReverts() public {
         vm.prank(pauser);
         vault.pause();
-        
+
         vm.prank(user1);
         vm.expectRevert();
         vault.unpause();
@@ -186,7 +164,7 @@ contract VaultPCTest is Test {
     function test_Pause_BlocksWithdrawToken() public {
         vm.prank(pauser);
         vault.pause();
-        
+
         vm.prank(fundManager);
         vm.expectRevert();
         vault.withdrawToken(address(prc20Token), user1, 100e18);
@@ -195,7 +173,7 @@ contract VaultPCTest is Test {
     function test_Pause_DoublePauseReverts() public {
         vm.prank(pauser);
         vault.pause();
-        
+
         vm.prank(pauser);
         vm.expectRevert();
         vault.pause();
@@ -210,10 +188,10 @@ contract VaultPCTest is Test {
     function test_Unpause_RestoresWithdrawTokenFunctionality() public {
         vm.prank(pauser);
         vault.pause();
-        
+
         vm.prank(pauser);
         vault.unpause();
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 100e18);
         assertEq(prc20Token.balanceOf(user1), 100e18);
@@ -225,16 +203,16 @@ contract VaultPCTest is Test {
 
     function test_WithdrawToken_StandardToken_Success() public {
         uint256 amount = 1000e18;
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, amount);
-        
+
         assertEq(prc20Token.balanceOf(user1), amount);
     }
 
     function test_WithdrawToken_EmitsFeesWithdrawnEvent() public {
         uint256 amount = 1000e18;
-        
+
         vm.prank(fundManager);
         vm.expectEmit(true, true, false, true);
         emit FeesWithdrawn(fundManager, address(prc20Token), amount);
@@ -261,19 +239,19 @@ contract VaultPCTest is Test {
 
     function test_WithdrawToken_InsufficientBalanceReverts() public {
         uint256 vaultBalance = prc20Token.balanceOf(address(vault));
-        
+
         vm.prank(fundManager);
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InsufficientBalance.selector);
         vault.withdrawToken(address(prc20Token), user1, vaultBalance + 1);
     }
 
     function test_WithdrawToken_MultipleRecipients() public {
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 100e18);
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user2, 200e18);
-        
+
         assertEq(prc20Token.balanceOf(user1), 100e18);
         assertEq(prc20Token.balanceOf(user2), 200e18);
     }
@@ -281,10 +259,10 @@ contract VaultPCTest is Test {
     function test_WithdrawToken_DifferentTokens() public {
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 100e18);
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token2), user1, 50e18);
-        
+
         assertEq(prc20Token.balanceOf(user1), 100e18);
         assertEq(prc20Token2.balanceOf(user1), 50e18);
     }
@@ -293,10 +271,10 @@ contract VaultPCTest is Test {
         // Multiple sequential withdrawals should work fine
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 100e18);
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 200e18);
-        
+
         assertEq(prc20Token.balanceOf(user1), 300e18);
     }
 
@@ -307,12 +285,12 @@ contract VaultPCTest is Test {
     function test_Withdraw_Native_Success() public {
         uint256 amount = 10 ether;
         vm.deal(address(vault), amount);
-        
+
         uint256 userBalanceBefore = user1.balance;
-        
+
         vm.prank(fundManager);
         vault.withdraw(user1, amount);
-        
+
         assertEq(user1.balance, userBalanceBefore + amount);
         assertEq(address(vault).balance, 0);
     }
@@ -320,7 +298,7 @@ contract VaultPCTest is Test {
     function test_Withdraw_Native_EmitsFeesWithdrawnEvent() public {
         uint256 amount = 5 ether;
         vm.deal(address(vault), amount);
-        
+
         vm.prank(fundManager);
         vm.expectEmit(true, true, false, true);
         emit FeesWithdrawn(fundManager, address(0), amount);
@@ -329,7 +307,7 @@ contract VaultPCTest is Test {
 
     function test_Withdraw_Native_ZeroAmountReverts() public {
         vm.deal(address(vault), 10 ether);
-        
+
         vm.prank(fundManager);
         vm.expectRevert(Errors.InvalidAmount.selector);
         vault.withdraw(user1, 0);
@@ -337,7 +315,7 @@ contract VaultPCTest is Test {
 
     function test_Withdraw_Native_ZeroRecipientReverts() public {
         vm.deal(address(vault), 10 ether);
-        
+
         vm.prank(fundManager);
         vm.expectRevert(Errors.ZeroAddress.selector);
         vault.withdraw(address(0), 1 ether);
@@ -345,15 +323,15 @@ contract VaultPCTest is Test {
 
     function test_Withdraw_Native_InsufficientBalanceReverts() public {
         vm.deal(address(vault), 5 ether);
-        
+
         vm.prank(fundManager);
-        vm.expectRevert(Errors.InvalidAmount.selector);
+        vm.expectRevert(Errors.InsufficientBalance.selector);
         vault.withdraw(user1, 10 ether);
     }
 
     function test_Withdraw_Native_OnlyFundManagerCanCall() public {
         vm.deal(address(vault), 10 ether);
-        
+
         vm.prank(user1);
         vm.expectRevert();
         vault.withdraw(user1, 1 ether);
@@ -361,10 +339,10 @@ contract VaultPCTest is Test {
 
     function test_Withdraw_Native_BlockedWhenPaused() public {
         vm.deal(address(vault), 10 ether);
-        
+
         vm.prank(pauser);
         vault.pause();
-        
+
         vm.prank(fundManager);
         vm.expectRevert();
         vault.withdraw(user1, 1 ether);
@@ -372,13 +350,13 @@ contract VaultPCTest is Test {
 
     function test_Withdraw_Native_SequentialCalls() public {
         vm.deal(address(vault), 30 ether);
-        
+
         vm.prank(fundManager);
         vault.withdraw(user1, 10 ether);
-        
+
         vm.prank(fundManager);
         vault.withdraw(user2, 15 ether);
-        
+
         assertEq(user1.balance, 10 ether);
         assertEq(user2.balance, 15 ether);
         assertEq(address(vault).balance, 5 ether);
@@ -387,10 +365,10 @@ contract VaultPCTest is Test {
     function test_Withdraw_Native_ExactBalance() public {
         uint256 vaultBalance = 25 ether;
         vm.deal(address(vault), vaultBalance);
-        
+
         vm.prank(fundManager);
         vault.withdraw(user1, vaultBalance);
-        
+
         assertEq(user1.balance, vaultBalance);
         assertEq(address(vault).balance, 0);
     }
@@ -398,10 +376,10 @@ contract VaultPCTest is Test {
     function test_ReceiveNative_ContractCanReceiveETH() public {
         uint256 amount = 10 ether;
         vm.deal(user1, amount);
-        
+
         vm.prank(user1);
-        (bool success, ) = address(vault).call{value: amount}("");
-        
+        (bool success,) = address(vault).call{ value: amount }("");
+
         assertTrue(success);
         assertEq(address(vault).balance, amount);
     }
@@ -412,25 +390,57 @@ contract VaultPCTest is Test {
 
     function test_MultipleWithdrawalsToken_ReducesBalance() public {
         uint256 initialBalance = prc20Token.balanceOf(address(vault));
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 100e18);
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user2, 200e18);
-        
+
         uint256 finalBalance = prc20Token.balanceOf(address(vault));
         assertEq(finalBalance, initialBalance - 300e18);
     }
 
     function test_WithdrawToken_ExactBalance_Success() public {
         uint256 vaultBalance = prc20Token.balanceOf(address(vault));
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, vaultBalance);
-        
+
         assertEq(prc20Token.balanceOf(user1), vaultBalance);
         assertEq(prc20Token.balanceOf(address(vault)), 0);
+    }
+
+    // ============================================================================
+    // WITHDRAW NATIVE — TRANSFER FAILURE TEST
+    // ============================================================================
+
+    function test_Withdraw_Native_FailedTransfer_Reverts() public {
+        VaultPCEthRejecter rejecter = new VaultPCEthRejecter();
+        uint256 amount = 5 ether;
+        vm.deal(address(vault), amount);
+
+        vm.prank(fundManager);
+        vm.expectRevert(Errors.DepositFailed.selector);
+        vault.withdraw(address(rejecter), amount);
+    }
+
+    function test_Withdraw_Native_ReceiveThenWithdraw() public {
+        uint256 amount = 10 ether;
+        vm.deal(user1, amount);
+
+        // Receive native via receive()
+        vm.prank(user1);
+        (bool ok,) = address(vault).call{ value: amount }("");
+        assertTrue(ok);
+        assertEq(address(vault).balance, amount);
+
+        // Withdraw it
+        vm.prank(fundManager);
+        vault.withdraw(user2, amount);
+
+        assertEq(user2.balance, amount);
+        assertEq(address(vault).balance, 0);
     }
 
     // ============================================================================
@@ -440,10 +450,10 @@ contract VaultPCTest is Test {
     function test_WithdrawToken_AfterPauseUnpause_WorksNormally() public {
         vm.prank(pauser);
         vault.pause();
-        
+
         vm.prank(pauser);
         vault.unpause();
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 100e18);
         assertEq(prc20Token.balanceOf(user1), 100e18);
@@ -452,15 +462,20 @@ contract VaultPCTest is Test {
     function test_WithdrawToken_MultipleSmallAmounts() public {
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 1e18);
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 2e18);
-        
+
         vm.prank(fundManager);
         vault.withdrawToken(address(prc20Token), user1, 3e18);
-        
+
         assertEq(prc20Token.balanceOf(user1), 6e18);
     }
-
 }
 
+/// @dev Contract that rejects all ETH transfers (for VaultPC withdraw failure test)
+contract VaultPCEthRejecter {
+    receive() external payable {
+        revert("no ETH");
+    }
+}

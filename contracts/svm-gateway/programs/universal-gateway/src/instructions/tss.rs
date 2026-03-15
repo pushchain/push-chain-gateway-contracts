@@ -1,3 +1,4 @@
+use crate::errors::GatewayError;
 use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{keccak::hash, secp256k1_recover::secp256k1_recover};
@@ -14,13 +15,23 @@ pub struct InitTss<'info> {
     )]
     pub tss_pda: Account<'info, TssPda>,
 
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == authority.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
 
-pub fn init_tss(ctx: Context<InitTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
+pub fn init_tss(ctx: Context<InitTss>, tss_eth_address: [u8; 20], chain_id: String) -> Result<()> {
+    require!(!chain_id.is_empty(), GatewayError::InvalidInput);
+    require!(chain_id.len() <= 64, GatewayError::InvalidInput); // Max 64 bytes for cluster pubkey
+
     let tss = &mut ctx.accounts.tss_pda;
     tss.tss_eth_address = tss_eth_address;
     tss.chain_id = chain_id;
@@ -44,10 +55,27 @@ pub struct UpdateTss<'info> {
     pub authority: Signer<'info>,
 }
 
-pub fn update_tss(ctx: Context<UpdateTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
+pub fn update_tss(
+    ctx: Context<UpdateTss>,
+    tss_eth_address: [u8; 20],
+    chain_id: String,
+) -> Result<()> {
+    require!(!chain_id.is_empty(), GatewayError::InvalidInput);
+    require!(chain_id.len() <= 64, GatewayError::InvalidInput); // Max 64 bytes for cluster pubkey
+
     let tss = &mut ctx.accounts.tss_pda;
+
+    // If TSS address changes, reset nonce to 0 for clarity and security
+    // (Old signatures won't work anyway due to address mismatch, but resetting is cleaner)
+    let address_changed = tss.tss_eth_address != tss_eth_address;
+
     tss.tss_eth_address = tss_eth_address;
     tss.chain_id = chain_id;
+
+    if address_changed {
+        tss.nonce = 0;
+    }
+
     Ok(())
 }
 
@@ -71,6 +99,7 @@ pub fn reset_nonce(ctx: Context<ResetNonce>, new_nonce: u64) -> Result<()> {
 }
 
 /// Common validator: verify nonce, hash, and ECDSA secp256k1 signature recovers stored ETH address.
+/// Used by withdraw, revert, and execute functions - single standard for all TSS-signed messages.
 pub fn validate_message(
     tss: &mut Account<TssPda>,
     instruction_id: u8,
@@ -82,15 +111,18 @@ pub fn validate_message(
     recovery_id: u8,
 ) -> Result<()> {
     // Nonce check and update
-    require!(nonce == tss.nonce, ErrorCode::NonceMismatch);
-    tss.nonce = tss.nonce.checked_add(1).ok_or(ErrorCode::NonceMismatch)?;
+    require!(nonce == tss.nonce, GatewayError::NonceMismatch);
+    tss.nonce = tss
+        .nonce
+        .checked_add(1)
+        .ok_or(GatewayError::NonceMismatch)?;
 
     // Rebuild message
     let mut buf = Vec::new();
     const PREFIX: &[u8] = b"PUSH_CHAIN_SVM";
     buf.extend_from_slice(PREFIX);
     buf.push(instruction_id);
-    buf.extend_from_slice(&tss.chain_id.to_be_bytes());
+    buf.extend_from_slice(tss.chain_id.as_bytes()); // Use UTF-8 bytes of chain_id string directly
     buf.extend_from_slice(&nonce.to_be_bytes());
     if let Some(val) = amount {
         buf.extend_from_slice(&val.to_be_bytes());
@@ -99,23 +131,13 @@ pub fn validate_message(
         buf.extend_from_slice(d);
     }
     let computed = hash(&buf[..]).to_bytes();
-    require!(&computed == message_hash, ErrorCode::MessageHashMismatch);
+    require!(&computed == message_hash, GatewayError::MessageHashMismatch);
 
     // Recover address via secp256k1
     let pubkey = secp256k1_recover(message_hash, recovery_id, signature)
-        .map_err(|_| ErrorCode::TssAuthFailed)?;
+        .map_err(|_| GatewayError::TssAuthFailed)?;
     let h = hash(pubkey.to_bytes().as_slice()).to_bytes();
     let address = &h.as_slice()[12..32];
-    require!(address == &tss.tss_eth_address, ErrorCode::TssAuthFailed);
+    require!(address == &tss.tss_eth_address, GatewayError::TssAuthFailed);
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Nonce mismatch")]
-    NonceMismatch,
-    #[msg("Message hash mismatch")]
-    MessageHashMismatch,
-    #[msg("TSS authentication failed")]
-    TssAuthFailed,
 }

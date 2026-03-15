@@ -17,67 +17,16 @@ pub mod universal_gateway {
     //           DEPOSITS
     // =========================
 
-    /// @notice Allows initiating a TX for funding UEA with gas deposits from source chain.
-    /// @dev    Supports only native SOL deposits for gas funding.
-    ///         The route emits UniversalTx event - important for Instant TX Route.
-    pub fn send_tx_with_gas(
-        ctx: Context<SendTxWithGas>,
-        payload: UniversalPayload,
-        revert_instruction: RevertInstructions,
-        amount: u64,
+    /// @notice Universal transaction entrypoint with internal routing (EVM parity).
+    /// @dev    Native amount parameter mirrors `msg.value` on EVM chains.
+    ///         All routing (gas / funds / batching) is handled inside the deposit module.
+    pub fn send_universal_tx(
+        ctx: Context<SendUniversalTx>,
+        req: UniversalTxRequest,
+        native_amount: u64,
     ) -> Result<()> {
-        instructions::deposit::send_tx_with_gas(ctx, payload, revert_instruction, amount)
+        instructions::deposit::send_universal_tx(ctx, req, native_amount)
     }
-
-    /// @notice Allows initiating a TX for movement of funds from source chain to Push Chain.
-    /// @dev    Supports both native SOL and SPL token deposits (like ETH Gateway).
-    ///         For native SOL: pass Pubkey::default() as bridge_token
-    ///         For SPL tokens: pass token mint address as bridge_token
-
-    ///         The route emits UniversalTx event.
-
-    pub fn send_funds(
-        ctx: Context<SendFunds>,
-        recipient: [u8; 20],
-        bridge_token: Pubkey,
-        bridge_amount: u64,
-        revert_instruction: RevertInstructions,
-    ) -> Result<()> {
-        instructions::deposit::send_funds(
-            ctx,
-            recipient,
-            bridge_token,
-            bridge_amount,
-            revert_instruction,
-        )
-    }
-
-    /// @notice Allows initiating a TX for movement of funds and payload from source chain to Push Chain.
-    /// @dev    Supports both native SOL and SPL token deposits with payload execution.
-    ///         The route emits UniversalTx event.
-    pub fn send_tx_with_funds(
-        ctx: Context<SendTxWithFunds>,
-        bridge_token: Pubkey,
-        bridge_amount: u64,
-        payload: UniversalPayload,
-        revert_instruction: RevertInstructions,
-        gas_amount: u64,
-        signature_data: Vec<u8>,
-    ) -> Result<()> {
-        instructions::deposit::send_tx_with_funds(
-            ctx,
-            bridge_token,
-            bridge_amount,
-            payload,
-            revert_instruction,
-            gas_amount,
-            signature_data,
-        )
-    }
-
-    // =========================
-    //        WITHDRAWALS
-    // =========================
 
     // =========================
     //           ADMIN
@@ -114,24 +63,9 @@ pub mod universal_gateway {
         instructions::admin::unpause(ctx)
     }
 
-    /// @notice Set TSS address
-    pub fn set_tss_address(ctx: Context<AdminAction>, new_tss: Pubkey) -> Result<()> {
-        instructions::admin::set_tss_address(ctx, new_tss)
-    }
-
     /// @notice Set USD caps
     pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap: u128, max_cap: u128) -> Result<()> {
         instructions::admin::set_caps_usd(ctx, min_cap, max_cap)
-    }
-
-    /// @notice Whitelist a token
-    pub fn whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-        instructions::admin::whitelist_token(ctx, token)
-    }
-
-    /// @notice Remove token from whitelist
-    pub fn remove_whitelist_token(ctx: Context<WhitelistAction>, token: Pubkey) -> Result<()> {
-        instructions::admin::remove_whitelist_token(ctx, token)
     }
 
     /// @notice Set Pyth price feed
@@ -149,12 +83,18 @@ pub mod universal_gateway {
     // =========================
 
     /// @notice Set block-based USD cap for rate limiting
-    pub fn set_block_usd_cap(ctx: Context<RateLimitConfigAction>, block_usd_cap: u128) -> Result<()> {
+    pub fn set_block_usd_cap(
+        ctx: Context<RateLimitConfigAction>,
+        block_usd_cap: u128,
+    ) -> Result<()> {
         instructions::admin::set_block_usd_cap(ctx, block_usd_cap)
     }
 
     /// @notice Update epoch duration for rate limiting
-    pub fn update_epoch_duration(ctx: Context<RateLimitConfigAction>, epoch_duration_sec: u64) -> Result<()> {
+    pub fn update_epoch_duration(
+        ctx: Context<RateLimitConfigAction>,
+        epoch_duration_sec: u64,
+    ) -> Result<()> {
         instructions::admin::update_epoch_duration(ctx, epoch_duration_sec)
     }
 
@@ -169,14 +109,18 @@ pub mod universal_gateway {
     // =========================
     //             TSS
     // =========================
-    pub fn init_tss(ctx: Context<InitTss>, tss_eth_address: [u8; 20], chain_id: u64) -> Result<()> {
+    pub fn init_tss(
+        ctx: Context<InitTss>,
+        tss_eth_address: [u8; 20],
+        chain_id: String,
+    ) -> Result<()> {
         instructions::tss::init_tss(ctx, tss_eth_address, chain_id)
     }
 
     pub fn update_tss(
         ctx: Context<UpdateTss>,
         tss_eth_address: [u8; 20],
-        chain_id: u64,
+        chain_id: String,
     ) -> Result<()> {
         instructions::tss::update_tss(ctx, tss_eth_address, chain_id)
     }
@@ -185,37 +129,38 @@ pub mod universal_gateway {
         instructions::tss::reset_nonce(ctx, new_nonce)
     }
 
-    /// @notice TSS-verified withdraw of native SOL
-    pub fn withdraw_tss(
-        ctx: Context<WithdrawTss>,
+    // =========================
+    //    WITHDRAW & EXECUTE
+    // =========================
+    /// @notice Unified outbound entrypoint: withdraw (mode 1) or execute (mode 2)
+    /// @param instruction_id 1=withdraw (vault→CEA→recipient), 2=execute (vault→CEA→CPI)
+    pub fn withdraw_and_execute(
+        ctx: Context<WithdrawAndExecute>,
+        instruction_id: u8,
+        tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
+        sender: [u8; 20],
+        writable_flags: Vec<u8>,
+        ix_data: Vec<u8>,
+        gas_fee: u64,
+        rent_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::withdraw_tss(
+        instructions::execute::withdraw_and_execute(
             ctx,
+            instruction_id,
+            tx_id,
+            universal_tx_id,
             amount,
-            signature,
-            recovery_id,
-            message_hash,
-            nonce,
-        )
-    }
-
-    /// @notice TSS-verified withdraw of SPL tokens
-    pub fn withdraw_spl_token_tss(
-        ctx: Context<WithdrawSplTokenTss>,
-        amount: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-        nonce: u64,
-    ) -> Result<()> {
-        instructions::withdraw::withdraw_spl_token_tss(
-            ctx,
-            amount,
+            sender,
+            writable_flags,
+            ix_data,
+            gas_fee,
+            rent_fee,
             signature,
             recovery_id,
             message_hash,
@@ -224,22 +169,28 @@ pub mod universal_gateway {
     }
 
     // =========================
-    //        REVERT WITHDRAW
+    //        REVERT
     // =========================
-    /// @notice TSS-verified revert withdraw for SOL
-    pub fn revert_withdraw(
-        ctx: Context<RevertWithdraw>,
+    /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
+    pub fn revert_universal_tx(
+        ctx: Context<RevertUniversalTx>,
+        tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
+        gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_withdraw(
+        instructions::revert::revert_universal_tx(
             ctx,
+            tx_id,
+            universal_tx_id,
             amount,
             revert_instruction,
+            gas_fee,
             signature,
             recovery_id,
             message_hash,
@@ -247,20 +198,26 @@ pub mod universal_gateway {
         )
     }
 
-    /// @notice TSS-verified revert withdraw for SPL tokens
-    pub fn revert_withdraw_spl_token(
-        ctx: Context<RevertWithdrawSplToken>,
+    /// @notice TSS-verified revert withdraw for SPL tokens (EVM parity: `revertUniversalTxToken`)
+    pub fn revert_universal_tx_token(
+        ctx: Context<RevertUniversalTxToken>,
+        tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
+        gas_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
         nonce: u64,
     ) -> Result<()> {
-        instructions::withdraw::revert_withdraw_spl_token(
+        instructions::revert::revert_universal_tx_token(
             ctx,
+            tx_id,
+            universal_tx_id,
             amount,
             revert_instruction,
+            gas_fee,
             signature,
             recovery_id,
             message_hash,
@@ -269,48 +226,48 @@ pub mod universal_gateway {
     }
 
     // =========================
-    //         LEGACY (V0)
+    //         UTILS
     // =========================
-    /// @notice Legacy-compatible add funds event for offchain relayers (pushsolanalocker)
-    pub fn add_funds(
-        ctx: Context<AddFunds>,
-        amount: u64,
-        transaction_hash: [u8; 32],
-    ) -> Result<()> {
-        instructions::legacy::add_funds(ctx, amount, transaction_hash)
-    }
-
     /// @notice View function for SOL price (locker-compatible)
-    /// @dev    Anyone can fetch SOL price in USD
     pub fn get_sol_price(ctx: Context<GetSolPrice>) -> Result<PriceData> {
-        instructions::legacy::get_sol_price(ctx)
+        utils::get_sol_price(&ctx.accounts.price_update)
     }
 }
 
+/// Accounts for get_sol_price view function
+#[derive(Accounts)]
+pub struct GetSolPrice<'info> {
+    pub price_update: Account<'info, pyth_solana_receiver_sdk::price_update::PriceUpdateV2>,
+}
+
 // Re-export account structs and types
-pub use instructions::admin::{AdminAction, PauseAction, WhitelistAction, TokenRateLimitAction, RateLimitConfigAction};
-pub use instructions::deposit::{SendFunds, SendTxWithFunds, SendTxWithGas};
+pub use instructions::admin::{
+    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
+};
+pub use instructions::deposit::SendUniversalTx;
+pub use instructions::execute::WithdrawAndExecute;
 pub use instructions::initialize::Initialize;
-pub use instructions::legacy::{AddFunds, FundsAddedEvent, GetSolPrice};
-pub use instructions::withdraw::{RevertWithdraw, RevertWithdrawSplToken};
+pub use instructions::revert::{
+    RevertUniversalTx, RevertUniversalTxToken,
+};
 pub use utils::PriceData;
 
 pub use state::{
     // Events
     CapsUpdated,
     Config,
+    ExecutedTx,
+    GatewayAccountMeta,
     RevertInstructions,
     TSSAddressUpdated,
-    TokenRemovedFromWhitelist,
-    TokenWhitelist,
-    TokenWhitelisted,
     TxType,
     UniversalPayload,
     UniversalTx,
+    UniversalTxExecuted,
+    UniversalTxRequest,
     VerificationType,
-    WithdrawFunds,
     CONFIG_SEED,
+    EXECUTED_TX_SEED,
     FEED_ID,
     VAULT_SEED,
-    WHITELIST_SEED,
 };

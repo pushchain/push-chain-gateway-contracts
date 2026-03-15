@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import { IUniversalCore } from "../../src/interfaces/IUniversalCore.sol";
-import { IPRC20 } from "../../src/interfaces/IPRC20.sol";
+import { MockPRC20 } from "./MockPRC20.sol";
 
 /**
  * @title MockUniversalCoreReal
@@ -15,10 +15,10 @@ contract MockUniversalCoreReal is IUniversalCore {
     address public immutable UNIVERSAL_EXECUTOR_MODULE;
 
     /// @notice Map to know the gas price of each chain given a chain id.
-    mapping(string => uint256) public gasPriceByChainId;
+    mapping(string => uint256) public gasPriceByChainNamespace;
 
     /// @notice Map to know the PRC20 address of a token given a chain id, ex pETH, pBNB etc.
-    mapping(string => address) public gasTokenPRC20ByChainId;
+    mapping(string => address) public gasTokenPRC20ByChainNamespace;
 
     /// @notice Map to know Uniswap V3 pool of PC/PRC20 given a chain id.
     mapping(string => address) public gasPCPoolByChainId;
@@ -46,9 +46,16 @@ contract MockUniversalCoreReal is IUniversalCore {
     /// @notice Base gas limit for the cross-chain outbound transactions.
     uint256 public BASE_GAS_LIMIT = 500_000;
 
+    /// @notice Protocol fee per token in native PC
+    mapping(address => uint256) public protocolFeeByToken;
+
+    /// @notice Rescue funds gas limit per chain namespace
+    mapping(string => uint256) public rescueFundsGasLimitByChainNamespace;
+
     /// @notice Role for managing gas-related configurations
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 public constant GATEWAY_ROLE = keccak256("GATEWAY_ROLE");
 
     // Role assignments
     mapping(bytes32 => mapping(address => bool)) private _roles;
@@ -175,14 +182,25 @@ contract MockUniversalCoreReal is IUniversalCore {
     }
 
     function setGasPrice(string memory chainID, uint256 price) external onlyRole(MANAGER_ROLE) {
-        gasPriceByChainId[chainID] = price;
+        gasPriceByChainNamespace[chainID] = price;
         emit SetGasPrice(chainID, price);
     }
 
     function setGasTokenPRC20(string memory chainID, address prc20) external onlyRole(MANAGER_ROLE) {
         require(prc20 != address(0), "MockUniversalCore: zero address");
-        gasTokenPRC20ByChainId[chainID] = prc20;
+        gasTokenPRC20ByChainNamespace[chainID] = prc20;
         emit SetGasToken(chainID, prc20);
+    }
+
+    function setProtocolFeeByToken(address token, uint256 fee) external onlyRole(MANAGER_ROLE) {
+        protocolFeeByToken[token] = fee;
+    }
+
+    function setRescueFundsGasLimitByChain(string memory chainNamespace, uint256 gasLimit)
+        external
+        onlyRole(MANAGER_ROLE)
+    {
+        rescueFundsGasLimitByChainNamespace[chainNamespace] = gasLimit;
     }
 
     // ========= Admin Functions =========
@@ -249,28 +267,46 @@ contract MockUniversalCoreReal is IUniversalCore {
         return amountIn;
     }
 
-    function withdrawGasFee(address _prc20) public view returns (address gasToken, uint256 gasFee) {
-        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_ID();
+    function getOutboundTxGasAndFees(address _prc20, uint256 gasLimit)
+        public
+        view
+        returns (address gasToken, uint256 gasFee, uint256 protocolFee, uint256 gasPrice, string memory chainNamespace)
+    {
+        chainNamespace = MockPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
-        gasToken = gasTokenPRC20ByChainId[chainID];
+        gasToken = gasTokenPRC20ByChainNamespace[chainNamespace];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
 
-        uint256 price = gasPriceByChainId[chainID];
-        require(price != 0, "MockUniversalCore: zero gas price");
+        gasPrice = gasPriceByChainNamespace[chainNamespace];
+        require(gasPrice != 0, "MockUniversalCore: zero gas price");
 
-        gasFee = price * BASE_GAS_LIMIT + IPRC20(_prc20).PC_PROTOCOL_FEE();
+        gasFee = gasPrice * gasLimit;
+        protocolFee = protocolFeeByToken[_prc20];
     }
 
-    function withdrawGasFeeWithGasLimit(address _prc20, uint256 gasLimit) public view returns (address gasToken, uint256 gasFee) {
-        string memory chainID = IPRC20(_prc20).SOURCE_CHAIN_ID();
+    function getRescueFundsGasLimit(address _prc20)
+        public
+        view
+        returns (
+            address gasToken,
+            uint256 gasFee,
+            uint256 rescueGasLimit,
+            uint256 gasPrice,
+            string memory chainNamespace
+        )
+    {
+        chainNamespace = MockPRC20(_prc20).SOURCE_CHAIN_NAMESPACE();
 
-        gasToken = gasTokenPRC20ByChainId[chainID];
+        rescueGasLimit = rescueFundsGasLimitByChainNamespace[chainNamespace];
+        require(rescueGasLimit != 0, "MockUniversalCore: zero rescue gas limit");
+
+        gasToken = gasTokenPRC20ByChainNamespace[chainNamespace];
         require(gasToken != address(0), "MockUniversalCore: zero gas token");
 
-        uint256 price = gasPriceByChainId[chainID];
-        require(price != 0, "MockUniversalCore: zero gas price");
+        gasPrice = gasPriceByChainNamespace[chainNamespace];
+        require(gasPrice != 0, "MockUniversalCore: zero gas price");
 
-        gasFee = price * gasLimit + IPRC20(_prc20).PC_PROTOCOL_FEE();
+        gasFee = gasPrice * rescueGasLimit;
     }
 
     /// @notice Update the base gas limit for the cross-chain outbound transactions.
@@ -280,6 +316,32 @@ contract MockUniversalCoreReal is IUniversalCore {
         BASE_GAS_LIMIT = gasLimit;
         emit BaseGasLimitUpdated(oldLimit, gasLimit);
     }
+
+    // ========= Swap Functions =========
+    function swapAndBurnGas(
+        address gasTokenAddr,
+        uint24,
+        uint256 gasFee,
+        uint256,
+        address caller
+    ) external payable returns (uint256 gasTokenOut, uint256 refund) {
+        require(gasFee > 0, "MockUniversalCore: zero total output");
+
+        // Burn gasFee portion (mint then burn to simulate swap+burn)
+        MockPRC20(gasTokenAddr).mint(address(this), gasFee);
+        MockPRC20(gasTokenAddr).burn(gasFee);
+
+        gasTokenOut = gasFee;
+
+        // Refund unused PC directly to the caller (1:1 ratio for mock simplicity)
+        if (msg.value > gasFee) {
+            refund = msg.value - gasFee;
+            (bool ok,) = caller.call{value: refund}("");
+            require(ok, "MockUniversalCore: refund failed");
+        }
+    }
+
+    receive() external payable {}
 
     // ========= Test Helper Functions =========
     function setUniversalExecutorModule(address _uem) external {

@@ -1,0 +1,816 @@
+Warning: This is a nightly build of Foundry. It is recommended to use the latest stable version. Visit https://book.getfoundry.sh/announcements for more information.
+To mute this warning set `FOUNDRY_DISABLE_NIGHTLY_WARNING` in your environment.
+
+Warning: `--ir-minimum` enables `viaIR` with minimum optimization, which can result in inaccurate source mappings.
+Only use this flag as a workaround if you are experiencing "stack too deep" errors.
+Note that `viaIR` is production ready since Solidity 0.8.13 and above.
+See more: https://github.com/foundry-rs/foundry/issues/3357
+Compiling 110 files with Solc 0.8.26
+Solc 0.8.26 finished in 90.90s
+Compiler run successful with warnings:
+Warning (3420): Source file does not specify required compiler version! Consider adding "pragma solidity ^0.8.26;"
+--> test/mocks/MockAggregatorV3.sol
+
+Warning (3420): Source file does not specify required compiler version! Consider adding "pragma solidity ^0.8.26;"
+--> test/mocks/MockSequencerUptimeFeed.sol
+
+Warning (2072): Unused local variable.
+   --> src/UniversalGatewayV0.sol:258:9:
+    |
+258 |         uint24[3] memory old = v3FeeOrder;
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> src/UniversalGatewayV0.sol:343:25:
+    |
+343 |         (uint256 price, uint8 decimals) = getEthUsdPrice_old();
+    |                         ^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> src/UniversalGatewayV0.sol:1198:10:
+     |
+1198 |         (IUniswapV3Pool pool, uint24 fee) = _findV3PoolWithNative(tokenIn);
+     |          ^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> src/UniversalGateway.sol:913:10:
+    |
+913 |         (IUniswapV3Pool pool, uint24 fee) = _findV3PoolWithNative(tokenIn);
+    |          ^^^^^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockERC20.sol:177:38:
+    |
+177 |     function simulateTransferFailure(address to, uint256 amount) external pure returns (bool) {
+    |                                      ^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockERC20.sol:177:50:
+    |
+177 |     function simulateTransferFailure(address to, uint256 amount) external pure returns (bool) {
+    |                                                  ^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockERC20.sol:188:38:
+    |
+188 |     function simulateApprovalFailure(address spender, uint256 amount) external pure returns (bool) {
+    |                                      ^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockERC20.sol:188:55:
+    |
+188 |     function simulateApprovalFailure(address spender, uint256 amount) external pure returns (bool) {
+    |                                                       ^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/gateway/11_executeUniversalTx.t.sol:458:9:
+    |
+458 |         bytes memory tokenPayload =
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/gateway/13_rateLimit_EpochBased.t.sol:849:9:
+    |
+849 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/gateway/13_rateLimit_EpochBased.t.sol:896:9:
+    |
+896 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1048:9:
+     |
+1048 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1087:9:
+     |
+1087 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1119:9:
+     |
+1119 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1155:9:
+     |
+1155 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1189:9:
+     |
+1189 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1337:9:
+     |
+1337 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1390:9:
+     |
+1390 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1478:9:
+     |
+1478 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1610:9:
+     |
+1610 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/13_rateLimit_EpochBased.t.sol:1645:9:
+     |
+1645 |         RevertInstructions memory revertInstructions = _buildDefaultRevertInstructions();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockUniversalCoreReal.sol:138:9:
+    |
+138 |         uint256 minPCOut,
+    |         ^^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockUniversalCoreReal.sol:247:27:
+    |
+247 |     function getSwapQuote(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn) public returns (uint256) {
+    |                           ^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockUniversalCoreReal.sol:247:44:
+    |
+247 |     function getSwapQuote(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn) public returns (uint256) {
+    |                                            ^^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockUniversalCoreReal.sol:247:62:
+    |
+247 |     function getSwapQuote(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn) public returns (uint256) {
+    |                                                              ^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockReentrantContract.sol:113:27:
+    |
+113 |     function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    |                           ^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockReentrantContract.sol:113:41:
+    |
+113 |     function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    |                                         ^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/mocks/MockReentrantContract.sol:113:53:
+    |
+113 |     function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    |                                                     ^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/mocks/MockReentrantContract.sol:115:10:
+    |
+115 |         (bool success,) =
+    |          ^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/gateway/7_sendUniversalTxWithFUNDS_FundsTxType_Case2_2.t.sol:252:9:
+    |
+252 |         uint256 expectedGasAmount = 0.001 ether; // $2 at $2000/ETH (within caps)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/gateway/7_sendUniversalTxWithFUNDS_FundsTxType_Case2_2.t.sol:867:9:
+    |
+867 |         address explicitRecipient = address(0x999);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+    --> test/gateway/7_sendUniversalTxWithFUNDS_FundsTxType_Case2_2.t.sol:1030:9:
+     |
+1030 |         uint256 expectedGasAmount = 0.002 ether; // $4 (within USD caps)
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/gateway/8_sendUniversalTxWithFUNDS_FundsTxType_Case2_3.t.sol:925:9:
+    |
+925 |         address explicitRecipient = address(0x999);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/oracle/OracleTest.t.sol:360:10:
+    |
+360 |         (uint256 price, uint8 decimals) = gatewayInstance.getEthUsdPrice();
+    |          ^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/oracle/OracleTest.t.sol:388:10:
+    |
+388 |         (bool success,) = payable(address(gateway)).call{ value: amount }("");
+    |          ^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/oracle/OracleTest.t.sol:470:26:
+    |
+470 |         (uint256 minEth, uint256 maxEth) = gateway.getMinMaxValueForNative();
+    |                          ^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/oracle/OracleTest.t.sol:486:10:
+    |
+486 |         (uint256 minEth, uint256 maxEth) = gateway.getMinMaxValueForNative();
+    |          ^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/oracle/OracleTest.t.sol:501:26:
+    |
+501 |         (uint256 minEth, uint256 maxEth) = gateway.getMinMaxValueForNative();
+    |                          ^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> test/oracle/OracleTest.t.sol:516:10:
+    |
+516 |         (uint256 minEth, uint256 maxEth) = gateway.getMinMaxValueForNative();
+    |          ^^^^^^^^^^^^^^
+
+Warning (2018): Function state mutability can be restricted to view
+   --> test/BaseTest.t.sol:198:5:
+    |
+198 |     function _initializeGateway() internal {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+   --> test/BaseTest.t.sol:339:5:
+    |
+339 |     function buildDefaultPayload() internal view returns (UniversalPayload memory) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+   --> test/BaseTest.t.sol:495:5:
+    |
+495 |     function assertDualEmitOrder(bytes32 firstTopic0, bytes32 secondTopic0, Vm.Log[] memory logs) internal {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+   --> test/gateway/12_rateLimit_BlockBased.t.sol:480:5:
+    |
+480 |     function _getEthAmountFromUsd(uint256 usdAmount1e18) internal view returns (uint256) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+   --> test/mocks/MockUniversalCoreReal.sol:247:5:
+    |
+247 |     function getSwapQuote(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn) public returns (uint256) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+  --> test/gateway/14_gatewayPC.t.sol:85:5:
+   |
+85 |     function calculateExpectedGasFee(uint256 gasLimit) internal view returns (uint256) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to view
+   --> test/oracle/OracleTest.t.sol:417:5:
+    |
+417 |     function testUniswapInitialization_ValidAddresses_SetsCorrectly() public {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to view
+   --> test/oracle/OracleTest.t.sol:427:5:
+    |
+427 |     function testFeeTiers_AllTiersTested() public {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Analysing contracts...
+Running tests...
+
+Ran 30 tests for test/gateway/10_withdrawTokens.t.sol:GatewayTSSFunctionsTest
+[PASS] testOnlyTSS_NonTSSShouldRevert() (gas: 34517)
+[PASS] testOnlyTSS_TSSShouldSucceed() (gas: 78768)
+[PASS] testRevertUniversalTxToken_ReplayProtection() (gas: 101204)
+[PASS] testRevertUniversalTx_ReplayProtection_Native() (gas: 97841)
+[PASS] testRevertWithdrawFunds_ERC20Token_Success() (gas: 109751)
+[PASS] testRevertWithdrawFunds_InsufficientBalance_Revert() (gas: 47336)
+[PASS] testRevertWithdrawFunds_InvalidAmount_Revert() (gas: 39697)
+[PASS] testRevertWithdrawFunds_InvalidRecipient_Revert() (gas: 37665)
+[PASS] testRevertWithdrawFunds_MultipleTokens() (gas: 155759)
+[PASS] testRevertWithdrawFunds_NativeETH_Success() (gas: 84677)
+[PASS] testRevertWithdrawFunds_WhenPaused_Revert() (gas: 63591)
+[PASS] testWithdrawFunds_ERC20InsufficientBalance_Revert() (gas: 46449)
+[PASS] testWithdrawFunds_ERC20Token_Success() (gas: 110939)
+[PASS] testWithdrawFunds_InsufficientBalance_Revert() (gas: 47212)
+[PASS] testWithdrawFunds_InvalidAmount_Revert() (gas: 39708)
+[PASS] testWithdrawFunds_InvalidRecipient_Revert() (gas: 36112)
+[PASS] testWithdrawFunds_MultipleTokens() (gas: 231735)
+[PASS] testWithdrawFunds_NativeETH_Success() (gas: 85346)
+[PASS] testWithdrawFunds_ReentrancyProtection() (gas: 78282)
+[PASS] testWithdrawFunds_WhenPaused_Revert() (gas: 63619)
+[PASS] testWithdraw_Native_AmountMismatch_Reverts() (gas: 48468)
+[PASS] testWithdraw_Native_EmitsCorrectEvent() (gas: 79563)
+[PASS] testWithdraw_Native_MultipleSequentialWithdrawals() (gas: 128595)
+[PASS] testWithdraw_Native_OnlyTSS() (gas: 43302)
+[PASS] testWithdraw_Native_ReplayProtection() (gas: 96789)
+[PASS] testWithdraw_Native_Success() (gas: 82789)
+[PASS] testWithdraw_Native_WhenPaused_Reverts() (gas: 73045)
+[PASS] testWithdraw_Native_ZeroAmount_Reverts() (gas: 39981)
+[PASS] testWithdraw_Native_ZeroOriginCaller_Reverts() (gas: 45927)
+[PASS] testWithdraw_Native_ZeroRecipient_Reverts() (gas: 46209)
+Suite result: ok. 30 passed; 0 failed; 0 skipped; finished in 10.54ms (6.41ms CPU time)
+
+Ran 23 tests for test/gateway/3_sendUniversalTx_token.t.sol:GatewaySendUniversalTxTokenGasTest
+[PASS] test_TokenGas_AcceptsMsgValue() (gas: 296504)
+[PASS] test_TokenGas_BuildsCorrectUniversalTxRequest() (gas: 404)
+[PASS] test_TokenGas_InferFUNDS_AND_PAYLOAD_Type() (gas: 302920)
+[PASS] test_TokenGas_InferFUNDS_Type() (gas: 294131)
+[PASS] test_TokenGas_InferGAS_AND_PAYLOAD_Type() (gas: 296415)
+[PASS] test_TokenGas_InferGAS_Type() (gas: 292108)
+[PASS] test_TokenGas_MaximumValues() (gas: 83642)
+[PASS] test_TokenGas_MsgValueDoesNotAffectNativeValue() (gas: 479070)
+[PASS] test_TokenGas_PreservesRevertInstruction() (gas: 308912)
+[PASS] test_TokenGas_PreservesSignatureData() (gas: 289582)
+[PASS] test_TokenGas_RevertOn_ExpiredDeadline() (gas: 39640)
+[PASS] test_TokenGas_RevertOn_InsufficientAllowance() (gas: 83368)
+[PASS] test_TokenGas_RevertOn_InsufficientBalance() (gas: 125131)
+[PASS] test_TokenGas_RevertOn_NoPoolFound() (gas: 2208243)
+[PASS] test_TokenGas_RevertOn_Paused() (gas: 68593)
+[PASS] test_TokenGas_RevertOn_SlippageExceeded() (gas: 304361)
+[PASS] test_TokenGas_RevertOn_UniswapNotConfigured() (gas: 8047386)
+[PASS] test_TokenGas_RevertOn_ZeroAmountOutMinETH() (gas: 38194)
+[PASS] test_TokenGas_RevertOn_ZeroGasAmount() (gas: 39174)
+[PASS] test_TokenGas_RevertOn_ZeroGasToken() (gas: 35932)
+[PASS] test_TokenGas_RoutesCorrectly() (gas: 1715)
+[PASS] test_TokenGas_WETHFastPath_Success() (gas: 185918)
+[PASS] test_TokenGas_ZeroDeadlineUsesDefault() (gas: 289365)
+Suite result: ok. 23 passed; 0 failed; 0 skipped; finished in 34.00ms (17.77ms CPU time)
+
+Ran 21 tests for test/gateway/5_sendUniversalTx_FundsTxType_Case_1.t.sol:GatewaySendUniversalTxWithFundsTest
+[PASS] test_SendTxWithFunds_FUNDS_ERC20_HappyPath() (gas: 163901)
+[PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientAllowance() (gas: 124592)
+[PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_InsufficientBalance() (gas: 120682)
+[PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_NonZeroMsgValue() (gas: 45994)
+[PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_RateLimitExceeded() (gas: 73313)
+[PASS] test_SendTxWithFunds_FUNDS_ERC20_RevertOn_UnsupportedToken() (gas: 2184487)
+[PASS] test_SendTxWithFunds_FUNDS_ERC20_SeparateRateLimitsPerToken() (gas: 282888)
+[PASS] test_SendTxWithFunds_FUNDS_EventPreservesrevertMsg() (gas: 102392)
+[PASS] test_SendTxWithFunds_FUNDS_MultipleUsersIndependent() (gas: 187387)
+[PASS] test_SendTxWithFunds_FUNDS_Native_AllowsZeroRecipient() (gas: 98938)
+[PASS] test_SendTxWithFunds_FUNDS_Native_GatewayDoesNotAccumulate() (gas: 96475)
+[PASS] test_SendTxWithFunds_FUNDS_Native_HappyPath() (gas: 123078)
+[PASS] test_SendTxWithFunds_FUNDS_Native_RateLimitResetsInNewEpoch() (gas: 174776)
+[PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_CumulativeRateLimitExceeded() (gas: 143807)
+[PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_MsgValueMismatch_TooLow() (gas: 48426)
+[PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_RateLimitExceeded() (gas: 76123)
+[PASS] test_SendTxWithFunds_FUNDS_Native_RevertOn_ZeroAmount() (gas: 37032)
+[PASS] test_SendTxWithFunds_FUNDS_RevertOn_NonEmptyPayload() (gas: 102381)
+[PASS] test_SendTxWithFunds_FUNDS_RevertOn_ZerorevertRecipient() (gas: 46333)
+Suite result: ok. 21 passed; 0 failed; 0 skipped; finished in 23.86ms (10.80ms CPU time)
+
+Ran 44 tests for test/gateway/13_rateLimit_EpochBased.t.sol:GatewayGlobalRateLimitTest
+[PASS] testBelowThresholdSucceeds() (gas: 185192)
+[PASS] testChangeEpochDurationMidEpoch() (gas: 360732)
+[PASS] testCurrentTokenUsageAfterEpochRollover() (gas: 201825)
+[PASS] testCurrentTokenUsageView() (gas: 212276)
+[PASS] testCurrentTokenUsageWithZeroEpochDuration() (gas: 72779)
+[PASS] testCurrentTokenUsageWithZeroThreshold() (gas: 28305)
+[PASS] testEpochDurationUpdatedEvent() (gas: 33792)
+[PASS] testEpochResetBehavior() (gas: 265266)
+[PASS] testEpochRollover() (gas: 292226)
+[PASS] testEpochRolloverRobustness() (gas: 311418)
+[PASS] testExactThresholdInclusive() (gas: 210514)
+[PASS] testExactThresholdSucceeds() (gas: 183900)
+[PASS] testExceedingLimitWithSendFunds() (gas: 199961)
+[PASS] testExceedingThresholdReverts() (gas: 91069)
+[PASS] testInitialTokenThresholds() (gas: 62152)
+[PASS] testMinimumThreshold() (gas: 211171)
+[PASS] testMultipleEpochRollovers() (gas: 403655)
+[PASS] testMultipleTokenThresholdEvents() (gas: 101515)
+[PASS] testMultipleTokensWithDifferentThresholds() (gas: 592024)
+[PASS] testMultipleTransactionsAccumulate() (gas: 325188)
+[PASS] testNativeTokenRateLimit() (gas: 158208)
+[PASS] testOnlyAdminCanSetThresholds() (gas: 69215)
+[PASS] testOnlyAdminCanUpdateEpochDuration() (gas: 42188)
+[PASS] testPartialUsageThenRollover() (gas: 315238)
+[PASS] testPausedFundsRouteReverts() (gas: 206332)
+[PASS] testSendFundsWithNative() (gas: 125814)
+[PASS] testSendTxWithFundsTokenGas() (gas: 94391)
+[PASS] testSetTokenLimitThresholds() (gas: 122198)
+[PASS] testSetTokenLimitThresholdsAllowsUpdating() (gas: 75549)
+[PASS] testSetTokenLimitThresholdsArrayMismatch() (gas: 32531)
+[PASS] testSetTokenLimitThresholdsWhenPaused() (gas: 89976)
+[PASS] testToggleThresholdToZero() (gas: 213306)
+[PASS] testTokenLimitThresholdUpdatedEvent() (gas: 70638)
+[PASS] testUnsupportedNativeToken() (gas: 76857)
+[PASS] testUnsupportedTokenReverts() (gas: 48724)
+[PASS] testUnsupportedTokenWithSendFunds() (gas: 48816)
+[PASS] testUpdateEpochDuration() (gas: 38994)
+[PASS] testUpdateEpochDurationWhenPaused() (gas: 64524)
+[PASS] testUpdateThresholdMidEpochDecrease() (gas: 237385)
+[PASS] testUpdateThresholdMidEpochIncrease() (gas: 267458)
+[PASS] testUpdateTokenLimitThresholdWhenPaused() (gas: 100494)
+[PASS] testViewHelpersFunctionality() (gas: 271521)
+[PASS] testZeroEpochDuration() (gas: 217932)
+[PASS] testZeroEpochDurationReverts() (gas: 91901)
+Suite result: ok. 44 passed; 0 failed; 0 skipped; finished in 53.43ms (48.36ms CPU time)
+
+Ran 18 tests for test/gateway/6_sendUniversalTxWithFUNDS_FundsTxType_Case2_1.t.sol:GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_1_Test
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_AllowsZeroRecipient() (gas: 146225)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_CumulativeRateLimit() (gas: 214317)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_ERC20_NoBatching_HappyPath() (gas: 180294)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_EventPreservesSignatureData() (gas: 150425)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_EventPreservesrevertMsg() (gas: 150208)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_GatewayDoesNotAccumulateETH() (gas: 231662)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_LargePayload() (gas: 7714167)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_MultipleERC20Tokens() (gas: 264123)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_PayloadPreserved() (gas: 152640)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_EmptyPayload() (gas: 138335)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_InsufficientAllowance() (gas: 130593)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_InsufficientBalance() (gas: 126040)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_NativeToken_NoBatching() (gas: 40819)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_RateLimitExceeded() (gas: 77934)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_UnsupportedToken() (gas: 2188834)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_ZeroAmount() (gas: 84495)
+[PASS] test_Case2_1_FUNDS_AND_PAYLOAD_RevertOn_ZerorevertRecipient() (gas: 47088)
+Suite result: ok. 18 passed; 0 failed; 0 skipped; finished in 68.65ms (57.90ms CPU time)
+
+Ran 16 tests for test/gateway/12_rateLimit_BlockBased.t.sol:GatewayBlockRateLimitTest
+[PASS] testAccumulateUnderCap() (gas: 377544)
+[PASS] testCrossSenderGlobalBudget() (gas: 242305)
+[PASS] testDisableBlockCap() (gas: 362982)
+[PASS] testExactlyEqualToBlockCap() (gas: 184829)
+[PASS] testFundsOnlyRouteNotThrottled() (gas: 290165)
+[PASS] testJustUnderJustOver() (gas: 228980)
+[PASS] testNativeGasLegInSendTxWithFunds() (gas: 350392)
+[PASS] testOverflowOnNthCall() (gas: 361139)
+[PASS] testPartialUsageThenNextBlock() (gas: 567758)
+[PASS] testPausedStateAndCap() (gas: 346348)
+[PASS] testPerTxCapFailsFirst() (gas: 116609)
+[PASS] testResetOnNextBlock() (gas: 256667)
+[PASS] testRevertAfterCapCheckDoesntLeakUsage() (gas: 477966)
+[PASS] testSetBlockUsdCap_HappyPath() (gas: 52598)
+[PASS] testSetBlockUsdCap_OnlyAdmin() (gas: 60515)
+[PASS] testSingleCallExceedsBlockCap() (gas: 156881)
+Suite result: ok. 16 passed; 0 failed; 0 skipped; finished in 20.96ms (15.40ms CPU time)
+
+Ran 23 tests for test/gateway/4_sendUniversalTx_GasTxType.t.sol:GatewaySendUniversalTxWithGasTest
+[PASS] test_SendTxWithGas_BlockCap_Disabled_AllowsUnlimited() (gas: 296022)
+[PASS] test_SendTxWithGas_BlockCap_RevertOn_CumulativeExceedsCap() (gas: 223155)
+[PASS] test_SendTxWithGas_BlockCap_RevertOn_SingleCallExceedsCap() (gas: 140742)
+[PASS] test_SendTxWithGas_Event_WithEmpty_SignatureData() (gas: 101665)
+[PASS] test_SendTxWithGas_GAS_AND_PAYLOAD_AllowsZeroGas() (gas: 68972)
+[PASS] test_SendTxWithGas_GAS_AND_PAYLOAD_EmitsCorrect_UniversalTxEvent() (gas: 113766)
+[PASS] test_SendTxWithGas_GAS_AND_PAYLOAD_ForwardsNative_ToTSS() (gas: 108696)
+[PASS] test_SendTxWithGas_GAS_AND_PAYLOAD_RevertOn_EmptyPayload() (gas: 92594)
+[PASS] test_SendTxWithGas_GAS_AND_PAYLOAD_RevertOn_ZerorevertRecipient() (gas: 50418)
+[PASS] test_SendTxWithGas_GAS_AND_PAYLOAD_SucceedsWith_NonEmptyPayload() (gas: 105335)
+[PASS] test_SendTxWithGas_GAS_And_GAS_AND_PAYLOAD_ShareBlockCap() (gas: 227793)
+[PASS] test_SendTxWithGas_GAS_EmitsCorrect_UniversalTxEvent() (gas: 102843)
+[PASS] test_SendTxWithGas_GAS_ForwardsNative_ToTSS() (gas: 100440)
+[PASS] test_SendTxWithGas_GAS_RevertOn_NonEmptyPayload() (gas: 101034)
+[PASS] test_SendTxWithGas_GAS_RevertOn_ZeroAmount() (gas: 36917)
+[PASS] test_SendTxWithGas_GAS_RevertOn_ZerorevertRecipient() (gas: 46362)
+[PASS] test_SendTxWithGas_GAS_SucceedsWith_EmptyPayload() (gas: 98091)
+[PASS] test_SendTxWithGas_Gateway_DoesNotAccumulate_NativeETH() (gas: 287133)
+[PASS] test_SendTxWithGas_LargePayload_DoesNotAffect_USDCaps() (gas: 7668521)
+[PASS] test_SendTxWithGas_MultipleUsers_ShareBlockCap() (gas: 344256)
+[PASS] test_SendTxWithGas_RevertOn_AboveMaxCap() (gas: 75179)
+[PASS] test_SendTxWithGas_RevertOn_BelowMinCap() (gas: 72975)
+[PASS] test_SendTxWithGas_SucceedsAt_ExactMinCap() (gas: 96886)
+Suite result: ok. 23 passed; 0 failed; 0 skipped; finished in 75.90ms (70.12ms CPU time)
+
+Ran 37 tests for test/gateway/8_sendUniversalTxWithFUNDS_FundsTxType_Case2_3.t.sol:GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_3_Test
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_Batching_HappyPath() (gas: 263098)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_CumulativeERC20RateLimit() (gas: 301871)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_DifferentRecipients_Work() (gas: 274049)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_DifferentTokensSameTx() (gas: 352048)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_EmitsTwoEvents_Always() (gas: 214540)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_EventsPreserveSignatureData() (gas: 194459)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_EventsPreserverevertMsg() (gas: 194101)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_FullMsgValueToGasRoute() (gas: 197854)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_GasEvent_HasEmptyPayload() (gas: 202522)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_GasEvent_NativeToken_FundsEvent_ERC20Token() (gas: 214655)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_GasEvent_RecipientAlwaysZero() (gas: 213643)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_Gateway_DoesNotAccumulate() (gas: 518404)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_IndependentAmounts() (gas: 206393)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_LargePayload_DoesNotAffectGasCaps() (gas: 7766692)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_MaximalGasAmount_AtMaxCap() (gas: 199013)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_MinimalGasAmount() (gas: 198001)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_MultipleCallsSameBlock_GasBlockCap() (gas: 410427)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_MultipleUsers() (gas: 382176)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_NativeNotConsumedInRateLimit() (gas: 524072)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_NativeToTSS_ERC20ToVault() (gas: 220692)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_PayloadPreserved() (gas: 215672)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RateLimitResetsInNewEpoch() (gas: 314671)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_CumulativeERC20RateLimitExceeded() (gas: 271927)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_ERC20RateLimitExceeded() (gas: 134096)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_EmptyPayload() (gas: 45905)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_GasAmountAboveMaxUSDCap() (gas: 85292)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_GasAmountBelowMinUSDCap() (gas: 82513)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_GasAmountExceedsBlockCap() (gas: 150395)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_InsufficientAllowance() (gas: 185474)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_InsufficientBalance() (gas: 182255)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_UnsupportedToken() (gas: 2243903)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_ZeroAmount() (gas: 114868)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_RevertOn_ZerorevertRecipient() (gas: 53742)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_SeparateRateLimits() (gas: 230353)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_SmallGasLargeFunds() (gas: 206154)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_VeryLargeERC20Amount_WithinRateLimit() (gas: 201934)
+[PASS] test_Case2_3_FUNDS_AND_PAYLOAD_ERC20_ZeroMsgValue_RoutesToCase2_1() (gas: 144983)
+Suite result: ok. 37 passed; 0 failed; 0 skipped; finished in 79.70ms (76.34ms CPU time)
+
+Ran 34 tests for test/gateway/7_sendUniversalTxWithFUNDS_FundsTxType_Case2_2.t.sol:GatewaySendUniversalTxWithFunds_PAYLOAD_Case2_2_Test
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_Batching_HappyPath() (gas: 190911)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_CumulativeRateLimit() (gas: 253714)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_DifferentRecipients_Work() (gas: 225390)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_EmitsOneEvent_WhenGasAmountZero() (gas: 113349)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_EmitsTwoEvents_WhenGasAmountPositive() (gas: 169036)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_EventsPreserveSignatureData() (gas: 148589)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_EventsPreserverevertMsg() (gas: 149725)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_ExactAmount_AllToFunds() (gas: 106613)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_ExactAmount_NoGas() (gas: 119297)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_FundSplit_CorrectDistribution() (gas: 154125)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_GasEvent_HasEmptyPayload() (gas: 157363)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_GasEvent_RecipientAlwaysZero() (gas: 168277)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_Gateway_DoesNotAccumulate() (gas: 449221)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_LargePayload_DoesNotAffectGasCaps() (gas: 7722371)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_MaximalGasAmount_AtMaxCap() (gas: 153001)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_MinimalGasAmount_AtMinCap() (gas: 154220)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_MultipleCallsSameBlock_GasBlockCap() (gas: 362796)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_MultipleUsers() (gas: 303932)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_PayloadPreserved() (gas: 169127)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RateLimitOnlyForFunds() (gas: 163584)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RateLimitResetsInNewEpoch() (gas: 264925)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_CumulativeRateLimitExceeded() (gas: 226634)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_EmptyPayload() (gas: 102157)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_FundsExceedRateLimit() (gas: 129852)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_GasAmountAboveMaxUSDCap() (gas: 82908)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_GasAmountBelowMinUSDCap() (gas: 80934)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_GasAmountExceedsBlockCap() (gas: 148149)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_MsgValueLessThanAmount() (gas: 55050)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_ZeroAmount() (gas: 80110)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_ZerorevertRecipient() (gas: 50752)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_RevertOn_ZeroMsgValue() (gas: 41233)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_SmallGasLargeFunds() (gas: 153452)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_TSS_ReceivesFullMsgValue() (gas: 156615)
+[PASS] test_Case2_2_FUNDS_AND_PAYLOAD_Native_VeryLargeFunds_WithinRateLimit() (gas: 155099)
+Suite result: ok. 34 passed; 0 failed; 0 skipped; finished in 71.07ms (67.45ms CPU time)
+
+Ran 28 tests for test/gateway/9_sendUniversalTxFetchTxType.t.sol:GatewayFetchTxTypeTest
+[PASS] test_FAP_erc20_plus_gas_basic() (gas: 195155)
+[PASS] test_FAP_native_batching_basic() (gas: 150657)
+[PASS] test_FAP_native_batching_missingNativeValue_revert() (gas: 42331)
+[PASS] test_FAP_native_batching_zeroExtraGas_ok() (gas: 119527)
+[PASS] test_FAP_nobatching_addNativeValue_becomes_FAP_erc20_plus_gas() (gas: 194396)
+[PASS] test_FAP_nobatching_erc20_basic() (gas: 155631)
+[PASS] test_FAP_nobatching_missingFunds_revert() (gas: 55361)
+[PASS] test_FUNDS_erc20_basic() (gas: 139772)
+[PASS] test_FUNDS_erc20_noFunds_revert() (gas: 39618)
+[PASS] test_FUNDS_erc20_withNativeValue_revert() (gas: 46991)
+[PASS] test_FUNDS_native_basic() (gas: 103259)
+[PASS] test_FUNDS_native_missingNativeValue_revert() (gas: 38104)
+[PASS] test_GAS_AND_PAYLOAD_basic() (gas: 118091)
+[PASS] test_GAS_AND_PAYLOAD_mutation_addFunds_native_becomes_FUNDS_AND_PAYLOAD() (gas: 119964)
+[PASS] test_GAS_AND_PAYLOAD_nonNativeToken_ignored() (gas: 120448)
+[PASS] test_GAS_AND_PAYLOAD_payload_only_native0() (gas: 75991)
+[PASS] test_GAS_basic_native() (gas: 102380)
+[PASS] test_GAS_basic_nonNativeToken_ignored() (gas: 104349)
+[PASS] test_GAS_mutation_hasFunds_becomes_FUNDS_native() (gas: 103742)
+[PASS] test_GAS_mutation_hasPayload_becomes_GAS_AND_PAYLOAD() (gas: 117286)
+[PASS] test_GAS_mutation_noNativeValue_revert() (gas: 37355)
+[PASS] test_Invalid_allZero() (gas: 39963)
+[PASS] test_Invalid_erc20Funds_withNoPayload_andNativeValue() (gas: 46439)
+[PASS] test_Invalid_nativeFunds_noNativeValue() (gas: 37690)
+[PASS] test_Invalid_payload_only_noNative() (gas: 53558)
+[PASS] test_Invariance_revertInstruction_onlyRecipientMatters() (gas: 278299)
+[PASS] test_Invariance_signatureData_ignored() (gas: 277647)
+Suite result: ok. 28 passed; 0 failed; 0 skipped; finished in 84.32ms (13.52ms CPU time)
+
+Ran 52 tests for test/gateway/1_adminActions.t.sol:GatewayAdminSettersTest
+[PASS] testGetMinMaxValueReflectsNewCaps() (gas: 67603)
+[PASS] testModifySupportForToken() (gas: 78561)
+[PASS] testModifySupportForTokenInvalidInput() (gas: 26690)
+[PASS] testModifySupportForTokenOnlyAdmin() (gas: 80034)
+[PASS] testPauseBlocksAllStateChangingFunctions() (gas: 110144)
+[PASS] testPauseOnlyAdmin() (gas: 68393)
+[PASS] testPauseUnpause() (gas: 51389)
+[PASS] testSetCapsUSD() (gas: 48257)
+[PASS] testSetCapsUSDInvalidRange() (gas: 26179)
+[PASS] testSetCapsUSDOnlyAdmin() (gas: 57703)
+[PASS] testSetCapsUSDWhenPaused() (gas: 53348)
+[PASS] testSetChainlinkStalePeriod() (gas: 34806)
+[PASS] testSetChainlinkStalePeriodOnlyAdmin() (gas: 22337)
+[PASS] testSetChainlinkStalePeriodWhenPaused() (gas: 53173)
+[PASS] testSetDefaultSwapDeadline() (gas: 35728)
+[PASS] testSetDefaultSwapDeadlineOnlyAdmin() (gas: 23349)
+[PASS] testSetDefaultSwapDeadlineWhenPaused() (gas: 53403)
+[PASS] testSetDefaultSwapDeadlineZeroReverts() (gas: 27162)
+[PASS] testSetEthUsdFeed() (gas: 617519)
+[PASS] testSetEthUsdFeedOnlyAdmin() (gas: 570298)
+[PASS] testSetEthUsdFeedWhenPaused() (gas: 600427)
+[PASS] testSetEthUsdFeedZeroAddressReverts() (gas: 25144)
+[PASS] testSetL2SequencerFeed() (gas: 472395)
+[PASS] testSetL2SequencerFeedOnlyAdmin() (gas: 449903)
+[PASS] testSetL2SequencerFeedWhenPaused() (gas: 479457)
+[PASS] testSetL2SequencerGracePeriod() (gas: 53217)
+[PASS] testSetL2SequencerGracePeriodMultipleUpdates() (gas: 58603)
+[PASS] testSetL2SequencerGracePeriodOnlyAdmin() (gas: 23280)
+[PASS] testSetL2SequencerGracePeriodWhenPaused() (gas: 53564)
+[PASS] testSetL2SequencerGracePeriodZeroAllowed() (gas: 32877)
+[PASS] testSetRouters() (gas: 81218)
+[PASS] testSetRoutersOnlyAdmin() (gas: 91385)
+[PASS] testSetRoutersWhenPaused() (gas: 52613)
+[PASS] testSetRoutersZeroAddress() (gas: 41240)
+[PASS] testSetTSSAddress() (gas: 87187)
+[PASS] testSetTSSAddressOnlyAdmin() (gas: 80423)
+[PASS] testSetTSSAddressWhenPaused() (gas: 94711)
+[PASS] testSetTSSAddressZeroAddress() (gas: 24653)
+[PASS] testSetV3FeeOrder() (gas: 66333)
+[PASS] testSetV3FeeOrderOnlyAdmin() (gas: 23974)
+[PASS] testSetV3FeeOrderWhenPaused() (gas: 53804)
+[PASS] testUnpauseOnlyAdmin() (gas: 54160)
+[PASS] testUpdateEpochDuration() (gas: 38195)
+[PASS] testUpdateEpochDurationCanBeCalledWhenPaused() (gas: 62989)
+[PASS] testUpdateEpochDurationMultipleUpdates() (gas: 55729)
+[PASS] testUpdateEpochDurationOnlyAdmin() (gas: 48281)
+[PASS] testUpdateEpochDurationZeroDuration() (gas: 28895)
+[PASS] testUpdateVault() (gas: 121917)
+[PASS] testUpdateVaultOnlyAdmin() (gas: 107319)
+[PASS] testUpdateVaultRequiresPaused() (gas: 111844)
+[PASS] testUpdateVaultRoleTransfer() (gas: 163485)
+[PASS] testUpdateVaultZeroAddressReverts() (gas: 53555)
+Suite result: ok. 52 passed; 0 failed; 0 skipped; finished in 13.61ms (12.39ms CPU time)
+
+Ran 50 tests for test/gateway/14_gatewayPC.t.sol:UniversalGatewayPCTest
+[PASS] testAdminFunctionsWorkWhenPaused() (gas: 45880)
+[PASS] testGasFeeCalculationAccuracy() (gas: 542612)
+[PASS] testInitializeRevertDoubleInit() (gas: 3880332)
+[PASS] testInitializeRevertZeroAdmin() (gas: 2787453)
+[PASS] testInitializeRevertZeroPauser() (gas: 2786742)
+[PASS] testInitializeRevertZeroUniversalCore() (gas: 2786645)
+[PASS] testInitializeRevertZeroVaultPC() (gas: 2786462)
+[PASS] testInitializeSuccess() (gas: 3897652)
+[PASS] testInvalidFeeQuoteZeroGasFee() (gas: 2176404)
+[PASS] testInvalidFeeQuoteZeroGasToken() (gas: 2138457)
+[PASS] testMaxGasLimit() (gas: 174862)
+[PASS] testPauseRevertAlreadyPaused() (gas: 50831)
+[PASS] testPauseRevertNonPauser() (gas: 22625)
+[PASS] testPauseSuccess() (gas: 55313)
+[PASS] testReentrancyProtection() (gas: 1550217)
+[PASS] testReentrancyProtectionWithExecute() (gas: 1551545)
+[PASS] testSetVaultPCRevertNonAdmin() (gas: 22312)
+[PASS] testSetVaultPCRevertWhenPaused() (gas: 56304)
+[PASS] testSetVaultPCRevertZeroAddress() (gas: 25720)
+[PASS] testSetVaultPCSuccess() (gas: 43851)
+[PASS] testSetVaultPCToZeroReverts() (gas: 25467)
+[PASS] testTokenBurnFailure() (gas: 2183712)
+[PASS] testUnpauseRevertNonPauser() (gas: 56172)
+[PASS] testUnpauseRevertNotPaused() (gas: 29597)
+[PASS] testUnpauseSuccess() (gas: 45125)
+[PASS] testWithdrawAndExecuteDifferentPayloadSizes() (gas: 252720)
+[PASS] testWithdrawAndExecuteEventEmission() (gas: 181715)
+[PASS] testWithdrawAndExecuteRevertEmptyTarget() (gas: 37274)
+[PASS] testWithdrawAndExecuteRevertInsufficientGasTokenAllowance() (gas: 117142)
+[PASS] testWithdrawAndExecuteRevertInsufficientGasTokenBalance() (gas: 137878)
+[PASS] testWithdrawAndExecuteRevertInsufficientPrc20Balance() (gas: 122880)
+[PASS] testWithdrawAndExecuteRevertInvalidRecipient() (gas: 39434)
+[PASS] testWithdrawAndExecuteRevertWhenPaused() (gas: 63628)
+[PASS] testWithdrawAndExecuteRevertZeroAmount() (gas: 38027)
+[PASS] testWithdrawAndExecuteRevertZeroToken() (gas: 36819)
+[PASS] testWithdrawAndExecuteSuccessWithComplexPayload() (gas: 182898)
+[PASS] testWithdrawAndExecuteSuccessWithCustomGasLimit() (gas: 182442)
+[PASS] testWithdrawAndExecuteSuccessWithDefaultGasLimit() (gas: 185667)
+[PASS] testWithdrawAndExecuteSuccessWithEmptyPayload() (gas: 179797)
+[PASS] testWithdrawEventEmission() (gas: 181073)
+[PASS] testWithdrawRevertEmptyTarget() (gas: 36679)
+[PASS] testWithdrawRevertInsufficientGasTokenAllowance() (gas: 115239)
+[PASS] testWithdrawRevertInsufficientGasTokenBalance() (gas: 135561)
+[PASS] testWithdrawRevertInsufficientPrc20Balance() (gas: 120471)
+[PASS] testWithdrawRevertInvalidRecipient() (gas: 36884)
+[PASS] testWithdrawRevertWhenPaused() (gas: 62087)
+[PASS] testWithdrawRevertZeroAmount() (gas: 37248)
+[PASS] testWithdrawRevertZeroToken() (gas: 34798)
+[PASS] testWithdrawSuccessWithCustomGasLimit() (gas: 182470)
+[PASS] testWithdrawSuccessWithDefaultGasLimit() (gas: 183312)
+Suite result: ok. 50 passed; 0 failed; 0 skipped; finished in 40.50ms (42.46ms CPU time)
+
+Ran 5 tests for test/gateway/2_sendUniversalTx.t.sol:GatewaySendUniversalTxTest
+[PASS] test_SendUniversalTx_FUNDS_AND_PAYLOAD_NoBatching_HappyPath() (gas: 145926)
+[PASS] test_SendUniversalTx_FUNDS_ERC20_HappyPath() (gas: 137654)
+[PASS] test_SendUniversalTx_FUNDS_Native_HappyPath() (gas: 106225)
+[PASS] test_SendUniversalTx_GAS_AND_PAYLOAD_HappyPath() (gas: 117899)
+[PASS] test_SendUniversalTx_GAS_HappyPath() (gas: 105687)
+Suite result: ok. 5 passed; 0 failed; 0 skipped; finished in 9.83ms (4.12ms CPU time)
+
+Ran 67 tests for test/gateway/11_executeUniversalTx.t.sol:GatewayExecuteUniversalTxTest
+[PASS] testExecuteCall_GasExhaustion_Reverts() (gas: 1040432847)
+[PASS] testExecuteCall_NonPayableTargetWithValue_Reverts() (gas: 71747)
+[PASS] testExecuteCall_SuccessNoValue() (gas: 157832)
+[PASS] testExecuteCall_SuccessWithValue() (gas: 126910)
+[PASS] testExecuteCall_TargetReverts_Reverts() (gas: 141393)
+[PASS] testExecuteUniversalTx_DuplicatesubTxId_Reverts() (gas: 156900)
+[PASS] testExecuteUniversalTx_ERC20Path_InsufficientBalance_Reverts() (gas: 81707)
+[PASS] testExecuteUniversalTx_ERC20Path_NoRemainingTokens() (gas: 156235)
+[PASS] testExecuteUniversalTx_ERC20Path_OnlyVault_Reverts() (gas: 169196)
+[PASS] testExecuteUniversalTx_ERC20Path_RemainingTokensReturnedToVault() (gas: 248018)
+[PASS] testExecuteUniversalTx_ERC20Path_ResetApprovalFails_Reverts() (gas: 153439)
+[PASS] testExecuteUniversalTx_ERC20Path_SafeApproveFails_Reverts() (gas: 142315)
+[PASS] testExecuteUniversalTx_ERC20Path_Success() (gas: 235000)
+[PASS] testExecuteUniversalTx_ERC20Path_TargetReverts_Reverts() (gas: 147214)
+[PASS] testExecuteUniversalTx_ERC20Path_WithValue_Reverts() (gas: 43408)
+[PASS] testExecuteUniversalTx_ERC20WithArbitraryCall() (gas: 154536)
+[PASS] testExecuteUniversalTx_EmptyPayload_Succeeds() (gas: 153692)
+[PASS] testExecuteUniversalTx_EventEmittedCorrectly() (gas: 153303)
+[PASS] testExecuteUniversalTx_MultipleExecutionsDifferentsubTxIds() (gas: 256271)
+[PASS] testExecuteUniversalTx_NativePath_ComplexPayload_Succeeds() (gas: 130990)
+[PASS] testExecuteUniversalTx_NativePath_DuplicatesubTxId_Reverts() (gas: 137612)
+[PASS] testExecuteUniversalTx_NativePath_EmptyPayload_Succeeds() (gas: 126834)
+[PASS] testExecuteUniversalTx_NativePath_EventEmission_Complete() (gas: 123872)
+[PASS] testExecuteUniversalTx_NativePath_GasExhaustion_Reverts() (gas: 2988621)
+[PASS] testExecuteUniversalTx_NativePath_NonPayableTarget_Reverts() (gas: 73104)
+[PASS] testExecuteUniversalTx_NativePath_OnlyTSS_Reverts() (gas: 150490)
+[PASS] testExecuteUniversalTx_NativePath_StateNotUpdatedOnRevert() (gas: 188926)
+[PASS] testExecuteUniversalTx_NativePath_Success() (gas: 132187)
+[PASS] testExecuteUniversalTx_NativePath_TargetReverts_Reverts() (gas: 79392)
+[PASS] testExecuteUniversalTx_NativePath_WhenPaused_Reverts() (gas: 66979)
+[PASS] testExecuteUniversalTx_NativePath_WrongValue_Reverts() (gas: 73469)
+[PASS] testExecuteUniversalTx_NativePath_ZeroAmount_Reverts() (gas: 41820)
+[PASS] testExecuteUniversalTx_NativePath_ZeroOriginCaller_Reverts() (gas: 42053)
+[PASS] testExecuteUniversalTx_NativePath_ZeroTarget_Reverts() (gas: 38715)
+[PASS] testExecuteUniversalTx_NotTSS_Reverts() (gas: 32129)
+[PASS] testExecuteUniversalTx_StateUpdatedCorrectly() (gas: 154564)
+[PASS] testExecuteUniversalTx_ValidTSS_Succeeds() (gas: 150136)
+[PASS] testExecuteUniversalTx_WhenPaused_Reverts() (gas: 59663)
+[PASS] testExecuteUniversalTx_ZeroAmount_Reverts() (gas: 79306)
+[PASS] testExecuteUniversalTx_ZeroOriginCaller_Reverts() (gas: 79096)
+[PASS] testExecuteUniversalTx_ZeroTarget_Reverts() (gas: 75574)
+[PASS] testIsExecutedMapping() (gas: 155043)
+[PASS] testResetApproval_NoReturnData_Success() (gas: 269267)
+[PASS] testResetApproval_ReturnsFalse_Reverts() (gas: 159722)
+[PASS] testResetApproval_RevertsOnZeroApproval_Success() (gas: 258270)
+[PASS] testResetApproval_StandardERC20_Success() (gas: 178408)
+[PASS] testResetApproval_USDTStyle_Success() (gas: 181591)
+[PASS] testSafeApprove_Idempotency_Success() (gas: 190260)
+[PASS] testSafeApprove_NoReturnData_Success() (gas: 268449)
+[PASS] testSafeApprove_ReturnsFalse_Reverts() (gas: 151247)
+[PASS] testSafeApprove_RevertsOnApprove_Reverts() (gas: 132594)
+[PASS] testSafeApprove_StandardERC20_Success() (gas: 163342)
+[PASS] testSafeApprove_USDTStyle_FromNonZero_Reverts() (gas: 2252760)
+[PASS] testSafeApprove_USDTStyle_FromZero_Success() (gas: 165945)
+[PASS] testWithdrawFunds_DuplicatesubTxId_Reverts() (gas: 146370)
+[PASS] testWithdrawFunds_EventEmission_Complete() (gas: 116617)
+[PASS] testWithdrawFunds_InsufficientBalance_Reverts() (gas: 81481)
+[PASS] testWithdrawFunds_MultipleTokens_Success() (gas: 222579)
+[PASS] testWithdrawFunds_OnlyVault_Reverts() (gas: 139086)
+[PASS] testWithdrawFunds_PartialWithdrawal_Success() (gas: 155498)
+[PASS] testWithdrawFunds_StateNotUpdatedOnRevert() (gas: 147868)
+[PASS] testWithdrawFunds_Success() (gas: 136716)
+[PASS] testWithdrawFunds_WhenPaused_Reverts() (gas: 102826)
+[PASS] testWithdrawFunds_ZeroAmount_Reverts() (gas: 79283)
+[PASS] testWithdrawFunds_ZeroOriginCaller_Reverts() (gas: 78420)
+[PASS] testWithdrawFunds_ZeroRecipient_Reverts() (gas: 74714)
+[PASS] testWithdrawFunds_ZeroToken_Reverts() (gas: 77414)
+Suite result: ok. 67 passed; 0 failed; 0 skipped; finished in 792.92ms (843.86ms CPU time)
+
+Ran 24 tests for test/gateway/3_sendUniversalTx_token_fork.t.sol:GatewaySendUniversalTxTokenGasForkTest
+[PASS] test_TokenGas_AcceptsMsgValue() (gas: 306084)
+[PASS] test_TokenGas_InferFUNDS_AND_PAYLOAD_Type() (gas: 347344)
+[PASS] test_TokenGas_InferFUNDS_Type() (gas: 329885)
+[PASS] test_TokenGas_InferGAS_AND_PAYLOAD_Type() (gas: 303061)
+[PASS] test_TokenGas_InferGAS_Type() (gas: 303781)
+[PASS] test_TokenGas_MaximumValues() (gas: 77506)
+[PASS] test_TokenGas_MsgValueDoesNotAffectNativeValue() (gas: 460424)
+[PASS] test_TokenGas_PreservesRevertInstruction() (gas: 321494)
+[PASS] test_TokenGas_PreservesSignatureData() (gas: 298304)
+[PASS] test_TokenGas_RevertOn_ExpiredDeadline() (gas: 120882)
+[PASS] test_TokenGas_RevertOn_InsufficientAllowance() (gas: 118424)
+[PASS] test_TokenGas_RevertOn_InsufficientBalance() (gas: 106030)
+[PASS] test_TokenGas_RevertOn_NoPoolFound() (gas: 2203417)
+[PASS] test_TokenGas_RevertOn_Paused() (gas: 150364)
+[PASS] test_TokenGas_RevertOn_SlippageExceeded() (gas: 299043)
+[PASS] test_TokenGas_RevertOn_UniswapNotConfigured() (gas: 8126336)
+[PASS] test_TokenGas_RevertOn_ZeroAmountOutMinETH() (gas: 119968)
+[PASS] test_TokenGas_RevertOn_ZeroGasAmount() (gas: 120902)
+[PASS] test_TokenGas_RevertOn_ZeroGasToken() (gas: 35932)
+[PASS] test_TokenGas_SwapDAI_Success() (gas: 289714)
+[PASS] test_TokenGas_SwapUSDC_Success() (gas: 310582)
+[PASS] test_TokenGas_SwapUSDT_Success() (gas: 307312)
+[PASS] test_TokenGas_WETHFastPath_Success() (gas: 169629)
+[PASS] test_TokenGas_ZeroDeadlineUsesDefault() (gas: 298540)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 15.17s (39.36s CPU time)
+
+Ran 15 test suites in 15.21s (16.55s CPU time): 472 tests passed, 0 failed, 0 skipped (472 total tests)
+Wrote LCOV report.

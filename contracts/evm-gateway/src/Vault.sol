@@ -2,27 +2,29 @@
 pragma solidity 0.8.26;
 
 /**
- * @title Vault
- * @notice ERC20 custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
+ * @title  Vault
+ * @notice Token custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
  * @dev    - TransparentUpgradeable (OZ Initializable pattern)
- *         - ERC20-only (no native); native is handled by the gateway directly.
+ *         - Handles both ERC20 and native tokens
  *         - Token support is gated by UniversalGateway.isSupportedToken(token) to keep a single source of truth.
- *         - Uses safe-approve -> call -> reset-approval pattern (USDT-safe).
+ *         - Routes withdrawals (empty payload) and executions (non-empty payload) through CEA contracts
+ *         - Uses CEAFactory for deterministic CEA deployment
  */
 
-import {Errors}                     from "./libraries/Errors.sol";
-import {IVault}                     from "./interfaces/IVault.sol";
-import {RevertInstructions}         from "./libraries/Types.sol";
-import {IUniversalGateway}          from "./interfaces/IUniversalGateway.sol";
+import { Errors } from "./libraries/Errors.sol";
+import { IVault } from "./interfaces/IVault.sol";
+import { ICEA } from "./interfaces/ICEA.sol";
+import { ICEAFactory } from "./interfaces/ICEAFactory.sol";
+import { IUniversalGateway } from "./interfaces/IUniversalGateway.sol";
+import { RevertInstructions } from "./libraries/Types.sol";
 
-import {IERC20}                     from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20}                  from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ContextUpgradeable}         from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
-import {PausableUpgradeable}        from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {Initializable}              from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {AccessControlUpgradeable}   from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 contract Vault is
     Initializable,
@@ -34,26 +36,25 @@ contract Vault is
 {
     using SafeERC20 for IERC20;
 
-    // =========================
-    //            ROLES
-    // =========================
-    bytes32 public constant TSS_ROLE    = keccak256("TSS_ROLE");
+    bytes32 public constant TSS_ROLE = keccak256("TSS_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    // =========================
-    //           STATE
-    // =========================
-    /// @notice UniversalGateway on the same chain; source of truth for token support.
     IUniversalGateway public gateway;
-
-    /// @notice The current TSS address for Vault
     address public TSS_ADDRESS;
+    ICEAFactory public CEAFactory;
 
-    // =========================
-    //         INITIALIZER
-    // =========================
-    function initialize(address admin, address pauser, address tss, address gw) external initializer {
-        if (admin == address(0) || pauser == address(0) || tss == address(0) || gw == address(0)) {
+    // ==============================
+    //     Vault_1: ADMIN ACTIONS
+    // ==============================
+
+    function initialize(address admin, address pauser, address tss, address gw, address ceaFactory)
+        external
+        initializer
+    {
+        if (
+            admin == address(0) || pauser == address(0) || tss == address(0) || gw == address(0)
+                || ceaFactory == address(0)
+        ) {
             revert Errors.ZeroAddress();
         }
 
@@ -63,33 +64,24 @@ contract Vault is
         __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE,          pauser);
-        _grantRole(TSS_ROLE,             tss);
+        _grantRole(PAUSER_ROLE, pauser);
+        _grantRole(TSS_ROLE, tss);
 
         gateway = IUniversalGateway(gw);
         TSS_ADDRESS = tss;
-        emit GatewayUpdated(address(0), gw);
-        emit TSSUpdated(address(0), tss);
+        CEAFactory = ICEAFactory(ceaFactory);
     }
 
-    // =========================
-    //          ADMIN OPS
-    // =========================
-    /// @notice             Allows the admin to pause the contract
-    /// @dev                Only callable by PAUSER_ROLE
     function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    /// @notice             Allows the admin to unpause the contract
-    /// @dev                Only callable by PAUSER_ROLE
     function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
-    /// @notice             Allows the admin to update the UniversalGateway address
-    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
-    /// @param gw           New UniversalGateway address
+    /// @notice                Updates the UniversalGateway address.
+    /// @param gw              New UniversalGateway address.
     function setGateway(address gw) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (gw == address(0)) revert Errors.ZeroAddress();
         address old = address(gateway);
@@ -97,14 +89,12 @@ contract Vault is
         emit GatewayUpdated(old, gw);
     }
 
-    /// @notice             Allows the admin to update the TSS address
-    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
-    /// @param newTss       New TSS address
+    /// @notice                Updates the TSS address and transfers TSS_ROLE.
+    /// @param newTss          New TSS address.
     function setTSS(address newTss) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newTss == address(0)) revert Errors.ZeroAddress();
         address old = TSS_ADDRESS;
 
-        // transfer role
         if (hasRole(TSS_ROLE, old)) _revokeRole(TSS_ROLE, old);
         _grantRole(TSS_ROLE, newTss);
 
@@ -112,80 +102,167 @@ contract Vault is
         emit TSSUpdated(old, newTss);
     }
 
-    /// @notice             Allows the admin to sweep tokens from the contract
-    /// @dev                Only callable by DEFAULT_ADMIN_ROLE
-    /// @param token        Token address
-    /// @param to           Recipient address
-    /// @param amount       Amount of token to sweep
-    function sweep(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
-        IERC20(token).safeTransfer(to, amount);
+    /// @notice                Updates the CEAFactory address.
+    /// @param newCEAFactory   New CEAFactory address.
+    function setCEAFactory(address newCEAFactory) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newCEAFactory == address(0)) revert Errors.ZeroAddress();
+        address old = address(CEAFactory);
+        CEAFactory = ICEAFactory(newCEAFactory);
+        emit CEAFactoryUpdated(old, newCEAFactory);
     }
 
-    // =========================
-    //          WITHDRAW
-    // =========================
-    /// @inheritdoc IVault
-    function withdraw(bytes32 txID, address originCaller, address token, address to, uint256 amount)
-        external
-        nonReentrant
-        whenNotPaused
-        onlyRole(TSS_ROLE)
-    {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
-        _enforceSupported(token);
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
-
-        IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.withdrawTokens(txID, originCaller, token, to, amount);
-        emit VaultWithdraw(txID, originCaller, token, to, amount);
-    }
+    // ==============================
+    //  Vault_2: WITHDRAW & EXECUTION
+    // ==============================
 
     /// @inheritdoc IVault
-    function withdrawAndExecute(bytes32 txID, address originCaller, address token, address target, uint256 amount, bytes calldata data)
-        external
-        nonReentrant
-        whenNotPaused
-        onlyRole(TSS_ROLE)
-    {
-        if (token == address(0) || target == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
-        _enforceSupported(token);
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+    function finalizeUniversalTx(
+        bytes32 subTxId,
+        bytes32 universalTxId,
+        address pushAccount,
+        address recipient,
+        address token,
+        uint256 amount,
+        bytes calldata data
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        (address cea, bool isDeployed) = CEAFactory.getCEAForPushAccount(pushAccount);
+        if (!isDeployed) {
+            cea = CEAFactory.deployCEA(pushAccount);
+        }
 
-        // Transfer tokens to gateway
-        IERC20(token).safeTransfer(address(gateway), amount);
+        _finalizeUniversalTx(subTxId, universalTxId, pushAccount, recipient, token, amount, data, cea);
 
-        // Forward execution call to gateway
-        gateway.executeUniversalTx(txID, originCaller, token, target, amount, data);
-        
-        emit VaultWithdrawAndExecute(token, target, amount, data);
+        emit UniversalTxFinalized(subTxId, universalTxId, pushAccount, recipient, token, amount, data);
     }
 
     /// @inheritdoc IVault
-    function revertWithdraw(bytes32 txID, address token, address to, uint256 amount, RevertInstructions calldata revertInstruction)
-        external
-        nonReentrant
-        whenNotPaused
-        onlyRole(TSS_ROLE)
-    {
-        if (token == address(0) || to == address(0)) revert Errors.ZeroAddress();
-        if (amount == 0) revert Errors.InvalidAmount();
-        _enforceSupported(token);
-        if (IERC20(token).balanceOf(address(this)) < amount) revert Errors.InvalidAmount();
+    function revertUniversalTx(
+        bytes32 subTxId,
+        bytes32 universalTxId,
+        address token,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        _validateRevertParams(amount, revertInstruction.revertRecipient);
 
-        IERC20(token).safeTransfer(address(gateway), amount);
-        gateway.revertUniversalTxToken(txID, token, amount, revertInstruction);
+        if (token == address(0)) {
+            if (msg.value != amount) revert Errors.InvalidAmount();
+            gateway.revertUniversalTx{ value: amount }(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
+        } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+            _enforceSupported(token);
+            if (IERC20(token).balanceOf(address(this)) < amount) {
+                revert Errors.InsufficientBalance();
+            }
+            IERC20(token).safeTransfer(address(gateway), amount);
+            gateway.revertUniversalTx(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
+        }
 
-        emit VaultRevert(token, to, amount, revertInstruction);
+        emit UniversalTxReverted(
+            subTxId, universalTxId, token, amount, revertInstruction
+        );
     }
 
-    // =========================
-    //        INTERNALS
-    // =========================
+    /// @inheritdoc IVault
+    function rescueFunds(
+        bytes32 subTxId,
+        bytes32 universalTxId,
+        address token,
+        uint256 amount,
+        RevertInstructions calldata revertInstruction
+    ) external payable nonReentrant whenNotPaused onlyRole(TSS_ROLE) {
+        _validateRevertParams(amount, revertInstruction.revertRecipient);
+
+        if (token == address(0)) {
+            if (msg.value != amount) revert Errors.InvalidAmount();
+            gateway.rescueFunds{ value: amount }(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
+        } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+            _enforceSupported(token);
+            if (IERC20(token).balanceOf(address(this)) < amount) {
+                revert Errors.InsufficientBalance();
+            }
+            IERC20(token).safeTransfer(address(gateway), amount);
+            gateway.rescueFunds(
+                subTxId, universalTxId, token, amount, revertInstruction
+            );
+        }
+
+        emit FundsRescued(
+            subTxId, universalTxId, token, amount, revertInstruction
+        );
+    }
+
+    // ==============================
+    //    Vault_3: INTERNAL HELPERS
+    // ==============================
+
+    /// @dev Validates common revert/rescue parameters.
+    function _validateRevertParams(uint256 amount, address revertRecipient) private pure {
+        if (amount == 0) revert Errors.InvalidAmount();
+        if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
+    }
+
+    /// @dev                   Checks token is supported via the gateway.
+    /// @param token           Token address to validate.
     function _enforceSupported(address token) internal view {
-        // Single source of truth lives in UniversalGateway
-        if (!gateway.isSupportedToken(token)) revert Errors.NotSupported();
+        if (!gateway.isSupportedToken(token)) {
+            revert Errors.NotSupported();
+        }
+    }
+
+    /// @dev                   Validates push account and token/value invariants.
+    /// @param pushAccount     Push Chain account (UEA).
+    /// @param token           Token address (address(0) for native).
+    /// @param amount          Expected amount.
+    function _validateParams(address pushAccount, address token, uint256 amount) internal view {
+        if (pushAccount == address(0)) revert Errors.ZeroAddress();
+        _enforceSupported(token);
+
+        if (token == address(0)) {
+            if (msg.value != amount) revert Errors.InvalidAmount();
+        } else {
+            if (msg.value != 0) revert Errors.InvalidAmount();
+        }
+    }
+
+    /// @dev                   Unified execution handler — all operations route through CEA.
+    /// @param subTxId         Gateway transaction ID
+    /// @param universalTxId   Universal transaction ID
+    /// @param pushAccount     Push Chain account (UEA) this transaction is attributed to
+    /// @param recipient       Destination address on this chain; address(0) means park in CEA
+    /// @param token           Token address (address(0) for native)
+    /// @param amount          Amount of tokens to fund CEA with
+    /// @param data            Multicall payload (abi.encode(Multicall[]))
+    /// @param cea             CEA address (already deployed or newly created)
+    function _finalizeUniversalTx(
+        bytes32 subTxId,
+        bytes32 universalTxId,
+        address pushAccount,
+        address recipient,
+        address token,
+        uint256 amount,
+        bytes calldata data,
+        address cea
+    ) private {
+        _validateParams(pushAccount, token, amount);
+
+        if (token != address(0)) {
+            if (amount > 0) {
+                if (IERC20(token).balanceOf(address(this)) < amount) {
+                    revert Errors.InvalidAmount();
+                }
+                IERC20(token).safeTransfer(cea, amount);
+            }
+            ICEA(cea).executeUniversalTx(subTxId, universalTxId, pushAccount, recipient, data);
+        } else {
+            ICEA(cea).executeUniversalTx{ value: amount }(subTxId, universalTxId, pushAccount, recipient, data);
+        }
     }
 }
