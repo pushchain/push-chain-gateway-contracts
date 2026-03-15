@@ -47,7 +47,7 @@ Inbound transactions result in PRC20 minting on Push Chain:
   `sender`'s own UEA.
 - **`recipient != address(0)`** (CEA path only): Push Chain routes to that explicit UEA address.
 
-### 1.4 TX_TYPE Reference — Inbound `_fetchTxType` (`UniversalGateway.sol:889-941`)
+### 1.4 TX_TYPE Reference — Inbound `_fetchTxType` (`UniversalGateway.sol:891-941`)
 
 TX_TYPE is inferred automatically from four decision variables. Users never specify it.
 
@@ -71,27 +71,7 @@ hasNativeValue := nativeValue > 0   // msg.value or swapped ETH from token-gas p
 
 ### 1.5 Protocol Fee
 
-Every inbound transaction (except CEA self-calls) pays a flat protocol fee in native token.
-The fee is extracted from `msg.value` by `_collectProtocolFee` inside `_routeUniversalTx`
-**before** any routing logic runs. All downstream functions see the post-fee `nativeValue`.
-
-| Property                  | Value                                                             |
-| ------------------------- | ----------------------------------------------------------------- |
-| State variable            | `INBOUND_FEE` (uint256, wei). Default: 0 (disabled).              |
-| Admin setter              | `setProtocolFee(uint256)` — `DEFAULT_ADMIN_ROLE` only.            |
-| Accumulator               | `totalProtocolFeesCollected` — running total, incremented per-tx. |
-| Destination               | Forwarded to `TSS_ADDRESS` via low-level call.                    |
-| CEA path (`fromCEA=true`) | **Skipped** — fee is already paid on Push Chain.                  |
-| Insufficient fee          | Reverts with `Errors.InsufficientProtocolFee()`.                  |
-
-**Fee mechanics (additive model)**: Users send `msg.value = desiredAmount + INBOUND_FEE`.
-After extraction, `nativeValue = msg.value - INBOUND_FEE`. The `req.amount` field represents
-the intended bridge amount, not the gross payment.
-
-- **GAS / GAS_AND_PAYLOAD**: `msg.value = gasTopUp + INBOUND_FEE`. Post-fee gas = `gasTopUp`.
-- **FUNDS native**: `msg.value = req.amount + INBOUND_FEE`. Post-fee `nativeValue = req.amount`.
-- **FUNDS ERC20**: `msg.value = INBOUND_FEE` (or `INBOUND_FEE + gasTopUp` for gas batching).
-- **Payload-only** (`GAS_AND_PAYLOAD`, `msg.value = INBOUND_FEE`): post-fee `nativeValue = 0`.
+> **Protocol Fee** — see [2_UniversalGateway.md §4 Inbound Fees](./2_UniversalGateway.md).
 
 ### 1.6 Rate-Limit Model
 
@@ -635,99 +615,7 @@ leg). Both emitted events carry `recipient=mappedUEA` and `fromCEA=true`.
 
 ## 7. Category 6 — Revert Flows
 
-Revert flows return funds to the user when a bridging transaction is rejected or fails after
-the gateway has already taken custody of the funds.
-
----
-
-### 7.1 Revert ERC20 Token (`revertUniversalTxToken`)
-
-**Caller**: `VAULT_ROLE` only (the Vault contract calls this after pulling tokens from its own
-balance). Direct TSS calls are rejected.
-
-**Function** (`UniversalGateway.sol:567-582`):
-```solidity
-function revertUniversalTxToken(
-    bytes32 subTxId,
-    bytes32 universalTxId,
-    address token,
-    uint256 amount,
-    RevertInstructions calldata revertInstruction
-) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE)
-```
-
-**Execution**:
-1. Check `isExecuted[subTxId]` → revert `PayloadExecuted` if already processed (replay protection).
-2. Set `isExecuted[subTxId] = true`.
-3. `IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount)`.
-4. Emit `RevertUniversalTx`.
-
-The full call chain initiated by TSS:
-```
-TSS → Vault.revertUniversalTxToken(subTxId, universalTxId, token, amount, revertInstruction)
-    → Vault: validates token support and balance, safeTransfer(gateway, amount)
-    → gateway.revertUniversalTxToken(...) → safeTransfer(revertRecipient, amount)
-    → emit RevertUniversalTx
-```
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant TSS as TSS (off-chain)
-    participant V as Vault (External Chain)
-    participant GW as UniversalGateway (External Chain)
-    participant USDC as USDC Token (External Chain)
-    participant R as revertRecipient
-
-    TSS->>V: revertUniversalTxToken(subTxId, universalTxId, USDC, amount, {revertRecipient})
-    V->>V: validate token supported, balance sufficient
-    V->>USDC: safeTransfer(gateway, amount)
-    V->>GW: revertUniversalTxToken(subTxId, universalTxId, USDC, amount, revertInstruction)
-    GW->>GW: isExecuted check + set true (replay protection)
-    GW->>USDC: safeTransfer(revertRecipient, amount)
-    USDC-->>R: +amount USDC
-    GW-->>TSS: emit RevertUniversalTx
-    V-->>TSS: emit UniversalTxReverted
-```
-
----
-
-### 7.2 Revert Native Token (`revertUniversalTx`)
-
-**Caller**: TSS only (`onlyTSS` modifier). Native ETH was held in the gateway after the original
-inbound `sendUniversalTx` call forwarded it to `TSS_ADDRESS`; TSS must re-send the ETH with
-the revert call.
-
-**Function** (`UniversalGateway.sol:585-603`):
-```solidity
-function revertUniversalTx(
-    bytes32 subTxId,
-    bytes32 universalTxId,
-    uint256 amount,
-    RevertInstructions calldata revertInstruction
-) external payable nonReentrant whenNotPaused onlyTSS
-```
-
-**Execution**:
-1. Check `isExecuted[subTxId]` → revert `PayloadExecuted` (replay protection).
-2. Validate `revertInstruction.revertRecipient != address(0)`.
-3. Validate `amount > 0 && msg.value == amount`.
-4. Set `isExecuted[subTxId] = true`.
-5. `payable(revertInstruction.revertRecipient).call{value: amount}("")` — revert if call fails.
-6. Emit `RevertUniversalTx`.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant TSS as TSS (off-chain)
-    participant GW as UniversalGateway (External Chain)
-    participant R as revertRecipient
-
-    TSS->>GW: revertUniversalTx{value: amount}(subTxId, universalTxId, amount, {revertRecipient})
-    GW->>GW: isExecuted check + set true (replay protection)
-    GW->>R: call{value: amount}("")
-    GW-->>TSS: emit RevertUniversalTx
-```
+> Revert and rescue flows are documented in [Revert_Handling.md](./Revert_Handling.md).
 
 ---
 

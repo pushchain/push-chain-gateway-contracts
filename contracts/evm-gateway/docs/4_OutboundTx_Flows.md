@@ -51,15 +51,14 @@ PRC20 tokens are wrapped representations of external chain tokens on Push Chain.
 
 #### External Chain (`UniversalGateway._fetchTxType`, used for CEA→UEA self-calls)
 
-Only `FUNDS` and `FUNDS_AND_PAYLOAD` are currently active for CEA→UEA routes.
-`GAS` and `GAS_AND_PAYLOAD` via CEA are not enabled.
+All four TX_TYPEs are supported on the CEA→UEA path via `sendUniversalTxFromCEA`.
 
-| `req.amount`           | `req.payload` | TX_TYPE                        | Route    |
-| ---------------------- | ------------- | ------------------------------ | -------- |
-| == 0, native value > 0 | empty         | `GAS` *(inactive)*             | Instant  |
-| == 0                   | non-empty     | `GAS_AND_PAYLOAD` *(inactive)* | Instant  |
-| > 0                    | empty         | `FUNDS`                        | Standard |
-| > 0                    | non-empty     | `FUNDS_AND_PAYLOAD`            | Standard |
+| `req.amount`           | `req.payload` | TX_TYPE             | Route    |
+| ---------------------- | ------------- | ------------------- | -------- |
+| == 0, native value > 0 | empty         | `GAS`               | Instant  |
+| == 0                   | non-empty     | `GAS_AND_PAYLOAD`   | Instant  |
+| > 0                    | empty         | `FUNDS`             | Standard |
+| > 0                    | non-empty     | `FUNDS_AND_PAYLOAD` | Standard |
 
 ### 1.5 Multicall Payload: The CEA Execution Engine
 
@@ -150,10 +149,9 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=1ETH, payload="")
     GPC->>GPC: burn 1 PRC20-ETH from BOB
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue] [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS)
 
@@ -204,10 +202,9 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=1000e6, payload="")
     GPC->>GPC: burn 1000e6 PRC20-USDC from BOB
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue] [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS)
 
@@ -258,10 +255,9 @@ sequenceDiagram
     Note over CEA: CEA holds 0.5 ETH (pre-existing)
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=multicallCalldata)
     Note over GPC: No burn (amount == 0)
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 
@@ -312,10 +308,9 @@ sequenceDiagram
     Note over CEA: CEA holds 200e6 USDC (pre-existing)
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=multicallCalldata)
     Note over GPC: No burn (amount == 0)
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 
@@ -374,10 +369,9 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=1ETH, payload=swapCalldata)
     GPC->>GPC: burn 1 PRC20-ETH from BOB
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
@@ -423,10 +417,9 @@ sequenceDiagram
     Note over CEA: CEA already holds 0.5 ETH
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=targetCalldata)
     Note over GPC: No burn
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 
@@ -470,10 +463,9 @@ sequenceDiagram
     Note over CEA: CEA holds 0.3 ETH pre-existing
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=0.5ETH, payload=targetCalldata)
     GPC->>GPC: burn 0.5 PRC20-ETH from BOB
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
@@ -517,10 +509,9 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=500e6, payload=aaveCalldata)
     GPC->>GPC: burn 500e6 PRC20-USDC from BOB
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
@@ -581,7 +572,7 @@ multicall bridges them back inbound in the same execution.
 > Push Chain uses this to credit BOB's existing UEA rather than deploying a new one for the
 > CEA's address (CEA address ≠ UEA address).
 
-Only `FUNDS` and `FUNDS_AND_PAYLOAD` are currently active for CEA→UEA routes.
+All four TX_TYPEs are supported for CEA→UEA routes via `sendUniversalTxFromCEA`. The most common patterns are `FUNDS` and `FUNDS_AND_PAYLOAD` (examples below), but `GAS` and `GAS_AND_PAYLOAD` are also valid.
 
 The general flow for all Category 3 cases:
 ```
@@ -639,10 +630,9 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_ETH, amount=ethAmount, payload=multicallData)
     GPC->>GPC: burn ethAmount PRC20-ETH from BOB
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
@@ -704,10 +694,9 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(token=PRC20_USDC, amount=500e6, payload=multicallData)
     GPC->>GPC: burn 500e6 PRC20-USDC from BOB
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, FUNDS_AND_PAYLOAD)
 
@@ -1034,10 +1023,9 @@ sequenceDiagram
 
     BOB->>GPC: sendUniversalTxOutbound{value: pcFee}(amount=0, payload=MIGRATION_SELECTOR)
     Note over GPC: No burn (amount == 0)
-    GPC->>VaultPC: call{value: protocolFee}("")
+    GPC->>VaultPC: call{value: protocolFee}("") [native PC revenue]
     GPC->>UC: swapAndBurnGas{value: pcFee - protocolFee}(pETH, gasFee)
     UC->>UC: swap PC → pETH, burn gasFee
-    UC->>VPC: send protocolFee (pETH)
     UC->>BOB: refund unused PC
     GPC-->>TSS: emit UniversalTxOutbound(subTxId, GAS_AND_PAYLOAD)
 

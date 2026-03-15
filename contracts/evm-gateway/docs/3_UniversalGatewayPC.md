@@ -68,11 +68,42 @@ Reverts with `InvalidData` if `gasToken == address(0)` or `gasFee + protocolFee 
 
 ### 2.3 Fee Swap and Split (`_swapAndCollectFees`)
 
-The user pays gas fees in native PC via `msg.value`. The gateway first sends `protocolFee` (native PC) directly to VaultPC, then calls `UniversalCore.swapAndBurnGas{value: pcAmount}(gasToken, fee, gasFee, deadline, caller)` which:
+**Protocol Fee vs Gas Fee**:
 
-1. Swaps native PC → gas token PRC20 (amount = `gasFee`).
-2. **Burns** the `gasFee` portion — the backing tokens on the origin chain are freed for TSS relayers to spend on execution gas.
-3. **Refunds** any excess PC directly to the caller.
+| Property | Protocol Fee | Gas Fee |
+|----------|--------------|---------|
+| What it is | Flat revenue fee per outbound tx | Cost to execute the tx on the origin chain |
+| Denomination | Native PC | Gas token PRC20 (e.g., pETH for Ethereum) |
+| Destination | VaultPC (sent before swap) | Burned via UniversalCore |
+| Source | `UniversalCore.getOutboundTxGasAndFees` | `gasPrice × gasLimit` |
+| Refund on over-payment | No (exact amount sent to VaultPC) | Yes — unused PC refunded to caller |
+
+**Detailed flow**:
+
+1. UGPC sends `protocolFee` (native PC) directly to VaultPC via `call{value: protocolFee}("")`.
+2. UGPC calls `UniversalCore.swapAndBurnGas{value: msg.value - protocolFee}(gasToken, fee, gasFee, deadline, caller)`.
+3. UniversalCore performs an `exactOutputSingle` swap: native PC → gas token PRC20.
+4. Exactly `gasFee` worth of gas token PRC20 is **burned** — the backing tokens on the origin chain are freed for TSS relayers to spend on execution gas.
+5. Any excess native PC is **refunded** directly to `caller` (the original user) by UniversalCore.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant BOB as BOB (Push Chain)
+    participant GPC as UniversalGatewayPC (Push Chain)
+    participant VPC as VaultPC (Push Chain)
+    participant UC as UniversalCore (Push Chain)
+    participant AMM as Uniswap AMM (Push Chain)
+    participant GT as Gas Token PRC20
+
+    BOB->>GPC: sendUniversalTxOutbound{value: msg.value}(req)
+    GPC->>VPC: call{value: protocolFee}("") [native PC revenue]
+    GPC->>UC: swapAndBurnGas{value: msg.value - protocolFee}(gasToken, gasFee, caller=BOB)
+    UC->>AMM: exactOutputSingle(PC → gasToken, amountOut=gasFee)
+    AMM-->>UC: gasFee gasToken
+    UC->>GT: burn(gasFee) [frees backing tokens on origin chain]
+    UC-->>BOB: refund unused PC
+```
 
 ---
 
@@ -95,12 +126,10 @@ The gateway never custodies withdrawn value — burning is the canonical on-chai
 
 **Execution flow:**
 
-1. **Validate** — `prc20 != address(0)`, `RESCUE_FUNDS_GAS_LIMIT > 0`.
-2. **Resolve chain** — fetches `chainNamespace` from `IPRC20(prc20).SOURCE_CHAIN_NAMESPACE()`.
-3. **Quote gas** — reads `gasPrice` and `gasToken` from `UniversalCore` for the chain namespace.
-4. **Calculate fee** — `gasFee = gasPrice * RESCUE_FUNDS_GAS_LIMIT`.
-5. **Swap and burn** — all `msg.value` goes to `_swapAndCollectFees` (no protocol fee).
-6. **Emit `RescueFundsOnSourceChain`** — TSS picks this up and calls `Vault.rescueFunds()` on the source chain.
+1. **Validate** — `prc20 != address(0)`.
+2. **Resolve chain and quote gas** — calls `IUniversalCore(UNIVERSAL_CORE).getRescueFundsGasLimit(prc20)` which returns: `gasToken`, `gasFee`, `rescueGasLimit`, `gasPrice`, `chainNamespace`.
+3. **Swap and burn** — all `msg.value` goes to `_swapAndCollectFees(gasToken, msg.value, gasFee)` (no protocol fee split).
+4. **Emit `RescueFundsOnSourceChain`** — TSS picks this up and calls `Vault.rescueFunds()` on the source chain.
 
 **Key differences from `sendUniversalTxOutbound`:**
 - No PRC20 burn (tokens are stuck, not held by the user).
@@ -128,9 +157,7 @@ The gateway never custodies withdrawn value — burning is the canonical on-chai
 | ---------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `IUniversalCore` | `BASE_GAS_LIMIT()`                                                            | Default gas limit when user passes 0                        |
 | `IUniversalCore` | `getOutboundTxGasAndFees(token, gasLimit)`                                    | Quote gas fee, protocol fee, gas price, gas token, chain namespace |
-| `IUniversalCore` | `swapAndBurnGas(gasToken, fee, gasFee, deadline, caller)`                     | Swap PC → gas token, burn gasFee                            |
-| `IUniversalCore` | `protocolFeeByToken(token)`                                                   | Protocol fee in native PC for a given token                 |
-| `IUniversalCore` | `gasPriceByChainNamespace(chainNamespace)`                                    | Gas price for a chain (used by rescue path)                 |
-| `IUniversalCore` | `gasTokenPRC20ByChainNamespace(chainNamespace)`                               | Gas token PRC20 for a chain (used by rescue path)           |
-| `IPRC20`         | `transferFrom`, `burn`, `SOURCE_CHAIN_NAMESPACE()`                            | Pull/burn PRC20 tokens; resolve chain namespace             |
+| `IUniversalCore` | `swapAndBurnGas(gasToken, fee, gasFee, deadline, caller)`                     | Swap PC → gas token, burn gasFee, refund unused PC to caller |
+| `IUniversalCore` | `getRescueFundsGasLimit(prc20)`                                               | Resolve chain and quote gas for `rescueFundsOnSourceChain`  |
+| `IPRC20`         | `transferFrom`, `burn`                                                        | Pull/burn PRC20 tokens                                      |
 | `IVaultPC`       | (address only)                                                                | Receives protocol fee in native PC                          |
