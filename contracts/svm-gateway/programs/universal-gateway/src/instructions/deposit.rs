@@ -399,6 +399,7 @@ pub struct SendUniversalTx<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
+    #[account(constraint = price_update.key() == config.pyth_price_feed @ GatewayError::InvalidAccount)]
     pub price_update: Account<'info, PriceUpdateV2>,
 
     /// Rate limit config - REQUIRED for universal entrypoint
