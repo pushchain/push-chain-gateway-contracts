@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import { Script } from "forge-std/Script.sol";
 import { console } from "forge-std/console.sol";
-import { UniversalGatewayV0 } from "../../src/UniversalGatewayV0.sol";
+import { UniversalGatewayV0 } from "../../src/testnetV0/UniversalGatewayV0.sol";
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
