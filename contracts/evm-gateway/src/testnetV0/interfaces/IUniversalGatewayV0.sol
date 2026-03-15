@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import { RevertInstructions, TX_TYPE } from "../libraries/Types.sol";
-import { UniversalTxRequest, UniversalTokenTxRequest } from "../libraries/TypesUG.sol";
+import { RevertInstructions, TX_TYPE } from "../../libraries/Types.sol";
+import { UniversalTxRequest, UniversalTokenTxRequest } from "../../libraries/TypesUG.sol";
 
 interface IUniversalGatewayV0 {
     // =========================

@@ -32,12 +32,6 @@ interface IUniversalCore {
         address caller
     ) external payable returns (uint256 gasTokenOut, uint256 refund);
 
-    function protocolFeeByToken(address token) external view returns (uint256);
-
-    function gasPriceByChainNamespace(string calldata chainNamespace) external view returns (uint256);
-
-    function gasTokenPRC20ByChainNamespace(string calldata chainNamespace) external view returns (address);
-
     function getRescueFundsGasLimit(address _prc20)
         external
         view

@@ -12,6 +12,7 @@ import { Multicall } from "../../src/libraries/Types.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockCEAFactory } from "../mocks/MockCEAFactory.sol";
 import { MockCEA } from "../mocks/MockCEA.sol";
+import { ZeroRejectERC20 } from "../mocks/ZeroRejectERC20.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Comprehensive test suite for Vault withdrawal functionality via finalizeUniversalTx with empty payload
@@ -27,6 +28,7 @@ contract VaultWithdrawalTest is Test {
     MockCEAFactory public ceaFactory;
     MockERC20 public usdc;
     MockERC20 public tokenA;
+    ZeroRejectERC20 public zeroRejectToken;
 
     // =========================
     //      ACTORS
@@ -138,6 +140,17 @@ contract VaultWithdrawalTest is Test {
         usdc.mint(address(vault), 100_000e6);
         tokenA.mint(address(vault), 100_000e18);
         vm.deal(address(vault), 1000 ether);
+
+        // Deploy and register zero-rejecting token
+        zeroRejectToken = new ZeroRejectERC20();
+        zeroRejectToken.mint(address(vault), 100_000e18);
+
+        address[] memory extraTokens = new address[](1);
+        extraTokens[0] = address(zeroRejectToken);
+        uint256[] memory extraThresholds = new uint256[](1);
+        extraThresholds[0] = 1_000_000e18;
+        vm.prank(admin);
+        gateway.setTokenLimitThresholds(extraTokens, extraThresholds);
     }
 
     // =========================
@@ -258,15 +271,15 @@ contract VaultWithdrawalTest is Test {
         );
     }
 
-    /// @notice Test ERC20 withdrawal with zero amount - should succeed (harmless no-op)
+    /// @notice Test ERC20 withdrawal with zero amount - should succeed (no-op transfer, CEA still invoked)
     function testWithdraw_ERC20_AmountZero_Allowed() public {
         bytes32 subTxId = keccak256("tx5");
         bytes32 universalTxId = keccak256("utx5");
         address originCaller = user1;
+        bytes memory payload = _withdrawalPayloadDirect(address(usdc), recipient, 0);
 
-        uint256 initialBalance = usdc.balanceOf(recipient);
+        uint256 initialVaultBalance = usdc.balanceOf(address(vault));
 
-        // Amount=0 is allowed (no-op but valid for execution-only operations)
         vm.prank(tss);
         vault.finalizeUniversalTx(
             subTxId,
@@ -275,11 +288,17 @@ contract VaultWithdrawalTest is Test {
             address(0), // recipient
             address(usdc),
             0, // Zero amount
-            _withdrawalPayloadDirect(address(usdc), recipient, 0)
+            payload
         );
 
-        // Verify no tokens moved (amount was 0)
-        assertEq(usdc.balanceOf(recipient), initialBalance, "Recipient balance unchanged");
+        // No tokens moved — guard skipped safeTransfer
+        assertEq(usdc.balanceOf(recipient), 0, "Recipient balance unchanged");
+        assertEq(usdc.balanceOf(address(vault)), initialVaultBalance, "Vault balance unchanged - no transfer occurred");
+
+        // CEA was still invoked (execution happened)
+        (address ceaAddr,) = ceaFactory.getCEAForPushAccount(originCaller);
+        MockCEA cea = ceaFactory.getMockCEA(ceaAddr);
+        assertEq(cea.lastPayload(), payload, "CEA should have been called with payload");
     }
 
 
@@ -918,6 +937,78 @@ contract VaultWithdrawalTest is Test {
         vault.finalizeUniversalTx{ value: amount }(
             subTxId, universalTxId, originCaller, specificRecipient, address(0), amount, payload
         );
+    }
+
+    // =========================
+    //  9. ZERO-REJECT TOKEN TESTS
+    // =========================
+
+    /// @notice Confirms ZeroRejectERC20 does in fact revert on zero transfers (validates the mock)
+    function testMock_ZeroRejectToken_RevertsOnZeroTransfer() public {
+        address anyAddr = makeAddr("anyAddr");
+        zeroRejectToken.mint(address(this), 1e18);
+
+        vm.expectRevert("ZeroRejectERC20: zero transfer");
+        zeroRejectToken.transfer(anyAddr, 0);
+    }
+
+    /// @notice Zero-rejecting token with amount=0 must NOT revert — guard skips the transfer
+    function testWithdraw_ZeroRejectToken_AmountZero_SkipsTransfer_Success() public {
+        bytes32 subTxId = keccak256("tx_zr1");
+        bytes32 universalTxId = keccak256("utx_zr1");
+        address originCaller = user1;
+        // Use empty payload so MockCEA doesn't try to call transfer(recipient, 0) which also rejects zero
+        bytes memory payload = bytes("");
+
+        uint256 initialVaultBalance = zeroRejectToken.balanceOf(address(vault));
+
+        // Must NOT revert — the guard skips safeTransfer when amount=0
+        vm.prank(tss);
+        vault.finalizeUniversalTx(
+            subTxId,
+            universalTxId,
+            originCaller,
+            address(0),
+            address(zeroRejectToken),
+            0,
+            payload
+        );
+
+        // No tokens transferred
+        assertEq(zeroRejectToken.balanceOf(address(vault)), initialVaultBalance, "Vault balance unchanged");
+
+        // CEA was still invoked
+        (address ceaAddr,) = ceaFactory.getCEAForPushAccount(originCaller);
+        MockCEA cea = ceaFactory.getMockCEA(ceaAddr);
+        assertEq(cea.executeCallCount(), 1, "CEA was invoked despite zero transfer amount");
+    }
+
+    /// @notice Zero-rejecting token with amount>0 must still transfer correctly — non-regression
+    function testWithdraw_ZeroRejectToken_AmountNonZero_Success() public {
+        bytes32 subTxId = keccak256("tx_zr2");
+        bytes32 universalTxId = keccak256("utx_zr2");
+        address originCaller = user2;
+        uint256 amount = 500e18;
+        // Payload withdraws tokens from CEA to recipient
+        bytes memory payload = _withdrawalPayloadDirect(address(zeroRejectToken), recipient, amount);
+
+        uint256 initialVaultBalance = zeroRejectToken.balanceOf(address(vault));
+        uint256 initialRecipientBalance = zeroRejectToken.balanceOf(recipient);
+
+        vm.prank(tss);
+        vault.finalizeUniversalTx(
+            subTxId,
+            universalTxId,
+            originCaller,
+            address(0),
+            address(zeroRejectToken),
+            amount,
+            payload
+        );
+
+        // Vault decreased, recipient received (CEA executed the transfer payload)
+        assertEq(zeroRejectToken.balanceOf(address(vault)), initialVaultBalance - amount, "Vault decreased");
+        assertEq(zeroRejectToken.balanceOf(recipient), initialRecipientBalance + amount, "Recipient received tokens");
     }
 
     /// @notice V-R6: recipient + non-empty payload both thread correctly to CEA

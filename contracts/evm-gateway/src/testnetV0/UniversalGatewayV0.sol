@@ -40,17 +40,17 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Errors } from "./libraries/Errors.sol";
+import { Errors } from "../libraries/Errors.sol";
 import { IUniversalGatewayV0 } from "./interfaces/IUniversalGatewayV0.sol";
 
-import { RevertInstructions, TX_TYPE, EpochUsage } from "./libraries/Types.sol";
-import { UniversalTxRequest, UniversalTokenTxRequest } from "./libraries/TypesUG.sol";
-import { IWETH } from "./interfaces/IWETH.sol";
+import { RevertInstructions, TX_TYPE, EpochUsage } from "../libraries/Types.sol";
+import { UniversalTxRequest, UniversalTokenTxRequest } from "../libraries/TypesUG.sol";
+import { IWETH } from "../interfaces/IWETH.sol";
 import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import { IUniswapV3Factory } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import { ISwapRouterSepolia as ISwapRouterSepolia } from "./interfaces/ISwapRouterSepolia.sol";
+import { ISwapRouterSepolia } from "./interfaces/ISwapRouterSepolia.sol";
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import { ICEAFactory } from "./interfaces/ICEAFactory.sol";
+import { ICEAFactory } from "../interfaces/ICEAFactory.sol";
 
 contract UniversalGatewayV0 is
     Initializable,
