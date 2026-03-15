@@ -16,12 +16,15 @@ export const TSS_CHAIN_ID =
   process.env.TSS_CHAIN_ID ?? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 
 function getTssPrivateKey(): string {
-  const priv = (
+  const priv =
     process.env.TSS_PRIVKEY ||
     process.env.ETH_PRIVATE_KEY ||
-    process.env.PRIVATE_KEY ||
-    "f1c05d6c46a4a2b06c4d679f7f6ed15c93dffa50e1399c049b58289f6a1e33ad"
-  ).replace(/^0x/, "");
+    process.env.PRIVATE_KEY;
+  if (!priv) {
+    throw new Error(
+      "TSS private key not set. Export TSS_PRIVKEY (or ETH_PRIVATE_KEY / PRIVATE_KEY) before running tests."
+    );
+  }
   return priv;
 }
 
