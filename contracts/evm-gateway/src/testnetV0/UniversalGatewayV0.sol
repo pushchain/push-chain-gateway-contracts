@@ -48,7 +48,7 @@ import { UniversalTxRequest, UniversalTokenTxRequest } from "../libraries/TypesU
 import { IWETH } from "../interfaces/IWETH.sol";
 import { IUniswapV3Pool } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import { IUniswapV3Factory } from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import { ISwapRouterSepolia as ISwapRouterSepolia } from "../interfaces/ISwapRouterSepolia.sol";
+import { ISwapRouterSepolia } from "./interfaces/ISwapRouterSepolia.sol";
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { ICEAFactory } from "../interfaces/ICEAFactory.sol";
 
