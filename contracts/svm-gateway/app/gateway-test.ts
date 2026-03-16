@@ -34,8 +34,13 @@ import {
   generateUniversalTxId,
 } from "../tests/helpers/tss";
 
+const KNOWN_PROGRAMS: Record<string, string> = {
+  main:  "CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS",
+  dummy: "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp",
+};
+
 const PROGRAM_ID = new PublicKey(
-  "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp"
+  process.env.PROGRAM_ID ?? KNOWN_PROGRAMS["dummy"]
 );
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
@@ -43,9 +48,29 @@ const EXECUTED_SUB_TX_SEED = "executed_sub_tx";
 const PRICE_ACCOUNT = new PublicKey(
   "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
 ); // Pyth SOL/USD price feed
-const ALT_ADDRESS = new PublicKey(
-  "EWXJ1ERkMwizmSovjtQ2qBTDpm1vxrZZ4Y2RjEujbqBo"
-); // Universal Gateway ALT
+
+// Resolve ALT address from universal-alt.json based on the active program ID.
+function resolveAltAddress(): PublicKey {
+  const altFile = "./universal-alt.json";
+  if (!fs.existsSync(altFile)) {
+    throw new Error(`${altFile} not found — run create-universal-alt.ts first`);
+  }
+  const data = JSON.parse(fs.readFileSync(altFile, "utf8"));
+  const label = Object.entries(KNOWN_PROGRAMS).find(
+    ([, id]) => id === PROGRAM_ID.toBase58()
+  )?.[0];
+  const entry = label ? data[label] : undefined;
+  if (!entry?.altAddress) {
+    throw new Error(
+      `No ALT entry found for program ${PROGRAM_ID.toBase58()} (label: ${label ?? "unknown"}) in ${altFile}. ` +
+      `Run: npx ts-node app/create-universal-alt.ts ${label ?? ""}`
+    );
+  }
+  console.log(`ALT: ${entry.altAddress} (${label})`);
+  return new PublicKey(entry.altAddress);
+}
+
+const ALT_ADDRESS = resolveAltAddress();
 
 // Load keypairs
 const adminKeypair = Keypair.fromSecretKey(
