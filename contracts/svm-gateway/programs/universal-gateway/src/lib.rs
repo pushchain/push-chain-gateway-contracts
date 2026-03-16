@@ -7,7 +7,7 @@ pub mod utils;
 
 use instructions::*;
 
-declare_id!("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+declare_id!("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
 
 #[program]
 pub mod universal_gateway {
@@ -63,9 +63,24 @@ pub mod universal_gateway {
         instructions::admin::unpause(ctx)
     }
 
+    /// @notice Update admin and/or pauser authority.
+    pub fn set_authorities(
+        ctx: Context<SetAuthoritiesAction>,
+        new_admin: Option<Pubkey>,
+        new_pauser: Option<Pubkey>,
+    ) -> Result<()> {
+        instructions::admin::set_authorities(ctx, new_admin, new_pauser)
+    }
+
     /// @notice Set USD caps
     pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap: u128, max_cap: u128) -> Result<()> {
         instructions::admin::set_caps_usd(ctx, min_cap, max_cap)
+    }
+
+    /// @notice Set flat protocol fee (lamports) for inbound send_universal_tx.
+    /// Not gated by `!config.paused` so the admin can disable fees during an emergency pause.
+    pub fn set_protocol_fee(ctx: Context<FeeVaultAdminAction>, fee_lamports: u64) -> Result<()> {
+        instructions::admin::set_protocol_fee(ctx, fee_lamports)
     }
 
     /// @notice Set Pyth price feed
@@ -125,56 +140,77 @@ pub mod universal_gateway {
         instructions::tss::update_tss(ctx, tss_eth_address, chain_id)
     }
 
-    pub fn reset_nonce(ctx: Context<ResetNonce>, new_nonce: u64) -> Result<()> {
-        instructions::tss::reset_nonce(ctx, new_nonce)
-    }
-
     // =========================
-    //    WITHDRAW & EXECUTE
+    //    FINALIZE UNIVERSAL TX
     // =========================
     /// @notice Unified outbound entrypoint: withdraw (mode 1) or execute (mode 2)
     /// @param instruction_id 1=withdraw (vault→CEA→recipient), 2=execute (vault→CEA→CPI)
-    pub fn withdraw_and_execute(
-        ctx: Context<WithdrawAndExecute>,
+    pub fn finalize_universal_tx(
+        ctx: Context<FinalizeUniversalTx>,
         instruction_id: u8,
-        tx_id: [u8; 32],
+        sub_tx_id: [u8; 32],
         universal_tx_id: [u8; 32],
         amount: u64,
-        sender: [u8; 20],
+        push_account: [u8; 20],
         writable_flags: Vec<u8>,
         ix_data: Vec<u8>,
         gas_fee: u64,
-        rent_fee: u64,
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
-        instructions::execute::withdraw_and_execute(
+        instructions::execute::finalize_universal_tx(
             ctx,
             instruction_id,
-            tx_id,
+            sub_tx_id,
             universal_tx_id,
             amount,
-            sender,
+            push_account,
             writable_flags,
             ix_data,
             gas_fee,
-            rent_fee,
             signature,
             recovery_id,
             message_hash,
-            nonce,
+        )
+    }
+
+    // =========================
+    //          RESCUE
+    // =========================
+    /// @notice TSS-verified emergency rescue of locked funds from vault.
+    ///         SOL path: token_mint = None. SPL path: token_mint = Some.
+    ///         Replay-protected via ExecutedSubTx PDA
+    pub fn rescue_funds(
+        ctx: Context<RescueFunds>,
+        sub_tx_id: [u8; 32],
+        universal_tx_id: [u8; 32],
+        amount: u64,
+        gas_fee: u64,
+        signature: [u8; 64],
+        recovery_id: u8,
+        message_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::rescue::rescue_funds(
+            ctx,
+            sub_tx_id,
+            universal_tx_id,
+            amount,
+            gas_fee,
+            signature,
+            recovery_id,
+            message_hash,
         )
     }
 
     // =========================
     //        REVERT
     // =========================
-    /// @notice TSS-verified revert withdraw for SOL (EVM parity: `revertUniversalTx`)
+    /// @notice TSS-verified unified revert (SOL and SPL) — EVM parity: `revertUniversalTx`.
+    ///         SOL path: token_mint = None. SPL path: token_mint = Some.
     pub fn revert_universal_tx(
         ctx: Context<RevertUniversalTx>,
-        tx_id: [u8; 32],
+        sub_tx_id: [u8; 32],
         universal_tx_id: [u8; 32],
         amount: u64,
         revert_instruction: RevertInstructions,
@@ -182,11 +218,10 @@ pub mod universal_gateway {
         signature: [u8; 64],
         recovery_id: u8,
         message_hash: [u8; 32],
-        nonce: u64,
     ) -> Result<()> {
         instructions::revert::revert_universal_tx(
             ctx,
-            tx_id,
+            sub_tx_id,
             universal_tx_id,
             amount,
             revert_instruction,
@@ -194,34 +229,6 @@ pub mod universal_gateway {
             signature,
             recovery_id,
             message_hash,
-            nonce,
-        )
-    }
-
-    /// @notice TSS-verified revert withdraw for SPL tokens (EVM parity: `revertUniversalTxToken`)
-    pub fn revert_universal_tx_token(
-        ctx: Context<RevertUniversalTxToken>,
-        tx_id: [u8; 32],
-        universal_tx_id: [u8; 32],
-        amount: u64,
-        revert_instruction: RevertInstructions,
-        gas_fee: u64,
-        signature: [u8; 64],
-        recovery_id: u8,
-        message_hash: [u8; 32],
-        nonce: u64,
-    ) -> Result<()> {
-        instructions::revert::revert_universal_tx_token(
-            ctx,
-            tx_id,
-            universal_tx_id,
-            amount,
-            revert_instruction,
-            gas_fee,
-            signature,
-            recovery_id,
-            message_hash,
-            nonce,
         )
     }
 
@@ -242,32 +249,35 @@ pub struct GetSolPrice<'info> {
 
 // Re-export account structs and types
 pub use instructions::admin::{
-    AdminAction, PauseAction, RateLimitConfigAction, TokenRateLimitAction,
+    AdminAction, FeeVaultAdminAction, PauseAction, RateLimitConfigAction, SetAuthoritiesAction, TokenRateLimitAction,
 };
 pub use instructions::deposit::SendUniversalTx;
-pub use instructions::execute::WithdrawAndExecute;
+pub use instructions::execute::FinalizeUniversalTx;
 pub use instructions::initialize::Initialize;
-pub use instructions::revert::{
-    RevertUniversalTx, RevertUniversalTxToken,
-};
+pub use instructions::rescue::RescueFunds;
+pub use instructions::revert::RevertUniversalTx;
 pub use utils::PriceData;
 
 pub use state::{
     // Events
     CapsUpdated,
     Config,
-    ExecutedTx,
+    ExecutedSubTx,
+    FeeVault,
+    FundsRescued,
     GatewayAccountMeta,
+    ProtocolFeeCollected,
+    ProtocolFeeReimbursed,
+    ProtocolFeeUpdated,
     RevertInstructions,
-    TSSAddressUpdated,
     TxType,
-    UniversalPayload,
     UniversalTx,
-    UniversalTxExecuted,
+    UniversalTxFinalized,
     UniversalTxRequest,
     VerificationType,
     CONFIG_SEED,
-    EXECUTED_TX_SEED,
+    EXECUTED_SUB_TX_SEED,
     FEED_ID,
+    FEE_VAULT_SEED,
     VAULT_SEED,
 };

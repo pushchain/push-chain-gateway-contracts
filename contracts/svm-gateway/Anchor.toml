@@ -12,12 +12,12 @@ universal_gateway = "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp"
 url = "https://api.apr.dev"
 
 [provider]
-# cluster = "localnet"
-cluster = "https://api.devnet.solana.com"
-wallet = "./upgrade-keypair.json"
+cluster = "localnet"
+# cluster = "https://api.devnet.solana.com"
+wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "npx ts-mocha -p ./tsconfig.json -t 1000000 ${TEST_FILE:-tests/*.test.ts}"
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 --require dotenv/config ${TEST_FILE:-tests/*.test.ts}"
 
 [test]
 startup_wait = 10000

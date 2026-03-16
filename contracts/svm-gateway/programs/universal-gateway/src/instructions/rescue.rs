@@ -5,17 +5,22 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
 // =========================
-//   TSS REVERT FUNCTION
+//   TSS RESCUE FUNCTION
 // =========================
+// EVM parity: UniversalGateway.rescueFunds() — TSS-only emergency release of locked funds.
 // Single entrypoint handles both SOL (token_mint = None) and SPL (token_mint = Some).
 //
-// TSS message format (instruction_id = 3 for both modes):
+// SVM deviations from EVM (intentional):
+//   1. Auth: ECDSA TSS signature verification instead of onlyRole(TSS_ROLE).
+//   2. gas_fee: relayer reimbursement from fee_vault (EVM rescue has no equivalent).
+//
+// TSS message format (instruction_id = 4 for both modes):
 //   SOL: amount || [sub_tx_id, universal_tx_id, recipient, gas_fee]
 //   SPL: amount || [sub_tx_id, universal_tx_id, mint, recipient, gas_fee]
 
 #[derive(Accounts)]
 #[instruction(sub_tx_id: [u8; 32])]
-pub struct RevertUniversalTx<'info> {
+pub struct RescueFunds<'info> {
     #[account(
         seeds = [CONFIG_SEED],
         bump = config.bump,
@@ -35,7 +40,7 @@ pub struct RevertUniversalTx<'info> {
     pub tss_pda: Account<'info, TssPda>,
 
     /// CHECK: Recipient wallet — SOL goes here directly; for SPL, validated against
-    /// recipient_token_account.owner and used as canonical identity in TSS message.
+    /// recipient_token_account.owner and used as the canonical identity in the TSS message.
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
 
@@ -70,12 +75,11 @@ pub struct RevertUniversalTx<'info> {
     pub token_program: Option<Program<'info, Token>>,
 }
 
-pub fn revert_universal_tx(
-    ctx: Context<RevertUniversalTx>,
+pub fn rescue_funds(
+    ctx: Context<RescueFunds>,
     sub_tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     amount: u64,
-    revert_instruction: RevertInstructions,
     gas_fee: u64,
     signature: [u8; 64],
     recovery_id: u8,
@@ -84,8 +88,7 @@ pub fn revert_universal_tx(
     require!(amount > 0, GatewayError::InvalidAmount);
 
     let recipient = ctx.accounts.recipient.key();
-    require!(revert_instruction.revert_recipient != Pubkey::default(), GatewayError::InvalidRecipient);
-    require!(recipient == revert_instruction.revert_recipient, GatewayError::InvalidRecipient);
+    require!(recipient != Pubkey::default(), GatewayError::InvalidRecipient);
 
     let is_native = ctx.accounts.token_mint.is_none();
 
@@ -107,16 +110,16 @@ pub fn revert_universal_tx(
         require!(recipient_ta.owner == recipient, GatewayError::InvalidRecipient);
     }
 
-    // TSS message: instruction_id=3 || amount || [sub_tx_id, universal_tx_id, (mint,) recipient, gas_fee]
-    let recipient_bytes = recipient.to_bytes();
+    // TSS message: instruction_id=4 || amount || [sub_tx_id, universal_tx_id, (mint,) recipient, gas_fee]
     let gas_fee_buf = encode_u64_be(gas_fee);
+    let recipient_bytes = recipient.to_bytes();
     if is_native {
         let additional: [&[u8]; 4] = [&sub_tx_id, &universal_tx_id, &recipient_bytes, &gas_fee_buf];
-        validate_message(&mut ctx.accounts.tss_pda, 3, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
+        validate_message(&mut ctx.accounts.tss_pda, 4, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
     } else {
         let mint_bytes = ctx.accounts.token_mint.as_ref().unwrap().key().to_bytes();
         let additional: [&[u8]; 5] = [&sub_tx_id, &universal_tx_id, &mint_bytes, &recipient_bytes, &gas_fee_buf];
-        validate_message(&mut ctx.accounts.tss_pda, 3, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
+        validate_message(&mut ctx.accounts.tss_pda, 4, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
     }
 
     let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
@@ -139,13 +142,15 @@ pub fn revert_universal_tx(
         )?;
     }
 
-    emit!(crate::state::RevertUniversalTx {
+    emit!(crate::state::FundsRescued {
         sub_tx_id,
         universal_tx_id,
-        revert_recipient: revert_instruction.revert_recipient,
         token: ctx.accounts.token_mint.as_ref().map_or(Pubkey::default(), |m| m.key()),
         amount,
-        revert_instruction: revert_instruction.clone(),
+        revert_instruction: RevertInstructions {
+            revert_recipient: recipient,
+            revert_msg: vec![],
+        },
     });
 
     reimburse_relayer_from_fee_vault(

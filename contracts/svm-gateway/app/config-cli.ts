@@ -17,8 +17,9 @@ const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp")
 
 // PDA Seeds
 const CONFIG_SEED = "config";
-const TSS_SEED = "tsspda";
+const TSS_SEED = "tsspda_v2";
 const VAULT_SEED = "vault";
+const FEE_VAULT_SEED = "fee_vault";
 const RATE_LIMIT_CONFIG_SEED = "rate_limit_config";
 const RATE_LIMIT_SEED = "rate_limit";
 
@@ -55,6 +56,11 @@ function deriveTssPda(): PublicKey {
 
 function deriveVaultPda(): PublicKey {
     const [pda] = PublicKey.findProgramAddressSync([Buffer.from(VAULT_SEED)], PROGRAM_ID);
+    return pda;
+}
+
+function deriveFeeVaultPda(): PublicKey {
+    const [pda] = PublicKey.findProgramAddressSync([Buffer.from(FEE_VAULT_SEED)], PROGRAM_ID);
     return pda;
 }
 
@@ -134,7 +140,7 @@ program_cli
 
             const tx = await program.methods
                 .initTss(ethAddress, chainId)
-                .accounts({
+                .accountsPartial({
                     tssPda: tssPda,
                     config: configPda,
                     authority: adminKeypair.publicKey,
@@ -163,6 +169,7 @@ program_cli
             const ethAddress = parseEthAddress(options.eth);
             const chainId = options.chainId;
 
+            const configPda = deriveConfigPda();
             const tssPda = deriveTssPda();
 
             console.log(`New TSS ETH Address: 0x${Buffer.from(ethAddress).toString("hex")}`);
@@ -171,8 +178,9 @@ program_cli
 
             const tx = await program.methods
                 .updateTss(ethAddress, chainId)
-                .accounts({
+                .accountsPartial({
                     tssPda: tssPda,
+                    config: configPda,
                     authority: adminKeypair.publicKey,
                 })
                 .signers([adminKeypair])
@@ -182,40 +190,6 @@ program_cli
             console.log(`   Transaction: ${tx}\n`);
         } catch (error: any) {
             console.error(`❌ Error updating TSS: ${error.message}`);
-            process.exit(1);
-        }
-    });
-
-program_cli
-    .command("tss:reset-nonce")
-    .description("Reset TSS nonce (DANGEROUS - use with caution)")
-    .requiredOption("--nonce <value>", "New nonce value (u64)")
-    .action(async (options) => {
-        try {
-            console.log("=== RESETTING TSS NONCE ===\n");
-            console.log("⚠️  WARNING: This is a dangerous operation!");
-            console.log("⚠️  Only use this for testing or recovery purposes.\n");
-
-            const nonce = BigInt(options.nonce);
-
-            const tssPda = deriveTssPda();
-
-            console.log(`New Nonce: ${nonce}`);
-            console.log(`TSS PDA: ${tssPda.toBase58()}\n`);
-
-            const tx = await program.methods
-                .resetNonce(new anchor.BN(nonce.toString()))
-                .accounts({
-                    tssPda: tssPda,
-                    authority: adminKeypair.publicKey,
-                })
-                .signers([adminKeypair])
-                .rpc();
-
-            console.log(`✅ TSS nonce reset successfully!`);
-            console.log(`   Transaction: ${tx}\n`);
-        } catch (error: any) {
-            console.error(`❌ Error resetting TSS nonce: ${error.message}`);
             process.exit(1);
         }
     });
@@ -235,7 +209,7 @@ program_cli
 
             const tx = await program.methods
                 .pause()
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     pauser: pauserKeypair.publicKey,
                 })
@@ -261,7 +235,7 @@ program_cli
 
             const tx = await program.methods
                 .unpause()
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     pauser: pauserKeypair.publicKey,
                 })
@@ -272,6 +246,93 @@ program_cli
             console.log(`   Transaction: ${tx}\n`);
         } catch (error: any) {
             console.error(`❌ Error unpausing gateway: ${error.message}`);
+            process.exit(1);
+        }
+    });
+
+// ============================================
+//           AUTHORITY COMMANDS
+// ============================================
+
+program_cli
+    .command("authority:set")
+    .description("Update admin and/or pauser authority")
+    .option("--new-admin <pubkey>", "New admin public key")
+    .option("--new-pauser <pubkey>", "New pauser public key")
+    .action(async (options) => {
+        try {
+            if (!options.newAdmin && !options.newPauser) {
+                throw new Error("Provide at least one of --new-admin or --new-pauser");
+            }
+
+            console.log("=== SETTING AUTHORITIES ===\n");
+
+            const newAdmin = options.newAdmin ? new PublicKey(options.newAdmin) : null;
+            const newPauser = options.newPauser ? new PublicKey(options.newPauser) : null;
+            const configPda = deriveConfigPda();
+
+            console.log(`Current signer (admin): ${adminKeypair.publicKey.toBase58()}`);
+            if (newAdmin) {
+                console.log(`New admin: ${newAdmin.toBase58()}`);
+            }
+            if (newPauser) {
+                console.log(`New pauser: ${newPauser.toBase58()}`);
+            }
+            console.log(`Config PDA: ${configPda.toBase58()}`);
+            console.log();
+
+            const tx = await program.methods
+                .setAuthorities(newAdmin, newPauser)
+                .accountsPartial({
+                    config: configPda,
+                    admin: adminKeypair.publicKey,
+                })
+                .signers([adminKeypair])
+                .rpc();
+
+            console.log(`✅ Authorities updated successfully!`);
+            console.log(`   Transaction: ${tx}\n`);
+        } catch (error: any) {
+            console.error(`❌ Error setting authorities: ${error.message}`);
+            process.exit(1);
+        }
+    });
+
+// ============================================
+//             PROTOCOL FEE COMMANDS
+// ============================================
+
+program_cli
+    .command("fee:init")
+    .description("Initialize fee vault PDA (idempotent); optionally set initial protocol fee")
+    .option("--fee <lamports>", "Initial protocol fee in lamports (u64)", "0")
+    .action(async (options) => {
+        try {
+            console.log("=== INITIALIZING FEE VAULT ===\n");
+
+            const feeLamports = BigInt(options.fee);
+            const configPda = deriveConfigPda();
+            const feeVaultPda = deriveFeeVaultPda();
+
+            console.log(`Config PDA: ${configPda.toBase58()}`);
+            console.log(`Fee Vault PDA: ${feeVaultPda.toBase58()}`);
+            console.log(`Protocol Fee (lamports): ${feeLamports}\n`);
+
+            const tx = await program.methods
+                .setProtocolFee(new anchor.BN(feeLamports.toString()))
+                .accountsPartial({
+                    config: configPda,
+                    feeVault: feeVaultPda,
+                    admin: adminKeypair.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([adminKeypair])
+                .rpc();
+
+            console.log(`✅ Fee vault initialized/updated successfully!`);
+            console.log(`   Transaction: ${tx}\n`);
+        } catch (error: any) {
+            console.error(`❌ Error initializing fee vault: ${error.message}`);
             process.exit(1);
         }
     });
@@ -306,7 +367,7 @@ program_cli
                     new anchor.BN(minCap.toString()),
                     new anchor.BN(maxCap.toString())
                 )
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: adminKeypair.publicKey,
                 })
@@ -340,7 +401,7 @@ program_cli
 
             const tx = await program.methods
                 .setPythPriceFeed(feed)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: adminKeypair.publicKey,
                 })
@@ -370,7 +431,7 @@ program_cli
 
             const tx = await program.methods
                 .setPythConfidenceThreshold(new anchor.BN(threshold.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     admin: adminKeypair.publicKey,
                 })
@@ -405,7 +466,7 @@ program_cli
 
             const tx = await program.methods
                 .setBlockUsdCap(new anchor.BN(cap.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
                     admin: adminKeypair.publicKey,
@@ -438,7 +499,7 @@ program_cli
 
             const tx = await program.methods
                 .updateEpochDuration(new anchor.BN(seconds.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     rateLimitConfig: rateLimitConfigPda,
                     admin: adminKeypair.publicKey,
@@ -478,7 +539,7 @@ program_cli
 
             const tx = await program.methods
                 .setTokenRateLimit(new anchor.BN(threshold.toString()))
-                .accounts({
+                .accountsPartial({
                     config: configPda,
                     tokenRateLimit: tokenRateLimitPda,
                     tokenMint: mint,
@@ -502,7 +563,7 @@ program_cli
 
 program_cli
     .command("config:show")
-    .description("Show current gateway configuration (config + tss + rate_limit)")
+    .description("Show current gateway configuration (config + tss + rate_limit + fee_vault)")
     .action(async () => {
         try {
             console.log("=== GATEWAY CONFIGURATION ===\n");
@@ -510,6 +571,7 @@ program_cli
             const configPda = deriveConfigPda();
             const tssPda = deriveTssPda();
             const rateLimitConfigPda = deriveRateLimitConfigPda();
+            const feeVaultPda = deriveFeeVaultPda();
 
             // Fetch Config
             console.log("📋 Config Account");
@@ -539,6 +601,19 @@ program_cli
             try {
                 const rateLimitConfig = await (program.account as any).rateLimitConfig.fetch(rateLimitConfigPda);
                 formatAccount("Data", rateLimitConfig);
+            } catch (error: any) {
+                console.log(`   ❌ Not initialized: ${error.message}`);
+            }
+            console.log();
+
+            // Fetch Fee Vault
+            console.log("💸 Fee Vault");
+            console.log(`   PDA: ${feeVaultPda.toBase58()}`);
+            try {
+                const feeVault = await (program.account as any).feeVault.fetch(feeVaultPda);
+                formatAccount("Data", feeVault);
+                const feeVaultBalance = await connection.getBalance(feeVaultPda);
+                console.log(`   Balance (lamports): ${feeVaultBalance}`);
             } catch (error: any) {
                 console.log(`   ❌ Not initialized: ${error.message}`);
             }

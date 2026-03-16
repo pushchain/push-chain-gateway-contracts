@@ -15,14 +15,36 @@ import * as spl from "@solana/spl-token";
 // 1) Creates an Address Lookup Table (ALT) owned by the upgrade/admin key.
 // 2) Extends it with the static accounts used by send_universal_tx so that
 //    user transactions can spend more of the 1232‑byte budget on instruction
-//    data (payload / revertInstruction / signatureData).
+//    data (payload / revertRecipient / signatureData).
 //
 // It writes the created ALT address to ./universal-alt.json so other scripts
 // (like the ALT send_universal_tx test) can load and use it.
+//
+// Usage:
+//   npx ts-node app/create-universal-alt.ts            # default: dummy program
+//   npx ts-node app/create-universal-alt.ts dummy      # dummy program
+//   npx ts-node app/create-universal-alt.ts main       # main program
+//   PROGRAM_ID=<pubkey> npx ts-node app/create-universal-alt.ts
 
-const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+const PROGRAMS: Record<string, string> = {
+    main:  "CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS", // main program
+    dummy: "DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp", // dummy program (default)
+};
+
+const programArg = process.argv[2]; // "main", "dummy", or undefined
+const programIdStr =
+    process.env.PROGRAM_ID ??
+    (programArg && PROGRAMS[programArg]) ??
+    PROGRAMS["dummy"];
+
+console.log(`Using program: ${programIdStr} (${
+    Object.entries(PROGRAMS).find(([, v]) => v === programIdStr)?.[0] ?? "custom"
+})`);
+
+const PROGRAM_ID = new PublicKey(programIdStr);
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
+const FEE_VAULT_SEED = "fee_vault";
 const RATE_LIMIT_CONFIG_SEED = "rate_limit_config";
 const PRICE_ACCOUNT = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"); // Pyth SOL/USD
 
@@ -47,6 +69,10 @@ async function main() {
         [Buffer.from(VAULT_SEED)],
         PROGRAM_ID,
     );
+    const [feeVaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(FEE_VAULT_SEED)],
+        PROGRAM_ID,
+    );
     const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
         [Buffer.from(RATE_LIMIT_CONFIG_SEED)],
         PROGRAM_ID,
@@ -54,6 +80,7 @@ async function main() {
 
     console.log("Config PDA:", configPda.toBase58());
     console.log("Vault  PDA:", vaultPda.toBase58());
+    console.log("FeeVault PDA:", feeVaultPda.toBase58());
     console.log("RateLimitConfig PDA:", rateLimitConfigPda.toBase58());
     console.log("Price account:", PRICE_ACCOUNT.toBase58());
 
@@ -81,6 +108,7 @@ async function main() {
     const addressesToAdd: PublicKey[] = [
         configPda,
         vaultPda,
+        feeVaultPda,
         rateLimitConfigPda,
         PRICE_ACCOUNT,
         spl.TOKEN_PROGRAM_ID,
@@ -102,13 +130,20 @@ async function main() {
     console.log(" ALT extend tx:", extendSig);
     await connection.confirmTransaction(extendSig, "confirmed");
 
-    // Persist ALT address so the test script can load it.
-    const out = {
+    // Persist ALT address into universal-alt.json, keyed by program label.
+    // Existing entries for other programs are preserved.
+    const altFile = "./universal-alt.json";
+    const existing = fs.existsSync(altFile)
+        ? JSON.parse(fs.readFileSync(altFile, "utf8"))
+        : {};
+    const label = Object.entries(PROGRAMS).find(([, v]) => v === programIdStr)?.[0] ?? "custom";
+    existing[label] = {
+        programId: programIdStr,
         altAddress: altAddress.toBase58(),
         entries: addressesToAdd.map((a) => a.toBase58()),
     };
-    fs.writeFileSync("./universal-alt.json", JSON.stringify(out, null, 2));
-    console.log("Saved ALT metadata to ./universal-alt.json");
+    fs.writeFileSync(altFile, JSON.stringify(existing, null, 2));
+    console.log(`Saved ALT metadata to ${altFile} under key "${label}"`);
 
     console.log("\n✅ ALT created and extended successfully.");
 }

@@ -15,6 +15,21 @@ pub struct AdminAction<'info> {
     pub admin: Signer<'info>,
 }
 
+/// Authority update action (available while paused).
+/// Updates admin and/or pauser in one instruction.
+#[derive(Accounts)]
+pub struct SetAuthoritiesAction<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == admin.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+
+    pub admin: Signer<'info>,
+}
+
 #[derive(Accounts)]
 pub struct PauseAction<'info> {
     #[account(
@@ -38,6 +53,31 @@ pub fn unpause(ctx: Context<PauseAction>) -> Result<()> {
     Ok(())
 }
 
+pub fn set_authorities(
+    ctx: Context<SetAuthoritiesAction>,
+    new_admin: Option<Pubkey>,
+    new_pauser: Option<Pubkey>,
+) -> Result<()> {
+    require!(
+        new_admin.is_some() || new_pauser.is_some(),
+        GatewayError::InvalidInput
+    );
+
+    let config = &mut ctx.accounts.config;
+
+    if let Some(next) = new_admin {
+        require!(next != Pubkey::default(), GatewayError::ZeroAddress);
+        config.admin = next;
+    }
+
+    if let Some(next) = new_pauser {
+        require!(next != Pubkey::default(), GatewayError::ZeroAddress);
+        config.pauser = next;
+    }
+
+    Ok(())
+}
+
 pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap_usd: u128, max_cap_usd: u128) -> Result<()> {
     require!(min_cap_usd <= max_cap_usd, GatewayError::InvalidCapRange);
     let config = &mut ctx.accounts.config;
@@ -50,6 +90,39 @@ pub fn set_caps_usd(ctx: Context<AdminAction>, min_cap_usd: u128, max_cap_usd: u
         max_cap_usd,
     });
 
+    Ok(())
+}
+
+/// Admin action for fee vault operations (intentionally no `!config.paused` guard —
+/// the admin must be able to disable the fee even while paused).
+#[derive(Accounts)]
+pub struct FeeVaultAdminAction<'info> {
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.admin == admin.key() @ GatewayError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init_if_needed,
+        payer = admin,
+        space = FeeVault::LEN,
+        seeds = [FEE_VAULT_SEED],
+        bump,
+    )]
+    pub fee_vault: Account<'info, FeeVault>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn set_protocol_fee(ctx: Context<FeeVaultAdminAction>, fee_lamports: u64) -> Result<()> {
+    // Keep bump persisted so seeded constraints continue to validate consistently.
+    ctx.accounts.fee_vault.bump = ctx.bumps.fee_vault;
+    ctx.accounts.fee_vault.protocol_fee_lamports = fee_lamports;
+    emit!(ProtocolFeeUpdated { new_fee_lamports: fee_lamports });
     Ok(())
 }
 

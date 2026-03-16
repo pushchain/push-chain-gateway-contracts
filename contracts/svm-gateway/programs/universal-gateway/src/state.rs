@@ -3,10 +3,11 @@ use anchor_lang::prelude::*;
 // PDA seeds
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const VAULT_SEED: &[u8] = b"vault";
-pub const TSS_SEED: &[u8] = b"tsspda";
+pub const FEE_VAULT_SEED: &[u8] = b"fee_vault";
+pub const TSS_SEED: &[u8] = b"tsspda_v2";
 pub const RATE_LIMIT_CONFIG_SEED: &[u8] = b"rate_limit_config";
 pub const RATE_LIMIT_SEED: &[u8] = b"rate_limit";
-pub const EXECUTED_TX_SEED: &[u8] = b"executed_tx";
+pub const EXECUTED_SUB_TX_SEED: &[u8] = b"executed_sub_tx";
 pub const CEA_SEED: &[u8] = b"push_identity";
 
 // Price feed ID (Pyth SOL/USD), same as locker for now
@@ -40,36 +41,21 @@ pub enum VerificationType {
     UniversalTxVerification,
 }
 
-/// Universal payload for cross-chain execution (parity with EVM `UniversalPayload`).
-/// Serialized and hashed for event parity with EVM (payload bytes/hash).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct UniversalPayload {
-    pub to: [u8; 20], // Ethereum address (20 bytes)
-    pub value: u64,
-    pub data: Vec<u8>,
-    pub gas_limit: u64,
-    pub max_fee_per_gas: u64,
-    pub max_priority_fee_per_gas: u64,
-    pub nonce: u64,
-    pub deadline: i64,
-    pub v_type: VerificationType,
-}
-
 /// Revert instructions for failed transactions (parity with EVM `RevertInstructions`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct RevertInstructions {
-    pub fund_recipient: Pubkey,
+    pub revert_recipient: Pubkey,
     pub revert_msg: Vec<u8>,
 }
 
 /// Universal transaction request (parity with EVM `UniversalTxRequest`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct UniversalTxRequest {
-    pub recipient: [u8; 20], // [0u8; 20] => credit to UEA on Push
-    pub token: Pubkey,       // Pubkey::default() => native SOL
-    pub amount: u64,         // native or SPL amount for bridging - Funds
-    pub payload: Vec<u8>,    // serialized payload (may be empty)
-    pub revert_instruction: RevertInstructions,
+    pub recipient: [u8; 20],      // [0u8; 20] => credit to UEA on Push
+    pub token: Pubkey,            // Pubkey::default() => native SOL
+    pub amount: u64,              // native or SPL amount for bridging - Funds
+    pub payload: Vec<u8>,         // serialized payload (may be empty)
+    pub revert_recipient: Pubkey, // Solana address to receive funds if tx is reverted on Push
     pub signature_data: Vec<u8>,
 }
 
@@ -78,7 +64,9 @@ pub struct UniversalTxRequest {
 #[account]
 pub struct Config {
     pub admin: Pubkey,
-    pub tss_address: Pubkey, // Not used - TODO: Remove
+    /// Legacy field — reserved for account layout compatibility.
+    /// Cannot be removed without a migration because it is part of the deployed on-chain layout.
+    pub tss_address: Pubkey,
     pub pauser: Pubkey,
     pub min_cap_universal_tx_usd: u128, // 1e8 = $1 (Pyth format)
     pub max_cap_universal_tx_usd: u128, // 1e8 = $10 (Pyth format)
@@ -94,6 +82,21 @@ impl Config {
     // discriminator + fields + padding
     // 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100
     pub const LEN: usize = 8 + 32 + 32 + 32 + 16 + 16 + 1 + 1 + 1 + 32 + 8 + 100;
+}
+
+/// Fee vault: holds protocol fee lamports and the per-tx fee config.
+/// PDA: `[b"fee_vault"]`.
+/// Lamports above rent-exempt minimum = spendable relayer reimbursement pool.
+/// Vault (bridge funds) is never touched by fee logic — 1:1 invariant is structurally enforced.
+#[account]
+pub struct FeeVault {
+    pub protocol_fee_lamports: u64, // Flat fee charged per inbound send_universal_tx; 0 disables
+    pub bump: u8,
+}
+
+impl FeeVault {
+    // 8 (discriminator) + 8 (fee) + 1 (bump) + 50 (padding)
+    pub const LEN: usize = 8 + 8 + 1 + 50;
 }
 
 /// Rate limiting configuration (separate account for backward compatibility)
@@ -126,29 +129,30 @@ impl TokenRateLimit {
 }
 
 /// TSS state PDA for ECDSA verification (Ethereum-style secp256k1).
-/// Stores 20-byte ETH address, chain id (Solana cluster pubkey as String), and replay-protection nonce.
+/// Stores 20-byte ETH address and chain id (Solana cluster pubkey as String).
 #[account]
 pub struct TssPda {
     pub tss_eth_address: [u8; 20],
     pub chain_id: String, // Solana cluster pubkey (e.g., "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" for mainnet)
-    pub nonce: u64,
+    /// Legacy field — set at init_tss but no longer used for authorization.
+    /// update_tss now checks config.admin. Kept for account layout compatibility.
     pub authority: Pubkey,
     pub bump: u8,
 }
 
 impl TssPda {
-    // discriminator (8) + tss_eth_address (20) + chain_id String (4 + 64 max) + nonce (8) + authority (32) + bump (1)
+    // discriminator (8) + tss_eth_address (20) + chain_id String (4 + 64 max) + authority (32) + bump (1)
     // String: 4 bytes length prefix + up to 64 bytes for cluster pubkey (base58, max ~44 chars, but allow buffer)
-    pub const LEN: usize = 8 + 20 + 4 + 64 + 8 + 32 + 1;
+    pub const LEN: usize = 8 + 20 + 4 + 64 + 32 + 1;
 }
 
-/// Executed transaction tracker (parity with EVM `isExecuted[txID]` mapping).
-/// PDA: `[b"executed_tx", tx_id]`.
+/// Executed transaction tracker (parity with EVM `isExecuted[subTxID]` mapping).
+/// PDA: `[b"executed_sub_tx", sub_tx_id]`.
 /// Account existence = transaction executed (replay protection via `init` constraint).
 #[account]
-pub struct ExecutedTx {}
+pub struct ExecutedSubTx {}
 
-impl ExecutedTx {
+impl ExecutedSubTx {
     // discriminator (8) only - account existence is the flag
     pub const LEN: usize = 8;
 }
@@ -165,12 +169,12 @@ pub struct GatewayAccountMeta {
     pub is_writable: bool,
 }
 
-/// Execute event (parity with EVM `UniversalTxExecuted`).
+/// Execute event (parity with EVM `UniversalTxFinalized`).
 #[event]
-pub struct UniversalTxExecuted {
-    pub tx_id: [u8; 32],
+pub struct UniversalTxFinalized {
+    pub sub_tx_id: [u8; 32],
     pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
-    pub sender: [u8; 20],          // EVM address (same as origin_caller in EVM)
+    pub push_account: [u8; 20],    // EVM address
     pub target: Pubkey,            // Target program
     pub token: Pubkey,             // Token (Pubkey::default() for SOL)
     pub amount: u64,
@@ -182,30 +186,25 @@ pub struct UniversalTxExecuted {
 #[event]
 pub struct UniversalTx {
     pub sender: Pubkey,
-    pub recipient: [u8; 20], // Ethereum address (20 bytes)
-    pub token: Pubkey,       // Bridge token (Pubkey::default() for native SOL)
-    pub amount: u64,         // Bridge amount (not gas amount)
-    pub payload: Vec<u8>,    // Payload data
-    pub revert_instruction: RevertInstructions,
+    pub recipient: [u8; 20],      // Ethereum address (20 bytes)
+    pub token: Pubkey,            // Bridge token (Pubkey::default() for native SOL)
+    pub amount: u64,              // Bridge amount (not gas amount)
+    pub payload: Vec<u8>,         // Payload data
+    pub revert_recipient: Pubkey, // Solana address to receive funds if tx is reverted on Push
     pub tx_type: TxType,
     pub signature_data: Vec<u8>,
+    pub from_cea: bool, // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as UEA
 }
 
 /// Revert withdraw event (parity with EVM `RevertUniversalTx`).
 #[event]
 pub struct RevertUniversalTx {
+    pub sub_tx_id: [u8; 32],       // Transaction ID
     pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
-    pub tx_id: [u8; 32],           // Transaction ID
-    pub fund_recipient: Pubkey,    // Recipient of reverted funds
+    pub revert_recipient: Pubkey,  // Recipient of reverted funds
     pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
     pub amount: u64,               // Amount
     pub revert_instruction: RevertInstructions,
-}
-
-#[event]
-pub struct TSSAddressUpdated {
-    pub old_tss: Pubkey,
-    pub new_tss: Pubkey,
 }
 
 #[event]
@@ -231,4 +230,32 @@ pub struct TokenRateLimitUpdated {
     pub limit_threshold: u128,
 }
 
-// Keep legacy if referenced; prefer TxWithGas above
+#[event]
+pub struct ProtocolFeeUpdated {
+    pub new_fee_lamports: u64,
+}
+
+#[event]
+pub struct ProtocolFeeCollected {
+    pub payer: Pubkey,
+    pub amount_lamports: u64,
+    pub native_amount_before: u64,
+    pub native_amount_after: u64,
+}
+
+#[event]
+pub struct ProtocolFeeReimbursed {
+    pub sub_tx_id: [u8; 32],
+    pub relayer: Pubkey,
+    pub amount_lamports: u64,
+}
+
+/// Emitted when locked funds are rescued back to recipient via TSS-verified rescue instruction.
+#[event]
+pub struct FundsRescued {
+    pub sub_tx_id: [u8; 32],
+    pub universal_tx_id: [u8; 32],
+    pub token: Pubkey,
+    pub amount: u64,
+    pub revert_instruction: RevertInstructions,
+}
