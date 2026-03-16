@@ -64,10 +64,13 @@ hasNativeValue := nativeValue > 0   // msg.value or swapped ETH from token-gas p
 | true         | false      | —               | any              | `GAS_AND_PAYLOAD`              | Instant  |
 | false        | true       | true            | true             | `FUNDS`                        | Standard |
 | false        | true       | false           | any              | `FUNDS`                        | Standard |
-| true         | true       | false           | false            | `FUNDS_AND_PAYLOAD` (Case 2.1) | Standard |
-| true         | true       | true            | true             | `FUNDS_AND_PAYLOAD` (Case 2.2) | Standard |
-| true         | true       | false           | true             | `FUNDS_AND_PAYLOAD` (Case 2.3) | Standard |
-| (any other)  | —          | —               | —                | ❌ reverts `InvalidInput`       | —        |
+| true         | true       | false           | any              | `FUNDS_AND_PAYLOAD` (Case 2.1 / 2.3) | Standard |
+| true         | true       | true            | true             | `FUNDS_AND_PAYLOAD` (Case 2.2)        | Standard |
+| (any other)  | —          | —               | —                | ❌ reverts `InvalidInput`              | —        |
+
+> **Note**: At the type-inference level (`_fetchTxType`), Cases 2.1 and 2.3 are unified under
+> the single `!fundsIsNative` check. The routing function `_sendTxWithFunds` still distinguishes
+> them: Case 2.1 fires when post-fee `nativeValue == 0`, Case 2.3 when post-fee `nativeValue > 0`.
 
 ### 1.5 Protocol Fee
 
@@ -410,7 +413,7 @@ Chain — no gas top-up needed.
 (or `INBOUND_FEE` if fee is enabled).
 
 **TX_TYPE**: `FUNDS_AND_PAYLOAD` Case 2.1 (`hasPayload=true`, `hasFunds=true`,
-`fundsIsNative=false`, `hasNativeValue=false`).
+`fundsIsNative=false`, `hasNativeValue=any`).
 
 **Routing**:
 1. `_consumeRateLimit(USDC, 500e6)`.

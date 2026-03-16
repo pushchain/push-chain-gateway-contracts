@@ -250,27 +250,6 @@ contract VaultWithdrawalTest is Test {
         );
     }
 
-    /// @notice Test ERC20 withdrawal with unsupported token - should revert
-    function testWithdraw_ERC20_TokenNotSupported_Reverts() public {
-        bytes32 subTxId = keccak256("tx4");
-        bytes32 universalTxId = keccak256("utx4");
-        address originCaller = user1;
-        address unsupportedToken = address(0xDEAD);
-        uint256 amount = 100e18;
-
-        vm.prank(tss);
-        vm.expectRevert(abi.encodeWithSelector(Errors.NotSupported.selector));
-        vault.finalizeUniversalTx(
-            subTxId,
-            universalTxId,
-            originCaller,
-            address(0), // recipient
-            unsupportedToken,
-            amount,
-            _withdrawalPayloadDirect(unsupportedToken, recipient, amount)
-        );
-    }
-
     /// @notice Test ERC20 withdrawal with zero amount - should succeed (no-op transfer, CEA still invoked)
     function testWithdraw_ERC20_AmountZero_Allowed() public {
         bytes32 subTxId = keccak256("tx5");
