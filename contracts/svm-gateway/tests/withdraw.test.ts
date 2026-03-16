@@ -778,7 +778,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             // Create recipient account first (needed for message hash)
             const recipientRevertAccount = await mockUSDT.createTokenAccount(recipient.publicKey);
 
-            // Include subTxId, universalTxId, mint, fund_recipient, and gas_fee in additional array
+            // Include subTxId, universalTxId, mint, revert_recipient, and gas_fee in additional array
             const signature = await signTssMessageWithChainId({
                 instruction: TssInstruction.Revert,
                 amount: revertRaw,
@@ -1216,7 +1216,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             );
         });
 
-        it("rejects revert with zero fundRecipient", async () => {
+        it("rejects revert with zero revertRecipient", async () => {
             const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(subTxId);
@@ -1233,7 +1233,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
                 additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(PublicKey.default), buildGasFeeBuf(DEFAULT_GAS_FEE)],
             });
 
-            // Our program validates fundRecipient != Pubkey::default()
+            // Our program validates revertRecipient != Pubkey::default()
             // But Anchor might also throw account validation error
             try {
                 await program.methods
@@ -1263,10 +1263,10 @@ describe("Universal Gateway - Withdraw Tests", () => {
                     })
                     .signers([relayer])
                     .rpc();
-                expect.fail("Should have thrown an error for zero fundRecipient");
+                expect.fail("Should have thrown an error for zero revertRecipient");
             } catch (error: any) {
                 const errorStr = error.toString();
-                // Our program should throw InvalidRecipient for zero fundRecipient
+                // Our program should throw InvalidRecipient for zero revertRecipient
                 expect(
                     errorStr.includes("InvalidRecipient") ||
                     errorStr.includes("AnchorError")
@@ -1441,7 +1441,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             );
         });
 
-        it("rejects SPL revert with zero fundRecipient", async () => {
+        it("rejects SPL revert with zero revertRecipient", async () => {
             const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();
             const executedTxPda = getExecutedTxPda(subTxId);

@@ -545,7 +545,8 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 **Key requirements**:
 - `instruction_id = 2`
 - `destination_program`: gateway program ID
-- `ix_data`: `send_universal_tx_to_uea` discriminator + Borsh args (`token`, `amount`, `payload`)
+- `ix_data`: `send_universal_tx_to_uea` discriminator + Borsh args (`token`, `amount`, `payload`, `revert_recipient`)
+- `revert_recipient` in args must be non-zero (`Pubkey::default()` is rejected)
 - Emits `UniversalTx` with `from_cea: true` and `UniversalTxFinalized`
 - Semantic split:
   - `UniversalTx.amount` / `UniversalTx.payload` come from inner decoded args
@@ -559,14 +560,14 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `sub_tx_id`: [u8; 32]
 - `universal_tx_id`: [u8; 32]
 - `amount`: u64
-- `revert_instruction`: Struct `{ fund_recipient: Pubkey, revert_msg: Vec<u8> }`
+- `revert_instruction`: Struct `{ revert_recipient: Pubkey, revert_msg: Vec<u8> }`
 - `gas_fee`: u64
 - `signature`: [u8; 64]
 - `recovery_id`: u8
 - `message_hash`: [u8; 32]
 
 **revert_instruction**:
-- `fund_recipient`: Pubkey (32 bytes) - where to send reverted funds
+- `revert_recipient`: Pubkey (32 bytes) - where to send reverted funds
 - `revert_msg`: Vec<u8> - revert message (can be empty)
 
 ### 4.6 Revert Universal Transaction (SPL Token via unified function)
@@ -707,7 +708,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
    - **CEA self-withdraw (target == gateway):** emits both `UniversalTx` (`from_cea: true`) and `UniversalTxFinalized`
      - `UniversalTx.amount`/`payload` = inner decoded `send_universal_tx_to_uea` args
      - `UniversalTxFinalized.amount`/`payload` = outer `finalize_universal_tx` args
-   - **Revert:** `RevertUniversalTx` — field order: `sub_tx_id`, `universal_tx_id`, `fund_recipient`, `token`, `amount`, `revert_instruction`
+   - **Revert:** `RevertUniversalTx` — field order: `sub_tx_id`, `universal_tx_id`, `revert_recipient`, `token`, `amount`, `revert_instruction`
 2. Verify event fields match your transaction
 3. Mark transaction as completed
 
@@ -871,7 +872,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 5. **Replay guard** — `ExecutedSubTx` PDA keyed by `sub_tx_id` prevents duplicate rescue execution
 6. **Events emitted**:
    - `FundsRescued { sub_tx_id, universal_tx_id, token, amount, revert_instruction }`
-   - For rescue, `revert_instruction.fund_recipient = recipient` and `revert_instruction.revert_msg = []`
+   - For rescue, `revert_instruction.revert_recipient = recipient` and `revert_instruction.revert_msg = []`
    - `ProtocolFeeReimbursed { sub_tx_id, relayer, amount_lamports }`
 
 ---
@@ -1008,7 +1009,7 @@ Before production:
 **For SOL transaction:**
 ```typescript
 const instruction = await program.methods
-  .FinalizeUniversalTx(/* ... params ... */)
+  .finalizeUniversalTx(/* ... params ... */)
   .accounts(/* ... */)
   .instruction();
 
@@ -1029,7 +1030,7 @@ const signature = await connection.sendTransaction(tx);
 const usdcMint = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 
 const instruction = await program.methods
-  .FinalizeUniversalTx(/* ... params ... */)
+  .finalizeUniversalTx(/* ... params ... */)
   .accounts({
     /* ... */
     mint: usdcMint,

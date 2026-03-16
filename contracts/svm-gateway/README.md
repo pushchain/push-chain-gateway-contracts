@@ -1,482 +1,82 @@
-# Push Chain Solana Gateway
+# Push Chain SVM Gateway
 
-Production-ready Solana program for bidirectional cross-chain bridging between Push Chain (EVM) and Solana with TSS-verified withdrawals.
+Solana-side gateway for Push Chain universal transactions.  
+This program handles:
+- inbound deposits (`send_universal_tx`)
+- outbound finalize (`finalize_universal_tx`)
+- outbound revert (`revert_universal_tx`)
+- outbound rescue (`rescue_funds`)
 
-## Architecture Overview
+## Getting Started
 
-**Inbound:** Solana → Push Chain (deposits)
-**Outbound:** Push Chain → Solana (withdrawals, executions, reverts)
-
-## Program ID
-
-**Devnet:** `DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp`
-**Mainnet:** TBD
-
-## Core Functions
-
-### Inbound (Deposits)
-- **`send_universal_tx`** - Universal entrypoint for deposits from Solana → Push Chain
-  - Routes to GAS or FUNDS handlers based on tx type
-  - Supports native SOL and SPL tokens
-  - Rate limiting per token via dynamic thresholds
-  - Pyth oracle price validation for USD caps
-
-### Outbound (Withdrawals & Executions)
-- **`finalize_universal_tx`** - Unified entrypoint for Push Chain → Solana operations
-  - **instruction_id = 1:** Withdraw (direct transfer to recipient)
-  - **instruction_id = 2:** Execute (CPI to target program with CEA as signer)
-  - TSS signature verification (ECDSA secp256k1)
-  - CEA (Cross-chain Execution Account) architecture for persistent user identity
-  - Mode enforcement: recipient required for withdraw, must be None for execute
-  - destination_program always required (SystemProgram for withdraw, target program for execute)
-
-### Revert Functions
-- **`revert_universal_tx`** - Unified SOL/SPL revert for failed transactions (`token_mint = None` for SOL, `Some` for SPL)
-
-### Rescue Function
-- **`rescue_funds`** - TSS-verified emergency release of locked vault funds (EVM parity: `UniversalGateway.rescueFunds`)
-  - **instruction_id = 4:** Unified SOL and SPL path (token_mint = None → SOL, Some → SPL)
-  - Replay-protected by `ExecutedSubTx` PDA using `sub_tx_id`
-  - Relayer gas reimbursed from `fee_vault`
-
-### Admin Functions
-- **`initialize`** - Deploy gateway with admin/pauser authorities
-- **`pause` / `unpause`** - Emergency stop controls
-- **`set_caps_usd`** - Configure min/max USD caps (configurable, not fixed)
-- **`set_block_usd_cap`** - Configure block-based USD cap for rate limiting
-- **`update_epoch_duration`** - Configure epoch duration for rate limiting
-- **`set_token_rate_limit`** - Configure per-token rate limit threshold
-- **`set_pyth_price_feed`** - Update Pyth price feed address
-- **`set_pyth_confidence_threshold`** - Update Pyth confidence threshold
-- **`init_tss`** - Initialize TSS with ETH address and chain ID
-- **`update_tss`** - Update TSS address and chain ID
-
-## Key Concepts
-
-### CEA (Cross-chain Execution Account)
-- PDA derived from user's EVM address: `[b"push_identity", push_account[20]]`
-- Persistent identity across all user transactions
-- Vault → CEA → Recipient flow ensures recipient sees CEA as push_account
-- CEA signs CPIs in execute mode (cross-chain program interactions)
-
-### Rate Limiting (Not Whitelist)
-- Dynamic threshold per token (configurable via `set_token_rate_limit`)
-- Token supported if `rate_limit_threshold > 0`
-- No fixed whitelist - flexible token management
-- Rate limiting applies to inbound deposits only (outbound has no rate limiting)
-
-### TSS Signature Verification
-- TSS signs message hash with ECDSA secp256k1
-- Per-tx replay protection via `ExecutedSubTx` PDA (seeded by `sub_tx_id`) — no global nonce
-- Message format: `PREFIX | instruction_id | chain_id | amount | sub_tx_id | universal_tx_id | push_account | token | gas_fee | [mode-specific]`
-- **Common fields** (same order for both withdraw and execute):
-  1. `sub_tx_id` (32 bytes) - matches function parameter order
-  2. `universal_tx_id` (32 bytes)
-  3. `push_account` (20 bytes, EVM address)
-  4. `token` (32 bytes, Pubkey)
-  5. `gas_fee` (u64 BE)
-- **Withdraw-specific**: `recipient` (32 bytes)
-- Public key recovered from signature, validated against TSS ETH address
-
-## Account Structure (PDAs)
-
-```
-config          → [b"config"]                    // Gateway config, authorities, caps
-vault_sol       → [b"vault"]                     // SOL vault (also ATA authority)
-tss_pda         → [b"tsspda_v2"]                 // TSS state (eth_address, chain_id, authority, bump)
-cea_authority   → [b"push_identity", push_account]     // User's CEA (push_account = 20-byte EVM address)
-executed_sub_tx     → [b"executed_sub_tx", sub_tx_id]        // Replay protection (32-byte sub_tx_id)
-rate_limit_config → [b"rate_limit_config"]       // Rate limit global config
-token_rate_limit  → [b"rate_limit", mint]        // Per-token rate limit state
-```
-
-## CLI Commands
-
-### Token Management
-```bash
-# Create test token
-npm run token:create -- -n "Test Token" -s "TEST" -d "Test token description"
-
-# Mint tokens to address
-npm run token:mint -- -m TEST -r <ADDRESS> -a 1000
-
-# Set rate limit (enable token)
-npm run config:rate-set-token -- --mint <MINT> --threshold 1000000000
-
-# List all tokens
-npm run token:list
-```
-
-### Testing
-```bash
-# Run all tests
-anchor test
-
-# Run specific test suite
-TEST_FILE=tests/execute.test.ts anchor test
-npm run test:execute
-npm run test:withdraw
-
-# Integration test
-npx ts-node app/gateway-test.ts
-```
-
-### ALT Management
-```bash
-# Create Protocol ALT (7 accounts total; SOL uses 4, SPL uses all 7)
-npx ts-node scripts/create-protocol-alt.ts
-
-# Create Token-Specific ALTs (2 accounts per token)
-npx ts-node scripts/create-token-alt.ts
-
-# Extend existing ALT
-npx ts-node scripts/extend-alt.ts --alt <ALT_ADDRESS> --accounts <PUBKEY1,PUBKEY2>
-
-# Deactivate ALT (irreversible)
-npx ts-node scripts/deactivate-alt.ts --alt <ALT_ADDRESS>
-```
-
-## Integration Examples
-
-### Withdraw (Push Chain → Solana)
-
-```typescript
-import {
-  buildWithdrawAdditionalData,
-  signTssMessage,
-  TssInstruction,
-} from "./tests/helpers/tss";
-
-// 1. Derive PDAs
-const [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], programId);
-const [vaultSol] = PublicKey.findProgramAddressSync([Buffer.from("vault")], programId);
-const [tssPda] = PublicKey.findProgramAddressSync([Buffer.from("tsspda_v2")], programId);
-const [ceaAuthority] = PublicKey.findProgramAddressSync(
-  [Buffer.from("push_identity"), Buffer.from(push_account)], // push_account = 20-byte EVM address
-  programId
-);
-const [executedSubTx] = PublicKey.findProgramAddressSync(
-  [Buffer.from("executed_sub_tx"), subTxId], // subTxId = 32 bytes
-  programId
-);
-
-// 2. Fetch TSS state
-const tssAccount = await program.account.tssPda.fetch(tssPda);
-const { chainId } = tssAccount;
-
-// 3. Build TSS message (withdraw)
-const additional = buildWithdrawAdditionalData(
-  universalTxId,
-  subTxId,
-  Buffer.from(push_account),   // 20-byte EVM address
-  tokenMint,             // Pubkey::default() for SOL
-  recipient,
-  BigInt(gasFee)
-);
-
-const { signature, recoveryId, messageHash } = await signTssMessage({
-  instruction: TssInstruction.Withdraw,
-  amount: BigInt(withdrawAmount),
-  additional,
-  chainId,
-});
-
-// 4. Submit withdraw transaction
-await program.methods
-  .finalizeUniversalTx(
-    1,                        // instruction_id (withdraw)
-    subTxId,                     // [u8; 32] - sub_tx_id
-    Array.from(universalTxId), // [u8; 32] - universal_tx_id
-    new anchor.BN(amount),    // u64 - amount
-    push_account,                   // [u8; 20] - push_account (EVM address)
-    Buffer.from([]),          // Vec<u8> - writable_flags (empty for withdraw)
-    Buffer.from([]),          // Vec<u8> - ix_data (empty for withdraw)
-    new anchor.BN(gasFee),    // u64 - gas_fee
-    signature,                // [u8; 64] - signature
-    recoveryId,               // u8 - recovery_id
-    messageHash,              // [u8; 32] - message_hash
-  )
-  .accounts({
-    caller: relayerKeypair.publicKey,
-    config: configPda,
-    vaultSol,
-    ceaAuthority,
-    tssPda,
-    executedSubTx,
-    systemProgram: SystemProgram.programId,
-    destinationProgram: SystemProgram.programId, // Required: SystemProgram for withdraw mode
-    recipient: recipientPubkey,                  // Required for withdraw mode
-    // SPL accounts (null for SOL):
-    vaultAta: null,
-    ceaAta: null,
-    mint: null,
-    tokenProgram: null,
-    rent: null,
-    associatedTokenProgram: null,
-    recipientAta: null,
-  })
-  .remainingAccounts([]) // Must be empty for withdraw
-  .rpc();
-```
-
-### Execute (Push Chain → Solana CPI)
-
-```typescript
-import {
-  buildExecuteAdditionalData,
-  signTssMessage,
-  TssInstruction,
-} from "./tests/helpers/tss";
-
-// Similar to withdraw, but:
-// - instruction_id = 2
-// - destination_program = target program pubkey (must be executable)
-// - recipient = null (must be None for execute mode)
-// - writable_flags = bitpacked flags for remaining_accounts
-// - ix_data = instruction data for target program
-// - remaining_accounts = accounts for target program CPI
-
-// Build TSS message (execute)
-const additional = buildExecuteAdditionalData(
-  universalTxId,
-  subTxId,
-  targetProgramId,
-  push_account,
-  accountsForTarget,  // AccountMeta[]
-  ixData,
-  gasFee,
-  tokenMint  // Pubkey::default() for SOL
-);
-
-const { signature, recoveryId, messageHash } = await signTssMessage({
-  instruction: 2, // Execute
-  amount,
-  additional,
-  chainId,
-});
-
-await program.methods
-  .finalizeUniversalTx(
-    2,                        // instruction_id (execute)
-    subTxId,                     // [u8; 32] - sub_tx_id
-    Array.from(universalTxId), // [u8; 32] - universal_tx_id
-    new anchor.BN(amount),    // u64 - amount
-    push_account,                   // [u8; 20] - push_account (EVM address)
-    writableFlags,            // Vec<u8> - Bitpacked: ceil(accounts/8) bytes
-    ixData,                   // Vec<u8> - Target program instruction data
-    new anchor.BN(gasFee),    // u64 - gas_fee
-    signature,                // [u8; 64] - signature
-    recoveryId,               // u8 - recovery_id
-    messageHash,              // [u8; 32] - message_hash
-  )
-  .accounts({
-    caller: relayerKeypair.publicKey,
-    config: configPda,
-    vaultSol,
-    ceaAuthority,
-    tssPda,
-    executedSubTx,
-    systemProgram: SystemProgram.programId,
-    destinationProgram: targetProgramId,  // Required: target program for execute mode
-    recipient: null,                      // Must be null for execute mode
-    // SPL accounts (null for SOL, required for SPL):
-    vaultAta: null,           // or vaultAtaAddress for SPL
-    ceaAta: null,             // or ceaAtaAddress for SPL
-    mint: null,               // or tokenMint for SPL
-    tokenProgram: null,       // or TOKEN_PROGRAM_ID for SPL
-    rent: null,               // or SYSVAR_RENT_PUBKEY for SPL
-    associatedTokenProgram: null, // or ASSOCIATED_TOKEN_PROGRAM_ID for SPL
-    recipientAta: null,       // Must be null for execute mode
-  })
-  .remainingAccounts(accountsForTargetProgram)
-  .rpc();
-```
-
-### TSS Helper Functions
-
-The `tests/helpers/tss.ts` file provides utilities for building and signing TSS messages. Both helpers use **consistent ordering** with common fields first:
-
-```typescript
-import {
-  signTssMessage,
-  buildWithdrawAdditionalData,
-  buildExecuteAdditionalData,
-  TssInstruction,
-} from "./tests/helpers/tss";
-
-// For withdraw (instruction_id = 1)
-// Returns: [sub_tx_id, universal_tx_id, push_account, token, gas_fee, recipient]
-const withdrawAdditional = buildWithdrawAdditionalData(
-  universalTxId,  // 32 bytes
-  subTxId,           // 32 bytes
-  push_account,         // 20 bytes (EVM address)
-  tokenMint,      // Pubkey (Pubkey::default() for SOL)
-  recipient,      // Pubkey
-  gasFee          // bigint
-);
-
-// For execute (instruction_id = 2)
-const executeAdditional = buildExecuteAdditionalData(
-  universalTxId,
-  subTxId,
-  targetProgram,
-  push_account,
-  accountsForTarget,  // GatewayAccountMeta[] = {pubkey, isWritable}[]
-  ixData,             // Uint8Array
-  gasFee,
-  tokenMint
-);
-
-// Sign the message
-const { signature, recoveryId, messageHash } = await signTssMessage({
-  instruction: TssInstruction.Withdraw,  // or TssInstruction.Execute
-  amount: BigInt(withdrawAmount),
-  additional: withdrawAdditional,
-  chainId,
-});
-```
-
-**Note**: Common fields (sub_tx_id, universal_tx_id, push_account, token, gas_fee) are in the same order for both modes, making the system easier to maintain and understand.
-
-### Deposit (Solana → Push Chain)
-
-```typescript
-const universalTxRequest = {
-  recipient: Array.from(Buffer.from(evmRecipient.slice(2), 'hex')), // 20 bytes
-  token: tokenMint,          // Pubkey::default() for SOL
-  amount: new anchor.BN(amount),
-  payload: [],               // Empty for simple transfer
-  revertInstruction: {
-    fundRecipient: userPubkey,
-    revertMsg: Buffer.from("Revert if failed")
-  },
-  signatureData: Buffer.from([]), // Reserved for future use
-};
-
-await program.methods
-  .sendUniversalTx(universalTxRequest, nativeAmount) // nativeAmount = SOL to send
-  .accounts({
-    config: configPda,
-    vault: vaultSol,
-    user: userKeypair.publicKey,
-    // REQUIRED ALWAYS (deposit.rs:435, 442) - even for SOL-only deposits
-    userTokenAccount: isSolOnly ? vaultSol : userAta,      // SOL: pass dummy account (e.g., vault)
-    gatewayTokenAccount: isSolOnly ? vaultSol : vaultAta,  // SOL: pass dummy account (e.g., vault)
-    priceUpdate: pythFeedAddress,   // For USD cap validation
-    rateLimitConfig,
-    tokenRateLimit,
-    tokenProgram: TOKEN_PROGRAM_ID, // Always required
-    systemProgram: SystemProgram.programId,
-  })
-  .rpc();
-
-// CRITICAL: userTokenAccount + gatewayTokenAccount are ALWAYS REQUIRED by Anchor account struct
-// For SOL deposits: Pass any valid existing account (e.g., vault) as dummy to satisfy requirements
-```
-
-## Transaction Size Optimization (ALTs)
-
-### Savings
-- **SOL transactions:** 92 bytes (Protocol ALT with 7 accounts; SOL transactions use 4 of them)
-- **SPL transactions:** 215 bytes (Protocol ALT: 185 bytes + Token ALT: 30 bytes)
+### Dependencies
+- Rust + Cargo
+- Solana CLI + Anchor CLI
+- Node.js + npm
 
 ### Setup
-1. **Create Protocol ALT** (shared by all transactions)
-2. **Create Token ALTs** (one per SPL token)
-3. **Load configs** in backend:
-   ```typescript
-   const altHelper = new AltHelper(connection);
-   altHelper.loadFromConfigFiles('./alt-config-protocol.json', './alt-config-tokens.json');
-   await altHelper.fetchAltAccounts();
-   ```
-4. **Build v0 transactions:**
-   ```typescript
-   const tx = await altHelper.buildVersionedTransaction(
-     [instruction],
-     relayerPubkey,
-     mintPubkey // null for SOL
-   );
-   ```
-
-See [ALT Integration Guide](../../INTEGRATION_GUIDE.md#12-address-lookup-tables-alts-for-transaction-size-optimization) for details.
-
-## Security Features
-
-- **TSS Signature Verification** - ECDSA secp256k1 with ETH address recovery
-- **Per-tx Replay Protection** - `executed_sub_tx` PDA (seeded by `sub_tx_id`) prevents double-execution without global nonce
-- **Pause Functionality** - Emergency stop for all user operations
-- **Rate Limiting** - Dynamic thresholds per token (inbound only), configurable by admin
-- **USD Caps** - Pyth oracle price validation (configurable min/max caps via set_caps_usd)
-- **Mode Enforcement** - Withdraw/execute modes validated (recipient presence enforced per mode)
-- **Account Validation** - Ownership, mint, ATA derivation checks
-- **CEA Architecture** - Isolated execution context per user
-
-## Common Errors
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `MessageHashMismatch` | Wrong TSS message construction | Verify field order and endianness (see tss.ts) |
-| `InvalidAccount` | Account derivation error | Check PDA seeds and ATA derivation |
-| `RateLimitExceeded` | Token threshold reached | Wait for rate limit reset or increase threshold |
-| `ExecutedSubTx` | Transaction already executed | sub_tx_id must be unique (check executed_sub_tx PDA) |
-| `Paused` | Gateway is paused | Wait for unpause or check pause status |
-| `InsufficientBalance` | User/vault low balance | Verify balances (1:1 backing guarantees vault) |
-| `InvalidProgram` | Target program not executable | Ensure destination_program.executable == true |
-
-## Development
-
 ```bash
-# Build
+cd contracts/svm-gateway
+npm install
 anchor build
+```
 
-# Deploy
-anchor deploy
-
-# Test
+### Test
+```bash
 anchor test
 
-# Generate IDL types
-anchor build && cp target/idl/*.json target/idl/*.ts .
+# focused suites
+npm run test:withdraw
+npm run test:execute
+npm run test:rescue
+npm run test:cea-to-uea
 ```
-
-## Documentation
-
-- **[Integration Guide](../../INTEGRATION_GUIDE.md)** - Complete backend integration reference
-- **[CLAUDE.md](../../CLAUDE.md)** - Unified entrypoint architecture reference
-- **[Test Files](tests/)** - Comprehensive test examples
-- **[Scripts](scripts/)** - ALT management and token utilities
-
-## Project Structure
-
-```
-contracts/svm-gateway/
-├── programs/
-│   └── universal-gateway/
-│       └── src/
-│           ├── lib.rs                    # Program entrypoint
-│           ├── instructions/
-│           │   ├── deposit.rs            # send_universal_tx (inbound)
-│           │   ├── execute.rs            # finalize_universal_tx (outbound)
-│           │   ├── revert.rs             # revert functions
-│           │   ├── rescue.rs             # rescue_funds
-│           │   ├── tss.rs                # TSS signature validation
-│           │   ├── admin.rs              # Admin functions
-│           │   ├── initialize.rs         # Gateway initialization
-│           │   └── mod.rs                # Module exports
-│           ├── state.rs                  # Account structs
-│           ├── errors.rs                 # Error codes
-│           └── utils/                    # Helper modules
-├── tests/                                # Test suites
-├── scripts/                              # CLI utilities
-├── app/                                  # Integration helpers
-└── README.md                             # This file
-```
-
-## Status
-
-**Current:** ✅ Unified outbound flow implemented and tested
-**Next:** Security audit + mainnet deployment preparation
 
 ---
 
-Built for Push Chain by the Push Protocol team.
+## Instruction Map
+
+| Function | Direction | instruction_id | Notes |
+|---|---|---|---|
+| `send_universal_tx` | Solana → Push Chain | N/A | Inbound deposit entrypoint |
+| `finalize_universal_tx` | Push Chain → Solana | `1` / `2` | `1=withdraw`, `2=execute` |
+| `revert_universal_tx` | Push Chain → Solana | `3` | Unified SOL + SPL revert |
+| `rescue_funds` | Push Chain → Solana | `4` | Emergency fund release |
+
+---
+
+## Documentation
+
+### Program Docs (`contracts/svm-gateway/docs/`)
+- [SVM Gateway Overview](./docs/0-SVM-GATEWAY.md)
+- [Deposit / Inbound](./docs/1-DEPOSIT.md)
+- [Withdraw + Execute](./docs/2-WITHDRAW-EXECUTE.md)
+- [Revert](./docs/3-REVERT.md)
+- [CEA](./docs/4-CEA.md)
+- [Rescue](./docs/5-RESCUE.md)
+- [Threat Model](./docs/THREAT_MODEL.md)
+- [Runbook](./docs/RUNBOOK.md)
+
+### Integration Docs
+- [Integration Guide](./INTEGRATION_GUIDE.md)
+
+
+---
+
+## Devnet Program IDs
+
+- Main: `CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS`
+- Dummy: `DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp`
+
+---
+
+## CLI Entry Points
+
+- Config/admin: `app/config-cli.ts`
+- Token tooling: `app/token-cli.ts`
+- End-to-end devnet script: `app/gateway-test.ts`
+- ALT helper: `app/create-universal-alt.ts`
+
+---
+
+License: ISC

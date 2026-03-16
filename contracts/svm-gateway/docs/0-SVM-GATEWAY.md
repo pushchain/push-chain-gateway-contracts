@@ -52,10 +52,11 @@ The program uses PDAs for all protocol state. No external signers or owner keys 
 
 ## Inbound: TX_TYPE Routing
 
-`send_universal_tx` never takes an explicit `TX_TYPE`. The program infers it:
+`send_universal_tx` never takes an explicit `TX_TYPE`. The program infers it from the fee-adjusted native amount:
+`adjusted_native_amount = native_amount - protocol_fee_lamports`.
 
-| TX_TYPE | req.amount | req.payload | native_amount |
-|---------|------------|-------------|---------------|
+| TX_TYPE | req.amount | req.payload | adjusted_native_amount |
+|---------|------------|-------------|------------------------|
 | `Gas` | 0 | empty | > 0 |
 | `GasAndPayload` | 0 | non-empty | any |
 | `Funds` (SOL) | > 0 | empty | == req.amount |
@@ -96,7 +97,7 @@ See `2-WITHDRAW-EXECUTE.md`.
 Vault → CEA → CPI to target program
 ```
 
-CEA receives funds, then the gateway calls the target program with CEA as the signer via `invoke_signed`. Target program sees `msg.sender == CEA`. `remaining_accounts` in the transaction must match the signed account list exactly.
+CEA receives funds, then the gateway calls the target program with CEA as the signer via `invoke_signed`. Target program sees `msg.sender == CEA`. `remaining_accounts` must match signed pubkeys/order exactly; writability is validated one-way (`signed writable => actual writable`).
 
 **CEA self-withdraw:** when `destination_program == gateway_program_id`, the execute path routes to a CEA→UEA flow instead of an external CPI. Emits both `UniversalTx` (`from_cea: true`) and `UniversalTxFinalized`.
 

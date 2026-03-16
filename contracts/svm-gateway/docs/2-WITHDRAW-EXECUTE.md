@@ -4,7 +4,7 @@
 **Direction:** Push Chain → Solana
 **Authorization:** TSS ECDSA secp256k1 signature
 
-Single entrypoint for all outbound operations, routed by `instruction_id`.
+Single entrypoint for withdraw/execute outbound operations, routed by `instruction_id`.
 
 | instruction_id | Mode | Action |
 |---|---|---|
@@ -77,6 +77,7 @@ Args (Borsh):
   token: Pubkey,    // Pubkey::default() for SOL, mint for SPL
   amount: u64,      // must be > 0
   payload: Vec<u8>, // empty = Funds, non-empty = FundsAndPayload
+  revert_recipient: Pubkey, // must be non-zero
 }
 ```
 

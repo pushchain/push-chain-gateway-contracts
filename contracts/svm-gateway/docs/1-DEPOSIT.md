@@ -10,8 +10,8 @@ The gateway infers `TX_TYPE` automatically from the request structure. Users nev
 
 ## TX_TYPE Routing
 
-| TX_TYPE | req.amount | req.payload | req.token | native_amount |
-|---------|-----------|-------------|-----------|---------------|
+| TX_TYPE | req.amount | req.payload | req.token | adjusted_native_amount |
+|---------|-----------|-------------|-----------|------------------------|
 | `Gas` | 0 | empty | any | > 0 |
 | `GasAndPayload` | 0 | non-empty | any | >= 0 |
 | `Funds` (SOL) | > 0 | empty | default | == req.amount (exact) |
@@ -20,6 +20,7 @@ The gateway infers `TX_TYPE` automatically from the request structure. Users nev
 | `FundsAndPayload` (SPL) | > 0 | non-empty | mint | any |
 
 `native_amount` mirrors `msg.value` on EVM — total native SOL sent by the user.
+Routing checks run on `adjusted_native_amount = native_amount - protocol_fee_lamports`.
 
 ---
 
@@ -32,8 +33,6 @@ A flat fee in lamports is deducted from `native_amount` before routing. The adju
 ## Gas Route (Instant)
 
 Applies to `Gas` and `GasAndPayload`. After fee deduction:
-
-> **Note:** GAS route payload validation is currently disabled (matching EVM V0). The gateway accepts `Gas` with a non-empty payload and `GasAndPayload` with an empty payload without error.
 
 1. USD cap check: `min_cap_usd <= lamports_to_usd(amount) <= max_cap_usd` (Pyth SOL/USD)
 2. Block USD cap check: per-slot budget; resets each slot
@@ -58,6 +57,22 @@ Applies to `Funds` and `FundsAndPayload`.
 For `FundsAndPayload`, if there is excess `native_amount` beyond `req.amount`, the excess is processed as a gas deposit first.
 
 ---
+
+## Required Accounts
+
+| Account | Notes |
+|---------|-------|
+| `config` | Required |
+| `vault` | Required |
+| `fee_vault` | Required — receives protocol fee; must exist (run `set_protocol_fee(0)` once on new deployments) |
+| `rate_limit_config` | Required |
+| `token_rate_limit` | Required (even for Gas route) |
+| `price_update` | Required; must match `config.pyth_price_feed` exactly |
+| `user` | Signer |
+| `system_program` | Required |
+| `user_token_account` | SPL only — pass `null` for native SOL |
+| `gateway_token_account` | SPL only — pass `null` for native SOL |
+| `token_program` | SPL only — pass `null` for native SOL |
 
 ## Token Accounts (Inbound)
 
