@@ -434,9 +434,10 @@ fn internal_withdraw(
 /// Layout: [8-byte discriminator][borsh(SendUniversalTxToUEAArgs)].
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct SendUniversalTxToUEAArgs {
-    pub token: Pubkey,    // Pubkey::default() for SOL; mint for SPL
-    pub amount: u64,      // must be > 0
-    pub payload: Vec<u8>, // empty = Funds, non-empty = FundsAndPayload
+    pub token: Pubkey,            // Pubkey::default() for SOL; mint for SPL
+    pub amount: u64,              // must be > 0
+    pub payload: Vec<u8>,         // empty = Funds, non-empty = FundsAndPayload
+    pub revert_recipient: Pubkey, // Solana account to receive funds if tx reverts on Push Chain
 }
 
 /// CEA → UEA inbound route: mirrors the inbound FUNDS deposit flow.
@@ -467,6 +468,7 @@ fn send_universal_tx_to_uea(
 
     // amount must be explicit — draining the full CEA balance is not allowed
     require!(args.amount > 0, GatewayError::InvalidAmount);
+    require!(args.revert_recipient != Pubkey::default(), GatewayError::InvalidRecipient);
 
     // Validate balance
     if token == Pubkey::default() {
@@ -569,7 +571,7 @@ fn send_universal_tx_to_uea(
         token,
         amount: withdraw_amount,
         payload: args.payload,
-        revert_recipient: ctx.accounts.cea_authority.key(),
+        revert_recipient: args.revert_recipient,
         tx_type,
         signature_data: vec![],
         from_cea: true,

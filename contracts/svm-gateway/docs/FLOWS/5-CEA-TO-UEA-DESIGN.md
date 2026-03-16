@@ -71,12 +71,12 @@ Should not be done: authorization on this path comes from the TSS signature over
 
 ```
 TSS authorizes → gateway.finalize_universal_tx(instruction_id=2, destination_program=gateway_program_id)
-  ix_data = [discriminator(send_universal_tx_to_uea)] ++ borsh(SendUniversalTxToUEAArgs { token, amount, payload })
+  ix_data = [discriminator(send_universal_tx_to_uea)] ++ borsh(SendUniversalTxToUEAArgs { token, amount, payload, revert_recipient })
     ├─ Gateway detects: target == program_id → send_universal_tx_to_uea
     ├─ CEA transfers funds back to vault
     ├─ tx_type = Funds (empty payload) | FundsAndPayload (non-empty payload)
-    ├─ emit UniversalTx { sender=CEA, recipient=UEA, fromCEA=true }
-    └─ emit UniversalTxFinalized { target=gateway_program_id, payload=[] }  ← dual-event
+    ├─ emit UniversalTx { sender=CEA, recipient=UEA, revert_recipient=args.revert_recipient, fromCEA=true }
+    └─ emit UniversalTxFinalized { target=gateway_program_id, payload=[] }  ← dual-event (emitted by parent finalize_universal_tx)
 ```
 
 **Authorization:** The TSS signature covers `target_program=gateway_program_id` and `ix_data_buf` (which includes the discriminator and the entire `SendUniversalTxToUEAArgs`). The relayer cannot forge or modify either field. This replaces both EVM guards:

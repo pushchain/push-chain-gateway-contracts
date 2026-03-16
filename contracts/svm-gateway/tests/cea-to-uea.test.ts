@@ -253,6 +253,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     return b;
                 })(),
                 Buffer.from([0, 0, 0, 0]), // payload = empty Vec<u8> (Borsh: 4-byte LE length = 0)
+                admin.publicKey.toBuffer(), // revert_recipient
             ]);
             const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
 
@@ -425,6 +426,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     lenBuf.writeUInt32LE(ceaPayload.length, 0);
                     return Buffer.concat([lenBuf, ceaPayload]);
                 })(),
+                admin.publicKey.toBuffer(), // revert_recipient
             ]);
             const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
 
@@ -612,6 +614,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
                     return b;
                 })(),
                 Buffer.from([0, 0, 0, 0]), // payload = empty Vec<u8> (Borsh: 4-byte LE length = 0)
+                admin.publicKey.toBuffer(), // revert_recipient
             ]);
             const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
 

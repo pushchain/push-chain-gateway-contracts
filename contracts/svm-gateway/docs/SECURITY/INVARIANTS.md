@@ -224,7 +224,7 @@ finalize_universal_tx succeeds (target == gateway, CEA withdrawal) ⟹
   exactly 1 UniversalTx event (from_cea=true)  AND
   exactly 1 UniversalTxFinalized event (target = gateway_program_id)
 ```
-**Enforcement:** emit! inside send_universal_tx_to_uea for CEA path (dual-event)
+**Enforcement:** `UniversalTx { from_cea=true }` emitted inside `send_universal_tx_to_uea`; `UniversalTxFinalized` emitted by the parent `finalize_universal_tx` after the sub-call returns (dual-event)
 
 ### 28. Revert Event
 ```

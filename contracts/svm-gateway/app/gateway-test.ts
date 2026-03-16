@@ -23,7 +23,7 @@ import { assert } from "chai";
 import { instructionToPayloadFields, encodeExecutePayload, decodeExecutePayload, accountsToWritableFlags } from "./execute-payload";
 import { signTssMessage, buildExecuteAdditionalData, buildWithdrawAdditionalData, TssInstruction, generateUniversalTxId } from "../tests/helpers/tss";
 
-const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
+const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const EXECUTED_SUB_TX_SEED = "executed_sub_tx";
@@ -1918,7 +1918,8 @@ async function run() {
         // Outer execute moves rent_fee vault->CEA before self-withdraw; include it to drain CEA fully.
         amountBytes.writeBigUInt64LE(BigInt(ceaBalBefore) + rentFee);
         const payloadLenBytes = Buffer.from([0, 0, 0, 0]); // empty Vec<u8>
-        const ixData = Buffer.concat([discriminator, tokenBytes, amountBytes, payloadLenBytes]);
+        const revertRecipientBytes = admin.toBuffer(); // revert_recipient
+        const ixData = Buffer.concat([discriminator, tokenBytes, amountBytes, payloadLenBytes, revertRecipientBytes]);
 
         const txId = anchor.web3.Keypair.generate().publicKey.toBytes();
         const universalTxId = generateUniversalTxId();

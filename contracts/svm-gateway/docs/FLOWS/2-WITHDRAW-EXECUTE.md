@@ -374,12 +374,13 @@ When destination_program == gateway_program_id, the gateway executes a special C
 [borsh_args: variable]    // SendUniversalTxToUEAArgs (Borsh-encoded)
 ```
 
-**SendUniversalTxToUEAArgs:** (execute.rs:429-433)
+**SendUniversalTxToUEAArgs:** (execute.rs:429-434)
 ```rust
 struct SendUniversalTxToUEAArgs {
-    token: Pubkey,      // Must match derived token (Pubkey::default() for SOL, mint for SPL)
-    amount: u64,        // Amount to withdraw (must be > 0, no auto-drain of full balance)
-    payload: Vec<u8>,   // empty = Funds tx_type, non-empty = FundsAndPayload tx_type (from_cea=true)
+    token: Pubkey,            // Must match derived token (Pubkey::default() for SOL, mint for SPL)
+    amount: u64,              // Amount to withdraw (must be > 0, no auto-drain of full balance)
+    payload: Vec<u8>,         // empty = Funds tx_type, non-empty = FundsAndPayload tx_type (from_cea=true)
+    revert_recipient: Pubkey, // Solana wallet to receive funds if Push Chain reverts (must not be default)
     // NOTE: NO recipient field - recipient (UEA address) comes from finalize_universal_tx push_account param
 }
 ```
@@ -387,13 +388,15 @@ struct SendUniversalTxToUEAArgs {
 **Emitted UniversalTx event:**
 - `from_cea: true` — Push Chain UE module uses `recipient` directly as existing UEA (no new UEA derivation)
 - `tx_type: Funds` if payload empty, `FundsAndPayload` if payload non-empty
+- `revert_recipient` — the wallet pubkey provided in args (wallet owner, not token account; for SPL reverts the relayer derives the ATA)
 
 **Validation:**
 1. ix_data must be >= 8 bytes
 2. First 8 bytes must match hash(b"global:send_universal_tx_to_uea")[..8]
-3. Remaining bytes must deserialize as SendUniversalTxToUEAArgs (token + amount + payload)
+3. Remaining bytes must deserialize as SendUniversalTxToUEAArgs (token + amount + payload + revert_recipient)
 4. args.token must match derived token (Pubkey::default() for SOL, mint for SPL)
-5. Recipient (UEA) comes from the `push_account` param in finalize_universal_tx, NOT from payload
+5. args.revert_recipient must not be Pubkey::default()
+6. Recipient (UEA) comes from the `push_account` param in finalize_universal_tx, NOT from payload
 
 **Integration Example:**
 ```typescript
@@ -403,17 +406,19 @@ import { serialize } from "borsh";
 // 1. Compute discriminator
 const discr = Buffer.from(sha256("global:send_universal_tx_to_uea"), "hex").slice(0, 8);
 
-// 2. Manually Borsh-encode SendUniversalTxToUEAArgs (token + amount + payload)
+// 2. Manually Borsh-encode SendUniversalTxToUEAArgs (token + amount + payload + revert_recipient)
 // NOTE: There is NO sendUniversalTxToUEA instruction in lib.rs, so we use raw Borsh encoding
 class SendUniversalTxToUEAArgs {
-  token: Uint8Array; // 32 bytes
-  amount: bigint;    // u64
-  payload: Uint8Array; // Vec<u8>
+  token: Uint8Array;            // 32 bytes
+  amount: bigint;               // u64
+  payload: Uint8Array;          // Vec<u8>
+  revert_recipient: Uint8Array; // 32 bytes (wallet pubkey, not token account)
 
-  constructor(token: Uint8Array, amount: bigint, payload: Uint8Array) {
+  constructor(token: Uint8Array, amount: bigint, payload: Uint8Array, revert_recipient: Uint8Array) {
     this.token = token;
     this.amount = amount;
     this.payload = payload;
+    this.revert_recipient = revert_recipient;
   }
 }
 
@@ -422,13 +427,15 @@ const schema = {
     token: { array: { type: 'u8', len: 32 } },
     amount: 'u64',
     payload: { vec: 'u8' },
+    revert_recipient: { array: { type: 'u8', len: 32 } },
   }
 };
 
 const args = new SendUniversalTxToUEAArgs(
-  mintPubkey.toBytes(), // or new PublicKey(0).toBytes() for SOL
+  mintPubkey.toBytes(),          // or new PublicKey(0).toBytes() for SOL
   BigInt(amount),
-  new Uint8Array([])    // empty = Funds, non-empty = FundsAndPayload
+  new Uint8Array([]),            // empty = Funds, non-empty = FundsAndPayload
+  revertRecipientPubkey.toBytes() // wallet that receives funds if Push Chain reverts
 );
 
 const argsEncoded = serialize(schema, args);
