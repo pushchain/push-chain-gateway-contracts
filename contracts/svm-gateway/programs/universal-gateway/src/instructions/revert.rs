@@ -84,8 +84,8 @@ pub fn revert_universal_tx(
     require!(amount > 0, GatewayError::InvalidAmount);
 
     let recipient = ctx.accounts.recipient.key();
-    require!(revert_instruction.fund_recipient != Pubkey::default(), GatewayError::InvalidRecipient);
-    require!(recipient == revert_instruction.fund_recipient, GatewayError::InvalidRecipient);
+    require!(revert_instruction.revert_recipient != Pubkey::default(), GatewayError::InvalidRecipient);
+    require!(recipient == revert_instruction.revert_recipient, GatewayError::InvalidRecipient);
 
     let is_native = ctx.accounts.token_mint.is_none();
 
@@ -142,7 +142,7 @@ pub fn revert_universal_tx(
     emit!(crate::state::RevertUniversalTx {
         sub_tx_id,
         universal_tx_id,
-        fund_recipient: revert_instruction.fund_recipient,
+        revert_recipient: revert_instruction.revert_recipient,
         token: ctx.accounts.token_mint.as_ref().map_or(Pubkey::default(), |m| m.key()),
         amount,
         revert_instruction: revert_instruction.clone(),

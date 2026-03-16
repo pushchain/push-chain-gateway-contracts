@@ -1,6 +1,6 @@
 use crate::errors::GatewayError;
 use crate::instructions::execute::FinalizeUniversalTx;
-use crate::state::{RevertInstructions, TxType, UniversalTx};
+use crate::state::{TxType, UniversalTx};
 use crate::utils::{
     parse_token_account, pda_spl_transfer, pda_system_transfer, validate_token_and_consume_rate_limit,
 };
@@ -78,6 +78,7 @@ pub struct SendUniversalTxToUEAArgs {
     pub token: Pubkey,
     pub amount: u64,
     pub payload: Vec<u8>,
+    pub revert_recipient: Pubkey,
 }
 
 /// CEA -> UEA inbound route: mirrors the inbound FUNDS deposit flow.
@@ -105,6 +106,7 @@ pub fn send_universal_tx_to_uea(
 
     require!(args.token == token, GatewayError::InvalidMint);
     require!(args.amount > 0, GatewayError::InvalidAmount);
+    require!(args.revert_recipient != Pubkey::default(), GatewayError::InvalidRecipient);
 
     if token == Pubkey::default() {
         require!(
@@ -186,10 +188,7 @@ pub fn send_universal_tx_to_uea(
         token,
         amount: withdraw_amount,
         payload: args.payload,
-        revert_instruction: RevertInstructions {
-            fund_recipient: ctx.accounts.cea_authority.key(),
-            revert_msg: vec![],
-        },
+        revert_recipient: args.revert_recipient,
         tx_type,
         signature_data: vec![],
         from_cea: true,

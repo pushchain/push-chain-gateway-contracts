@@ -293,6 +293,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
           return b;
         })(),
         Buffer.from([0, 0, 0, 0]), // payload = empty Vec<u8> (Borsh: 4-byte LE length = 0)
+        cea.toBuffer(), // revert_recipient = CEA itself
       ]);
       const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
 
@@ -448,6 +449,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
           lenBuf.writeUInt32LE(ceaPayload.length, 0);
           return Buffer.concat([lenBuf, ceaPayload]);
         })(),
+        cea.toBuffer(), // revert_recipient = CEA itself
       ]);
       const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
 
@@ -549,6 +551,74 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
       expect(Buffer.from(finalizedEvent.data.payload).toString("hex")).to.equal(
         withdrawIxData.toString("hex")
       );
+    });
+
+    it("rejects CEA → UEA self-call with zero revert_recipient", async () => {
+      const pushAccount = generateSender();
+      const cea = getCeaAuthorityPda(pushAccount);
+
+      // Fund CEA with a small amount so the balance check passes before the recipient check
+      const fundTx = new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.transfer({
+          fromPubkey: admin.publicKey,
+          toPubkey: cea,
+          lamports: asLamports(0.1).toNumber(),
+        })
+      );
+      await provider.sendAndConfirm(fundTx, [admin]);
+
+      const txId = generateTxId();
+      const universalTxId = generateUniversalTxId();
+      const withdrawDiscr = computeDiscriminator("global:send_universal_tx_to_uea");
+      const { gasFee } = await calculateSolExecuteFees(provider.connection);
+      const drainAmount = BigInt(await provider.connection.getBalance(cea));
+
+      // Build args with zero (default) revert_recipient — should be rejected
+      const withdrawArgs = Buffer.concat([
+        Buffer.alloc(32, 0), // token = Pubkey::default()
+        (() => { const b = Buffer.alloc(8); b.writeBigUInt64LE(drainAmount); return b; })(),
+        Buffer.from([0, 0, 0, 0]), // empty payload
+        Buffer.alloc(32, 0),       // revert_recipient = Pubkey::default() ← invalid
+      ]);
+      const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
+
+      const sig = await signTssMessage({
+        instruction: TssInstruction.Execute,
+        amount: BigInt(0),
+        chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+        additional: buildExecuteAdditionalData(
+          new Uint8Array(universalTxId),
+          new Uint8Array(txId),
+          gatewayProgram.programId,
+          new Uint8Array(pushAccount),
+          [],
+          withdrawIxData,
+          gasFee,
+        ),
+      });
+
+      try {
+        await finalizeUniversalTx({
+          instructionId: 2,
+          subTxId: txId,
+          universalTxId,
+          amount: new anchor.BN(0),
+          pushAccount,
+          writableFlags: accountsToWritableFlagsOnly([]),
+          ixData: withdrawIxData,
+          gasFee: new anchor.BN(Number(gasFee)),
+          sig,
+          caller: admin.publicKey,
+          destinationProgram: gatewayProgram.programId,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+        })
+          .signers([admin])
+          .rpc();
+        expect.fail("Should have thrown InvalidRecipient for zero revert_recipient");
+      } catch (err: any) {
+        expect(err.toString()).to.include("InvalidRecipient");
+      }
     });
   });
 
@@ -671,6 +741,7 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
           return b;
         })(),
         Buffer.from([0, 0, 0, 0]), // payload = empty Vec<u8> (Borsh: 4-byte LE length = 0)
+        cea.toBuffer(), // revert_recipient = CEA itself
       ]);
       const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
 

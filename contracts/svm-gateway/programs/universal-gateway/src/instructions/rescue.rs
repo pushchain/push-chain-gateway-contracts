@@ -148,7 +148,7 @@ pub fn rescue_funds(
         token: ctx.accounts.token_mint.as_ref().map_or(Pubkey::default(), |m| m.key()),
         amount,
         revert_instruction: RevertInstructions {
-            fund_recipient: recipient,
+            revert_recipient: recipient,
             revert_msg: vec![],
         },
     });

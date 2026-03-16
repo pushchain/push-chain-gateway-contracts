@@ -11,10 +11,10 @@ Emergency release of locked funds when normal outbound paths (withdraw/execute/r
 
 ## When to Use
 
-Rescue is for funds that are permanently locked — e.g., the original deposit's `revert_instruction` recipient is invalid or the associated outbound transaction can never be finalized. TSS initiates rescue off-chain; it is not triggered by user request.
+Rescue is for funds that are permanently locked — e.g., the original deposit's `revert_recipient` is invalid or the associated outbound transaction can never be finalized. TSS initiates rescue off-chain; it is not triggered by user request.
 
 Rescue is distinct from revert:
-- **Revert (3):** standard recovery of a failed Push Chain transaction; uses same `fund_recipient` as original deposit
+- **Revert (3):** standard recovery of a failed Push Chain transaction; uses same `revert_recipient` as original deposit
 - **Rescue (4):** TSS-authorized emergency release to any recipient; used when normal recovery paths are unavailable
 
 ---
@@ -101,8 +101,8 @@ FundsRescued {
     token: Pubkey,          // Pubkey::default() for SOL, mint for SPL
     amount: u64,
     revert_instruction: RevertInstructions {
-        fund_recipient: Pubkey,  // recipient
-        revert_msg: Vec<u8>,     // always empty for rescue
+        revert_recipient: Pubkey,  // recipient
+        revert_msg: Vec<u8>,       // always empty for rescue
     },
 }
 ```

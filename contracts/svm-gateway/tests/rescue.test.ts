@@ -179,7 +179,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                     token: PublicKey.default,
                     amount: new anchor.BN(solDepositAmount),
                     payload: Buffer.from([]),
-                    revertInstruction: { fundRecipient: user1.publicKey, revertMsg: Buffer.from("seed") },
+                    revertRecipient: user1.publicKey,
                     signatureData: Buffer.from([]),
                 },
                 new anchor.BN(solDepositAmount)
@@ -232,7 +232,7 @@ describe("Universal Gateway - Rescue Tests", () => {
                     token: mockUSDT.mint.publicKey,
                     amount: splDepositAmount,
                     payload: Buffer.from([]),
-                    revertInstruction: { fundRecipient: user1.publicKey, revertMsg: Buffer.from("seed spl") },
+                    revertRecipient: user1.publicKey,
                     signatureData: Buffer.from([]),
                 },
                 new anchor.BN(0)

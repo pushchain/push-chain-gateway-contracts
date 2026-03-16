@@ -82,7 +82,7 @@ fn route_universal_tx(
             tx_type,
             native_amount,
             &req.payload,
-            &req.revert_instruction,
+            &req.revert_recipient,
             &req.signature_data,
         ),
         TxType::Funds | TxType::FundsAndPayload => {
@@ -135,7 +135,7 @@ fn send_tx_with_gas_route(
     tx_type: TxType,
     gas_amount: u64,
     payload: &[u8],
-    revert_instruction: &RevertInstructions,
+    revert_recipient: &Pubkey,
     signature_data: &[u8],
 ) -> Result<()> {
     // Validate tx_type
@@ -154,7 +154,7 @@ fn send_tx_with_gas_route(
     // }
 
     require!(
-        revert_instruction.fund_recipient != Pubkey::default(),
+        *revert_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
 
@@ -172,7 +172,7 @@ fn send_tx_with_gas_route(
             token: Pubkey::default(),
             amount: 0,
             payload: payload.to_vec(),
-            revert_instruction: revert_instruction.clone(),
+            revert_recipient: *revert_recipient,
             tx_type,
             signature_data: signature_data.to_vec(),
             from_cea: false,
@@ -206,7 +206,7 @@ fn send_tx_with_gas_route(
         token: Pubkey::default(),
         amount: gas_amount,
         payload: payload.to_vec(),
-        revert_instruction: revert_instruction.clone(),
+        revert_recipient: *revert_recipient,
         tx_type,
         signature_data: signature_data.to_vec(),
         from_cea: false,
@@ -224,7 +224,7 @@ fn send_tx_with_funds_route(
     tx_type: TxType,
 ) -> Result<()> {
     require!(
-        req.revert_instruction.fund_recipient != Pubkey::default(),
+        req.revert_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
     require!(req.amount > 0, GatewayError::InvalidAmount);
@@ -260,7 +260,7 @@ fn handle_native_funds_route(
 
     let gas_amount = native_amount.saturating_sub(req.amount);
     if gas_amount > 0 {
-        send_tx_with_gas_route(ctx, TxType::Gas, gas_amount, &[], &req.revert_instruction, &req.signature_data)?;
+        send_tx_with_gas_route(ctx, TxType::Gas, gas_amount, &[], &req.revert_recipient, &req.signature_data)?;
     }
 
     validate_token_and_consume_rate_limit(
@@ -291,7 +291,7 @@ fn handle_spl_funds_route(
     if tx_type == TxType::Funds {
         require!(native_amount == 0, GatewayError::InvalidAmount);
     } else if native_amount > 0 {
-        send_tx_with_gas_route(ctx, TxType::Gas, native_amount, &[], &req.revert_instruction, &req.signature_data)?;
+        send_tx_with_gas_route(ctx, TxType::Gas, native_amount, &[], &req.revert_recipient, &req.signature_data)?;
     }
 
     validate_token_and_consume_rate_limit(
@@ -313,7 +313,7 @@ fn emit_funds_route_event(ctx: &Context<SendUniversalTx>, req: UniversalTxReques
         token: req.token,
         amount: req.amount,
         payload: req.payload,
-        revert_instruction: req.revert_instruction,
+        revert_recipient: req.revert_recipient,
         tx_type,
         signature_data: req.signature_data,
         from_cea: false,

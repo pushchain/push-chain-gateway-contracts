@@ -112,7 +112,7 @@ See `2-WITHDRAW-EXECUTE.md` and `4-CEA.md`.
 Vault → Recipient (original depositor)
 ```
 
-Returns funds when the Push Chain transaction failed. Recipient must match the `fund_recipient` from the original deposit's `revert_instruction` field. Gas reimbursement comes from FeeVault, not Vault.
+Returns funds when the Push Chain transaction failed. Recipient must match the `revert_recipient` from the original deposit. Gas reimbursement comes from FeeVault, not Vault.
 
 Emits: `RevertUniversalTx`
 

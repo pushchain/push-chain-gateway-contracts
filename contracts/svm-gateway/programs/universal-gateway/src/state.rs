@@ -44,18 +44,18 @@ pub enum VerificationType {
 /// Revert instructions for failed transactions (parity with EVM `RevertInstructions`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct RevertInstructions {
-    pub fund_recipient: Pubkey,
+    pub revert_recipient: Pubkey,
     pub revert_msg: Vec<u8>,
 }
 
 /// Universal transaction request (parity with EVM `UniversalTxRequest`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct UniversalTxRequest {
-    pub recipient: [u8; 20], // [0u8; 20] => credit to UEA on Push
-    pub token: Pubkey,       // Pubkey::default() => native SOL
-    pub amount: u64,         // native or SPL amount for bridging - Funds
-    pub payload: Vec<u8>,    // serialized payload (may be empty)
-    pub revert_instruction: RevertInstructions,
+    pub recipient: [u8; 20],      // [0u8; 20] => credit to UEA on Push
+    pub token: Pubkey,            // Pubkey::default() => native SOL
+    pub amount: u64,              // native or SPL amount for bridging - Funds
+    pub payload: Vec<u8>,         // serialized payload (may be empty)
+    pub revert_recipient: Pubkey, // Solana address to receive funds if tx is reverted on Push
     pub signature_data: Vec<u8>,
 }
 
@@ -186,11 +186,11 @@ pub struct UniversalTxFinalized {
 #[event]
 pub struct UniversalTx {
     pub sender: Pubkey,
-    pub recipient: [u8; 20], // Ethereum address (20 bytes)
-    pub token: Pubkey,       // Bridge token (Pubkey::default() for native SOL)
-    pub amount: u64,         // Bridge amount (not gas amount)
-    pub payload: Vec<u8>,    // Payload data
-    pub revert_instruction: RevertInstructions,
+    pub recipient: [u8; 20],      // Ethereum address (20 bytes)
+    pub token: Pubkey,            // Bridge token (Pubkey::default() for native SOL)
+    pub amount: u64,              // Bridge amount (not gas amount)
+    pub payload: Vec<u8>,         // Payload data
+    pub revert_recipient: Pubkey, // Solana address to receive funds if tx is reverted on Push
     pub tx_type: TxType,
     pub signature_data: Vec<u8>,
     pub from_cea: bool, // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as UEA
@@ -201,7 +201,7 @@ pub struct UniversalTx {
 pub struct RevertUniversalTx {
     pub sub_tx_id: [u8; 32],       // Transaction ID
     pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
-    pub fund_recipient: Pubkey,    // Recipient of reverted funds
+    pub revert_recipient: Pubkey,  // Recipient of reverted funds
     pub token: Pubkey,             // Token address (Pubkey::default() for native SOL)
     pub amount: u64,               // Amount
     pub revert_instruction: RevertInstructions,

@@ -45,7 +45,7 @@ sub_tx_id[32] | universal_tx_id[32] | mint[32] | recipient[32] | gas_fee (8 BE)
 
 ## Recipient Validation
 
-The `recipient` must match `revert_instruction.fund_recipient` from the original deposit. This value was included in the `UniversalTx` event emitted at deposit time. TSS reads it from chain state to construct the revert.
+The `recipient` must match the flat `revert_recipient: Pubkey` from the original deposit. This value was included in the `UniversalTx` event emitted at deposit time. TSS reads it from chain state to construct the revert.
 
 `recipient` must not be `Pubkey::default()`.
 
@@ -58,6 +58,6 @@ The `recipient` must match `revert_instruction.fund_recipient` from the original
 | `TssAuthFailed` | Signature invalid or TSS address mismatch |
 | `MessageHashMismatch` | Message reconstruction mismatch |
 | account init failure | `sub_tx_id` reused — `ExecutedSubTx` PDA already exists |
-| `InvalidRecipient` | Recipient is zero address; or doesn't match original `fund_recipient`; or (SPL) recipient ATA owner doesn't match `fund_recipient` |
+| `InvalidRecipient` | Recipient is zero address; or doesn't match original `revert_recipient`; or (SPL) recipient ATA owner doesn't match `revert_recipient` |
 | `InvalidMint` | Recipient ATA mint doesn't match `token_mint` |
 | `Paused` | Gateway is paused |

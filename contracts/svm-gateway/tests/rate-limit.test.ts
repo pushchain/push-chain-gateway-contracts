@@ -36,11 +36,6 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
         return pda;
     };
 
-    // Helper to create revert instruction
-    const createRevertInstruction = (recipient: PublicKey) => ({
-        fundRecipient: recipient,
-        revertMsg: Buffer.from("test"),
-    });
 
     before(async () => {
         admin = sharedState.getAdmin();
@@ -102,7 +97,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0), // GAS route
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig1"),
             };
 
@@ -254,7 +249,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig"),
             };
 
@@ -353,7 +348,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig"),
             };
 
@@ -436,7 +431,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount1),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig1"),
             };
 
@@ -464,7 +459,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount1),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig2"),
             };
 
@@ -493,7 +488,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount3),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig3"),
             };
 
@@ -551,7 +546,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: mockUSDT.mint.publicKey,
                 amount: tokenAmount1,
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("spl_sig1"),
             };
 
@@ -579,7 +574,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: mockUSDT.mint.publicKey,
                 amount: tokenAmount1,
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("spl_sig2"),
             };
 
@@ -608,7 +603,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: mockUSDT.mint.publicKey,
                 amount: tokenAmount3,
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("spl_sig3"),
             };
 
@@ -660,7 +655,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(largeAmount),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig"),
             };
 
@@ -728,7 +723,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(largeAmount),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig"),
             };
 
@@ -793,7 +788,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount),
                 payload: Buffer.from("payload"),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig"),
             };
 
@@ -822,7 +817,7 @@ describe("Universal Gateway - Rate Limiting Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount),
                 payload: Buffer.from("payload"),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: user1.publicKey,
                 signatureData: Buffer.from("sig2"),
             };
 
