@@ -1,35 +1,49 @@
 # Push Chain SVM Gateway
 
-Solana-side gateway for Push Chain universal transactions.  
-This program handles:
-- inbound deposits (`send_universal_tx`)
-- outbound finalize (`finalize_universal_tx`)
-- outbound revert (`revert_universal_tx`)
-- outbound rescue (`rescue_funds`)
+Solana-side gateway for Push Chain universal transactions. This program handles inbound deposits from Solana to Push Chain and outbound finalization, reverts, and emergency rescues from Push Chain back to Solana.
 
 ## Getting Started
 
 ### Dependencies
+
 - Rust + Cargo
-- Solana CLI + Anchor CLI
-- Node.js + npm
+- [Solana CLI](https://docs.solanalabs.com/cli/install)
+- [Anchor CLI](https://www.anchor-lang.com/docs/installation) 0.31.1
+- Node.js 20+ and npm
 
 ### Setup
+
 ```bash
-cd contracts/svm-gateway
 npm install
 anchor build
 ```
 
 ### Test
-```bash
-anchor test
 
-# focused suites
-npm run test:withdraw
-npm run test:execute
-npm run test:rescue
-npm run test:cea-to-uea
+```bash
+anchor test                                        # all tests
+TEST_FILE=tests/execute.test.ts anchor test        # single file
+npm run test:execute                               # convenience script
+# also: test:withdraw, test:admin, test:rate-limit, test:universal-tx,
+#        test:rescue, test:cea-to-uea, test:execute-heavy
+```
+
+### CLI Tools
+
+```bash
+# Token management
+npm run token:create          # create SPL token
+npm run token:mint            # mint tokens
+npm run token:whitelist       # add token to rate limits
+npm run token:remove-whitelist # remove token from rate limits
+npm run token:list            # list whitelisted tokens
+
+# Gateway configuration
+npm run config:show           # display current config
+npm run config:tss-init       # initialize TSS
+npm run config:tss-update     # update TSS address
+npm run config:pause          # pause gateway
+npm run config:unpause        # unpause gateway
 ```
 
 ---
@@ -38,16 +52,17 @@ npm run test:cea-to-uea
 
 | Function | Direction | instruction_id | Notes |
 |---|---|---|---|
-| `send_universal_tx` | Solana → Push Chain | N/A | Inbound deposit entrypoint |
-| `finalize_universal_tx` | Push Chain → Solana | `1` / `2` | `1=withdraw`, `2=execute` |
-| `revert_universal_tx` | Push Chain → Solana | `3` | Unified SOL + SPL revert |
-| `rescue_funds` | Push Chain → Solana | `4` | Emergency fund release |
+| `send_universal_tx` | Solana -> Push Chain | N/A | Inbound deposit entrypoint |
+| `finalize_universal_tx` | Push Chain -> Solana | `1` / `2` | `1=withdraw`, `2=execute` |
+| `revert_universal_tx` | Push Chain -> Solana | `3` | Unified SOL + SPL revert |
+| `rescue_funds` | Push Chain -> Solana | `4` | Emergency fund release |
 
 ---
 
-## Documentation
+## Docs and Tooling
 
-### Program Docs (`contracts/svm-gateway/docs/`)
+### Program Documentation
+
 - [SVM Gateway Overview](./docs/0-SVM-GATEWAY.md)
 - [Deposit / Inbound](./docs/1-DEPOSIT.md)
 - [Withdraw + Execute](./docs/2-WITHDRAW-EXECUTE.md)
@@ -57,26 +72,22 @@ npm run test:cea-to-uea
 - [Threat Model](./docs/THREAT_MODEL.md)
 - [Runbook](./docs/RUNBOOK.md)
 
-### Integration Docs
+### Integration
+
 - [Integration Guide](./INTEGRATION_GUIDE.md)
 
-
----
-
-## Devnet Program IDs
+### Devnet Program IDs
 
 - Main: `CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS`
 - Dummy: `DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp`
 
----
+### Push Chain
 
-## CLI Entry Points
-
-- Config/admin: `app/config-cli.ts`
-- Token tooling: `app/token-cli.ts`
-- End-to-end devnet script: `app/gateway-test.ts`
-- ALT helper: `app/create-universal-alt.ts`
+- **Testnet RPC:** `https://rpc.testnet.push.org`
+- **Docs:** [https://push.org/docs/](https://push.org/docs/)
 
 ---
 
-License: ISC
+## License
+
+ISC

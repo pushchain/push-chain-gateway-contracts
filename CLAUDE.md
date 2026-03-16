@@ -4,530 +4,184 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Push Chain Gateway Contracts** - A monorepo containing bidirectional bridge gateway implementations between Push Chain and external blockchain ecosystems:
+**Push Chain Gateway Contracts** — A monorepo containing bidirectional bridge gateway implementations between Push Chain and external blockchain ecosystems:
 
-- **EVM Gateway** (`contracts/evm-gateway/`) - Solidity contracts for Ethereum and EVM-compatible chains
-- **SVM Gateway** (`contracts/svm-gateway/`) - Anchor programs for Solana (SVM)
+- **EVM Gateway** (`contracts/evm-gateway/`) — Solidity contracts for Ethereum and EVM-compatible chains
+- **SVM Gateway** (`contracts/svm-gateway/`) — Anchor programs for Solana
 
-Both implementations provide:
-- **Inbound bridging**: External chains → Push Chain (deposit funds/payloads)
-- **Outbound bridging**: Push Chain → External chains (withdraw/execute via TSS)
-- **Transaction routing**: Automatic TX_TYPE inference based on request structure
-- **Rate limiting**: Dual-system (instant vs standard confirmations)
-- **Fee abstraction**: Gas payment in native or arbitrary tokens
-- **Cross-chain execution**: Payload execution on destination chains
+Both gateways implement the same protocol: inbound bridging (external chain → Push Chain), outbound bridging (Push Chain → external chain via TSS signatures), automatic TX_TYPE inference, dual rate limiting, fee abstraction, and cross-chain payload execution.
 
-## Quick Start
+## Build & Test
 
 ### EVM Gateway (Foundry)
+
 ```bash
 cd contracts/evm-gateway
 
-# Build
-forge build
+forge build                                                    # Build
+forge test -vv                                                 # All tests
+forge test --match-path test/gateway/1_adminActions.t.sol -vv  # Single file
+forge test --match-test testFunctionName -vv                   # Single test
+forge test -vvvv                                               # Max trace
+forge coverage --ir-minimum                                    # Coverage
+forge test --gas-report                                        # Gas report
 
-# Run all tests
-forge test -vv
-
-# Run specific test file
-forge test --match-path test/gateway/1_adminActions.t.sol -vv
-
-# Coverage
-forge coverage --ir-minimum
-
-# Deploy (requires .env)
+# Deploy (requires .env with SEPOLIA_RPC_URL and KEY)
 forge script script/1_DeployGatewayWithProxy.sol:DeployGatewayWithProxy \
   --rpc-url $SEPOLIA_RPC_URL --private-key $KEY --broadcast
 ```
 
-**See `contracts/evm-gateway/CLAUDE.md` for complete EVM-specific guidance.**
+Foundry profiles: `default` (1000 fuzz), `ci` (2000 fuzz), `coverage`, `debug` (optimizer off), `gas`, `fork`.
 
 ### SVM Gateway (Anchor)
+
 ```bash
 cd contracts/svm-gateway
 
-# Install dependencies
-npm install
-
-# Build programs
-anchor build
-
-# Run all tests (uses Anchor.toml test script)
-anchor test
-# or
-npm test
-
-# Run specific test file
-TEST_FILE=tests/execute.test.ts npm test
-# or use convenience scripts:
-npm run test:execute
-npm run test:withdraw
-npm run test:admin
-npm run test:rate-limit
-npm run test:universal-tx
-
-# Deploy to devnet
-anchor deploy --provider.cluster devnet
-
-# Upgrade program (requires upgrade authority keypair)
-anchor upgrade target/deploy/universal_gateway.so \
-  --program-id <PROGRAM_ID> \
-  --provider.wallet ./upgrade-keypair.json
+npm install                                          # Install deps
+anchor build                                         # Build programs
+anchor test                                          # All tests (or: npm test)
+TEST_FILE=tests/execute.test.ts anchor test          # Single file
+npm run test:execute                                 # Convenience scripts available:
+# test:withdraw, test:admin, test:rate-limit, test:universal-tx,
+# test:rescue, test:cea-to-uea, test:execute-heavy
+npm run typecheck                                    # TypeScript type check
 ```
 
-**CLI Tools (SVM):**
-```bash
-cd contracts/svm-gateway
-
-# Token management
-npm run token:create      # Create SPL token
-npm run token:mint        # Mint tokens
-npm run token:whitelist   # Add token to rate limits
-npm run token:list        # List whitelisted tokens
-
-# Gateway configuration
-npm run config:show                    # Display config
-npm run config:tss-init                # Initialize TSS
-npm run config:tss-update              # Update TSS address
-npm run config:pause                   # Pause gateway
-npm run config:unpause                 # Unpause gateway
-npm run config:caps-set                # Set USD caps
-npm run config:pyth-set-feed           # Set Pyth price feed
-npm run config:rate-set-block-usd-cap  # Set block USD cap
-npm run config:rate-set-epoch          # Set epoch duration
-npm run config:rate-set-token          # Set token rate limit
-```
+**CLI tools** (run from `contracts/svm-gateway/`):
+- Token: `npm run token:{create,mint,whitelist,remove-whitelist,list}`
+- Config: `npm run config:{show,tss-init,tss-update,authority-set,pause,unpause,fee-init,caps-set,pyth-set-feed,pyth-set-conf,rate-set-block-usd-cap,rate-set-epoch,rate-set-token}`
 
 ## Architecture
 
-### Shared Concepts (EVM + SVM)
+### Transaction Type System
 
-Both gateways implement the same high-level architecture with platform-specific adaptations:
+TX_TYPE is **automatically inferred** from request structure — users never specify it.
 
-**1. Transaction Type System (TX_TYPE)**
+| TX_TYPE | Route | Inferred when | Rate Limiting |
+|---------|-------|---------------|---------------|
+| `GAS` | Instant | No funds, no payload, has native value | USD caps (min/max) + block cap |
+| `GAS_AND_PAYLOAD` | Instant | No funds, has payload | USD caps (min/max) + block cap |
+| `FUNDS` | Standard | Has funds, no payload | Per-token epoch limits |
+| `FUNDS_AND_PAYLOAD` | Standard | Has funds, has payload | Per-token epoch limits |
 
-Transaction types are **automatically inferred** - users never specify TX_TYPE explicitly.
+**Inference logic**: `hasFunds` and `hasPayload` determine the type. If neither is true and no native value, the tx reverts. See `_fetchTxType()` in both `UniversalGateway.sol` and the SVM `deposit.rs`.
 
-| TX_TYPE | Route | Description | Rate Limiting |
-|---------|-------|-------------|---------------|
-| `GAS` | Instant | Gas-only funding for UEA | USD caps (min/max) + block cap |
-| `GAS_AND_PAYLOAD` | Instant | Gas + payload execution | USD caps (min/max) + block cap |
-| `FUNDS` | Standard | High-value transfer only | Per-token epoch limits |
-| `FUNDS_AND_PAYLOAD` | Standard | High-value + payload | Per-token epoch limits |
+### Rate Limiting (Dual System)
 
-**TX_TYPE Inference Rules:**
+- **Instant route** (GAS, GAS_AND_PAYLOAD): Per-tx USD caps + per-block USD budget. Oracle-priced (Chainlink on EVM, Pyth on SVM).
+- **Standard route** (FUNDS, FUNDS_AND_PAYLOAD): Per-token epoch-based limits. Usage resets on epoch rollover.
 
-**EVM (Inbound):**
-```
-hasPayload = payload.length > 0
-hasFunds = bridgeAmount > 0
-fundsIsNative = bridgeToken == address(0)
-hasNativeValue = msg.value > 0
+### Cross-Chain Flow
 
-if !hasFunds:
-    if hasPayload: return GAS_AND_PAYLOAD
-    if hasNativeValue: return GAS
-    revert InvalidInput
+**Inbound** (External → Push Chain): User deposits via gateway → funds locked in Vault → `UniversalTx` event → relayers credit UEA on Push Chain.
 
-if hasPayload:
-    if fundsIsNative:
-        require msg.value >= bridgeAmount
-    return FUNDS_AND_PAYLOAD
+**Outbound** (Push Chain → External): User initiates on Push Chain → TSS signs (ECDSA secp256k1) → relayer submits to external chain → gateway validates signature → funds released from Vault → `UniversalTxExecuted` event.
 
-// FUNDS (no payload)
-if fundsIsNative:
-    require msg.value == bridgeAmount
-else:
-    require msg.value == 0
-return FUNDS
-```
+### Outbound Instruction IDs (SVM)
 
-**SVM (Inbound):**
-```
-hasPayload = req.payload.len() > 0
-hasFunds = req.amount > 0
-fundsIsNative = req.token == Pubkey::default()
-hasNativeValue = native_amount > 0
+| ID | Operation | Description |
+|----|-----------|-------------|
+| `1` | Withdraw | Vault → CEA → Recipient |
+| `2` | Execute | Vault → CEA → Target Program (CPI) |
+| `3` | Revert | Unified SOL + SPL revert |
+| `4` | Rescue | Emergency fund release (no replay guard) |
 
-if !hasFunds:
-    if hasPayload: return GAS_AND_PAYLOAD
-    if hasNativeValue: return GAS
-    revert InvalidInput
+SVM entrypoint: `finalize_universal_tx` (withdraw/execute) and separate `revert_universal_tx` / `rescue_funds` instructions.
 
-if hasPayload:
-    if fundsIsNative:
-        require native_amount >= req.amount
-    return FUNDS_AND_PAYLOAD
+### Outbound (EVM)
 
-// FUNDS (no payload)
-if fundsIsNative:
-    require native_amount == req.amount
-else:
-    require !hasNativeValue
-return FUNDS
-```
+EVM uses `Vault.finalizeUniversalTx()` as the main outbound entrypoint. All operations route through deterministic CEA (Chain Execution Account) contracts deployed per user via CREATE2. The CEA executes multicall payloads (`Multicall[]` struct). Separate functions: `revertUniversalTx()`, `rescueFunds()`.
 
-**Outbound (Push Chain → External):**
-```
-hasPayload = payload.length > 0 (EVM) or req.payload.len() > 0 (SVM)
-hasFunds = amount > 0
+## EVM Architecture
 
-if !hasPayload && hasFunds: return FUNDS
-if hasPayload && hasFunds: return FUNDS_AND_PAYLOAD
-if hasPayload && !hasFunds: return GAS_AND_PAYLOAD
-if !hasPayload && !hasFunds: revert InvalidInput (empty tx)
-```
+**Core contracts:**
+- `UniversalGateway.sol` — Main inbound gateway (current version)
+- `UniversalGatewayPC.sol` — Push Chain side (outbound: burn + swap + emit)
+- `Vault.sol` — External chain fund custody, TSS-controlled outbound via CEA
+- `VaultPC.sol` — Push Chain side vault
 
-**2. Dual Rate Limiting**
-
-**Instant Route** (GAS, GAS_AND_PAYLOAD):
-- Per-transaction USD caps: `MIN_CAP` to `MAX_CAP`
-- Per-block USD budget: `BLOCK_USD_CAP`
-- Uses price oracles (Chainlink for EVM, Pyth for SVM)
-
-**Standard Route** (FUNDS, FUNDS_AND_PAYLOAD):
-- Per-token epoch-based limits
-- Epoch duration: configurable (e.g., 86400 sec = 24 hours)
-- Usage resets on epoch rollover
-- Token threshold in natural token units
-
-**3. Cross-Chain Execution Flow**
-
-**Inbound (External → Push Chain):**
-```
-1. User deposits via send_universal_tx / sendUniversalTx
-2. Gateway validates and applies rate limits
-3. Funds locked in Vault
-4. UniversalTx event emitted
-5. Push Chain relayers detect event
-6. User's UEA credited on Push Chain
-```
-
-**Outbound (Push Chain → External):**
-```
-1. User initiates on Push Chain
-2. TSS validates and signs (ECDSA secp256k1)
-3. Relayer submits to external chain
-4. Gateway validates TSS signature
-5. Funds released: Vault → CEA → Target
-6. UniversalTxExecuted event emitted
-7. Push Chain confirms
-```
-
-### EVM-Specific Architecture
-
-**Core Contracts:**
-- `UniversalGateway.sol` - Main gateway (current version)
-- `UniversalGatewayV0.sol` - Legacy version
-- `UniversalGatewayPC.sol` - Push Chain side (outbound)
-- `Vault.sol` / `VaultPC.sol` - Fund management
-
-**Tech Stack:**
-- Foundry (Solidity 0.8.26, via_ir=true)
-- OpenZeppelin upgradeable contracts
-- Chainlink price feeds
-- Uniswap v3 for token swaps
-
-**Key Patterns:**
-- Upgradeable proxy pattern (TransparentUpgradeableProxy)
-- Role-based access control (DEFAULT_ADMIN_ROLE, PAUSER_ROLE, TSS_ROLE)
+**Key patterns:**
+- Upgradeable proxy (TransparentUpgradeableProxy, OpenZeppelin)
+- Roles: `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE`, `TSS_ROLE`
 - Reentrancy guards on all deposit/withdraw paths
-- Pausable for emergency stops
+- Chainlink ETH/USD oracle with staleness + L2 sequencer checks
+- Uniswap v3 for ERC-20 → native gas swaps
+- Solidity 0.8.26, `via_ir=true`, optimizer runs: 99999
 
-### SVM-Specific Architecture
+**Types are split across three files:** `Types.sol` (shared), `TypesUG.sol` (gateway-specific), `TypesUGPC.sol` (Push Chain gateway-specific).
 
-**Core Programs:**
-- `universal-gateway` - Main gateway program (Anchor)
-- `test-counter` - Test program for CPI execution testing
+**Test organization** (numbered files in `test/gateway/`):
+- `1_` admin, `2-3_` deposits, `4_` GAS type, `5-8_` FUNDS cases, `9_` TX_TYPE inference
+- `10_` withdrawals, `12-13_` rate limits, `14_` gatewayPC, `15_` CEA inbound
+- `16_` protocol fees, `17_` rescue funds
+- All tests inherit from `BaseTest.t.sol` (setup, mocks, helpers)
+- Fork tests: `3_sendUniversalTx_token_fork.t.sol`
+- Vault tests: `test/vault/` (Vault.t.sol, VaultPC.t.sol, VaultWithdrawal.t.sol, VaultRescueFunds.t.sol)
 
-**Tech Stack:**
-- Anchor Framework 0.31.1
-- Pyth price feeds (via Hermes client)
-- SPL Token Program
+See `contracts/evm-gateway/CLAUDE.md` for detailed EVM-specific guidance including Vault/CEA architecture, CEA inbound route, and UGPC outbound flow.
 
-**Key Patterns:**
-- PDA-based architecture (no external signers for protocol operations)
-- TSS validation via ECDSA secp256k1 signature recovery
-- CEA (Chain Executor Account) - per-user PDA for signing authority
-- Replay protection via ExecutedTx PDAs (account existence check)
+## SVM Architecture
 
-**PDAs and Seeds:**
-```rust
-CONFIG_SEED: b"config"           // Global config
-VAULT_SEED: b"vault"             // SOL vault (no data, just authority)
-TSS_SEED: b"tsspda_v2"           // TSS state (address, chain_id)
-RATE_LIMIT_CONFIG_SEED: b"rate_limit_config"  // Rate limit settings
-RATE_LIMIT_SEED: b"rate_limit"   // Per-token rate limit state
-EXECUTED_SUB_TX_SEED: b"executed_sub_tx" // Replay protection
-CEA_SEED: b"push_identity"       // Per-user signing authority
+**Core program:** `universal-gateway` (Anchor 0.31.1)
+
+**Source layout** (`programs/universal-gateway/src/`):
+- `lib.rs` — Program entrypoints
+- `state.rs` — Account structures and PDA definitions
+- `errors.rs` — Custom error codes
+- `instructions/` — `deposit.rs`, `withdraw.rs`, `execute.rs`, `revert.rs`, `rescue.rs`, `admin.rs`, `initialize.rs`, `tss.rs`
+- `utils/` — `encoding.rs`, `pricing.rs`, `rate_limit.rs`, `transfers.rs`, `validation.rs`
+
+**PDAs and seeds:**
+```
+config           → b"config"
+vault            → b"vault"             (SOL vault, authority only)
+tsspda_v2        → b"tsspda_v2"         (TSS address, chain_id, nonce)
+rate_limit_config → b"rate_limit_config"
+rate_limit       → b"rate_limit"        (per-token epoch state)
+executed_sub_tx  → b"executed_sub_tx"   (replay protection, existence check)
+push_identity    → b"push_identity"     (CEA per-user signing authority)
 ```
 
-**Account Structure:**
-- `Config` - Admin, TSS, pauser addresses; USD caps; Pyth oracle config
-- `TssPda` - TSS Ethereum address, chain ID, nonce (replay protection)
-- `RateLimitConfig` - Block USD cap, epoch duration
-- `TokenRateLimit` - Per-token epoch usage tracking
-- `ExecutedTx` - 8-byte discriminator only (existence = executed)
+**Key patterns:**
+- PDA-based (no external signers for protocol operations)
+- TSS via ECDSA secp256k1 recovery (`tss.rs`)
+- CEA provides persistent CPI signing authority per user
+- Replay protection via `ExecutedTx` PDA existence
+- Pyth price feeds for USD valuation
 
-## Outbound Transaction Handling
+**Test files** (`tests/`):
+- `execute.test.ts` — CPI execution (largest suite)
+- `withdraw.test.ts`, `universal-tx.test.ts`, `rate-limit.test.ts`, `admin.test.ts`
+- `rescue.test.ts`, `cea-to-uea.test.ts`, `execute-heavy.test.ts`
+- Helpers: `tests/helpers/` (`tss.ts`, `test-setup.ts`, `token-mint.ts`, `price-feed.ts`)
+- Shared state: `tests/shared-state.ts`
+- Payload encoding: `app/execute-payload.ts`
 
-### Unified Entrypoint Pattern
+**TSS message format:** `keccak256("PUSH_CHAIN_SVM" || instruction_id || chain_id || nonce || additional_data)`
 
-Both EVM and SVM use unified outbound entrypoints with instruction_id routing:
+See `contracts/svm-gateway/docs/` for detailed architecture, flows, threat model, and runbook.
 
-**EVM:** `withdrawFunds(instruction_id, ...)`
-**SVM:** `withdraw_and_execute(instruction_id, ...)`
+## Build Issues & Solutions (SVM)
 
-**Instruction IDs:**
-- `1` = Withdraw (Vault → CEA → Recipient)
-- `2` = Execute (Vault → CEA → Target Program via CPI)
-- `3` = Revert SOL
-- `4` = Revert SPL
-- `5` = Rescue (SOL or SPL, TSS-verified emergency release, no replay guard)
+1. **`spl-associated-token-account` dependency** — Direct dependency causes `#[global_allocator]` conflict. Use `anchor_spl::associated_token::spl_associated_token_account` re-export instead. Requires `anchor-spl` with `features = ["associated_token"]`.
 
-### TSS Signature Validation
+2. **Rent sysvar import** — `rent::ID` doesn't resolve. Use `anchor_lang::solana_program::sysvar::rent as rent_sysvar` then `rent_sysvar::ID`.
 
-Both implementations validate TSS signatures using ECDSA secp256k1:
+3. **Manual ATA creation** — `init_if_needed` incompatible with `Option<Account>` pattern. Use manual CPI via `spl_associated_token_account::instruction::create_associated_token_account`.
 
-**Message Format:**
-```
-PREFIX = "PUSH_CHAIN_SVM" (SVM) or "PUSH_CHAIN_EVM" (EVM)
-message = keccak256(PREFIX || instruction_id || chain_id || nonce || [additional_data])
-```
+## Security Model
 
-**Additional Data Array Pattern (SVM):**
-
-Common fields come first (matching function parameter order):
-```rust
-// Common (both modes): [tx_id, universal_tx_id, sender, token, gas_fee]
-// Withdraw adds: [recipient]
-// Execute adds: [target_program, accounts_buf, ix_data_buf]
-```
-
-**Rationale:** Consistent ordering reduces errors, matches function signatures.
-
-### Execute Mode (instruction_id=2)
-
-**SVM Flow:**
-```
-3. Build CPI instruction with CEA as signer
-4. invoke_signed(cpi_ix, &[cea_seeds])
-```
-
-**Key Components:**
-- `writable_flags`: Bitmap encoding which accounts are writable (1 byte per 8 accounts)
-- `ix_data`: Target program instruction data
-- `gas_fee`: Relayer reimbursement (includes executed_tx rent + CEA ATA rent if needed)
-
-**CEA as Signer:**
-- CEA PDA derives from: `[b"push_identity", sender[20]]`
-- Uses `invoke_signed` with CEA seeds for CPI
-- Allows target programs to receive signed transactions from consistent identity
-
-## Development Patterns
-
-### Testing Conventions
-
-**EVM:**
-- Tests inherit from `BaseTest` (provides setup, mocks, helpers)
-- Numbered test files (1_adminActions.t.sol, 2_deposits.t.sol, etc.)
-- Fork tests for mainnet integration (e.g., 3_sendUniversalTx_token_fork.t.sol)
-- Use `forge test --match-test testFunctionName -vv` for specific tests
-
-**SVM:**
-- Tests use Mocha + Chai
-- Helper modules in `tests/helpers/`:
-  - `tss.ts` - TSS signing and validation helpers
-  - `test-setup.ts` - Gateway initialization
-  - `token-mint.ts` - SPL token creation
-  - `price-feed.ts` - Pyth mock setup
-- Shared state in `tests/shared-state.ts` for cross-test data
-- Test organization:
-  - `execute.test.ts` - CPI execution (163 KB, comprehensive)
-  - `withdraw.test.ts` - Withdrawal flows
-  - `universal-tx.test.ts` - Inbound deposits
-  - `rate-limit.test.ts` - Rate limiting
-  - `admin.test.ts` - Admin operations
-
-### TSS Testing Helpers (SVM)
-
-**Building TSS Signatures:**
-```typescript
-import { signTssMessage, buildExecuteAdditionalData, TssInstruction } from './helpers/tss';
-
-// For withdraw (instruction_id=1)
-const withdrawAdditionalData = [
-  tx_id,
-  universal_tx_id,
-  sender,
-  token.toBuffer(),
-  gas_fee_buffer,
-  recipient.toBuffer(),
-];
-
-// For execute (instruction_id=2)
-const executeAdditionalData = buildExecuteAdditionalData({
-  tx_id,
-  universal_tx_id,
-  sender,
-  token,
-  gas_fee,
-  target_program,
-  accounts_buf,
-  ix_data_buf,
-});
-
-const tssSignature = await signTssMessage({
-  instruction: TssInstruction.Execute,
-  nonce: tss_nonce,
-  additional: executeAdditionalData,
-});
-```
-
-### Fee Calculation Patterns (SVM)
-
-**SOL Execute:**
-```typescript
-const { gasFee } = await calculateSolExecuteFees(connection);
-```
-
-**SPL Execute:**
-```typescript
-const { gasFee } = await calculateSplExecuteFees(connection, ceaAta);
-```
-
-**Components:**
-- `executed_tx_rent`: Gateway PDA creation (reimbursed from gas_fee)
-- `cea_ata_rent`: CEA ATA creation if needed (reimbursed from gas_fee)
-- `compute_buffer`: Transaction fees and compute units (~100k lamports)
-
-### Instruction Data Encoding (SVM)
-
-**Execute Payloads:**
-```typescript
-import { encodeExecutePayload, instructionToPayloadFields, accountsToWritableFlags } from '../app/execute-payload';
-
-// Build instruction
-const targetIx = await program.methods
-  .increment()
-  .accounts({ counter: counterPda })
-  .instruction();
-
-// Extract fields
-const { accounts_buf, ix_data_buf, writable_flags } = instructionToPayloadFields(targetIx);
-
-// Or use all-in-one helper
-const payload = encodeExecutePayload(targetIx);
-```
-
-### Common Development Tasks
-
-**Adding a new token to SVM gateway:**
-```bash
-# 1. Create token (if needed)
-npm run token:create
-
-# 2. Whitelist with rate limit
-npm run token:whitelist
-# Prompts for: mint address, threshold (natural units)
-
-# 3. Verify
-npm run token:list
-```
-
-**Updating TSS configuration:**
-```bash
-# EVM
-cast send $GATEWAY_ADDR "setTSS(address)" $NEW_TSS_ADDR \
-  --rpc-url $RPC_URL --private-key $ADMIN_KEY
-
-# SVM
-npm run config:tss-update
-# Prompts for: TSS ETH address (hex), chain ID
-```
-
-**Pausing the gateway:**
-```bash
-# EVM
-cast send $GATEWAY_ADDR "pause()" \
-  --rpc-url $RPC_URL --private-key $PAUSER_KEY
-
-# SVM
-npm run config:pause
-```
-
-## Key Files Reference
-
-### EVM
-- `src/UniversalGateway.sol` - Main gateway implementation
-- `src/UniversalGatewayPC.sol` - Push Chain side (outbound)
-- `src/libraries/Types.sol` - Shared types and enums
-- `src/interfaces/IUniversalGateway.sol` - Public API
-- `test/BaseTest.t.sol` - Test base class with setup
-- `script/DeployCommands.md` - Deployment examples
-
-### SVM
-- `programs/universal-gateway/src/lib.rs` - Program entrypoints
-- `programs/universal-gateway/src/instructions/deposit.rs` - Inbound deposits
-- `programs/universal-gateway/src/instructions/execute.rs` - Outbound execution
-- `programs/universal-gateway/src/instructions/tss.rs` - TSS validation
-- `programs/universal-gateway/src/state.rs` - Account structures and PDAs
-- `tests/helpers/tss.ts` - TSS signing utilities
-- `app/execute-payload.ts` - Payload encoding helpers
-- `app/config-cli.ts` - Gateway configuration CLI
-- `app/token-cli.ts` - Token management CLI
-- `docs/ARCHITECTURE.md` - System architecture
-- `docs/FLOWS/2-WITHDRAW-EXECUTE.md` - Outbound flow details
-- `docs/SECURITY/TSS-VALIDATION.md` - TSS security model
-
-## Documentation
-
-**EVM:** `contracts/evm-gateway/CLAUDE.md` - Comprehensive EVM-specific guidance
-**SVM:** `contracts/svm-gateway/docs/` - Architecture, flows, security, and reference docs
-**Root:** This file - Cross-cutting patterns and monorepo navigation
-
-## Security Considerations
-
-**Both Implementations:**
-- TSS signatures are the ONLY authorization for outbound transactions
-- Replay protection via nonces (EVM) or ExecutedTx PDAs (SVM)
-- Pausable for emergency stops
-- Rate limiting protects both instant and standard routes
-- Oracle staleness checks (Chainlink for EVM, Pyth for SVM)
-
-**EVM-Specific:**
-- Reentrancy guards on all deposit/withdraw paths
-- Role-based access control (DEFAULT_ADMIN_ROLE, PAUSER_ROLE, TSS_ROLE)
-- Upgradeable via proxy pattern (storage layout compatibility required)
-- Uniswap v3 slippage protection via `amountOutMinETH`
-
-**SVM-Specific:**
-- No external signers for protocol operations (all PDA-based)
-- CEA provides persistent signing authority per user
-- ExecutedTx account existence prevents replay
-- SPL token account ownership validation
-- CPI security: Only CEA can sign for user's identity
-
-## Build Issues & Solutions
-
-### SVM Known Issues
-
-**1. Associated Token Account Dependency:**
-- **Issue:** `spl-associated-token-account` as direct dependency causes `#[global_allocator]` conflict
-- **Solution:** Use `anchor_spl::associated_token::spl_associated_token_account` re-export instead
-- **Config:** `anchor-spl` needs `features = ["associated_token"]` in Cargo.toml
-
-**2. Rent Sysvar Import:**
-- **Issue:** `rent::ID` doesn't resolve
-- **Solution:** Use `anchor_lang::solana_program::sysvar::rent as rent_sysvar` then `rent_sysvar::ID`
-
-**3. Manual ATA Creation:**
-- **Issue:** `init_if_needed` incompatible with `Option<Account>` pattern
-- **Solution:** Use manual CPI via `spl_associated_token_account::instruction::create_associated_token_account`
+- **TSS signatures** are the sole authorization for all outbound transactions
+- **Replay protection**: Nonces (EVM) or ExecutedTx PDAs (SVM)
+- **Pausable** for emergency stops on both chains
+- **Rate limiting** on both instant and standard routes
+- **Oracle staleness checks**: Chainlink (EVM), Pyth (SVM)
+- **Reentrancy guards** on all EVM deposit/withdraw paths
+- **CEA isolation**: Only CEA can sign for a user's cross-chain identity
 
 ## Version Information
 
-- **EVM:** Solidity 0.8.26, Foundry
-- **SVM:** Anchor 0.31.1, Solana 1.18+
-- **Node:** 20+ (for SVM TypeScript tests and CLIs)
-- **Rust:** 1.75+ (for Anchor programs)
+- **EVM:** Solidity 0.8.26, Foundry, EVM target: shanghai
+- **SVM:** Anchor 0.31.1, Solana 1.18+, Rust 1.75+
+- **Node:** 20+ (SVM tests and CLIs)
