@@ -15,7 +15,7 @@ pub struct UniversalTx {
     pub token: Pubkey,                 // Token (Pubkey::default() = SOL)
     pub amount: u64,                   // Bridge amount
     pub payload: Vec<u8>,              // Execution payload
-    pub revert_recipient: [u8; 20],    // Address to receive funds if tx is reverted
+    pub revert_recipient: Pubkey,      // Solana account to receive funds if tx is reverted
     pub tx_type: TxType,               // Gas/GasAndPayload/Funds/FundsAndPayload
     pub signature_data: Vec<u8>,       // User signature data
     pub from_cea: bool,                 // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as existing UEA

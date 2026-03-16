@@ -569,7 +569,7 @@ fn send_universal_tx_to_uea(
         token,
         amount: withdraw_amount,
         payload: args.payload,
-        revert_recipient: push_account,
+        revert_recipient: ctx.accounts.cea_authority.key(),
         tx_type,
         signature_data: vec![],
         from_cea: true,

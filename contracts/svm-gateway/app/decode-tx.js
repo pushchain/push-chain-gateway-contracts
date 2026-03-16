@@ -183,19 +183,9 @@ async function decodeTx(sig, label) {
         console.log(`  - token: ${e.token}`);
         console.log(`  - amount: ${e.amount}`);
 
-        // Show revert_instruction if present
-        if (e.revert_instruction || e.revertInstruction) {
-            const revert = e.revert_instruction || e.revertInstruction;
-            console.log(`  - revert_instruction:`);
-            console.log(`    - fund_recipient: ${revert.fund_recipient || revert.fundRecipient || 'N/A'}`);
-            if (revert.revert_msg || revert.revertContext) {
-                const msg = revert.revert_msg || revert.revertContext;
-                const msgBuf = Array.isArray(msg) ? Buffer.from(msg) : Buffer.isBuffer(msg) ? msg : Buffer.from(msg || []);
-                console.log(`    - revert_msg length: ${msgBuf.length} bytes`);
-                if (msgBuf.length > 0) {
-                    console.log(`    - revert_msg (hex): ${msgBuf.toString('hex')}`);
-                }
-            }
+        // Show revert_recipient if present
+        if (e.revert_recipient) {
+            console.log(`  - revert_recipient: 0x${Buffer.from(e.revert_recipient).toString('hex')}`);
         }
 
         // Show signature_data if present
@@ -261,14 +251,7 @@ async function decodeTx(sig, label) {
             amount: e.amount.toString(),
             tx_type: txTypeName,
             payload: payload,
-            revert_instruction: e.revert_instruction || e.revertInstruction ? {
-                fund_recipient: (e.revert_instruction || e.revertInstruction).fund_recipient || (e.revert_instruction || e.revertInstruction).fundRecipient,
-                revert_msg: e.revert_instruction || e.revertInstruction ? (() => {
-                    const msg = (e.revert_instruction || e.revertInstruction).revert_msg || (e.revert_instruction || e.revertInstruction).revertContext;
-                    const msgBuf = Array.isArray(msg) ? Buffer.from(msg) : Buffer.isBuffer(msg) ? msg : Buffer.from(msg || []);
-                    return msgBuf.length > 0 ? "0x" + msgBuf.toString('hex') : null;
-                })() : null
-            } : null,
+            revert_recipient: e.revert_recipient ? "0x" + Buffer.from(e.revert_recipient).toString('hex') : null,
             signature_data: (() => {
                 const sigData = e.signature_data || e.signatureData;
                 const sigBuf = Array.isArray(sigData) ? Buffer.from(sigData) : Buffer.isBuffer(sigData) ? sigData : Buffer.from(sigData || []);

@@ -101,7 +101,7 @@ fn send_tx_with_gas_route(
     tx_type: TxType,
     gas_amount: u64,
     payload: &[u8],
-    revert_recipient: &[u8; 20],
+    revert_recipient: &Pubkey,
     signature_data: &[u8],
 ) -> Result<()> {
     // Validate tx_type
@@ -120,7 +120,7 @@ fn send_tx_with_gas_route(
     // }
 
     require!(
-        *revert_recipient != [0u8; 20],
+        *revert_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
 
@@ -202,7 +202,7 @@ fn send_tx_with_funds_route(
     tx_type: TxType,
 ) -> Result<()> {
     require!(
-        req.revert_recipient != [0u8; 20],
+        req.revert_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
     require!(req.amount > 0, GatewayError::InvalidAmount);

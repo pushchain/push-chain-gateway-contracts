@@ -348,7 +348,7 @@ const universalTxRequest = {
   token: tokenMint,          // Pubkey::default() for SOL
   amount: new anchor.BN(amount),
   payload: [],               // Empty for simple transfer
-  revertRecipient: Array.from(userPubkey.toBuffer().slice(0, 20)), // 20-byte fallback address
+  revertRecipient: userPubkey, // Solana PublicKey fallback address
   signatureData: Buffer.from([]), // Reserved for future use
 };
 

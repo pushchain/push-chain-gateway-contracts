@@ -172,7 +172,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             token: PublicKey.default,
             amount: new anchor.BN(solDepositAmount),
             payload: Buffer.from([]),
-            revertRecipient: Array.from(user1.publicKey.toBuffer().slice(0, 20)),
+            revertRecipient: user1.publicKey,
             signatureData: Buffer.from([]),
         };
 
@@ -222,7 +222,7 @@ describe("Universal Gateway - Withdraw Tests", () => {
             token: mockUSDT.mint.publicKey,
             amount: depositAmount,
             payload: Buffer.from([]), // Empty payload for FUNDS route
-            revertRecipient: Array.from(user1.publicKey.toBuffer().slice(0, 20)),
+            revertRecipient: user1.publicKey,
             signatureData: Buffer.from([]), // Empty for FUNDS route
         };
 
