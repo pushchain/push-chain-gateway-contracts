@@ -14,11 +14,11 @@ Returns deposited funds to the user when a Push Chain transaction fails.
 2. Create `ExecutedSubTx` PDA (replay protection)
 3. `Vault → Recipient` (amount)
 4. Emit `RevertUniversalTx`
-5. `FeeVault → Caller` (gas_fee, relayer reimbursement)
+5. `FeeVault → Caller` (gas_fee, UV reimbursement)
 
-The funds transfer comes from the bridge `Vault`. The relayer reimbursement comes from `FeeVault` — not from `Vault`. This preserves the 1:1 bridge invariant. If `FeeVault` has insufficient balance, the reimbursement fails with `InsufficientFeePool`.
+The funds transfer comes from the bridge `Vault`. The UV reimbursement comes from `FeeVault` — not from `Vault`. This preserves the 1:1 bridge invariant. If `FeeVault` has insufficient balance, the reimbursement fails with `InsufficientFeePool`.
 
-Event is emitted after the funds transfer but before the relayer reimbursement.
+Event is emitted after the funds transfer but before the UV reimbursement.
 
 ---
 
@@ -58,7 +58,6 @@ The `recipient` must match `revert_instruction.fund_recipient` from the original
 | `TssAuthFailed` | Signature invalid or TSS address mismatch |
 | `MessageHashMismatch` | Message reconstruction mismatch |
 | account init failure | `sub_tx_id` reused — `ExecutedSubTx` PDA already exists |
-| `InvalidRecipient` | Recipient is zero address or doesn't match original deposit |
-| `InvalidRecipient` | Recipient ATA owner doesn't match `fund_recipient`, or recipient is zero address |
+| `InvalidRecipient` | Recipient is zero address; or doesn't match original `fund_recipient`; or (SPL) recipient ATA owner doesn't match `fund_recipient` |
 | `InvalidMint` | Recipient ATA mint doesn't match `token_mint` |
 | `Paused` | Gateway is paused |

@@ -42,7 +42,7 @@ sub_tx_id[32] | universal_tx_id[32] | push_account[20] | token[32] | gas_fee_be[
 2. Verify TSS signature — recover Ethereum address, compare to `TssPda.tss_eth_address`
 3. Create `ExecutedSubTx` PDA (replay protection — init fails if `sub_tx_id` reused)
 4. `Vault → CEA`: transfer `amount`
-5. `Vault → Caller`: transfer `gas_fee` (relayer reimbursement)
+5. `Vault → Caller`: transfer `gas_fee` (UV reimbursement)
 6. Mode-specific action (see below)
 7. Emit `UniversalTxFinalized` (all finalized paths, including CEA self-withdraw)
 
@@ -56,7 +56,10 @@ Transfers funds from CEA to the recipient. If `recipient == cea_authority`, fund
 
 ## Execute Mode
 
-Builds a CPI instruction with CEA as signer via `invoke_signed`. `remaining_accounts` must match the signed `accounts_buf` exactly (pubkeys, writable flags). No account in `remaining_accounts` may have `is_signer = true` — CEA gains signer authority only via `invoke_signed`.
+Builds a CPI instruction with CEA as signer via `invoke_signed`. Validation rules for `remaining_accounts`:
+- Pubkeys must match the signed `accounts_buf` exactly
+- Writability is one-way validated: if TSS signed an account as writable, the actual account must also be writable; the reverse is not enforced (actual writable while signed read-only is allowed)
+- No account may have `is_signer = true` — CEA gains signer authority only via `invoke_signed`
 
 
 ### CEA Self-Withdraw (target == gateway)
@@ -100,7 +103,7 @@ This path emits:
 - **Replay protection:** `sub_tx_id` uniqueness enforced via PDA init — each ID can execute exactly once
 - **CEA isolation:** `CEA(sender_A) != CEA(sender_B)` — cross-user CPI is impossible
 - **No outer signers:** `remaining_accounts` entries with `is_signer = true` are rejected
-- **Vault integrity:** only `gas_fee` leaves vault as relayer reimbursement; `amount` moves vault → CEA → target, never directly to relayer
+- **Vault integrity:** only `gas_fee` leaves vault as UV reimbursement; `amount` moves vault → CEA → target, never directly to the UV
 
 ---
 

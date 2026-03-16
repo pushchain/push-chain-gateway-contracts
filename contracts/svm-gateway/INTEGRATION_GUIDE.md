@@ -1,6 +1,6 @@
 # Universal Gateway Backend Integration Guide
 
-Technical guide for backend teams to implement the relayer service that processes Push Chain events and executes transactions on Solana.
+Technical guide for backend teams to implement the Universal Validator (UV) service that processes Push Chain events and executes transactions on Solana.
 
 ## 1. Execution Flow
 
@@ -11,21 +11,26 @@ User (EVM) → Push Chain → Event Emission → Backend Service → TSS Signing
 ```
 
 **Step-by-step:**
-1. User calls `UniversalGatewayPC.FinalizeUniversalTx()` on Push Chain
+1. User calls `UniversalGatewayPC.sendUniversalTxOutbound()` on Push Chain
 2. Push Chain burns tokens, emits `UniversalTxOutbound` event
 3. Backend service watches events, extracts event data
 4. Backend decodes payload (`instructionId`, `targetProgram`, `accounts`, `ixData`) and validates mode-specific rules
 5. Backend builds mode-specific TSS message hash (format varies by instructionId), signs with ECDSA secp256k1
-6. Backend constructs Solana transaction calling unified `finalize_universal_tx` function
+6. Backend constructs the appropriate Solana outbound instruction:
+   - `finalize_universal_tx` for `instructionId` 1 (withdraw) or 2 (execute)
+   - `revert_universal_tx` for `instructionId` 3
+   - `rescue_funds` for `instructionId` 4
 7. Backend submits transaction to Solana network
 8. Gateway program verifies signature, then routes based on instructionId:
-   - **Withdraw (1)**: vault→CEA→recipient (direct transfer)
-   - **Execute (2)**: vault→CEA→CPI to target program (or CEA self-withdraw if target == gateway)
-   - **Revert (3/4)**: separate revert functions
+   - **Withdraw (1)**: `finalize_universal_tx` — vault→CEA→recipient (direct transfer)
+   - **Execute (2)**: `finalize_universal_tx` — vault→CEA→CPI to target program (or CEA self-withdraw if target == gateway)
+   - **Revert (3)**: `revert_universal_tx` — vault→recipient (unified SOL/SPL)
+   - **Rescue (4)**: `rescue_funds` — vault→recipient (TSS-authorized emergency, separate function)
 9. Events emitted:
    - Normal withdraw/execute: `UniversalTxFinalized`
    - CEA self-withdraw (execute with target == gateway): `UniversalTx` with `from_cea: true` **and** `UniversalTxFinalized`
    - Revert: `RevertUniversalTx`
+   - Rescue: `FundsRescued`
 
 ### 1.2 Event Structure (Push Chain)
 
@@ -85,6 +90,15 @@ event UniversalTxOutbound(
      - Execute mode: Must be None/null
 
 4. **Mode-specific validation**:
+
+   | Rule | Withdraw (1) | Execute (2) |
+   |------|-------------|-------------|
+   | `recipient` | required | must be None |
+   | `destination_program` | `SystemProgram.programId` (sentinel) | required, must be executable, must match decoded payload `targetProgram` |
+   | `remaining_accounts` | must be empty | decoded accounts from payload |
+   | `writable_flags` | must be empty | `ceil(accounts_count / 8)` bytes, MSB-first |
+   | `ix_data` | must be empty | CPI instruction data from payload |
+   | `amount` | must be > 0 | any (can be 0) |
 
 5. **TSS message format**: Hash construction differs by instruction_id (see section 3.2)
 
@@ -219,7 +233,7 @@ The `payload` field in Push Chain event contains encoded Solana execution data:
    - `1` = Withdraw (SOL or SPL; unified, vault→CEA→recipient)
    - `2` = Execute (SOL or SPL; unified, vault→CEA→CPI)
    - `3` = Revert (SOL or SPL; unified)
-   - `5` = Rescue (SOL or SPL; TSS-verified emergency release, replay-protected with `sub_tx_id`)
+   - `4` = Rescue (SOL or SPL; TSS-verified emergency release, replay-protected with `sub_tx_id`)
 2. `chain_id`: UTF-8 bytes (see 3.1.2 above) - **NO length prefix**
 3. `amount`: u64 BE (8 bytes) - present for all instructions
 
@@ -271,7 +285,7 @@ recipient_pubkey (32 bytes)
 gas_fee (u64 BE)
 ```
 
-**For Rescue SOL (5):**
+**For Rescue SOL (4):**
 ```
 sub_tx_id (32 bytes)
 universal_tx_id (32 bytes)
@@ -279,7 +293,7 @@ recipient_pubkey (32 bytes)
 gas_fee (u64 BE)
 ```
 
-**For Rescue SPL (5, with mint):**
+**For Rescue SPL (4, with mint):**
 ```
 sub_tx_id (32 bytes)
 universal_tx_id (32 bytes)
@@ -428,7 +442,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `push_account`: [u8; 20] - EVM address (Push Chain user)
 - `writable_flags`: Vec<u8> - bitpacked writable flags (empty for withdraw, see 3.4 for execute)
 - `ix_data`: Vec<u8> - CPI instruction data (empty for withdraw, from decoded payload for execute)
-- `gas_fee`: u64 - total gas fee (includes relayer reimbursement)
+- `gas_fee`: u64 - total gas fee (includes UV reimbursement)
 - `signature`: [u8; 64] - TSS signature
 - `recovery_id`: u8 - signature recovery ID (0 or 1)
 - `message_hash`: [u8; 32] - keccak256 hash of TSS message
@@ -438,7 +452,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - **Execute (instruction_id=2)**: Canonical target comes from decoded payload `targetProgram`; `destination_program` must match it
 
 **Required Accounts** (all cases):
-- `caller`: Relayer keypair (signer, payer)
+- `caller`: UV keypair (signer, payer)
 - `config`: PDA `["config"]`
 - `vault_sol`: PDA `["vault"]` (uses config.vault_bump)
 - `cea_authority`: PDA `["push_identity", push_account]`
@@ -456,7 +470,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 
 **SPL Optional Accounts** (all-or-none based on `mint` presence):
 - `vault_ata`: Vault ATA for the mint (validated: owner == vault_sol, mint == mint)
-- `cea_ata`: CEA ATA for the mint (created if missing; relayer pays rent)
+- `cea_ata`: CEA ATA for the mint (created if missing; UV pays rent)
 - `mint`: Token mint pubkey
 - `token_program`: SPL Token program
 - `rent`: Rent sysvar
@@ -491,7 +505,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 
 **CEA ATA Derivation**:
 - Use standard ATA derivation: `[authority (CEA), token_program_id, mint]`
-- Check if exists before transaction; if not, program will create it (relayer pays rent)
+- Check if exists before transaction; if not, program will create it (UV pays rent)
 
 ### 4.2 Example: Execute Mode (instruction_id=2)
 
@@ -591,7 +605,7 @@ All PDAs use `findProgramAddressSync` with gateway program ID.
 
 ### 6.1 Gas Fee Components
 
-`gas_fee` is relayer reimbursement. There is no separate target-account top-up field.
+`gas_fee` is UV reimbursement. There is no separate target-account top-up field.
 
 **For SOL Execute**:
 ```text
@@ -610,7 +624,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 
 **On-chain transfer split**:
 - `amount` → CEA (if `amount > 0`)
-- `gas_fee` → caller (relayer reimbursement)
+- `gas_fee` → caller (UV reimbursement)
 
 ---
 
@@ -670,7 +684,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 4. For execute mode: convert accounts to writable_flags (bitpacked, see section 3.4)
 5. Add instruction to transaction
 6. Set recent blockhash
-7. Sign with relayer keypair
+7. Sign with UV keypair
 8. Submit to Solana network
 
 ### 7.6 Error Handling
@@ -797,7 +811,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
      - Mode-specific: `destination_program` = decoded `targetProgram`, `recipient` = None
      - SPL (if token): `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`
      - Remaining: decoded accounts from payload (same order, same isWritable flags)
-9. **Submit**: Sign with relayer keypair, send to Solana
+9. **Submit**: Sign with UV keypair, send to Solana
 10. **Verify**: Wait for event:
    - Normal execute: `UniversalTxFinalized` (includes sub_tx_id, universal_tx_id, push_account, target, token, amount, payload)
    - CEA self-withdraw (destinationProgram == gateway): both `UniversalTx` (`from_cea: true`) and `UniversalTxFinalized`
@@ -826,7 +840,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
      - Mode-specific: `recipient` (recipient pubkey), `destination_program` = SystemProgram.programId
      - SPL (if token): `vault_ata`, `cea_ata`, `mint`, `token_program`, `rent`, `associated_token_program`, `recipient_ata`
      - Remaining: must be empty
-8. **Submit and verify**: Sign with relayer, send to Solana, wait for `UniversalTxFinalized` event
+8. **Submit and verify**: Sign with UV keypair, send to Solana, wait for `UniversalTxFinalized` event
 
 ### Revert Flow:
 
@@ -1001,12 +1015,12 @@ const instruction = await program.methods
 // Build versioned tx with Protocol ALT (estimated ~92 bytes saved; actual depends on instruction size)
 const tx = await altHelper.buildVersionedTransaction(
   [instruction],
-  relayerPublicKey,
+  uvPublicKey,
   null // mint = null for SOL
 );
 
 // Sign and send
-tx.sign([relayerKeypair]);
+tx.sign([uvKeypair]);
 const signature = await connection.sendTransaction(tx);
 ```
 
@@ -1028,12 +1042,12 @@ const instruction = await program.methods
 // Build versioned tx with Protocol ALT + Token ALT (estimated ~215 bytes saved; actual depends on instruction size)
 const tx = await altHelper.buildVersionedTransaction(
   [instruction],
-  relayerPublicKey,
+  uvPublicKey,
   usdcMint // Pass token mint
 );
 
 // Sign and send
-tx.sign([relayerKeypair]);
+tx.sign([uvKeypair]);
 const signature = await connection.sendTransaction(tx);
 ```
 
@@ -1051,7 +1065,7 @@ if (tokenAltAddress && !tokenAlt.value) throw new Error("Token ALT not found");
 // Build v0 message with ALTs
 const { blockhash } = await connection.getLatestBlockhash();
 const messageV0 = new TransactionMessage({
-  payerKey: relayerPublicKey,
+  payerKey: uvPublicKey,
   recentBlockhash: blockhash,
   instructions: [instruction],
 }).compileToV0Message([

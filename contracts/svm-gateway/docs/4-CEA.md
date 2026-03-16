@@ -27,13 +27,13 @@ When `destination_program == gateway_program_id` in execute mode, the flow route
 ```
 finalize_universal_tx (instruction_id=2, target=gateway)
   → Vault → CEA (amount)
-  → Vault → Caller (gas_fee, relayer reimbursement)
+  → Vault → Caller (gas_fee, UV reimbursement)
   → CEA → Vault (withdraw_amount)
   → emit UniversalTx (from_cea=true)
   → emit UniversalTxFinalized
 ```
 
-The `UniversalTx` event is picked up by Push Chain relayers to credit the user's UEA.
+The `UniversalTx` event is picked up by Push Chain Universal Validators (UVs) to credit the user's UEA.
 `UniversalTx` uses inner decoded values from `send_universal_tx_to_uea` args (`amount`, `payload`).
 `UniversalTxFinalized` uses outer `finalize_universal_tx` values (`amount`, full `ix_data`).
 
