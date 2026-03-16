@@ -421,7 +421,7 @@ contract VaultPCTest is Test {
         vm.deal(address(vault), amount);
 
         vm.prank(fundManager);
-        vm.expectRevert(Errors.DepositFailed.selector);
+        vm.expectRevert(Errors.WithdrawFailed.selector);
         vault.withdraw(address(rejecter), amount);
     }
 

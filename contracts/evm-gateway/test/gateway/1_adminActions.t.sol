@@ -624,24 +624,24 @@ contract GatewayAdminSettersTest is BaseTest {
         assertEq(gateway.epochDurationSec(), newDuration);
     }
 
-    function testUpdateEpochDurationCanBeCalledWhenPaused() public {
+    function testUpdateEpochDurationRevertsWhenPaused() public {
         uint256 newDuration = 12 hours;
 
         // Pause the contract
         vm.prank(admin);
         gateway.pause();
 
-        // Should still be able to update epoch duration when paused
+        // Should revert when paused (whenNotPaused modifier)
         vm.prank(admin);
+        vm.expectRevert();
         gateway.updateEpochDuration(newDuration);
-        assertEq(gateway.epochDurationSec(), newDuration);
     }
 
-    function testUpdateEpochDurationZeroDuration() public {
-        // Zero duration is allowed (though may not be practical)
+    function testUpdateEpochDurationZeroDurationReverts() public {
+        // Zero duration should revert to prevent division-by-zero
         vm.prank(admin);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.updateEpochDuration(0);
-        assertEq(gateway.epochDurationSec(), 0);
     }
 
     function testUpdateEpochDurationMultipleUpdates() public {

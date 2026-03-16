@@ -55,6 +55,7 @@ contract UniversalGateway is
 
     bytes32 public constant TSS_ROLE = keccak256("TSS_ROLE");
     bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     address public TSS_ADDRESS;
     address public VAULT;
@@ -91,6 +92,11 @@ contract UniversalGateway is
 
     uint256 public totalProtocolFeesCollected;
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     /// @param admin             DEFAULT_ADMIN_ROLE holder
     /// @param tss               Initial TSS address
     /// @param vaultAddress      Vault contract address
@@ -119,6 +125,7 @@ contract UniversalGateway is
         __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(PAUSER_ROLE, admin);
         _grantRole(TSS_ROLE, tss);
         _grantRole(VAULT_ROLE, vaultAddress);
 
@@ -143,11 +150,11 @@ contract UniversalGateway is
     // ==============================
     //     UG_1: ADMIN ACTIONS
     // ==============================
-    function pause() external whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {
+    function pause() external whenNotPaused onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external whenPaused onlyRole(DEFAULT_ADMIN_ROLE) {
+    function unpause() external whenPaused onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
@@ -227,7 +234,8 @@ contract UniversalGateway is
 
     /// @notice                Update the epoch duration (hard reset schedule)
     /// @param newDurationSec  New epoch duration in seconds
-    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        if (newDurationSec == 0) revert Errors.InvalidInput();
         uint256 old = epochDurationSec;
         epochDurationSec = newDurationSec;
         emit EpochDurationUpdated(old, newDurationSec);
