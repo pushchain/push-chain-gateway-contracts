@@ -576,36 +576,7 @@ contract VaultTest is Test {
     // TOKEN SUPPORT / GATEWAY GATING TESTS
     // ============================================================================
 
-    function test_Withdraw_UnsupportedTokenReverts() public {
-        MockERC20 unsupportedToken = new MockERC20("Unsupported", "UNS", 18, 1000e18);
-        unsupportedToken.mint(address(vault), 100e18);
-
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(
-            subTxId,
-            bytes32(uint256(3000 + uint256(subTxId))),
-            user1,
-            address(0),
-            address(unsupportedToken),
-            100e18,
-            _withdrawalPayloadDirect(address(unsupportedToken), user1, 100e18)
-        );
-    }
-
-    function test_RevertWithdraw_UnsupportedTokenReverts() public {
-        MockERC20 unsupportedToken = new MockERC20("Unsupported", "UNS", 18, 1000e18);
-        unsupportedToken.mint(address(vault), 100e18);
-
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.revertUniversalTx(
-            _tx(2), bytes32(uint256(3000 + 2)), address(unsupportedToken), 100e18, RevertInstructions(user1, "")
-        );
-    }
-
     function test_TokenSupport_TogglingReflectsImmediately() public {
-        // Initially supported
         vm.prank(tss);
         vault.finalizeUniversalTx(
             _tx(1),
@@ -617,32 +588,6 @@ contract VaultTest is Test {
             _withdrawalPayloadDirect(address(token), user1, 100e18)
         );
         assertEq(token.balanceOf(user1), 100e18);
-
-        // Remove support
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(token);
-        uint256[] memory thresholds = new uint256[](1);
-        thresholds[0] = 0;
-
-        vm.prank(admin);
-        gateway.setTokenLimitThresholds(tokens, thresholds);
-
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(
-            _tx(2),
-            bytes32(uint256(3000 + uint256(_tx(2)))),
-            user2,
-            address(0),
-            address(token),
-            100e18,
-            _withdrawalPayloadDirect(address(token), user2, 100e18)
-        );
-
-        // Re-add support
-        thresholds[0] = 1_000_000e18;
-        vm.prank(admin);
-        gateway.setTokenLimitThresholds(tokens, thresholds);
 
         vm.prank(tss);
         vault.finalizeUniversalTx(
@@ -1103,18 +1048,6 @@ contract VaultTest is Test {
     // HIGH PRIORITY TESTS
 
     // C. Parameter Validation (continued - 3 tests)
-    function test_ExecuteUniversalTx_ERC20_UnsupportedTokenReverts() public {
-        MockERC20 unsupportedToken = new MockERC20("Unsupported", "UNS", 18, 1000e18);
-        unsupportedToken.mint(address(vault), 100e18);
-        bytes memory data = "";
-
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(
-            _tx(316), bytes32(uint256(3316)), user1, address(0), address(unsupportedToken), 100e18, data
-        );
-    }
-
     function test_ExecuteUniversalTx_ERC20_InsufficientVaultBalanceReverts() public {
         uint256 vaultBalance = token.balanceOf(address(vault));
         bytes memory data = "";
@@ -1516,23 +1449,6 @@ contract VaultTest is Test {
         );
     }
 
-    function test_Withdraw_NativeUnsupportedReverts() public {
-        // Remove native support from gateway
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(0);
-        uint256[] memory thresholds = new uint256[](1);
-        thresholds[0] = 0;
-        vm.prank(admin);
-        gateway.setTokenLimitThresholds(tokens, thresholds);
-
-        vm.deal(tss, 1 ether);
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx{ value: 1 ether }(
-            _tx(503), bytes32(uint256(3503)), user1, address(0), address(0), 1 ether, _emptyMulticallPayload()
-        );
-    }
-
     // ============================================================================
     // REVERT FLOW: ADDITIONAL TESTS
     // ============================================================================
@@ -1805,8 +1721,6 @@ contract VaultTest is Test {
     // ============================================================================
 
     function test_GatewayChange_LiveSupport() public {
-        assertTrue(gateway.isSupportedToken(address(token)));
-
         vm.prank(tss);
         vault.finalizeUniversalTx(
             subTxId,
@@ -1819,32 +1733,7 @@ contract VaultTest is Test {
         );
         assertEq(token.balanceOf(user1), 100e18);
 
-        // Create new gateway that doesn't support token
-        UniversalGateway newGatewayImpl = new UniversalGateway();
-        bytes memory initData = abi.encodeWithSelector(
-            UniversalGateway.initialize.selector, admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
-        );
-        ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
-        UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
-
-        vm.prank(admin);
-        vault.setGateway(address(newGateway));
-
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(
-            subTxId,
-            bytes32(uint256(3000 + uint256(subTxId))),
-            user1,
-            address(0),
-            address(token),
-            100e18,
-            _withdrawalPayloadDirect(address(token), user2, 100e18)
-        );
-    }
-
-    function test_GatewayChange_ReenableSupport() public {
-        // Create new gateway without support
+        // Switch to a new gateway and verify vault still routes calls through it
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector, admin, tss, address(vault), 1e18, 10e18, address(0), address(0), weth
@@ -1855,38 +1744,7 @@ contract VaultTest is Test {
         vm.prank(admin);
         vault.setGateway(address(newGateway));
 
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.finalizeUniversalTx(
-            _tx(100),
-            bytes32(uint256(3000 + uint256(_tx(100)))),
-            user1,
-            address(0),
-            address(token),
-            100e18,
-            _withdrawalPayloadDirect(address(token), user1, 100e18)
-        );
-
-        // Re-enable support in new gateway
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(token);
-        uint256[] memory thresholds = new uint256[](1);
-        thresholds[0] = 1_000_000e18;
-
-        vm.prank(admin);
-        newGateway.setTokenLimitThresholds(tokens, thresholds);
-
-        vm.prank(tss);
-        vault.finalizeUniversalTx(
-            _tx(101),
-            bytes32(uint256(3000 + uint256(_tx(101)))),
-            user1,
-            address(0),
-            address(token),
-            100e18,
-            _withdrawalPayloadDirect(address(token), user1, 100e18)
-        );
-        assertEq(token.balanceOf(user1), 100e18);
+        assertEq(address(vault.gateway()), address(newGateway));
     }
 
     // ============================================================================

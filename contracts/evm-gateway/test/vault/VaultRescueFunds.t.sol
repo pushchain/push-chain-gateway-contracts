@@ -22,7 +22,6 @@ contract VaultRescueFundsTest is Test {
     Vault public vault;
     UniversalGateway public gateway;
     MockERC20 public token;
-    MockERC20 public delistedToken;
     MockCEAFactory public ceaFactory;
 
     address public admin;
@@ -97,13 +96,11 @@ contract VaultRescueFundsTest is Test {
 
         // Deploy tokens
         token = new MockERC20("Test Token", "TST", 18, 1_000_000e18);
-        delistedToken = new MockERC20("Delisted", "DEL", 18, 1_000_000e18);
 
         // Fund vault with ERC20
         token.mint(address(vault), 100_000e18);
-        delistedToken.mint(address(vault), 100_000e18);
 
-        // Support token in gateway (but NOT delistedToken)
+        // Support token in gateway
         address[] memory tokens = new address[](2);
         tokens[0] = address(token);
         tokens[1] = address(0);
@@ -200,20 +197,6 @@ contract VaultRescueFundsTest is Test {
         vm.expectRevert(Errors.InsufficientBalance.selector);
         vault.rescueFunds(
             SUB_TX_ID, UNIVERSAL_TX_ID, address(token), vaultBalance + 1, ri
-        );
-    }
-
-    // ==============================
-    //    TOKEN SUPPORT TESTS
-    // ==============================
-
-    function testRescueFundsDelistedTokenReverts() public {
-        RevertInstructions memory ri = RevertInstructions(recipient, "");
-
-        vm.prank(tss);
-        vm.expectRevert(Errors.NotSupported.selector);
-        vault.rescueFunds(
-            SUB_TX_ID, UNIVERSAL_TX_ID, address(delistedToken), 500e18, ri
         );
     }
 

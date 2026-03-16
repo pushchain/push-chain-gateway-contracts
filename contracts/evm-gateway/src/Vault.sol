@@ -6,7 +6,6 @@ pragma solidity 0.8.26;
  * @notice Token custody vault for outbound flows (withdraw / withdraw+call) managed by TSS.
  * @dev    - TransparentUpgradeable (OZ Initializable pattern)
  *         - Handles both ERC20 and native tokens
- *         - Token support is gated by UniversalGateway.isSupportedToken(token) to keep a single source of truth.
  *         - Routes withdrawals (empty payload) and executions (non-empty payload) through CEA contracts
  *         - Uses CEAFactory for deterministic CEA deployment
  */
@@ -152,7 +151,6 @@ contract Vault is
             );
         } else {
             if (msg.value != 0) revert Errors.InvalidAmount();
-            _enforceSupported(token);
             if (IERC20(token).balanceOf(address(this)) < amount) {
                 revert Errors.InsufficientBalance();
             }
@@ -184,7 +182,6 @@ contract Vault is
             );
         } else {
             if (msg.value != 0) revert Errors.InvalidAmount();
-            _enforceSupported(token);
             if (IERC20(token).balanceOf(address(this)) < amount) {
                 revert Errors.InsufficientBalance();
             }
@@ -209,21 +206,12 @@ contract Vault is
         if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
     }
 
-    /// @dev                   Checks token is supported via the gateway.
-    /// @param token           Token address to validate.
-    function _enforceSupported(address token) internal view {
-        if (!gateway.isSupportedToken(token)) {
-            revert Errors.NotSupported();
-        }
-    }
-
     /// @dev                   Validates push account and token/value invariants.
     /// @param pushAccount     Push Chain account (UEA).
     /// @param token           Token address (address(0) for native).
     /// @param amount          Expected amount.
     function _validateParams(address pushAccount, address token, uint256 amount) internal view {
         if (pushAccount == address(0)) revert Errors.ZeroAddress();
-        _enforceSupported(token);
 
         if (token == address(0)) {
             if (msg.value != amount) revert Errors.InvalidAmount();
