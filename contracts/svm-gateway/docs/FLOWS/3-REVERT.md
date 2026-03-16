@@ -68,7 +68,7 @@ hash = keccak256(message)
 | **Pause state** | `require!(!config.paused)` |
 | **Amount** | `require!(amount > 0)` |
 | **Recipient** | `require!(recipient != Pubkey::default())` |
-| **Recipient match** | `require!(recipient == revert_instruction.fund_recipient)` |
+| **Recipient match** | `require!(recipient == revert_instruction.revert_recipient)` |
 | **TSS signature** | ECDSA secp256k1 recovery + address match |
 | **Replay** | ExecutedSubTx PDA init (fails if sub_tx_id reused) |
 | **SPL ATA** | Owner == vault, Mint == token_mint |
@@ -97,7 +97,7 @@ hash = keccak256(message)
 pub struct RevertUniversalTx {
     pub sub_tx_id: [u8; 32],
     pub universal_tx_id: [u8; 32],
-    pub fund_recipient: Pubkey,
+    pub revert_recipient: Pubkey,   // Where reverted funds were sent
     pub token: Pubkey,              // Pubkey::default() for SOL
     pub amount: u64,
     pub revert_instruction: RevertInstructions,
@@ -125,7 +125,7 @@ pub struct RevertUniversalTx {
 3. **Amount validation:** Code only validates `amount > 0` (revert.rs:68, 205) - NO enforcement that amount matches original deposit
    - **Note:** "Exact amount" revert is a business-layer expectation, not an on-chain invariant
    - TSS is responsible for signing correct revert amounts
-4. **Recipient validation:** Must match revert_instruction.fund_recipient
+4. **Recipient validation:** Must match revert_instruction.revert_recipient
 
 ---
 

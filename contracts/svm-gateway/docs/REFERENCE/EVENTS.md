@@ -15,7 +15,7 @@ pub struct UniversalTx {
     pub token: Pubkey,                 // Token (Pubkey::default() = SOL)
     pub amount: u64,                   // Bridge amount
     pub payload: Vec<u8>,              // Execution payload
-    pub revert_instruction: RevertInstructions,
+    pub revert_recipient: [u8; 20],    // Address to receive funds if tx is reverted
     pub tx_type: TxType,               // Gas/GasAndPayload/Funds/FundsAndPayload
     pub signature_data: Vec<u8>,       // User signature data
     pub from_cea: bool,                 // true = emitted from CEA withdrawal; Push Chain UE uses recipient directly as existing UEA
@@ -59,7 +59,7 @@ pub struct UniversalTxFinalized {
 pub struct RevertUniversalTx {
     pub sub_tx_id: [u8; 32],               // Transaction ID
     pub universal_tx_id: [u8; 32],     // Cross-chain ID
-    pub fund_recipient: Pubkey,        // Who received reverted funds
+    pub revert_recipient: Pubkey,      // Who received reverted funds
     pub token: Pubkey,                 // Token (Pubkey::default() = SOL)
     pub amount: u64,                   // Reverted amount
     pub revert_instruction: RevertInstructions,
@@ -149,7 +149,7 @@ pub enum TxType {
 ### RevertInstructions
 ```rust
 pub struct RevertInstructions {
-    pub fund_recipient: Pubkey,  // Where to send reverted funds
+    pub revert_recipient: Pubkey, // Where to send reverted funds
     pub revert_msg: Vec<u8>,     // Error message/reason
 }
 ```

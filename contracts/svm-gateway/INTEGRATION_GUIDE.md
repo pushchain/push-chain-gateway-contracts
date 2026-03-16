@@ -529,14 +529,14 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `sub_tx_id`: [u8; 32]
 - `universal_tx_id`: [u8; 32]
 - `amount`: u64
-- `revert_instruction`: Struct `{ fund_recipient: Pubkey, revert_msg: Vec<u8> }`
+- `revert_instruction`: Struct `{ revert_recipient: Pubkey, revert_msg: Vec<u8> }`
 - `gas_fee`: u64
 - `signature`: [u8; 64]
 - `recovery_id`: u8
 - `message_hash`: [u8; 32]
 
 **revert_instruction**:
-- `fund_recipient`: Pubkey (32 bytes) - where to send reverted funds
+- `revert_recipient`: Pubkey (32 bytes) - where to send reverted funds
 - `revert_msg`: Vec<u8> - revert message (can be empty)
 
 ### 4.6 Revert Universal Transaction (SPL Token)
@@ -697,8 +697,8 @@ gas_fee = rent_fee + executed_sub_tx_rent + cea_ata_rent (if created) + compute_
 
 1. After transaction confirmation, listen for Solana events:
    - **Normal execute/withdraw:** `UniversalTxFinalized` — field order: `sub_tx_id`, `universal_tx_id`, `push_account`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
-   - **CEA self-withdraw (target == gateway):** BOTH `UniversalTx` with `from_cea: true` AND `UniversalTxFinalized` with `target = gateway_program_id` — both emitted by `send_universal_tx_to_uea`
-   - **Revert:** `RevertUniversalTx` — field order: `sub_tx_id`, `universal_tx_id`, `fund_recipient`, `token`, `amount`, `revert_instruction`
+   - **CEA self-withdraw (target == gateway):** emits `UniversalTx` with `from_cea: true` from `send_universal_tx_to_uea`, then emits `UniversalTxFinalized` with `target = gateway_program_id` in the parent `finalize_universal_tx` flow
+   - **Revert:** `RevertUniversalTx` — field order: `sub_tx_id`, `universal_tx_id`, `revert_recipient`, `token`, `amount`, `revert_instruction`
 2. Verify event fields match your transaction
 3. Mark transaction as completed
 

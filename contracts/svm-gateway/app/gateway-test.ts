@@ -23,7 +23,7 @@ import { assert } from "chai";
 import { instructionToPayloadFields, encodeExecutePayload, decodeExecutePayload, accountsToWritableFlags } from "./execute-payload";
 import { signTssMessage, buildExecuteAdditionalData, buildWithdrawAdditionalData, TssInstruction, generateUniversalTxId } from "../tests/helpers/tss";
 
-const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
+const PROGRAM_ID = new PublicKey("DJoFYDpgbTfxbXBv1QYhYGc9FK4J5FUKpYXAfSkHryXp");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
 const EXECUTED_SUB_TX_SEED = "executed_sub_tx";
@@ -331,7 +331,7 @@ async function run() {
 
     // Helper to create revert instruction
     const createRevertInstruction = (recipient: PublicKey, msg: string = "test") => ({
-        fundRecipient: recipient,
+        revertRecipient: recipient,
         revertMsg: Buffer.from(msg),
     });
 
@@ -541,7 +541,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0),
         payload: Buffer.from([]),
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("gas_sig"),
     };
 
@@ -577,7 +577,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0),
         payload: serializePayload(createPayload(1)),
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("gas_payload_sig"),
     };
 
@@ -617,7 +617,7 @@ async function run() {
         token: PublicKey.default,
         amount: fundsAmount,
         payload: Buffer.from([]),
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("funds_sig"),
     };
 
@@ -660,7 +660,7 @@ async function run() {
             token: mint,
             amount: splFundsAmount,
             payload: Buffer.from([]),
-            revertInstruction: createRevertInstruction(user),
+            revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
             signatureData: Buffer.from("spl_funds_sig"),
         };
 
@@ -706,7 +706,7 @@ async function run() {
         token: PublicKey.default,
         amount: fundsPayloadBridgeAmount,
         payload: serializePayload(createPayload(2)),
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("funds_payload_sig"),
     };
 
@@ -757,7 +757,7 @@ async function run() {
             token: mint,
             amount: splFundsPayloadBridgeAmount,
             payload: serializePayload(largePayloadStruct),
-            revertInstruction: createRevertInstruction(user),
+            revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
             signatureData: Buffer.from("spl_funds_payload_sig"),
         };
 
@@ -836,7 +836,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0),
         payload: serializePayload(createPayload(5)),
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("payload_only_sig"),
     };
 
@@ -874,7 +874,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0.01 * LAMPORTS_PER_SOL),
         payload: Buffer.from([]),
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("mismatched_sig"),
     };
 
@@ -912,7 +912,7 @@ async function run() {
             token: mint,
             amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
             payload: Buffer.from([]),
-            revertInstruction: createRevertInstruction(user),
+            revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
             signatureData: Buffer.from("invalid_spl_sig"),
         };
 
@@ -948,7 +948,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0),
         payload: Buffer.from([]),
-        revertInstruction: createRevertInstruction(PublicKey.default), // Invalid: default pubkey
+        revertRecipient: Array.from(PublicKey.default.toBuffer().slice(0, 20)), // Invalid: default pubkey
         signatureData: Buffer.from("invalid_recipient_sig"),
     };
 
@@ -985,7 +985,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0.01 * LAMPORTS_PER_SOL),
         payload: Buffer.from([]), // Empty payload routes to FUNDS, not FUNDS_AND_PAYLOAD
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("mismatched_native_sig"),
     };
 
@@ -1020,7 +1020,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0.01 * LAMPORTS_PER_SOL),
         payload: serializePayload(createPayload(4)),
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: Buffer.from("insufficient_native_sig"),
     };
 
@@ -1059,7 +1059,7 @@ async function run() {
             token: mint,
             amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
             payload: Buffer.from([]),
-            revertInstruction: createRevertInstruction(user),
+            revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
             signatureData: Buffer.from("malicious_spl_sig"),
         };
 
@@ -1097,7 +1097,7 @@ async function run() {
             token: mint,
             amount: new anchor.BN(500 * Math.pow(10, tokenInfo.decimals)),
             payload: serializePayload(createPayload(99)),
-            revertInstruction: createRevertInstruction(user),
+            revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
             signatureData: Buffer.from("malicious_spl_payload_sig"),
         };
 
@@ -1146,7 +1146,7 @@ async function run() {
             token: mint, // Correct mint
             amount: new anchor.BN(1000 * Math.pow(10, tokenInfo.decimals)),
             payload: Buffer.from([]),
-            revertInstruction: createRevertInstruction(user),
+            revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
             signatureData: Buffer.from("wrong_mint_sig"),
         };
 
@@ -1211,7 +1211,7 @@ async function run() {
         token: PublicKey.default,
         amount: new anchor.BN(0),
         payload: Buffer.from([]), // Empty payload for GAS route
-        revertInstruction: createRevertInstruction(user),
+        revertRecipient: Array.from(user.toBuffer().slice(0, 20)),
         signatureData: signatureNew,
     };
     try {
@@ -2951,7 +2951,7 @@ async function run() {
                 Array.from(universalTxIdRevert), // Use same universal_tx_id from message hash
                 new anchor.BN(amount),
                 {
-                    fundRecipient: admin,
+                    revertRecipient: admin,
                     revertMsg: Buffer.from("test_revert"),
                 },
                 new anchor.BN(revertGasFee),

@@ -15,7 +15,7 @@ import * as spl from "@solana/spl-token";
 // 1) Creates an Address Lookup Table (ALT) owned by the upgrade/admin key.
 // 2) Extends it with the static accounts used by send_universal_tx so that
 //    user transactions can spend more of the 1232‑byte budget on instruction
-//    data (payload / revertInstruction / signatureData).
+//    data (payload / revertRecipient / signatureData).
 //
 // It writes the created ALT address to ./universal-alt.json so other scripts
 // (like the ALT send_universal_tx test) can load and use it.

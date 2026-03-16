@@ -259,10 +259,10 @@ require!(parsed.owner == vault.key(), GatewayError::InvalidOwner);
 require!(parsed.mint == req.token, GatewayError::InvalidMint);
 ```
 
-### 8. Revert Instruction Validation
+### 8. Revert Recipient Validation
 ```rust
 require!(
-    revert_instruction.fund_recipient != Pubkey::default(),
+    *revert_recipient != [0u8; 20],
     GatewayError::InvalidRecipient
 );
 ```
@@ -280,9 +280,10 @@ pub struct UniversalTx {
     pub token: Pubkey,               // Token (default = SOL)
     pub amount: u64,                 // Bridge amount
     pub payload: Vec<u8>,            // Execution payload
-    pub revert_instruction: RevertInstructions,
+    pub revert_recipient: [u8; 20],  // Address to receive funds if tx is reverted
     pub tx_type: TxType,             // Gas/Funds/GasAndPayload/FundsAndPayload
     pub signature_data: Vec<u8>,     // User signature data
+    pub from_cea: bool,              // true = emitted from CEA withdrawal
 }
 ```
 

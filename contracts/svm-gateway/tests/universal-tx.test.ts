@@ -87,11 +87,9 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
         return buf;
     };
 
-    // Helper to create revert instruction
-    const createRevertInstruction = (recipient: PublicKey, msg: string = "test") => ({
-        fundRecipient: recipient,
-        revertMsg: Buffer.from(msg),
-    });
+    // Helper to create revert recipient bytes
+    const createRevertRecipient = (recipient: PublicKey) =>
+        Array.from(recipient.toBuffer().slice(0, 20));
 
     // Helper to get token rate limit PDA
     const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
@@ -204,7 +202,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("gas_sig"),
             };
 
@@ -241,7 +239,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: serializePayload(createPayload(99)), // Non-empty payload
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("sig"),
             };
 
@@ -280,7 +278,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("gas_payload_sig"),
             };
 
@@ -313,7 +311,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("payload_only"),
             };
 
@@ -348,7 +346,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("funds_sig"),
             };
 
@@ -383,7 +381,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("funds_nonzero_recipient"),
             };
 
@@ -418,7 +416,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("invalid_native_amount"),
             };
 
@@ -466,7 +464,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: mockUSDT.mint.publicKey,
                 amount: tokenAmount,
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("spl_funds_sig"),
             };
 
@@ -506,7 +504,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: mockUSDT.mint.publicKey,
                 amount: tokenAmount,
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("spl_native_invalid"),
             };
 
@@ -561,7 +559,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmountLamports),
                 payload: serializePayload(createPayload(1)), // Non-empty payload required
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("batched_sig"),
             };
 
@@ -597,7 +595,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(fundsAmount),
                 payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("insufficient_native_sig"),
             };
 
@@ -647,7 +645,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: mockUSDC.mint.publicKey,
                 amount: tokenAmount,
                 payload: serializePayload(createPayload(1)), // Must have payload for FUNDS_AND_PAYLOAD
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("spl_no_batch_sig"),
             };
 
@@ -703,7 +701,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: mockUSDC.mint.publicKey,
                 amount: tokenAmount,
                 payload: serializePayload(createPayload(1)), // Non-empty payload required
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("spl_batched_sig"),
             };
 
@@ -745,7 +743,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: mockUSDC.mint.publicKey,
                 amount: tokenAmount,
                 payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("spl_bad_rate_limit"),
             };
 
@@ -791,7 +789,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("sig"),
             };
 
@@ -833,7 +831,7 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
                 token: PublicKey.default,
                 amount: new anchor.BN(0),
                 payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
+                revertRecipient: createRevertRecipient(user1.publicKey),
                 signatureData: Buffer.from("sig"),
             };
 

@@ -48,7 +48,7 @@ fn route_universal_tx(
             tx_type,
             native_amount,
             &req.payload,
-            &req.revert_instruction,
+            &req.revert_recipient,
             &req.signature_data,
         ),
         TxType::Funds | TxType::FundsAndPayload => {
@@ -101,7 +101,7 @@ fn send_tx_with_gas_route(
     tx_type: TxType,
     gas_amount: u64,
     payload: &[u8],
-    revert_instruction: &RevertInstructions,
+    revert_recipient: &[u8; 20],
     signature_data: &[u8],
 ) -> Result<()> {
     // Validate tx_type
@@ -120,7 +120,7 @@ fn send_tx_with_gas_route(
     // }
 
     require!(
-        revert_instruction.fund_recipient != Pubkey::default(),
+        *revert_recipient != [0u8; 20],
         GatewayError::InvalidRecipient
     );
 
@@ -138,7 +138,7 @@ fn send_tx_with_gas_route(
             token: Pubkey::default(),
             amount: 0,
             payload: payload.to_vec(),
-            revert_instruction: revert_instruction.clone(),
+            revert_recipient: *revert_recipient,
             tx_type,
             signature_data: signature_data.to_vec(),
             from_cea: false,
@@ -177,7 +177,7 @@ fn send_tx_with_gas_route(
         token: Pubkey::default(),
         amount: gas_amount,
         payload: payload.to_vec(),
-        revert_instruction: revert_instruction.clone(),
+        revert_recipient: *revert_recipient,
         tx_type,
         signature_data: signature_data.to_vec(),
         from_cea: false,
@@ -202,7 +202,7 @@ fn send_tx_with_funds_route(
     tx_type: TxType,
 ) -> Result<()> {
     require!(
-        req.revert_instruction.fund_recipient != Pubkey::default(),
+        req.revert_recipient != [0u8; 20],
         GatewayError::InvalidRecipient
     );
     require!(req.amount > 0, GatewayError::InvalidAmount);
@@ -259,7 +259,7 @@ fn send_tx_with_funds_route(
                         TxType::Gas,
                         gas_amount,
                         &[],
-                        &req.revert_instruction,
+                        &req.revert_recipient,
                         &req.signature_data,
                     )?;
                 }
@@ -286,7 +286,7 @@ fn send_tx_with_funds_route(
                         TxType::Gas,
                         native_amount,
                         &[],
-                        &req.revert_instruction,
+                        &req.revert_recipient,
                         &req.signature_data,
                     )?;
                 }
@@ -310,7 +310,7 @@ fn send_tx_with_funds_route(
         token: req.token,
         amount: req.amount,
         payload: req.payload,
-        revert_instruction: req.revert_instruction,
+        revert_recipient: req.revert_recipient,
         tx_type,
         signature_data: req.signature_data,
         from_cea: false,

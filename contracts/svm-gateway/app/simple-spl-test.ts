@@ -134,10 +134,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     const depositAmount = new anchor.BN(amount * Math.pow(10, decimals)); // Convert to proper units
     const recipient = Keypair.generate().publicKey;
 
-    const revertSettings = {
-        fundRecipient: user,
-        revertMsg: Buffer.from("test revert message"),
-    };
+    const revertRecipientBytes = Array.from(user.toBuffer().slice(0, 20));
 
     // Get balances before
     const userTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, userTokenAccount.address)).amount;
@@ -157,7 +154,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
         token: mint,
         amount: depositAmount,
         payload: Buffer.from([]), // Empty payload for FUNDS route
-        revertInstruction: revertSettings,
+        revertRecipient: revertRecipientBytes,
         signatureData: Buffer.from([]), // Empty for FUNDS route
     };
 

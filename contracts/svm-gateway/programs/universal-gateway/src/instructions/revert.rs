@@ -66,16 +66,16 @@ pub fn revert_universal_tx(
 ) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
-        revert_instruction.fund_recipient != Pubkey::default(),
+        revert_instruction.revert_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
     require!(
-        ctx.accounts.recipient.key() == revert_instruction.fund_recipient,
+        ctx.accounts.recipient.key() == revert_instruction.revert_recipient,
         GatewayError::InvalidRecipient
     );
 
     let instruction_id: u8 = 3;
-    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
+    let recipient_bytes = revert_instruction.revert_recipient.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
     let additional: [&[u8]; 4] = [&sub_tx_id[..], &universal_tx_id[..], &recipient_bytes[..], &gas_fee_buf];
@@ -93,7 +93,7 @@ pub fn revert_universal_tx(
     anchor_lang::solana_program::program::invoke_signed(
         &system_instruction::transfer(
             &ctx.accounts.vault.key(),
-            &revert_instruction.fund_recipient,
+            &revert_instruction.revert_recipient,
             amount,
         ),
         &[
@@ -107,7 +107,7 @@ pub fn revert_universal_tx(
     emit!(crate::state::RevertUniversalTx {
         sub_tx_id,
         universal_tx_id,
-        fund_recipient: revert_instruction.fund_recipient,
+        revert_recipient: revert_instruction.revert_recipient,
         token: Pubkey::default(),
         amount,
         revert_instruction: revert_instruction.clone(),
@@ -151,7 +151,7 @@ pub struct RevertUniversalTxToken<'info> {
     )]
     pub tss_pda: Account<'info, TssPda>,
 
-    /// Recipient token account (ATA for fund_recipient + token_mint)
+    /// Recipient token account (ATA for revert_recipient + token_mint)
     #[account(mut)]
     pub recipient_token_account: Account<'info, TokenAccount>,
 
@@ -196,11 +196,11 @@ pub fn revert_universal_tx_token(
 ) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
     require!(
-        revert_instruction.fund_recipient != Pubkey::default(),
+        revert_instruction.revert_recipient != Pubkey::default(),
         GatewayError::InvalidRecipient
     );
     require!(
-        ctx.accounts.recipient_token_account.owner == revert_instruction.fund_recipient,
+        ctx.accounts.recipient_token_account.owner == revert_instruction.revert_recipient,
         GatewayError::InvalidRecipient
     );
     require!(
@@ -211,7 +211,7 @@ pub fn revert_universal_tx_token(
     let instruction_id: u8 = 4;
     let mut mint_bytes = [0u8; 32];
     mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
-    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
+    let recipient_bytes = revert_instruction.revert_recipient.to_bytes();
     let mut gas_fee_buf = [0u8; 8];
     gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
     let additional: [&[u8]; 5] = [
@@ -260,7 +260,7 @@ pub fn revert_universal_tx_token(
     emit!(crate::state::RevertUniversalTx {
         sub_tx_id,
         universal_tx_id,
-        fund_recipient: revert_instruction.fund_recipient,
+        revert_recipient: revert_instruction.revert_recipient,
         token: ctx.accounts.token_mint.key(),
         amount,
         revert_instruction: revert_instruction.clone(),
