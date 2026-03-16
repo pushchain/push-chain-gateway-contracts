@@ -42,6 +42,11 @@ contract Vault is
     address public TSS_ADDRESS;
     ICEAFactory public CEAFactory;
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     // ==============================
     //     Vault_1: ADMIN ACTIONS
     // ==============================

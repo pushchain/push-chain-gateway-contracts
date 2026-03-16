@@ -34,6 +34,11 @@ contract VaultPC is
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     // ==============================
     //    VaultPC_1: ADMIN ACTIONS
     // ==============================
@@ -77,7 +82,7 @@ contract VaultPC is
         }
 
         (bool success,) = payable(to).call{ value: amount }("");
-        if (!success) revert Errors.DepositFailed();
+        if (!success) revert Errors.WithdrawFailed();
 
         emit FeesWithdrawn(msg.sender, address(0), amount);
     }
