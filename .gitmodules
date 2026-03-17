@@ -27,3 +27,6 @@
 [submodule "contracts/evm-gateway/lib/chainlink-brownie-contracts"]
 	path = contracts/evm-gateway/lib/chainlink-brownie-contracts
 	url = https://github.com/smartcontractkit/chainlink-brownie-contracts
+[submodule "contracts/svm-gateway/mock-pyth"]
+    path = contracts/svm-gateway/mock-pyth
+    url = https://github.com/tkkinn/mock-pyth
