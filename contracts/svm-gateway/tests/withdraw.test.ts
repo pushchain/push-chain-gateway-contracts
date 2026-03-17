@@ -1168,6 +1168,69 @@ describe("Universal Gateway - Withdraw Tests", () => {
     });
 
     describe("revert error conditions", () => {
+        it("rejects revert while paused", async () => {
+            await program.methods
+                .pause()
+                .accountsPartial({ pauser: pauser.publicKey, config: configPda })
+                .signers([pauser])
+                .rpc();
+
+            try {
+                const subTxId = generateTxId();
+                const universalTxId = generateUniversalTxId();
+                const executedTxPda = getExecutedTxPda(subTxId);
+                const revertAmount = 1;
+
+                const revertInstruction = {
+                    revertRecipient: recipient.publicKey,
+                    revertMsg: Buffer.from("revert paused"),
+                };
+
+                const signature = await signTssMessageWithChainId({
+                    instruction: TssInstruction.Revert,
+                    amount: BigInt(revertAmount),
+                    additional: [new Uint8Array(subTxId), new Uint8Array(universalTxId), toBytes(recipient.publicKey), buildGasFeeBuf(DEFAULT_GAS_FEE)],
+                });
+
+                await expectRejection(
+                    program.methods
+                        .revertUniversalTx(
+                            subTxId,
+                            universalTxId,
+                            new anchor.BN(revertAmount),
+                            revertInstruction,
+                            new anchor.BN(Number(DEFAULT_GAS_FEE)),
+                            signature.signature,
+                            signature.recoveryId,
+                            signature.messageHash,
+                        )
+                        .accountsPartial({
+                            config: configPda,
+                            vault: vaultPda,
+                            feeVault: feeVaultPda,
+                            tssPda,
+                            recipient: recipient.publicKey,
+                            executedSubTx: executedTxPda,
+                            caller: relayer.publicKey,
+                            systemProgram: SystemProgram.programId,
+                            tokenVault: null,
+                            recipientTokenAccount: null,
+                            tokenMint: null,
+                            tokenProgram: null,
+                        })
+                        .signers([relayer])
+                        .rpc(),
+                    "Paused"
+                );
+            } finally {
+                await program.methods
+                    .unpause()
+                    .accountsPartial({ pauser: pauser.publicKey, config: configPda })
+                    .signers([pauser])
+                    .rpc();
+            }
+        });
+
         it("rejects revert with zero amount", async () => {
             const subTxId = generateTxId();
             const universalTxId = generateUniversalTxId();

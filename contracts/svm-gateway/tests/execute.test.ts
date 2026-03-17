@@ -2175,6 +2175,96 @@ describe("Universal Gateway - Execute Tests", () => {
       }
     }
 
+    it("should reject execute while paused", async () => {
+      await gatewayProgram.methods
+        .pause()
+        .accountsPartial({ pauser: admin.publicKey, config: configPda })
+        .signers([admin])
+        .rpc();
+
+      try {
+        const subTxId = generateTxId();
+        const universalTxId = generateUniversalTxId();
+        const pushAccount = generateSender();
+
+        const counterIx = await counterProgram.methods
+          .increment(new anchor.BN(1))
+          .accountsPartial({
+            counter: counterPda,
+            authority: counterAuthority.publicKey,
+          })
+          .instruction();
+
+        const accounts = instructionAccountsToGatewayMetas(counterIx);
+        const remainingAccounts = instructionAccountsToRemaining(counterIx);
+        const { gasFee } = await calculateSolExecuteFees(provider.connection);
+
+        const sig = await signTssMessage({
+          instruction: TssInstruction.Execute,
+          amount: BigInt(0),
+          chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+          additional: buildExecuteAdditionalData(
+            new Uint8Array(universalTxId),
+            new Uint8Array(subTxId),
+            counterProgram.programId,
+            new Uint8Array(pushAccount),
+            accounts,
+            counterIx.data,
+            gasFee
+          ),
+        });
+
+        await expectExecuteRevert(
+          "Paused execute",
+          () =>
+            gatewayProgram.methods
+              .finalizeUniversalTx(
+                2,
+                Array.from(subTxId),
+                Array.from(universalTxId),
+                new anchor.BN(0),
+                Array.from(pushAccount),
+                accountsToWritableFlagsOnly(accounts),
+                Buffer.from(counterIx.data),
+                new anchor.BN(Number(gasFee)),
+                Array.from(sig.signature),
+                sig.recoveryId,
+                Array.from(sig.messageHash)
+              )
+              .accountsPartial({
+                caller: admin.publicKey,
+                config: configPda,
+                vaultSol: vaultPda,
+                ceaAuthority: getCeaAuthorityPda(pushAccount),
+                tssPda,
+                executedSubTx: getExecutedTxPda(subTxId),
+                rateLimitConfig: null,
+                tokenRateLimit: null,
+                destinationProgram: counterProgram.programId,
+                recipient: null,
+                vaultAta: null,
+                ceaAta: null,
+                mint: null,
+                tokenProgram: null,
+                rent: null,
+                associatedTokenProgram: null,
+                recipientAta: null,
+                systemProgram: SystemProgram.programId,
+              })
+              .remainingAccounts(remainingAccounts)
+              .signers([admin])
+              .rpc(),
+          "Paused"
+        );
+      } finally {
+        await gatewayProgram.methods
+          .unpause()
+          .accountsPartial({ pauser: admin.publicKey, config: configPda })
+          .signers([admin])
+          .rpc();
+      }
+    });
+
     describe("account manipulation attacks", () => {
       it("should reject account substitution attack", async () => {
         const subTxId = generateTxId();

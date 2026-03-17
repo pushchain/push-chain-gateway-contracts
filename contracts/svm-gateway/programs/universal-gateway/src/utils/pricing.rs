@@ -3,6 +3,10 @@ use crate::state::{Config, FEED_ID};
 use anchor_lang::prelude::*;
 use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
 
+/// Maximum allowed age for Pyth price updates used by inbound USD-cap checks.
+/// Tune before mainnet if tighter freshness is required.
+const MAX_PRICE_AGE_SECONDS: u64 = 3_600; // 1 hour
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct PriceData {
     pub price: i64,        // Raw price from Pyth
@@ -12,8 +16,10 @@ pub struct PriceData {
 }
 
 pub fn calculate_sol_price(price_update: &Account<PriceUpdateV2>) -> Result<PriceData> {
+    let feed_id = get_feed_id_from_hex(FEED_ID).map_err(|_| error!(GatewayError::InvalidPrice))?;
+    let clock = Clock::get()?;
     let price = price_update
-        .get_price_unchecked(&get_feed_id_from_hex(FEED_ID)?) //TODO check time in mainnet
+        .get_price_no_older_than(&clock, MAX_PRICE_AGE_SECONDS, &feed_id)
         .map_err(|_| error!(GatewayError::InvalidPrice))?;
 
     require!(price.price > 0, GatewayError::InvalidPrice);
@@ -66,9 +72,21 @@ pub fn check_usd_caps(
     price_update: &Account<PriceUpdateV2>,
 ) -> Result<()> {
     let price_data = calculate_sol_price(price_update)?;
+    if config.pyth_confidence_threshold > 0 {
+        require!(
+            price_data.confidence <= config.pyth_confidence_threshold,
+            GatewayError::InvalidPrice
+        );
+    }
     let usd_amount = calculate_usd_amount(lamports, &price_data)?;
-    require!(usd_amount >= config.min_cap_universal_tx_usd, GatewayError::BelowMinCap);
-    require!(usd_amount <= config.max_cap_universal_tx_usd, GatewayError::AboveMaxCap);
+    require!(
+        usd_amount >= config.min_cap_universal_tx_usd,
+        GatewayError::BelowMinCap
+    );
+    require!(
+        usd_amount <= config.max_cap_universal_tx_usd,
+        GatewayError::AboveMaxCap
+    );
     Ok(())
 }
 

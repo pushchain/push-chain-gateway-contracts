@@ -1199,6 +1199,65 @@ describe("Universal Gateway - send_universal_tx Tests", () => {
       }
     });
 
+    it("Should reject GAS route when oracle confidence exceeds threshold (InvalidPrice)", async () => {
+      // Set a very tight confidence threshold (1 lamport) so the real mock feed's
+      // confidence value exceeds it, triggering InvalidPrice on the next deposit.
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+      const configBefore = await program.account.config.fetch(configPda);
+      const prevThreshold = configBefore.pythConfidenceThreshold;
+      const restoreThreshold = prevThreshold.gt(new anchor.BN(0))
+        ? prevThreshold
+        : new anchor.BN(1_000_000);
+
+      // Set a very tight threshold (1 raw unit) so the mock feed's confidence exceeds it.
+      await program.methods
+        .setPythConfidenceThreshold(new anchor.BN(1))
+        .accountsPartial({ admin: admin.publicKey, config: configPda })
+        .signers([admin])
+        .rpc();
+
+      const gasAmount = calculateSolAmount(2.5, solPrice);
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("confidence_threshold_test"),
+      };
+
+      try {
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(gasAmount))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should have rejected with InvalidPrice");
+      } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidPrice");
+      } finally {
+        // Setter rejects 0; fallback keeps restore valid on legacy-zero configs.
+        await program.methods
+          .setPythConfidenceThreshold(restoreThreshold)
+          .accountsPartial({ admin: admin.publicKey, config: configPda })
+          .signers([admin])
+          .rpc();
+      }
+    });
+
     it("Should support fee-off mode for legacy SPL FUNDS call shape", async () => {
       const usdtTokenRateLimitPda = getTokenRateLimitPda(
         mockUSDT.mint.publicKey

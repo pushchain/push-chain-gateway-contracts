@@ -109,6 +109,7 @@ npm run config:pyth-set-conf -- --threshold <u64>
 ```
 
 The program does not enforce a fixed feed — the admin can update it at any time via `set_pyth_price_feed`.
+Inbound gas-route pricing enforces staleness (`get_price_no_older_than`) and optionally enforces confidence (`pyth_confidence_threshold > 0`).
 
 ---
 

@@ -6,8 +6,8 @@ Solana-side gateway for Push Chain universal transactions. This program handles 
 
 ### Dependencies
 
-- Rust + Cargo
-- [Solana CLI](https://docs.solanalabs.com/cli/install)
+- Rust + Cargo 1.75+
+- [Solana CLI](https://docs.solanalabs.com/cli/install) 1.18+
 - [Anchor CLI](https://www.anchor-lang.com/docs/installation) 0.31.1
 - Node.js 20+ and npm
 
