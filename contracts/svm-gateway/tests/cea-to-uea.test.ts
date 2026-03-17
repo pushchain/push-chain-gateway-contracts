@@ -539,6 +539,9 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
         new anchor.web3.PublicKey(new Uint8Array(32)).toString()
       );
       expect(finalizedEvent.data.amount.toString()).to.equal("0");
+      expect(finalizedEvent.data.gasFee.toString()).to.equal(
+        Number(gasFeeWithdraw).toString()
+      );
       expect(Buffer.from(finalizedEvent.data.subTxId).toString("hex")).to.equal(
         Buffer.from(txIdWithdraw).toString("hex")
       );

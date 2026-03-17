@@ -174,6 +174,7 @@ pub struct GatewayAccountMeta {
 pub struct UniversalTxFinalized {
     pub sub_tx_id: [u8; 32],
     pub universal_tx_id: [u8; 32], // Universal transaction ID from source chain
+    pub gas_fee: u64,              // UV gas reimbursement amount (lamports)
     pub push_account: [u8; 20],    // EVM address
     pub target: Pubkey,            // Target program
     pub token: Pubkey,             // Token (Pubkey::default() for SOL)
