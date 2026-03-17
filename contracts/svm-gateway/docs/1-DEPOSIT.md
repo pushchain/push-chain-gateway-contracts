@@ -35,6 +35,7 @@ A flat fee in lamports is deducted from `native_amount` before routing. The adju
 Applies to `Gas` and `GasAndPayload`. After fee deduction:
 
 1. USD cap check: `min_cap_usd <= lamports_to_usd(amount) <= max_cap_usd` (Pyth SOL/USD)
+   - Oracle guardrails: feed-account match, feed-id match, freshness max-age, and optional confidence-threshold check
 2. Block USD cap check: per-slot budget; resets each slot
 3. Transfer: `User → Vault` (native SOL)
 4. Emit `UniversalTx` with `recipient = [0u8; 20]` (→ UEA on Push Chain)
@@ -88,6 +89,7 @@ For `FundsAndPayload`, if there is excess `native_amount` beyond `req.amount`, t
 |-------|-------|
 | `BelowMinCap` / `AboveMaxCap` | Gas amount outside USD cap range |
 | `BlockUsdCapExceeded` | Per-slot budget exhausted |
+| `InvalidPrice` | Oracle price failed validation (stale, wrong feed-id, non-positive, or confidence above threshold) |
 | `NotSupported` | Token not whitelisted |
 | `RateLimitExceeded` | Epoch limit reached for token |
 | `InvalidOwner` | SPL token account owner mismatch |
