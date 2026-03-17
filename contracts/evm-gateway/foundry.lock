@@ -1,4 +1,7 @@
 {
+  "../svm-gateway/mock-pyth": {
+    "rev": "2b1488d864101ca105592deef4ebc724e2a6caf2"
+  },
   "lib/chainlink-brownie-contracts": {
     "rev": "67887b84d3add02a25ef4145fc014e2f549509da"
   },
