@@ -3,6 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import pkg from "js-sha3";
 const { keccak_256 } = pkg;
 import * as secp from "@noble/secp256k1";
+import { randomBytes } from "crypto";
 
 export enum TssInstruction {
   Withdraw = 1, // Unified withdraw (vault→CEA→recipient)
@@ -107,11 +108,7 @@ export function pubkeyToBytes(pubkey: PublicKey): Uint8Array {
  * In production, this comes from the source chain (EVM/Push Chain)
  */
 export function generateUniversalTxId(): number[] {
-  return Array.from(
-    Buffer.from(
-    Array.from({ length: 32 }, () => Math.floor(Math.random() * 256))
-    )
-  );
+  return Array.from(randomBytes(32));
 }
 
 // =========================

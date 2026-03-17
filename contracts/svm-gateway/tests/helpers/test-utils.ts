@@ -5,7 +5,7 @@ import {
   accountsToWritableFlags,
   GatewayAccountMeta,
 } from "../../app/execute-payload";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 // =============================================================================
 // Constants
@@ -46,7 +46,7 @@ export const makeTxIdGenerator = () => {
     const buffer = Buffer.alloc(32);
     buffer.writeUInt32BE(counter, 0);
     buffer.writeUInt32BE(Date.now() % 0xffffffff, 4);
-    for (let i = 8; i < 32; i++) buffer[i] = Math.floor(Math.random() * 256);
+    randomBytes(24).copy(buffer, 8);
     return Array.from(buffer);
   };
 };
@@ -54,7 +54,7 @@ export const makeTxIdGenerator = () => {
 /** Generate a random 20-byte EVM-style sender address (never all-zeros) */
 export const generateSender = (): number[] => {
   const buffer = Buffer.alloc(20);
-  for (let i = 0; i < 20; i++) buffer[i] = Math.floor(Math.random() * 256);
+  randomBytes(20).copy(buffer);
   if (buffer.every((b) => b === 0)) buffer[0] = 1;
   return Array.from(buffer);
 };
