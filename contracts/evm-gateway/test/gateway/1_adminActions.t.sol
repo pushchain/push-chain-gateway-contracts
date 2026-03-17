@@ -26,31 +26,31 @@ contract GatewayAdminSettersTest is BaseTest {
         super.setUp();
     }
 
-    function testPauseOnlyAdmin() public {
-        // Non-admin should not be able to pause
+    function testPauseOnlyPauser() public {
+        // Non-pauser should not be able to pause
         vm.prank(user1);
         vm.expectRevert();
         gateway.pause();
 
-        // Admin should be able to pause
-        vm.prank(admin);
+        // Pauser should be able to pause
+        vm.prank(pauser);
         gateway.pause();
         assertTrue(gateway.paused());
     }
 
-    function testUnpauseOnlyAdmin() public {
+    function testUnpauseOnlyPauser() public {
         // First pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         assertTrue(gateway.paused());
 
-        // Non-admin should not be able to unpause
+        // Non-pauser should not be able to unpause
         vm.prank(user1);
         vm.expectRevert();
         gateway.unpause();
 
-        // Admin should be able to unpause
-        vm.prank(admin);
+        // Pauser should be able to unpause
+        vm.prank(pauser);
         gateway.unpause();
         assertFalse(gateway.paused());
     }
@@ -59,12 +59,12 @@ contract GatewayAdminSettersTest is BaseTest {
         assertFalse(gateway.paused());
 
         // Pause
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         assertTrue(gateway.paused());
 
         // Unpause
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.unpause();
         assertFalse(gateway.paused());
     }
@@ -106,7 +106,7 @@ contract GatewayAdminSettersTest is BaseTest {
 
     function testSetTSSAddressWhenPaused() public {
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Admin functions like setTSS should work even when paused
@@ -152,7 +152,7 @@ contract GatewayAdminSettersTest is BaseTest {
 
     function testSetCapsUSDWhenPaused() public {
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Should not be able to set caps when paused
@@ -205,7 +205,7 @@ contract GatewayAdminSettersTest is BaseTest {
 
     function testSetRoutersWhenPaused() public {
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Should not be able to set routers when paused
@@ -300,7 +300,7 @@ contract GatewayAdminSettersTest is BaseTest {
     }
 
     function testSetDefaultSwapDeadlineWhenPaused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         vm.prank(admin);
         vm.expectRevert();
@@ -325,7 +325,7 @@ contract GatewayAdminSettersTest is BaseTest {
     }
 
     function testSetV3FeeOrderWhenPaused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         vm.prank(admin);
         vm.expectRevert();
@@ -361,7 +361,7 @@ contract GatewayAdminSettersTest is BaseTest {
     }
 
     function testSetEthUsdFeedWhenPaused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         MockAggregatorV3 newFeed = new MockAggregatorV3(8);
         vm.prank(admin);
@@ -382,7 +382,7 @@ contract GatewayAdminSettersTest is BaseTest {
     }
 
     function testSetChainlinkStalePeriodWhenPaused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         vm.prank(admin);
         vm.expectRevert();
@@ -409,7 +409,7 @@ contract GatewayAdminSettersTest is BaseTest {
     }
 
     function testSetL2SequencerFeedWhenPaused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         MockSequencerUptimeFeed seq = new MockSequencerUptimeFeed();
         vm.prank(admin);
@@ -430,7 +430,7 @@ contract GatewayAdminSettersTest is BaseTest {
     }
 
     function testSetL2SequencerGracePeriodWhenPaused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
         vm.prank(admin);
         vm.expectRevert();
@@ -460,7 +460,7 @@ contract GatewayAdminSettersTest is BaseTest {
     // =========================
     function testPauseBlocksAllStateChangingFunctions() public {
         // Pause first
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Admin setters should be blocked when paused
@@ -508,10 +508,6 @@ contract GatewayAdminSettersTest is BaseTest {
         address newVault = address(0x999);
         address oldVault = gateway.VAULT();
 
-        // Must be paused to update vault
-        vm.prank(admin);
-        gateway.pause();
-
         // Expect VaultUpdated event
         vm.expectEmit(true, true, true, true);
         emit IUniversalGateway.VaultUpdated(oldVault, newVault);
@@ -527,10 +523,6 @@ contract GatewayAdminSettersTest is BaseTest {
     function testUpdateVaultOnlyAdmin() public {
         address newVault = address(0x999);
 
-        // Pause first
-        vm.prank(admin);
-        gateway.pause();
-
         // Non-admin should not be able to update vault
         vm.prank(user1);
         vm.expectRevert();
@@ -542,28 +534,7 @@ contract GatewayAdminSettersTest is BaseTest {
         assertEq(gateway.VAULT(), newVault);
     }
 
-    function testUpdateVaultRequiresPaused() public {
-        address newVault = address(0x999);
-
-        // Should revert when not paused (whenPaused modifier checks for paused state)
-        vm.prank(admin);
-        vm.expectRevert("ExpectedPause()");
-        gateway.setVault(newVault);
-
-        // Should work when paused
-        vm.prank(admin);
-        gateway.pause();
-
-        vm.prank(admin);
-        gateway.setVault(newVault);
-        assertEq(gateway.VAULT(), newVault);
-    }
-
     function testUpdateVaultZeroAddressReverts() public {
-        // Pause first
-        vm.prank(admin);
-        gateway.pause();
-
         vm.prank(admin);
         vm.expectRevert(Errors.ZeroAddress.selector);
         gateway.setVault(address(0));
@@ -573,10 +544,6 @@ contract GatewayAdminSettersTest is BaseTest {
         address newVault1 = address(0x888);
         address newVault2 = address(0x999);
         address oldVault = gateway.VAULT();
-
-        // Pause first
-        vm.prank(admin);
-        gateway.pause();
 
         // First update
         vm.prank(admin);
@@ -628,7 +595,7 @@ contract GatewayAdminSettersTest is BaseTest {
         uint256 newDuration = 12 hours;
 
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Should revert when paused (whenNotPaused modifier)

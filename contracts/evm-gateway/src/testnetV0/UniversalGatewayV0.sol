@@ -197,12 +197,6 @@ contract UniversalGatewayV0 is
         USDT = _usdtAddress;
     }
 
-    /// @dev Only TSS can call guarded functions
-    modifier onlyTSS() {
-        if (!hasRole(TSS_ROLE, _msgSender())) revert Errors.Unauthorized();
-        _;
-    }
-
     function version() external pure returns (string memory) {
         return "2.0.0";
     }
@@ -389,17 +383,17 @@ contract UniversalGatewayV0 is
     ///                        req.recipient MUST equal the CEA's mapped UEA (anti-spoof).
     /// @param req             UniversalTxRequest struct
     function sendUniversalTxFromCEA(UniversalTxRequest calldata req) external payable nonReentrant whenNotPaused {
-        address ceaFactory = CEA_FACTORY;
-        if (ceaFactory == address(0)) revert Errors.InvalidInput();
-        if (!ICEAFactory(ceaFactory).isCEA(msg.sender)) revert Errors.Unauthorized();
+        if (CEA_FACTORY == address(0)) revert Errors.InvalidInput();
+        if (!_isCallerCEA()) revert Errors.InvalidInput();
 
-        // Resolve the UEA mapped to this CEA and enforce anti-spoof
-        address mappedUEA = ICEAFactory(ceaFactory).getPushAccountForCEA(msg.sender);
-        if (req.recipient != mappedUEA) revert Errors.InvalidInput();
+        address mappedUEA = ICEAFactory(CEA_FACTORY).getPushAccountForCEA(_msgSender());
+        if (mappedUEA == address(0)) revert Errors.InvalidInput();
+
+        if (req.recipient != mappedUEA) revert Errors.InvalidRecipient();
 
         uint256 nativeValue = msg.value;
         TX_TYPE txType = _fetchTxType(req, nativeValue);
-        _routeUniversalTx(req, msg.sender, nativeValue, txType, true);
+        _routeUniversalTx(req, _msgSender(), nativeValue, txType, true);
     }
 
     // =========================
@@ -511,6 +505,10 @@ contract UniversalGatewayV0 is
         //            -> _sendTxWithFunds is used to send bridgeAmount
         if (txType == TX_TYPE.FUNDS_AND_PAYLOAD) {
             address tokenForFundsAndPayload;
+            // When fromCEA, the gas leg must emit recipient=req.recipient (mapped UEA) so Push Chain
+            // routes the gas to the correct UEA instead of deploying a new one for the CEA address.
+            // address(0) recipient: Push Chain attributes funds to the sender's UEA
+            address gasRecipient = fromCEA ? _req.recipient : address(0);
             // Case 2.1: No Batching ( nativeValue == 0 ): user already has UEA with PC token ( gas ) on Push to execute payloads
             if (nativeValue == 0) {
                 if (_req.token == address(0)) revert Errors.InvalidAmount();
@@ -522,7 +520,6 @@ contract UniversalGatewayV0 is
                 if (nativeValue < _req.amount) revert Errors.InvalidAmount();
 
                 uint256 gasAmount = nativeValue - _req.amount;
-                address gasRecipient = fromCEA ? _req.recipient : address(0);
 
                 if (gasAmount > 0) {
                     _sendTxWithGas(
@@ -541,7 +538,6 @@ contract UniversalGatewayV0 is
             // Case 2.3: Batching of Gas + Funds_and_Payload (nativeValue > 0): with token != native_token
             else if (_req.token != address(0)) {
                 uint256 gasAmount = nativeValue;
-                address gasRecipient = fromCEA ? _req.recipient : address(0);
                 // Send Gas to caller's UEA via instant route
                 _sendTxWithGas(
                     TX_TYPE.GAS,
@@ -559,9 +555,12 @@ contract UniversalGatewayV0 is
 
             //_consumeRateLimit(tokenForFundsAndPayload, _req.amount);
             _handleDeposits(tokenForFundsAndPayload, _req.amount);
+
+            // fromCEA: emit req.recipient (mapped UEA); normal: address(0) → Push Chain attributes to sender's UEA
+            address fundsAndPayloadRecipient = fromCEA ? _req.recipient : address(0);
             _emitUniversalTx(
                 _msgSender(),
-                _req.recipient,
+                fundsAndPayloadRecipient,
                 tokenForFundsAndPayload,
                 _req.amount,
                 _req.payload,
@@ -611,56 +610,54 @@ contract UniversalGatewayV0 is
     //  UG_3: REVERT HANDLING PATHS
     // =========================
 
-    //
-    function revertUniversalTxToken(
+    /// @inheritdoc IUniversalGatewayV0
+    function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
-        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+    ) external payable nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        _validateRevertParams(subTxId, amount, token, revertInstruction.revertRecipient);
 
-        isExecuted[subTxId] = true;
-        IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
+        if (token == address(0)) {
+            (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
+            if (!ok) revert Errors.WithdrawFailed();
+        } else {
+            IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
+        }
 
         emit RevertUniversalTx(
-            subTxId,
-            universalTxId,
-            revertInstruction.revertRecipient,
-            token,
-            amount,
-            RevertInstructions({
-                revertRecipient: revertInstruction.revertRecipient, revertMsg: revertInstruction.revertMsg
-            })
+            subTxId, universalTxId, revertInstruction.revertRecipient, token, amount, revertInstruction
         );
     }
 
-    function revertUniversalTx(
+    /// @inheritdoc IUniversalGatewayV0
+    function rescueFunds(
         bytes32 subTxId,
         bytes32 universalTxId,
+        address token,
         uint256 amount,
         RevertInstructions calldata revertInstruction
-    ) external payable nonReentrant whenNotPaused onlyTSS {
-        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+    ) external payable nonReentrant whenNotPaused onlyRole(VAULT_ROLE) {
+        _validateRevertParams(subTxId, amount, token, revertInstruction.revertRecipient);
 
-        if (revertInstruction.revertRecipient == address(0)) revert Errors.InvalidRecipient();
-        if (amount == 0 || msg.value != amount) revert Errors.InvalidAmount();
+        if (token == address(0)) {
+            (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
+            if (!ok) revert Errors.WithdrawFailed();
+        } else {
+            IERC20(token).safeTransfer(revertInstruction.revertRecipient, amount);
+        }
+
+        emit FundsRescued(subTxId, universalTxId, token, amount, revertInstruction);
+    }
+
+    function _validateRevertParams(bytes32 subTxId, uint256 amount, address token, address revertRecipient) private {
+        if (isExecuted[subTxId]) revert Errors.PayloadExecuted();
+        if (revertRecipient == address(0)) revert Errors.InvalidRecipient();
+        if (amount == 0 || (token == address(0) && msg.value != amount)) revert Errors.InvalidAmount();
 
         isExecuted[subTxId] = true;
-        (bool ok,) = payable(revertInstruction.revertRecipient).call{ value: amount }("");
-        if (!ok) revert Errors.WithdrawFailed();
-
-        emit RevertUniversalTx(
-            subTxId,
-            universalTxId,
-            revertInstruction.revertRecipient,
-            address(0),
-            amount,
-            RevertInstructions({
-                revertRecipient: revertInstruction.revertRecipient, revertMsg: revertInstruction.revertMsg
-            })
-        );
     }
 
     // =========================
@@ -1036,7 +1033,7 @@ contract UniversalGatewayV0 is
     /// @param nativeValue      Raw native value received with the transaction
     /// @return adjustedNative  nativeValue minus the collected fee
     /// @return feeCollected    Amount forwarded to TSS as the protocol fee
-    function _collectProtocolFee(uint256 nativeValue) private returns (uint256 adjustedNative, uint256 feeCollected) {
+    function _collectInboundFee(uint256 nativeValue) private returns (uint256 adjustedNative, uint256 feeCollected) {
         uint256 fee = INBOUND_FEE;
         if (fee == 0) return (nativeValue, 0);
 
@@ -1070,7 +1067,7 @@ contract UniversalGatewayV0 is
         // Skip protocol fee for CEA path — fees already paid on Push Chain
         if (!fromCEA) {
             uint256 feeCollected;
-            (nativeValue, feeCollected) = _collectProtocolFee(nativeValue);
+            (nativeValue, feeCollected) = _collectInboundFee(nativeValue);
             totalProtocolFeesCollected += feeCollected;
         }
 

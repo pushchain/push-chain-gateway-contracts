@@ -34,7 +34,7 @@ contract Vault_InvariantsFuzz is Test {
         UniversalGateway gatewayImpl = new UniversalGateway();
         bytes memory gatewayInit = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin, tss,
+            admin, pauser, tss,
             address(1), // vault placeholder
             1e18, 10e18,
             address(0), address(0), weth
@@ -54,11 +54,7 @@ contract Vault_InvariantsFuzz is Test {
 
         // Point gateway at real vault and register it with VAULT_ROLE
         vm.prank(admin);
-        gateway.pause();
-        vm.prank(admin);
         gateway.setVault(address(vault));
-        vm.prank(admin);
-        gateway.unpause();
 
         // Deploy token and register it in gateway
         mockToken = new MockERC20("Mock", "MCK", 18, 0);
