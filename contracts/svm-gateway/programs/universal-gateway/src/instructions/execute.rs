@@ -175,6 +175,7 @@ pub fn finalize_universal_tx(
     emit!(UniversalTxFinalized {
         sub_tx_id,
         universal_tx_id,
+        gas_fee,
         push_account,
         target: request.target,
         token: request.token,

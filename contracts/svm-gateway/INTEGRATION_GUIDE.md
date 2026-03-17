@@ -550,7 +550,7 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - Emits `UniversalTx` with `from_cea: true` and `UniversalTxFinalized`
 - Semantic split:
   - `UniversalTx.amount` / `UniversalTx.payload` come from inner decoded args
-  - `UniversalTxFinalized.amount` / `UniversalTxFinalized.payload` come from outer finalize args (`amount`, full `ix_data`)
+  - `UniversalTxFinalized.amount` / `UniversalTxFinalized.gasFee` / `UniversalTxFinalized.payload` come from outer finalize args (`amount`, `gas_fee`, full `ix_data`)
 
 ### 4.5 Revert Universal Transaction (Unified SOL/SPL)
 
@@ -704,10 +704,10 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 ### 7.7 Event Verification
 
 1. After transaction confirmation, listen for Solana events:
-   - **Normal execute/withdraw:** `UniversalTxFinalized` — field order: `sub_tx_id`, `universal_tx_id`, `push_account`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
+   - **Normal execute/withdraw:** `UniversalTxFinalized` — field order: `sub_tx_id`, `universal_tx_id`, `gas_fee`, `push_account`, `target`, `token`, `amount`, `payload`. For withdraw, `target` = recipient, `payload` = empty.
    - **CEA self-withdraw (target == gateway):** emits both `UniversalTx` (`from_cea: true`) and `UniversalTxFinalized`
      - `UniversalTx.amount`/`payload` = inner decoded `send_universal_tx_to_uea` args
-     - `UniversalTxFinalized.amount`/`payload` = outer `finalize_universal_tx` args
+     - `UniversalTxFinalized.amount`/`gasFee`/`payload` = outer `finalize_universal_tx` args
    - **Revert:** `RevertUniversalTx` — field order: `sub_tx_id`, `universal_tx_id`, `revert_recipient`, `token`, `amount`, `revert_instruction`
 2. Verify event fields match your transaction
 3. Mark transaction as completed
@@ -814,7 +814,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
      - Remaining: decoded accounts from payload (same order, same isWritable flags)
 9. **Submit**: Sign with UV keypair, send to Solana
 10. **Verify**: Wait for event:
-   - Normal execute: `UniversalTxFinalized` (includes sub_tx_id, universal_tx_id, push_account, target, token, amount, payload)
+   - Normal execute: `UniversalTxFinalized` (includes sub_tx_id, universal_tx_id, gas_fee, push_account, target, token, amount, payload)
    - CEA self-withdraw (destinationProgram == gateway): both `UniversalTx` (`from_cea: true`) and `UniversalTxFinalized`
 
 ### Withdraw Flow (instruction_id=1):
