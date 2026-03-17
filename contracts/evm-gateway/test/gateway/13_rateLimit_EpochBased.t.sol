@@ -931,7 +931,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
 
     function testSetTokenLimitThresholdsWhenPaused() public {
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Setup token thresholds
@@ -954,7 +954,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Unpause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.unpause();
     }
 
@@ -970,7 +970,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Update threshold
@@ -991,7 +991,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Unpause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.unpause();
     }
 
@@ -1001,7 +1001,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         uint256 newDuration = oldDuration * 2;
 
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Admin should be able to update epoch duration while paused
@@ -1017,7 +1017,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.updateEpochDuration(oldDuration);
 
         // Unpause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.unpause();
     }
 
@@ -1033,7 +1033,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.setTokenLimitThresholds(tokens, thresholds);
 
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Try to send funds while paused
@@ -1049,7 +1049,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.stopPrank();
 
         // Unpause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.unpause();
 
         // Now sending funds should work

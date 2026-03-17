@@ -145,6 +145,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin, // admin
+            pauser, // pauser
             tss, // tss
             address(this), // vault address
             MIN_CAP_USD,
@@ -342,7 +343,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
 
     /// @notice Test revert when contract is paused
     function test_TokenGas_RevertOn_Paused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gatewayFork.pause();
 
         fundUserWithMainnetTokens(user1, MAINNET_USDC, 1000e6);
@@ -367,6 +368,7 @@ contract GatewaySendUniversalTxTokenGasForkTest is BaseTest {
         bytes memory initData2 = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(this),
             MIN_CAP_USD,

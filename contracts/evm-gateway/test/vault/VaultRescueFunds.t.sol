@@ -76,6 +76,7 @@ contract VaultRescueFundsTest is Test {
         bytes memory gatewayInitData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(vault),
             1e18,

@@ -244,7 +244,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         bytes32 subTxId = bytes32(uint256(14));
         bytes32 universalTxId = bytes32(uint256(1014));
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         vm.deal(address(this), 1 ether);
@@ -258,7 +258,7 @@ contract GatewayTSSFunctionsTest is BaseTest {
         bytes32 subTxId = bytes32(uint256(15));
         bytes32 universalTxId = bytes32(uint256(1015));
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         RevertInstructions memory revertCfg = revertCfg(user1);

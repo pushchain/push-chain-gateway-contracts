@@ -401,6 +401,7 @@ contract OracleTest is BaseTest {
         vm.prank(admin);
         newGateway.initialize(
             admin,
+            pauser,
             tss,
             address(this), // vault address
             1e18, // minCapUsd

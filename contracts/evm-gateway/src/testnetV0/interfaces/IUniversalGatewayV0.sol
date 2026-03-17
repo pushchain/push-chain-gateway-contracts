@@ -72,6 +72,15 @@ interface IUniversalGatewayV0 {
         RevertInstructions revertInstruction
     );
 
+    /// @notice Emitted when funds are rescued from source chain
+    event FundsRescued(
+        bytes32 subTxId,
+        bytes32 indexed universalTxId,
+        address indexed token,
+        uint256 amount,
+        RevertInstructions revertInstruction
+    );
+
     /// @notice Emitted when the Vault address is updated
     event VaultUpdated(address indexed oldVault, address indexed newVault);
 
@@ -151,26 +160,30 @@ interface IUniversalGatewayV0 {
     //  UG_2: REVERT HANDLING PATHS
     // =========================
 
-    /// @notice             Revert universal transaction with tokens to the recipient specified in revertInstruction
-    /// @param subTxId         unique transaction identifier (for replay protection)
-    /// @param token        token address to revert
-    /// @param amount       amount of token to revert
+    /// @notice             Revert universal transaction (native or ERC20) to the recipient specified in revertInstruction
+    /// @param subTxId      unique transaction identifier (for replay protection)
+    /// @param universalTxId universal transaction identifier
+    /// @param token        token address (address(0) for native)
+    /// @param amount       amount to revert
     /// @param revertCFG    revert settings
-    function revertUniversalTxToken(
+    function revertUniversalTx(
         bytes32 subTxId,
         bytes32 universalTxId,
         address token,
         uint256 amount,
         RevertInstructions calldata revertCFG
-    ) external;
+    ) external payable;
 
-    /// @notice             Revert native tokens to the recipient specified in revertInstruction
-    /// @param subTxId         unique transaction identifier (for replay protection)
-    /// @param amount       amount of native token to revert
+    /// @notice             Rescue funds locked in source chain Vault
+    /// @param subTxId      unique transaction identifier (for replay protection)
+    /// @param universalTxId universal transaction identifier
+    /// @param token        token address (address(0) for native)
+    /// @param amount       amount to rescue
     /// @param revertCFG    revert settings
-    function revertUniversalTx(
+    function rescueFunds(
         bytes32 subTxId,
         bytes32 universalTxId,
+        address token,
         uint256 amount,
         RevertInstructions calldata revertCFG
     ) external payable;
