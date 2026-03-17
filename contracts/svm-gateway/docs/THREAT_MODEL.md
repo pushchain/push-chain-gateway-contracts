@@ -23,7 +23,7 @@ Universal Validators (UVs) submit transactions, but outbound-critical values are
 - UV/TSS off-chain infrastructure
 - Solana/SPL/System/ATA runtime internals
 
-**Reviewed at commit:** `8808979e99abd59a42800c727dc5ea51eff63aaf`
+**Commit/version reference:** *(insert commit hash at time of audit)*
 
 ---
 
@@ -91,8 +91,8 @@ Universal Validators (UVs) submit transactions, but outbound-critical values are
 
 6. **Oracle account substitution / staleness**  
    Risk: bad price used for inbound gas-route caps.  
-   Control: `price_update.key() == config.pyth_price_feed` + feed-id check + positive price.  
-   Residual: staleness/confidence checks are not yet enforced in pricing path.
+   Control: `price_update.key() == config.pyth_price_feed` + feed-id check + positive price + staleness check (`get_price_no_older_than`) + confidence threshold (`config.pyth_confidence_threshold`).  
+   Residual: max-age is a code constant and should be tuned per deployment policy.
 
 7. **Inbound SPL account spoofing**  
    Risk: user supplies fake source/destination token accounts.  
@@ -131,6 +131,6 @@ Universal Validators (UVs) submit transactions, but outbound-critical values are
 
 ## 6. Deferred / Non-Goals
 
-- Pyth staleness and confidence enforcement is deferred hardening (known TODO).
+- Pyth max-age is a fixed code constant, not an admin-set runtime parameter.
 - No user-driven timeout recovery path if off-chain relay never executes.
 - No automatic `FeeVault` replenishment; operational top-up is required.
