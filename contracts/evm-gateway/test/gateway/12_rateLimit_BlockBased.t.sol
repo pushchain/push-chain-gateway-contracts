@@ -443,7 +443,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Pause the contract
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         // Try to send tx while paused - should revert due to pause
@@ -452,7 +452,7 @@ contract GatewayBlockRateLimitTest is BaseTest {
         gateway.sendUniversalTx{ value: ETH_FOR_5_USD }(_buildGasTxRequest());
 
         // Unpause
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.unpause();
 
         // Should be able to use remaining $5 of cap

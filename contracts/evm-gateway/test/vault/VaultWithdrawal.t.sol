@@ -86,6 +86,7 @@ contract VaultWithdrawalTest is Test {
         bytes memory gatewayInitData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(this), // vault address (temporary)
             1e18, // minCapUsd
@@ -112,11 +113,8 @@ contract VaultWithdrawalTest is Test {
         ceaFactory.setVault(address(vault));
 
         // Update gateway's VAULT_ROLE
-        vm.startPrank(admin);
-        gateway.pause();
+        vm.prank(admin);
         gateway.setVault(address(vault));
-        gateway.unpause();
-        vm.stopPrank();
 
         // Deploy tokens
         usdc = new MockERC20("USD Coin", "USDC", 6, 1_000_000e6);

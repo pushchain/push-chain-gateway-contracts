@@ -91,6 +91,7 @@ contract GatewaySendUniversalTxTest is BaseTest {
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(this), // vault address (same as BaseTest)
             MIN_CAP_USD,

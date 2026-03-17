@@ -399,6 +399,7 @@ contract OracleTest is BaseTest {
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(this), // vault address
             1e18, // minCapUsd

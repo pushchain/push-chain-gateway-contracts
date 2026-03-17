@@ -135,6 +135,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(this),
             MIN_CAP_USD,
@@ -262,7 +263,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
 
     /// @notice Test revert when contract is paused
     function test_TokenGas_RevertOn_Paused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gatewayTemp.pause();
 
         UniversalTokenTxRequest memory req = _buildMinimalTokenGasRequest(address(tokenA), 1 ether, 0.001 ether);
@@ -284,6 +285,7 @@ contract GatewaySendUniversalTxTokenGasTest is BaseTest {
         bytes memory initData2 = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(this),
             MIN_CAP_USD,

@@ -758,7 +758,7 @@ contract SendUniversalTxViaCEATest is BaseTest {
     // =====================================================
 
     function test_RevertWhen_Paused() public {
-        vm.prank(admin);
+        vm.prank(pauser);
         gateway.pause();
 
         UniversalTxRequest memory req = _buildViaCEARequest(address(tokenA), 100 ether, _defaultPayload());

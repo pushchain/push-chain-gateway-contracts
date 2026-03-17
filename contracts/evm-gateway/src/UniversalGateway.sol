@@ -98,6 +98,7 @@ contract UniversalGateway is
     }
 
     /// @param admin             DEFAULT_ADMIN_ROLE holder
+    /// @param pauser            PAUSER_ROLE holder
     /// @param tss               Initial TSS address
     /// @param vaultAddress      Vault contract address
     /// @param minCapUsd         Min USD cap (1e18 decimals)
@@ -107,6 +108,7 @@ contract UniversalGateway is
     /// @param wethAddress       WETH address
     function initialize(
         address admin,
+        address pauser,
         address tss,
         address vaultAddress,
         uint256 minCapUsd,
@@ -115,7 +117,10 @@ contract UniversalGateway is
         address router,
         address wethAddress
     ) external initializer {
-        if (admin == address(0) || tss == address(0) || vaultAddress == address(0) || wethAddress == address(0)) {
+        if (
+            admin == address(0) || pauser == address(0) || tss == address(0) || vaultAddress == address(0)
+                || wethAddress == address(0)
+        ) {
             revert Errors.ZeroAddress();
         }
 
@@ -125,7 +130,7 @@ contract UniversalGateway is
         __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE, admin);
+        _grantRole(PAUSER_ROLE, pauser);
         _grantRole(TSS_ROLE, tss);
         _grantRole(VAULT_ROLE, vaultAddress);
 
@@ -173,7 +178,7 @@ contract UniversalGateway is
 
     /// @notice                Allows the admin to set the Vault address
     /// @param newVault        New Vault address
-    function setVault(address newVault) external onlyRole(DEFAULT_ADMIN_ROLE) whenPaused {
+    function setVault(address newVault) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newVault == address(0)) revert Errors.ZeroAddress();
         address old = VAULT;
 
@@ -953,7 +958,7 @@ contract UniversalGateway is
     /// @param nativeValue      Raw native value received with the transaction
     /// @return adjustedNative  nativeValue minus the collected fee
     /// @return feeCollected    Amount forwarded to TSS as the protocol fee
-    function _collectProtocolFee(uint256 nativeValue) private returns (uint256 adjustedNative, uint256 feeCollected) {
+    function _collectInboundFee(uint256 nativeValue) private returns (uint256 adjustedNative, uint256 feeCollected) {
         uint256 fee = INBOUND_FEE;
         if (fee == 0) return (nativeValue, 0);
 
@@ -988,7 +993,7 @@ contract UniversalGateway is
         // Skip protocol fee for CEA path — fees already paid on Push Chain
         if (!fromCEA) {
             uint256 feeCollected;
-            (nativeValue, feeCollected) = _collectProtocolFee(nativeValue);
+            (nativeValue, feeCollected) = _collectInboundFee(nativeValue);
             totalProtocolFeesCollected += feeCollected;
         }
 

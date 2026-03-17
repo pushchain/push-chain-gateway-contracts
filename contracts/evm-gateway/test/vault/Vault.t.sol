@@ -75,6 +75,7 @@ contract VaultTest is Test {
         bytes memory gatewayInitData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
             admin,
+            pauser,
             tss,
             address(this), // vault address (will be set to actual vault after deployment)
             1e18, // minCapUsd
@@ -101,16 +102,8 @@ contract VaultTest is Test {
         ceaFactory.setVault(address(vault));
 
         // Update gateway's VAULT_ROLE to point to actual vault
-        vm.startPrank(admin);
-        gateway.pause();
-        vm.stopPrank();
-
         vm.prank(admin);
         gateway.setVault(address(vault));
-
-        vm.startPrank(admin);
-        gateway.unpause();
-        vm.stopPrank();
 
         // Deploy tokens
         token = new MockERC20("Test Token", "TST", 18, 1_000_000e18);
@@ -340,7 +333,7 @@ contract VaultTest is Test {
     function test_SetGateway_OnlyAdminCanSet() public {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
-            UniversalGateway.initialize.selector, admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            UniversalGateway.initialize.selector, admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -365,7 +358,7 @@ contract VaultTest is Test {
     function test_SetGateway_EmitsEvent() public {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
-            UniversalGateway.initialize.selector, admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            UniversalGateway.initialize.selector, admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -527,7 +520,7 @@ contract VaultTest is Test {
 
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
-            UniversalGateway.initialize.selector, admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            UniversalGateway.initialize.selector, admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -1736,7 +1729,7 @@ contract VaultTest is Test {
         // Switch to a new gateway and verify vault still routes calls through it
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
-            UniversalGateway.initialize.selector, admin, tss, address(vault), 1e18, 10e18, address(0), address(0), weth
+            UniversalGateway.initialize.selector, admin, pauser, tss, address(vault), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
@@ -1754,7 +1747,7 @@ contract VaultTest is Test {
     function test_Events_GatewayUpdated() public {
         UniversalGateway newGatewayImpl = new UniversalGateway();
         bytes memory initData = abi.encodeWithSelector(
-            UniversalGateway.initialize.selector, admin, tss, address(this), 1e18, 10e18, address(0), address(0), weth
+            UniversalGateway.initialize.selector, admin, pauser, tss, address(this), 1e18, 10e18, address(0), address(0), weth
         );
         ERC1967Proxy newProxy = new ERC1967Proxy(address(newGatewayImpl), initData);
         UniversalGateway newGateway = UniversalGateway(payable(address(newProxy)));
