@@ -92,6 +92,11 @@ contract UniversalGateway is
 
     uint256 public totalProtocolFeesCollected;
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     /// @param admin             DEFAULT_ADMIN_ROLE holder
     /// @param pauser            PAUSER_ROLE holder
     /// @param tss               Initial TSS address
@@ -234,7 +239,8 @@ contract UniversalGateway is
 
     /// @notice                Update the epoch duration (hard reset schedule)
     /// @param newDurationSec  New epoch duration in seconds
-    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateEpochDuration(uint256 newDurationSec) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+        if (newDurationSec == 0) revert Errors.InvalidInput();
         uint256 old = epochDurationSec;
         epochDurationSec = newDurationSec;
         emit EpochDurationUpdated(old, newDurationSec);

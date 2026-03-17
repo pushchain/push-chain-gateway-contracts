@@ -394,12 +394,10 @@ contract OracleTest is BaseTest {
     // =========================
 
     function testUniswapInitialization_ZeroAddresses_SkipsInitialization() public {
-        // Deploy a new gateway with zero addresses
-        UniversalGateway newGateway = new UniversalGateway();
-
-        // Initialize with zero addresses
-        vm.prank(admin);
-        newGateway.initialize(
+        // Deploy a new gateway via proxy with zero Uniswap addresses
+        UniversalGateway impl = new UniversalGateway();
+        bytes memory initData = abi.encodeWithSelector(
+            UniversalGateway.initialize.selector,
             admin,
             pauser,
             tss,
@@ -410,6 +408,9 @@ contract OracleTest is BaseTest {
             address(0), // router = address(0)
             address(gateway.WETH())
         );
+        TransparentUpgradeableProxy proxy =
+            new TransparentUpgradeableProxy(address(impl), admin, initData);
+        UniversalGateway newGateway = UniversalGateway(payable(address(proxy)));
 
         // Should not revert and should have zero addresses
         assertEq(address(newGateway.uniV3Factory()), address(0));

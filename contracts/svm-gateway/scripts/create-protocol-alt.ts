@@ -12,7 +12,7 @@ import idl from "../target/idl/universal_gateway.json";
 import fs from "fs";
 
 /**
- * Create Protocol Static ALT for withdraw_and_execute
+ * Create Protocol Static ALT for finalize_universal_tx
  *
  * This ALT contains accounts that NEVER change across ANY transaction:
  * - gateway_config
@@ -28,7 +28,7 @@ import fs from "fs";
 
 const PROGRAM_ID = new PublicKey(idl.address);
 const CONFIG_SEED = Buffer.from("config");
-const TSS_SEED = Buffer.from("tsspda");
+const TSS_SEED = Buffer.from("tsspda_v2");
 const VAULT_SEED = Buffer.from("vault");
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -36,10 +36,8 @@ const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xW
 const RENT_SYSVAR = new PublicKey("SysvarRent111111111111111111111111111111111");
 
 async function main() {
-  const connection = new Connection(
-    process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com",
-    "confirmed"
-  );
+  const rpcUrl = process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com";
+  const connection = new Connection(rpcUrl, "confirmed");
 
   const wallet = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(fs.readFileSync("./upgrade-keypair.json", "utf8")))
@@ -51,7 +49,7 @@ async function main() {
 
   const program = new Program(idl as any, provider) as Program<UniversalGateway>;
 
-  console.log("🔧 Creating Protocol Static ALT for withdraw_and_execute...\n");
+  console.log("🔧 Creating Protocol Static ALT for finalize_universal_tx...\n");
 
   // Derive PDAs
   const [configPda] = PublicKey.findProgramAddressSync(
@@ -161,7 +159,7 @@ async function main() {
   const altConfig = {
     protocolStaticALT: lookupTableAddress.toBase58(),
     accounts: staticAccounts.map(acc => acc.toBase58()),
-    network: process.env.ANCHOR_PROVIDER_URL?.includes("devnet") ? "devnet" : "mainnet",
+    network: rpcUrl.includes("devnet") ? "devnet" : "mainnet",
     createdAt: new Date().toISOString(),
   };
 
@@ -170,8 +168,8 @@ async function main() {
 
   console.log("💾 ALT config saved to:", outputPath);
   console.log();
-  console.log("🎉 Done! Use this ALT for ALL withdraw_and_execute transactions.");
-  console.log("   Savings: 128 bytes per transaction");
+  console.log("🎉 Done! Use this ALT for ALL finalize_universal_tx transactions.");
+  console.log("   Savings: 185 bytes per transaction (7×32 - ALT overhead of 32+7)");
 }
 
 main().catch(console.error);

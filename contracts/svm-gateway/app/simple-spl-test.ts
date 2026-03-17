@@ -10,13 +10,14 @@ import {
 } from "@solana/web3.js";
 import fs from "fs";
 import { Program } from "@coral-xyz/anchor";
-import type { Pushsolanagateway } from "../target/types/pushsolanagateway";
+import type { UniversalGateway } from "../target/types/universal_gateway";
 import * as spl from "@solana/spl-token";
 import { Command } from "commander";
 
 const PROGRAM_ID = new PublicKey("CFVSincHYbETh2k7w6u1ENEkjbSLtveRCEBupKidw2VS");
 const CONFIG_SEED = "config";
 const VAULT_SEED = "vault";
+const FEE_VAULT_SEED = "fee_vault";
 const RATE_LIMIT_CONFIG_SEED = "rate_limit_config";
 const RATE_LIMIT_SEED = "rate_limit";
 
@@ -40,9 +41,9 @@ const userProvider = new anchor.AnchorProvider(connection, new anchor.Wallet(use
 anchor.setProvider(adminProvider);
 
 // Load IDL
-const idl = JSON.parse(fs.readFileSync("./target/idl/pushsolanagateway.json", "utf8"));
-const program = new Program(idl as Pushsolanagateway, adminProvider);
-const userProgram = new Program(idl as Pushsolanagateway, userProvider);
+const idl = JSON.parse(fs.readFileSync("./target/idl/universal_gateway.json", "utf8"));
+const program = new Program(idl as UniversalGateway, adminProvider);
+const userProgram = new Program(idl as UniversalGateway, userProvider);
 
 // Helper function to load token info from file
 function loadTokenInfo(tokenSymbol: string): any {
@@ -68,6 +69,10 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
         [Buffer.from(VAULT_SEED)],
         PROGRAM_ID
     );
+    const [feeVaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(FEE_VAULT_SEED)],
+        PROGRAM_ID
+    );
     const [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
         [Buffer.from(RATE_LIMIT_CONFIG_SEED)],
         PROGRAM_ID
@@ -89,7 +94,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     // Get price feed from config (or use dummy if not set)
     let priceFeed: PublicKey;
     try {
-        const config = await program.account.config.fetch(configPda);
+        const config = await (program.account as any).config.fetch(configPda);
         priceFeed = config.pythPriceFeed;
     } catch {
         // If config doesn't exist or price feed not set, use a dummy
@@ -102,6 +107,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     console.log(`Mint: ${mint.toString()}`);
     console.log(`Config PDA: ${configPda.toString()}`);
     console.log(`Vault PDA: ${vaultPda.toString()}`);
+    console.log(`Fee Vault PDA: ${feeVaultPda.toString()}`);
 
     // Step 1: Get vault ATA
     console.log("1. Getting vault ATA...");
@@ -134,11 +140,6 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     const depositAmount = new anchor.BN(amount * Math.pow(10, decimals)); // Convert to proper units
     const recipient = Keypair.generate().publicKey;
 
-    const revertSettings = {
-        fundRecipient: user,
-        revertMsg: Buffer.from("test revert message"),
-    };
-
     // Get balances before
     const userTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, userTokenAccount.address)).amount;
     const vaultTokenBalanceBefore = (await spl.getAccount(userProvider.connection as any, vaultAta)).amount;
@@ -157,7 +158,7 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
         token: mint,
         amount: depositAmount,
         payload: Buffer.from([]), // Empty payload for FUNDS route
-        revertInstruction: revertSettings,
+        revertRecipient: user,
         signatureData: Buffer.from([]), // Empty for FUNDS route
     };
 
@@ -166,17 +167,17 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
 
     // Initialize token rate limit if needed (with very large threshold to effectively disable)
     try {
-        await program.account.tokenRateLimit.fetch(splTokenRateLimitPda);
+        await (program.account as any).tokenRateLimit.fetch(splTokenRateLimitPda);
     } catch {
         // Not initialized, create it
         const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // Effectively unlimited
         try {
             await program.methods
                 .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
+                .accountsPartial({
                     config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
                     tokenRateLimit: splTokenRateLimitPda,
+                    tokenMint: mint,
                     admin: admin,
                     systemProgram: SystemProgram.programId,
                 })
@@ -190,9 +191,10 @@ async function testDeposit(mintAddress: string, amount: number, tokenSymbol?: st
     // Perform the deposit using sendUniversalTx
     const depositTx = await userProgram.methods
         .sendUniversalTx(fundsReq, new anchor.BN(0)) // No native SOL for SPL funds
-        .accounts({
+        .accountsPartial({
             config: configPda,
             vault: vaultPda,
+            feeVault: feeVaultPda,
             user: user,
             userTokenAccount: userTokenAccount.address,
             gatewayTokenAccount: vaultAta,

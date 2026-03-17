@@ -1,18 +1,20 @@
 use crate::instructions::tss::validate_message;
+use crate::utils::{encode_u64_be, pda_spl_transfer, pda_system_transfer, reimburse_relayer_from_fee_vault};
 use crate::{errors::*, state::*};
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program_pack::Pack;
-use anchor_lang::solana_program::system_instruction;
-use anchor_spl::token::{self, spl_token, Mint, Token, TokenAccount, Transfer};
-use spl_token::state::Account as SplAccount;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 // =========================
-//   TSS REVERT WITHDRAW FUNCTIONS
+//   TSS REVERT FUNCTION
 // =========================
+// Single entrypoint handles both SOL (token_mint = None) and SPL (token_mint = Some).
+//
+// TSS message format (instruction_id = 3 for both modes):
+//   SOL: amount || [sub_tx_id, universal_tx_id, recipient, gas_fee]
+//   SPL: amount || [sub_tx_id, universal_tx_id, mint, recipient, gas_fee]
 
-/// Revert withdraw for SOL (TSS-verified)
 #[derive(Accounts)]
-#[instruction(tx_id: [u8; 32])]
+#[instruction(sub_tx_id: [u8; 32])]
 pub struct RevertUniversalTx<'info> {
     #[account(
         seeds = [CONFIG_SEED],
@@ -21,41 +23,56 @@ pub struct RevertUniversalTx<'info> {
     )]
     pub config: Account<'info, Config>,
 
-    /// CHECK: SOL-only PDA, no data
+    /// CHECK: SOL vault PDA — holds bridged SOL and serves as authority for SPL vault ATAs.
     #[account(mut, seeds = [VAULT_SEED], bump = config.vault_bump)]
     pub vault: UncheckedAccount<'info>,
 
-    #[account(
-        mut,
-        seeds = [TSS_SEED],
-        bump = tss_pda.bump,
-    )]
+    /// Fee vault — relayer gas reimbursement source.
+    #[account(mut, seeds = [FEE_VAULT_SEED], bump = fee_vault.bump)]
+    pub fee_vault: Account<'info, FeeVault>,
+
+    #[account(mut, seeds = [TSS_SEED], bump = tss_pda.bump)]
     pub tss_pda: Account<'info, TssPda>,
 
-    /// CHECK: Recipient address
+    /// CHECK: Recipient wallet — SOL goes here directly; for SPL, validated against
+    /// recipient_token_account.owner and used as canonical identity in TSS message.
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
 
-    /// Executed transaction tracker (EVM parity: isExecuted[txID])
+    /// Replay protection (EVM parity: isExecuted[subTxId]).
     #[account(
         init,
         payer = caller,
-        space = ExecutedTx::LEN,
-        seeds = [EXECUTED_TX_SEED, &tx_id],
+        space = ExecutedSubTx::LEN,
+        seeds = [EXECUTED_SUB_TX_SEED, &sub_tx_id],
         bump
     )]
-    pub executed_tx: Account<'info, ExecutedTx>,
+    pub executed_sub_tx: Account<'info, ExecutedSubTx>,
 
-    /// The caller/relayer who pays for the transaction (including executed_tx account creation)
+    /// The caller/relayer — pays transaction fees, receives gas_fee reimbursement.
     #[account(mut)]
     pub caller: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+
+    // --- Optional SPL accounts (all None for SOL, all Some for SPL) ---
+
+    /// Vault ATA for this mint — holds bridged SPL tokens.
+    #[account(mut)]
+    pub token_vault: Option<Account<'info, TokenAccount>>,
+
+    /// Recipient token account — must be owned by recipient and match token_mint.
+    #[account(mut)]
+    pub recipient_token_account: Option<Account<'info, TokenAccount>>,
+
+    pub token_mint: Option<Account<'info, Mint>>,
+
+    pub token_program: Option<Program<'info, Token>>,
 }
 
 pub fn revert_universal_tx(
     ctx: Context<RevertUniversalTx>,
-    tx_id: [u8; 32],
+    sub_tx_id: [u8; 32],
     universal_tx_id: [u8; 32],
     amount: u64,
     revert_instruction: RevertInstructions,
@@ -63,225 +80,79 @@ pub fn revert_universal_tx(
     signature: [u8; 64],
     recovery_id: u8,
     message_hash: [u8; 32],
-    nonce: u64,
 ) -> Result<()> {
     require!(amount > 0, GatewayError::InvalidAmount);
-    require!(
-        revert_instruction.fund_recipient != Pubkey::default(),
-        GatewayError::InvalidRecipient
-    );
-    require!(
-        ctx.accounts.recipient.key() == revert_instruction.fund_recipient,
-        GatewayError::InvalidRecipient
-    );
 
-    let instruction_id: u8 = 3;
-    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
-    let mut gas_fee_buf = [0u8; 8];
-    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    let additional: [&[u8]; 4] = [
-        &universal_tx_id[..],
-        &tx_id[..],
-        &recipient_bytes[..],
-        &gas_fee_buf,
-    ];
-    validate_message(
-        &mut ctx.accounts.tss_pda,
-        instruction_id,
-        nonce,
-        Some(amount),
-        &additional,
-        &message_hash,
-        &signature,
-        recovery_id,
-    )?;
+    let recipient = ctx.accounts.recipient.key();
+    require!(revert_instruction.revert_recipient != Pubkey::default(), GatewayError::InvalidRecipient);
+    require!(recipient == revert_instruction.revert_recipient, GatewayError::InvalidRecipient);
+
+    let is_native = ctx.accounts.token_mint.is_none();
+
+    // --- Account presence + cross-account consistency ---
+    if is_native {
+        require!(
+            ctx.accounts.token_vault.is_none()
+                && ctx.accounts.recipient_token_account.is_none()
+                && ctx.accounts.token_program.is_none(),
+            GatewayError::InvalidAccount
+        );
+    } else {
+        let token_vault = ctx.accounts.token_vault.as_ref().ok_or(error!(GatewayError::InvalidAccount))?;
+        let recipient_ta = ctx.accounts.recipient_token_account.as_ref().ok_or(error!(GatewayError::InvalidAccount))?;
+        let mint_key = ctx.accounts.token_mint.as_ref().unwrap().key(); // Safe: !is_native ⟹ token_mint.is_some()
+        require!(token_vault.mint == mint_key, GatewayError::InvalidMint);
+        require!(token_vault.owner == ctx.accounts.vault.key(), GatewayError::InvalidAccount);
+        require!(recipient_ta.mint == mint_key, GatewayError::InvalidMint);
+        require!(recipient_ta.owner == recipient, GatewayError::InvalidRecipient);
+    }
+
+    // TSS message: instruction_id=3 || amount || [sub_tx_id, universal_tx_id, (mint,) recipient, gas_fee]
+    let recipient_bytes = recipient.to_bytes();
+    let gas_fee_buf = encode_u64_be(gas_fee);
+    if is_native {
+        let additional: [&[u8]; 4] = [&sub_tx_id, &universal_tx_id, &recipient_bytes, &gas_fee_buf];
+        validate_message(&mut ctx.accounts.tss_pda, 3, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
+    } else {
+        let mint_bytes = ctx.accounts.token_mint.as_ref().unwrap().key().to_bytes();
+        let additional: [&[u8]; 5] = [&sub_tx_id, &universal_tx_id, &mint_bytes, &recipient_bytes, &gas_fee_buf];
+        validate_message(&mut ctx.accounts.tss_pda, 3, Some(amount), &additional, &message_hash, &signature, recovery_id)?;
+    }
 
     let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-    anchor_lang::solana_program::program::invoke_signed(
-        &system_instruction::transfer(
-            &ctx.accounts.vault.key(),
-            &revert_instruction.fund_recipient,
+
+    if is_native {
+        pda_system_transfer(
+            &ctx.accounts.vault.to_account_info(),
+            &ctx.accounts.recipient.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
             amount,
-        ),
-        &[
-            ctx.accounts.vault.to_account_info(),
-            ctx.accounts.recipient.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        &[seeds],
-    )?;
+            seeds,
+        )?;
+    } else {
+        pda_spl_transfer(
+            &ctx.accounts.token_vault.as_ref().unwrap().to_account_info(),
+            &ctx.accounts.recipient_token_account.as_ref().unwrap().to_account_info(),
+            &ctx.accounts.vault.to_account_info(),
+            amount,
+            seeds,
+        )?;
+    }
 
     emit!(crate::state::RevertUniversalTx {
+        sub_tx_id,
         universal_tx_id,
-        tx_id,
-        fund_recipient: revert_instruction.fund_recipient,
-        token: Pubkey::default(),
+        revert_recipient: revert_instruction.revert_recipient,
+        token: ctx.accounts.token_mint.as_ref().map_or(Pubkey::default(), |m| m.key()),
         amount,
         revert_instruction: revert_instruction.clone(),
     });
 
-    // Transfer gas fee to caller (relayer reimbursement)
-    crate::utils::transfer_gas_fee_to_caller(
-        &ctx.accounts.vault.to_account_info(),
+    reimburse_relayer_from_fee_vault(
+        &ctx.accounts.fee_vault,
         &ctx.accounts.caller.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
+        sub_tx_id,
         gas_fee,
-        ctx.accounts.config.vault_bump,
-    )?;
-
-    Ok(())
-}
-
-/// Revert withdraw for SPL tokens (TSS-verified)
-#[derive(Accounts)]
-#[instruction(tx_id: [u8; 32])]
-pub struct RevertUniversalTxToken<'info> {
-    #[account(
-        seeds = [CONFIG_SEED],
-        bump = config.bump,
-        constraint = !config.paused @ GatewayError::Paused,
-    )]
-    pub config: Account<'info, Config>,
-
-    /// CHECK: SOL-only PDA, no data
-    #[account(mut, seeds = [VAULT_SEED], bump = config.vault_bump)]
-    pub vault: UncheckedAccount<'info>,
-
-    /// CHECK: Vault token account - validated at runtime (owner == vault, mint == token_mint)
-    #[account(mut)]
-    pub token_vault: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [TSS_SEED],
-        bump = tss_pda.bump,
-    )]
-    pub tss_pda: Account<'info, TssPda>,
-
-    /// Recipient token account (ATA for fund_recipient + token_mint)
-    #[account(mut)]
-    pub recipient_token_account: Account<'info, TokenAccount>,
-
-    pub token_mint: Account<'info, Mint>,
-
-    /// Executed transaction tracker (EVM parity: isExecuted[txID])
-    #[account(
-        init,
-        payer = caller,
-        space = ExecutedTx::LEN,
-        seeds = [EXECUTED_TX_SEED, &tx_id],
-        bump
-    )]
-    pub executed_tx: Account<'info, ExecutedTx>,
-
-    /// The caller/relayer who pays for the transaction (including executed_tx account creation)
-    #[account(mut)]
-    pub caller: Signer<'info>,
-
-    /// Vault SOL PDA (needed for gas_fee transfer to caller)
-    #[account(
-        mut,
-        seeds = [VAULT_SEED],
-        bump = config.vault_bump,
-    )]
-    pub vault_sol: SystemAccount<'info>,
-
-    pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
-}
-
-pub fn revert_universal_tx_token(
-    ctx: Context<RevertUniversalTxToken>,
-    tx_id: [u8; 32],
-    universal_tx_id: [u8; 32],
-    amount: u64,
-    revert_instruction: RevertInstructions,
-    gas_fee: u64,
-    signature: [u8; 64],
-    recovery_id: u8,
-    message_hash: [u8; 32],
-    nonce: u64,
-) -> Result<()> {
-    require!(amount > 0, GatewayError::InvalidAmount);
-    require!(
-        revert_instruction.fund_recipient != Pubkey::default(),
-        GatewayError::InvalidRecipient
-    );
-    require!(
-        ctx.accounts.recipient_token_account.owner == revert_instruction.fund_recipient,
-        GatewayError::InvalidRecipient
-    );
-    require!(
-        ctx.accounts.recipient_token_account.mint == ctx.accounts.token_mint.key(),
-        GatewayError::InvalidMint
-    );
-
-    let instruction_id: u8 = 4;
-    let mut mint_bytes = [0u8; 32];
-    mint_bytes.copy_from_slice(&ctx.accounts.token_mint.key().to_bytes());
-    let recipient_bytes = revert_instruction.fund_recipient.to_bytes();
-    let mut gas_fee_buf = [0u8; 8];
-    gas_fee_buf.copy_from_slice(&gas_fee.to_be_bytes());
-    let additional: [&[u8]; 5] = [
-        &universal_tx_id[..],
-        &tx_id[..],
-        &mint_bytes[..],
-        &recipient_bytes[..],
-        &gas_fee_buf,
-    ];
-    validate_message(
-        &mut ctx.accounts.tss_pda,
-        instruction_id,
-        nonce,
-        Some(amount),
-        &additional,
-        &message_hash,
-        &signature,
-        recovery_id,
-    )?;
-
-    // SECURITY: Validate token_vault is owned by vault and matches token_mint
-    let data = ctx.accounts.token_vault.try_borrow_data()?.to_vec();
-    let parsed = SplAccount::unpack(&data).map_err(|_| error!(GatewayError::InvalidAccount))?;
-    require!(
-        parsed.owner == ctx.accounts.vault.key(),
-        GatewayError::InvalidOwner
-    );
-    require!(
-        parsed.mint == ctx.accounts.token_mint.key(),
-        GatewayError::InvalidMint
-    );
-
-    let seeds: &[&[u8]] = &[VAULT_SEED, &[ctx.accounts.config.vault_bump]];
-
-    let cpi_accounts = Transfer {
-        from: ctx.accounts.token_vault.to_account_info(),
-        to: ctx.accounts.recipient_token_account.to_account_info(),
-        authority: ctx.accounts.vault.to_account_info(),
-    };
-
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let seeds_array = [seeds];
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, &seeds_array);
-
-    token::transfer(cpi_ctx, amount)?;
-
-    emit!(crate::state::RevertUniversalTx {
-        universal_tx_id,
-        tx_id,
-        fund_recipient: revert_instruction.fund_recipient,
-        token: ctx.accounts.token_mint.key(),
-        amount,
-        revert_instruction: revert_instruction.clone(),
-    });
-
-    // Transfer gas fee to caller (relayer reimbursement)
-    crate::utils::transfer_gas_fee_to_caller(
-        &ctx.accounts.vault_sol.to_account_info(),
-        &ctx.accounts.caller.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        gas_fee,
-        ctx.accounts.config.vault_bump,
     )?;
 
     Ok(())

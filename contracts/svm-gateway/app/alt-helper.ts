@@ -9,7 +9,7 @@ import {
 import fs from "fs";
 
 /**
- * ALT Helper for withdraw_and_execute transactions
+ * ALT Helper for finalize_universal_tx transactions
  *
  * Supports dual ALT architecture:
  * 1. Protocol Static ALT (same for all txs):

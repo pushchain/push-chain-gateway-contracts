@@ -1,7 +1,12 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { UniversalGateway } from "../target/types/universal_gateway";
-import { PublicKey, Keypair, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import {
+  PublicKey,
+  Keypair,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+} from "@solana/web3.js";
 import { expect } from "chai";
 import * as sharedState from "./shared-state";
 import { getSolPrice, calculateSolAmount } from "./setup-pricefeed";
@@ -9,906 +14,1359 @@ import * as spl from "@solana/spl-token";
 import { ensureTestSetup } from "./helpers/test-setup";
 
 describe("Universal Gateway - send_universal_tx Tests", () => {
-    anchor.setProvider(anchor.AnchorProvider.env());
-    const provider = anchor.getProvider() as anchor.AnchorProvider;
-    const program = anchor.workspace.UniversalGateway as Program<UniversalGateway>;
+  anchor.setProvider(anchor.AnchorProvider.env());
+  const provider = anchor.getProvider() as anchor.AnchorProvider;
+  const program = anchor.workspace
+    .UniversalGateway as Program<UniversalGateway>;
 
-    before(async () => {
-        await ensureTestSetup();
+  before(async () => {
+    await ensureTestSetup();
+  });
+
+  let admin: Keypair;
+  let tssAddress: Keypair;
+  let pauser: Keypair;
+  let user1: Keypair;
+  let user2: Keypair;
+  let configPda: PublicKey;
+  let vaultPda: PublicKey;
+  let feeVaultPda: PublicKey;
+  let rateLimitConfigPda: PublicKey;
+  let mockPriceFeed: PublicKey;
+  let solPrice: number;
+  let mockUSDT: any;
+  let mockUSDC: any;
+  const DEFAULT_PROTOCOL_FEE_LAMPORTS = 50_000;
+
+  // Helper to create payload (EVM-style: to address, value, calldata, gas params).
+  const createPayload = (
+    to: number,
+    vType: any = { signedVerification: {} }
+  ) => ({
+    to: Array.from(Buffer.alloc(20, to)),
+    value: new anchor.BN(0),
+    data: Buffer.from([]),
+    gasLimit: new anchor.BN(21000),
+    maxFeePerGas: new anchor.BN(20000000000),
+    maxPriorityFeePerGas: new anchor.BN(1000000000),
+    nonce: new anchor.BN(0),
+    deadline: new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
+    vType,
+  });
+
+  /**
+   * Serialize payload as Anchor/Borsh-encoded UniversalPayload (matches program state.rs).
+   * EVM relayer decodes the same format on Push chain. Smaller than JSON.
+   */
+  const serializePayload = (payload: any): Buffer => {
+    // to: exactly 20 bytes (EVM address), match Rust [u8; 20]
+    const toRaw = Buffer.from(new Uint8Array(payload.to));
+    const toBuf = Buffer.alloc(20);
+    toRaw.copy(toBuf, 0, 0, Math.min(20, toRaw.length));
+    const data = Buffer.isBuffer(payload.data)
+      ? payload.data
+      : Buffer.from(payload.data ?? []);
+    const value = BigInt(payload.value.toString());
+    const gasLimit = BigInt(payload.gasLimit.toString());
+    const maxFeePerGas = BigInt(payload.maxFeePerGas.toString());
+    const maxPriorityFeePerGas = BigInt(
+      payload.maxPriorityFeePerGas.toString()
+    );
+    const nonce = BigInt(payload.nonce.toString());
+    const deadline = BigInt(payload.deadline.toString());
+    const vTypeDiscriminant =
+      payload.vType?.signedVerification !== undefined ? 0 : 1;
+
+    const dataLen = data.length;
+    const size = 20 + 8 + 4 + dataLen + 8 + 8 + 8 + 8 + 8 + 1;
+    const buf = Buffer.alloc(size);
+    let off = 0;
+    toBuf.copy(buf, off);
+    off += 20;
+    buf.writeBigUInt64LE(value, off);
+    off += 8;
+    buf.writeUInt32LE(dataLen, off);
+    off += 4;
+    data.copy(buf, off);
+    off += dataLen;
+    buf.writeBigUInt64LE(gasLimit, off);
+    off += 8;
+    buf.writeBigUInt64LE(maxFeePerGas, off);
+    off += 8;
+    buf.writeBigUInt64LE(maxPriorityFeePerGas, off);
+    off += 8;
+    buf.writeBigUInt64LE(nonce, off);
+    off += 8;
+    buf.writeBigInt64LE(deadline, off);
+    off += 8;
+    buf.writeUInt8(vTypeDiscriminant, off);
+    return buf;
+  };
+
+
+  // Helper to get token rate limit PDA
+  const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
+    const [pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("rate_limit"), tokenMint.toBuffer()],
+      program.programId
+    );
+    return pda;
+  };
+
+  const setProtocolFee = async (feeLamports: number) => {
+    await program.methods
+      .setProtocolFee(new anchor.BN(feeLamports))
+      .accountsPartial({
+        config: configPda,
+        feeVault: feeVaultPda,
+        admin: admin.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
+  };
+
+  const withProtocolFee = (baseLamports: number) =>
+    new anchor.BN(baseLamports + DEFAULT_PROTOCOL_FEE_LAMPORTS);
+
+  before(async () => {
+    admin = sharedState.getAdmin();
+    tssAddress = sharedState.getTssAddress();
+    pauser = sharedState.getPauser();
+    user1 = Keypair.generate();
+    user2 = Keypair.generate();
+
+    const airdropAmount = 20 * LAMPORTS_PER_SOL;
+    await Promise.all([
+      provider.connection.requestAirdrop(user1.publicKey, airdropAmount),
+      provider.connection.requestAirdrop(user2.publicKey, airdropAmount),
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    [configPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("config")],
+      program.programId
+    );
+    [vaultPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault")],
+      program.programId
+    );
+    [feeVaultPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("fee_vault")],
+      program.programId
+    );
+    [rateLimitConfigPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("rate_limit_config")],
+      program.programId
+    );
+
+    mockPriceFeed = sharedState.getMockPriceFeed();
+    solPrice = await getSolPrice(mockPriceFeed);
+
+    // Get mock tokens
+    mockUSDT = sharedState.getMockUSDT();
+    mockUSDC = sharedState.getMockUSDC();
+
+    // Normalize token rate limits every run so this suite doesn't inherit stale 0-threshold state.
+    const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // 1 sextillion
+    for (const tokenMint of [
+      PublicKey.default,
+      mockUSDT.mint.publicKey,
+      mockUSDC.mint.publicKey,
+    ]) {
+      await program.methods
+        .setTokenRateLimit(veryLargeThreshold)
+        .accountsPartial({
+          admin: admin.publicKey,
+          config: configPda,
+          tokenRateLimit: getTokenRateLimitPda(tokenMint),
+          tokenMint,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+    }
+
+    await setProtocolFee(DEFAULT_PROTOCOL_FEE_LAMPORTS);
+  });
+
+  describe("GAS Route (TxType.GAS)", () => {
+    it("Should deposit native SOL as gas without payload", async () => {
+      const gasAmount = calculateSolAmount(2.5, solPrice);
+      const initialVaultBalance = await provider.connection.getBalance(vaultPda);
+      const initialFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+      const initialUserBalance = await provider.connection.getBalance(user1.publicKey);
+
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("gas_sig"),
+      };
+
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(gasAmount))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      const finalFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+      // Bridge vault receives only the gas amount; fee goes to fee_vault (1:1 invariant)
+      expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
+      expect(finalFeeVaultBalance - initialFeeVaultBalance).to.equal(DEFAULT_PROTOCOL_FEE_LAMPORTS);
     });
 
-    let admin: Keypair;
-    let tssAddress: Keypair;
-    let pauser: Keypair;
-    let user1: Keypair;
-    let user2: Keypair;
-    let configPda: PublicKey;
-    let vaultPda: PublicKey;
-    let rateLimitConfigPda: PublicKey;
-    let mockPriceFeed: PublicKey;
-    let solPrice: number;
-    let mockUSDT: any;
-    let mockUSDC: any;
+    it("Should route GAS request with payload to GAS_AND_PAYLOAD (not reject)", async () => {
+      // NOTE: This test verifies the correct behavior - amount==0 + payload>0 routes to GAS_AND_PAYLOAD
+      // The payload validation is commented out in send_tx_with_gas_route (matching EVM V0)
+      const gasAmount = calculateSolAmount(2.5, solPrice);
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+      const initialVaultBalance = await provider.connection.getBalance(
+        vaultPda
+      );
 
-    // Helper to create payload (EVM-style: to address, value, calldata, gas params).
-    const createPayload = (to: number, vType: any = { signedVerification: {} }) => ({
-        to: Array.from(Buffer.alloc(20, to)),
-        value: new anchor.BN(0),
-        data: Buffer.from([]),
-        gasLimit: new anchor.BN(21000),
-        maxFeePerGas: new anchor.BN(20000000000),
-        maxPriorityFeePerGas: new anchor.BN(1000000000),
-        nonce: new anchor.BN(0),
-        deadline: new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
-        vType,
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: serializePayload(createPayload(99)), // Non-empty payload
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("sig"),
+      };
+
+      // Should succeed and route to GAS_AND_PAYLOAD (fetchTxType logic)
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(gasAmount))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      // Verify transaction succeeded (vault receives only gas; fee goes to fee_vault)
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
+    });
+  });
+
+  describe("GAS_AND_PAYLOAD Route", () => {
+    it("Should deposit gas with payload", async () => {
+      const gasAmount = calculateSolAmount(2.5, solPrice);
+      const initialVaultBalance = await provider.connection.getBalance(
+        vaultPda
+      );
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: serializePayload(createPayload(1)),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("gas_payload_sig"),
+      };
+
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(gasAmount))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
     });
 
-    /**
-     * Serialize payload as Anchor/Borsh-encoded UniversalPayload (matches program state.rs).
-     * EVM relayer decodes the same format on Push chain. Smaller than JSON.
-     */
-    const serializePayload = (payload: any): Buffer => {
-        // to: exactly 20 bytes (EVM address), match Rust [u8; 20]
-        const toRaw = Buffer.from(new Uint8Array(payload.to));
-        const toBuf = Buffer.alloc(20);
-        toRaw.copy(toBuf, 0, 0, Math.min(20, toRaw.length));
-        const data = Buffer.isBuffer(payload.data) ? payload.data : Buffer.from(payload.data ?? []);
-        const value = BigInt(payload.value.toString());
-        const gasLimit = BigInt(payload.gasLimit.toString());
-        const maxFeePerGas = BigInt(payload.maxFeePerGas.toString());
-        const maxPriorityFeePerGas = BigInt(payload.maxPriorityFeePerGas.toString());
-        const nonce = BigInt(payload.nonce.toString());
-        const deadline = BigInt(payload.deadline.toString());
-        const vTypeDiscriminant = payload.vType?.signedVerification !== undefined ? 0 : 1;
+    it("Should allow payload-only execution (gas_amount == 0)", async () => {
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
 
-        const dataLen = data.length;
-        const size = 20 + 8 + 4 + dataLen + 8 + 8 + 8 + 8 + 8 + 1;
-        const buf = Buffer.alloc(size);
-        let off = 0;
-        toBuf.copy(buf, off);
-        off += 20;
-        buf.writeBigUInt64LE(value, off);
-        off += 8;
-        buf.writeUInt32LE(dataLen, off);
-        off += 4;
-        data.copy(buf, off);
-        off += dataLen;
-        buf.writeBigUInt64LE(gasLimit, off);
-        off += 8;
-        buf.writeBigUInt64LE(maxFeePerGas, off);
-        off += 8;
-        buf.writeBigUInt64LE(maxPriorityFeePerGas, off);
-        off += 8;
-        buf.writeBigUInt64LE(nonce, off);
-        off += 8;
-        buf.writeBigInt64LE(deadline, off);
-        off += 8;
-        buf.writeUInt8(vTypeDiscriminant, off);
-        return buf;
-    };
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: serializePayload(createPayload(1)),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("payload_only"),
+      };
 
-    // Helper to create revert instruction
-    const createRevertInstruction = (recipient: PublicKey, msg: string = "test") => ({
-        fundRecipient: recipient,
-        revertMsg: Buffer.from(msg),
+      // Should succeed with 0 native amount
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(0))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+    });
+  });
+
+  describe("FUNDS Route - Native SOL", () => {
+    it("Should bridge native SOL funds", async () => {
+      const fundsAmount = 0.5 * LAMPORTS_PER_SOL;
+      const initialVaultBalance = await provider.connection.getBalance(
+        vaultPda
+      );
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)), // Must be zero for FUNDS
+        token: PublicKey.default,
+        amount: new anchor.BN(fundsAmount),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("funds_sig"),
+      };
+
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(fundsAmount))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      expect(finalVaultBalance - initialVaultBalance).to.equal(fundsAmount);
     });
 
-    // Helper to get token rate limit PDA
-    const getTokenRateLimitPda = (tokenMint: PublicKey): PublicKey => {
-        const [pda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("rate_limit"), tokenMint.toBuffer()],
-            program.programId
+    it("Should bridge native SOL funds to explicit recipient", async () => {
+      const fundsAmount = 0.75 * LAMPORTS_PER_SOL;
+      const initialVaultBalance = await provider.connection.getBalance(
+        vaultPda
+      );
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 1)), // Non-zero recipient now allowed
+        token: PublicKey.default,
+        amount: new anchor.BN(fundsAmount),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("funds_nonzero_recipient"),
+      };
+
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(fundsAmount))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: null,
+          gatewayTokenAccount: null,
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      expect(finalVaultBalance - initialVaultBalance).to.equal(fundsAmount);
+    });
+
+    it("Should reject FUNDS when native amount does not match bridge amount", async () => {
+      const fundsAmount = 0.5 * LAMPORTS_PER_SOL;
+      const wrongNativeAmount = fundsAmount - 1234;
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(fundsAmount),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("invalid_native_amount"),
+      };
+
+      try {
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(wrongNativeAmount))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should reject FUNDS when native amount mismatches");
+      } catch (error: any) {
+        expect(error).to.exist;
+        const errorCode =
+          error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidAmount");
+      }
+    });
+  });
+
+  describe("FUNDS Route - SPL Token", () => {
+    it("Should bridge SPL token funds", async () => {
+      // Create user token account and mint tokens using mock token's methods
+      const userTokenAccount = await mockUSDT.createTokenAccount(
+        user1.publicKey
+      );
+      const gatewayTokenAccount = await mockUSDT.createTokenAccount(
+        vaultPda,
+        true
+      );
+
+      // Mint tokens using mock token's mintTo method (uses correct mint authority)
+      await mockUSDT.mintTo(userTokenAccount, 1000);
+      const tokenAmount = new anchor.BN(1000 * 10 ** mockUSDT.config.decimals);
+
+      const initialGatewayBalance = await mockUSDT.getBalance(gatewayTokenAccount);
+      const initialFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+      const usdtTokenRateLimitPda = getTokenRateLimitPda(
+        mockUSDT.mint.publicKey
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: mockUSDT.mint.publicKey,
+        amount: tokenAmount,
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("spl_funds_sig"),
+      };
+
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(0)) // Fee-only native amount for SPL FUNDS
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: userTokenAccount,
+          gatewayTokenAccount: gatewayTokenAccount,
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: usdtTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      const finalGatewayBalance = await mockUSDT.getBalance(gatewayTokenAccount);
+      const finalFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+      const balanceIncrease =
+        (finalGatewayBalance - initialGatewayBalance) * 10 ** mockUSDT.config.decimals;
+      expect(balanceIncrease).to.equal(tokenAmount.toNumber());
+      expect(finalFeeVaultBalance - initialFeeVaultBalance).to.equal(DEFAULT_PROTOCOL_FEE_LAMPORTS);
+    });
+
+    it("Should reject SPL deposit from token account not owned by signer (InvalidOwner)", async () => {
+      // Create two users: victim owns the token account, attacker signs the tx.
+      // This tests deposit_spl_to_vault line: parsed_user.owner == ctx.accounts.user.key()
+      const victim = Keypair.generate();
+      await provider.connection.requestAirdrop(victim.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
+
+      const victimTokenAccount = await mockUSDT.createTokenAccount(victim.publicKey);
+      const gatewayTokenAccount = await mockUSDT.createTokenAccount(vaultPda, true);
+      await mockUSDT.mintTo(victimTokenAccount, 1000);
+
+      const tokenAmount = new anchor.BN(1000 * 10 ** mockUSDT.config.decimals);
+      const usdtTokenRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: mockUSDT.mint.publicKey,
+        amount: tokenAmount,
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("invalid_owner_test"),
+      };
+
+      try {
+        // user1 signs but victimTokenAccount is owned by victim — must be rejected
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(0))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: victimTokenAccount,
+            gatewayTokenAccount: gatewayTokenAccount,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: usdtTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should have rejected: token account owned by different wallet");
+      } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidOwner");
+      }
+    });
+
+    it("Should reject FUNDS SPL when native SOL is provided", async () => {
+      const userTokenAccount = await mockUSDT.createTokenAccount(
+        user1.publicKey
+      );
+      const gatewayTokenAccount = await mockUSDT.createTokenAccount(
+        vaultPda,
+        true
+      );
+
+      await mockUSDT.mintTo(userTokenAccount, 1000);
+      const tokenAmount = new anchor.BN(1000 * 10 ** mockUSDT.config.decimals);
+      const usdtTokenRateLimitPda = getTokenRateLimitPda(
+        mockUSDT.mint.publicKey
+      );
+      const nativeAmount = calculateSolAmount(1.5, solPrice);
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: mockUSDT.mint.publicKey,
+        amount: tokenAmount,
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("spl_native_invalid"),
+      };
+
+      try {
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(nativeAmount))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: userTokenAccount,
+            gatewayTokenAccount: gatewayTokenAccount,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: usdtTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should reject FUNDS SPL when native SOL is attached");
+      } catch (error: any) {
+        expect(error).to.exist;
+        const errorCode =
+          error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidAmount");
+      }
+    });
+  });
+
+  describe("FUNDS_AND_PAYLOAD Route - Native SOL with Batching", () => {
+    it("Should batch gas + funds for native SOL", async () => {
+      // Case 2.2: Batching with native SOL
+      // Split: gasAmount = native_amount - req.amount
+      // Gas must be >= $1 USD (min cap), funds can be any amount
+      // Strategy: Use larger gas amount ($3) and small funds amount to ensure gas >= $1 after split
+      const gasAmountLamports = calculateSolAmount(3.0, solPrice); // $3.00 for gas (well above $1 min cap)
+      const fundsAmountLamports = calculateSolAmount(0.1, solPrice); // $0.10 for funds (very small)
+      const totalAmount = gasAmountLamports + fundsAmountLamports; // Total = gas + funds
+
+      // Verify: after split, gas_amount = totalAmount - fundsAmount = gasAmountLamports (should be >= $1)
+      const expectedGasAfterSplit = totalAmount - fundsAmountLamports;
+      const expectedGasUsd =
+        (expectedGasAfterSplit / LAMPORTS_PER_SOL) * solPrice;
+      if (expectedGasUsd < 1.0) {
+        throw new Error(
+          `Expected gas after split ${expectedGasUsd.toFixed(
+            4
+          )} USD is below minimum $1 USD cap. Gas: ${gasAmountLamports}, Funds: ${fundsAmountLamports}, Total: ${totalAmount}`
         );
-        return pda;
-    };
+      }
 
-    before(async () => {
-        admin = sharedState.getAdmin();
-        tssAddress = sharedState.getTssAddress();
-        pauser = sharedState.getPauser();
-        user1 = Keypair.generate();
-        user2 = Keypair.generate();
+      const initialVaultBalance = await provider.connection.getBalance(
+        vaultPda
+      );
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
 
-        const airdropAmount = 20 * LAMPORTS_PER_SOL;
-        await Promise.all([
-            provider.connection.requestAirdrop(user1.publicKey, airdropAmount),
-            provider.connection.requestAirdrop(user2.publicKey, airdropAmount),
-        ]);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 1)), // Non-zero allowed for FUNDS_AND_PAYLOAD
+        token: PublicKey.default,
+        amount: new anchor.BN(fundsAmountLamports),
+        payload: serializePayload(createPayload(1)), // Non-empty payload required
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("batched_sig"),
+      };
 
-        [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
-        [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault")], program.programId);
-        [rateLimitConfigPda] = PublicKey.findProgramAddressSync([Buffer.from("rate_limit_config")], program.programId);
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(totalAmount))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: null, 
+          gatewayTokenAccount: null, 
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
 
-        mockPriceFeed = sharedState.getMockPriceFeed();
-        solPrice = await getSolPrice(mockPriceFeed);
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      // Bridge vault receives gas + funds; fee goes to fee_vault
+      expect(finalVaultBalance - initialVaultBalance).to.equal(totalAmount);
+    });
 
-        // Get mock tokens
-        mockUSDT = sharedState.getMockUSDT();
-        mockUSDC = sharedState.getMockUSDC();
+    it("Should reject FUNDS_AND_PAYLOAD native when native amount is insufficient", async () => {
+      const fundsAmount = calculateSolAmount(0.75, solPrice);
+      const insufficientNative = fundsAmount - 50_000; // native < funds
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
 
-        // Initialize token rate limit accounts (required for universal gateway)
-        // Use a very large threshold to effectively disable rate limits (since admin function requires > 0)
-        // The rate limit will be effectively disabled because epoch_duration is 0 by default
-        const veryLargeThreshold = new anchor.BN("1000000000000000000000"); // 1 sextillion (effectively unlimited)
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 1)),
+        token: PublicKey.default,
+        amount: new anchor.BN(fundsAmount),
+        payload: serializePayload(createPayload(1)),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("insufficient_native_sig"),
+      };
 
-        // Initialize native SOL rate limit
-        const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-        try {
-            await program.account.tokenRateLimit.fetch(nativeSolTokenRateLimitPda);
-        } catch {
-            // Not initialized, create it with very large threshold (effectively disabled)
+      try {
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(insufficientNative))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should reject when native gas is below bridge amount");
+      } catch (error: any) {
+        expect(error).to.exist;
+        const errorCode =
+          error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidAmount");
+      }
+    });
+  });
+
+  describe("FUNDS_AND_PAYLOAD Route - SPL Token", () => {
+    it("Should bridge SPL funds with payload without batching (Case 2.1)", async () => {
+      // Case 2.1: No Batching (native_amount == 0): user already has UEA with gas on Push Chain
+      // User can directly move req.amount for req.token to Push Chain (SPL token only for Case 2.1)
+      // Use USDC to avoid rate limit conflicts with USDT used in previous tests
+      const userTokenAccount = await mockUSDC.createTokenAccount(
+        user1.publicKey
+      );
+      const gatewayTokenAccount = await mockUSDC.createTokenAccount(
+        vaultPda,
+        true
+      );
+
+      // Mint tokens using mock token's mintTo method
+      await mockUSDC.mintTo(userTokenAccount, 500);
+      const tokenAmount = new anchor.BN(500 * 10 ** mockUSDC.config.decimals);
+
+      const initialGatewayBalance = await mockUSDC.getBalance(gatewayTokenAccount);
+      const initialVaultBalance = await provider.connection.getBalance(vaultPda);
+      const initialFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+      const usdcTokenRateLimitPda = getTokenRateLimitPda(
+        mockUSDC.mint.publicKey
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 1)), // Non-zero allowed for FUNDS_AND_PAYLOAD
+        token: mockUSDC.mint.publicKey,
+        amount: tokenAmount,
+        payload: serializePayload(createPayload(1)), // Must have payload for FUNDS_AND_PAYLOAD
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("spl_no_batch_sig"),
+      };
+
+      // With protocol fee enabled, this route sends only fee as native amount.
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(0))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: userTokenAccount,
+          gatewayTokenAccount: gatewayTokenAccount,
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: usdcTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      // SPL tokens go to gateway token account; fee goes to fee_vault; bridge vault unchanged
+      const finalGatewayBalance = await mockUSDC.getBalance(gatewayTokenAccount);
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      const finalFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+      const balanceIncrease =
+        (finalGatewayBalance - initialGatewayBalance) * 10 ** mockUSDC.config.decimals;
+      expect(balanceIncrease).to.equal(tokenAmount.toNumber());
+      expect(finalVaultBalance - initialVaultBalance).to.equal(0);
+      expect(finalFeeVaultBalance - initialFeeVaultBalance).to.equal(DEFAULT_PROTOCOL_FEE_LAMPORTS);
+    });
+
+    it("Should batch native gas + SPL funds (Case 2.3)", async () => {
+      // Setup SPL token accounts using mock token's methods
+      const userTokenAccount = await mockUSDC.createTokenAccount(
+        user1.publicKey
+      );
+      const gatewayTokenAccount = await mockUSDC.createTokenAccount(
+        vaultPda,
+        true
+      );
+
+      // Mint tokens using mock token's mintTo method
+      await mockUSDC.mintTo(userTokenAccount, 500);
+      const tokenAmount = new anchor.BN(500 * 10 ** mockUSDC.config.decimals);
+
+      // Case 2.3: Batching with SPL + native gas
+      // Gas amount must be >= $1 USD (min cap) and <= $10 USD (max cap)
+      // native_amount is sent as gas, req.amount is SPL bridge amount
+      const gasAmount = calculateSolAmount(2.5, solPrice); // $2.50 for gas (within $1-$10 cap)
+
+      // Verify gas amount is >= $1 USD
+      const gasUsd = (gasAmount / LAMPORTS_PER_SOL) * solPrice;
+      if (gasUsd < 1.0) {
+        throw new Error(`Gas amount ${gasUsd} USD is below minimum $1 USD cap`);
+      }
+      const initialVaultBalance = await provider.connection.getBalance(
+        vaultPda
+      );
+      const initialGatewayBalance = await mockUSDC.getBalance(
+        gatewayTokenAccount
+      );
+      const usdcTokenRateLimitPda = getTokenRateLimitPda(
+        mockUSDC.mint.publicKey
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 1)),
+        token: mockUSDC.mint.publicKey,
+        amount: tokenAmount,
+        payload: serializePayload(createPayload(1)), // Non-empty payload required
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("spl_batched_sig"),
+      };
+
+      const initialFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(gasAmount))
+        .accountsPartial({
+          config: configPda,
+          vault: vaultPda,
+          feeVault: feeVaultPda,
+          userTokenAccount: userTokenAccount,
+          gatewayTokenAccount: gatewayTokenAccount,
+          user: user1.publicKey,
+          priceUpdate: mockPriceFeed,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: usdcTokenRateLimitPda,
+          tokenProgram: spl.TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      const finalVaultBalance = await provider.connection.getBalance(vaultPda);
+      const finalFeeVaultBalance = await provider.connection.getBalance(feeVaultPda);
+      // Bridge vault receives only gas (no fee); fee goes to fee_vault
+      expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
+      expect(finalFeeVaultBalance - initialFeeVaultBalance).to.equal(DEFAULT_PROTOCOL_FEE_LAMPORTS);
+
+      const finalGatewayBalance = await mockUSDC.getBalance(
+        gatewayTokenAccount
+      );
+      const balanceIncrease =
+        (finalGatewayBalance - initialGatewayBalance) *
+        10 ** mockUSDC.config.decimals;
+      expect(balanceIncrease).to.equal(tokenAmount.toNumber());
+    });
+
+    it("Should reject FUNDS_AND_PAYLOAD SPL when token rate limit PDA mismatches", async () => {
+      const userTokenAccount = await mockUSDC.createTokenAccount(
+        user1.publicKey
+      );
+      const gatewayTokenAccount = await mockUSDC.createTokenAccount(
+        vaultPda,
+        true
+      );
+
+      await mockUSDC.mintTo(userTokenAccount, 500);
+      const tokenAmount = new anchor.BN(500 * 10 ** mockUSDC.config.decimals);
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      ); // intentionally wrong
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 1)),
+        token: mockUSDC.mint.publicKey,
+        amount: tokenAmount,
+        payload: serializePayload(createPayload(1)),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("spl_bad_rate_limit"),
+      };
+
+      try {
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(0))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: userTokenAccount,
+            gatewayTokenAccount: gatewayTokenAccount,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail(
+          "Should reject FUNDS_AND_PAYLOAD SPL when token rate limit PDA is invalid"
+        );
+      } catch (error: any) {
+        expect(error).to.exist;
+        const errorCode =
+          error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidToken");
+      }
+    });
+  });
+
+  describe("Error Cases", () => {
+    it("Should reject when paused", async () => {
+      await program.methods
+        .pause()
+        .accountsPartial({ pauser: pauser.publicKey, config: configPda })
+        .signers([pauser])
+        .rpc();
+
+      const gasAmount = calculateSolAmount(2.5, solPrice);
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("sig"),
+      };
+
+      try {
+        await program.methods
+          .sendUniversalTx(req, new anchor.BN(gasAmount))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: null, 
+            gatewayTokenAccount: null, 
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should reject when paused");
+      } catch (error: any) {
+        expect(error).to.exist;
+        expect(error.error?.errorCode?.code || error.code).to.equal("Paused");
+      }
+
+      await program.methods
+        .unpause()
+        .accountsPartial({ pauser: pauser.publicKey, config: configPda })
+        .signers([pauser])
+        .rpc();
+    });
+
+    it("Should reject GAS route amounts outside USD cap bounds", async () => {
+      // Snapshot current caps — other test files may leave config at different values.
+      // We pin to known bounds, test, then restore the exact prior state in `finally`.
+      const configBefore = await program.account.config.fetch(configPda);
+      const prevMin = configBefore.minCapUniversalTxUsd;
+      const prevMax = configBefore.maxCapUniversalTxUsd;
+
+      await program.methods
+        .setCapsUsd(new anchor.BN(100_000_000), new anchor.BN(1_000_000_000)) // $1 min / $10 max
+        .accountsPartial({ admin: admin.publicKey, config: configPda })
+        .signers([admin])
+        .rpc();
+
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+      const cases = [
+        { label: "BelowMinCap", usd: 0.5,  expectedError: "BelowMinCap" },  // $0.50 < $1 min
+        { label: "AboveMaxCap", usd: 15.0, expectedError: "AboveMaxCap" },  // $15 > $10 max
+      ];
+
+      try {
+        for (const { label, usd, expectedError } of cases) {
+          const gasAmount = calculateSolAmount(usd, solPrice);
+          const req = {
+            recipient: Array.from(Buffer.alloc(20, 0)),
+            token: PublicKey.default,
+            amount: new anchor.BN(0),
+            payload: Buffer.from([]),
+            revertRecipient: user1.publicKey,
+            signatureData: Buffer.from(label),
+          };
+          try {
             await program.methods
-                .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenMint: PublicKey.default,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
+              .sendUniversalTx(req, withProtocolFee(gasAmount))
+              .accountsPartial({
+                config: configPda,
+                vault: vaultPda,
+                feeVault: feeVaultPda,
+                userTokenAccount: null,
+                gatewayTokenAccount: null,
+                user: user1.publicKey,
+                priceUpdate: mockPriceFeed,
+                rateLimitConfig: rateLimitConfigPda,
+                tokenRateLimit: nativeSolTokenRateLimitPda,
+                tokenProgram: spl.TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+              })
+              .signers([user1])
+              .rpc();
+            expect.fail(`${label}: Should have rejected with ${expectedError}`);
+          } catch (error: any) {
+            const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+            expect(errorCode).to.equal(expectedError, `${label}: wrong error code`);
+          }
         }
-
-        // Initialize USDT rate limit
-        const usdtTokenRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
-        try {
-            await program.account.tokenRateLimit.fetch(usdtTokenRateLimitPda);
-        } catch {
-            await program.methods
-                .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: usdtTokenRateLimitPda,
-                    tokenMint: mockUSDT.mint.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
-
-        // Initialize USDC rate limit
-        const usdcTokenRateLimitPda = getTokenRateLimitPda(mockUSDC.mint.publicKey);
-        try {
-            await program.account.tokenRateLimit.fetch(usdcTokenRateLimitPda);
-        } catch {
-            await program.methods
-                .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: usdcTokenRateLimitPda,
-                    tokenMint: mockUSDC.mint.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
+      } finally {
+        await program.methods
+          .setCapsUsd(prevMin, prevMax)
+          .accountsPartial({ admin: admin.publicKey, config: configPda })
+          .signers([admin])
+          .rpc();
+      }
     });
 
-    describe("GAS Route (TxType.GAS)", () => {
-        it("Should deposit native SOL as gas without payload", async () => {
-            const gasAmount = calculateSolAmount(2.5, solPrice);
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
-            const initialUserBalance = await provider.connection.getBalance(user1.publicKey);
+    it("Should reject invalid parameter combinations (no gas or funds)", async () => {
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
 
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("sig"),
+      };
 
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: PublicKey.default,
-                amount: new anchor.BN(0),
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("gas_sig"),
-            };
+      try {
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(0))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should reject parameter set without gas or funds");
+      } catch (error: any) {
+        expect(error).to.exist;
+        const errorCode =
+          error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidInput");
+      }
+    });
+  });
 
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
+  describe("Protocol Fee", () => {
+    it("Should accumulate fee_vault balance across multiple txs", async () => {
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+      const gasAmount = calculateSolAmount(2.5, solPrice);
+      const feeVaultBefore = await provider.connection.getBalance(feeVaultPda);
 
-            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
-        });
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("acc_test"),
+      };
 
-        it("Should route GAS request with payload to GAS_AND_PAYLOAD (not reject)", async () => {
-            // NOTE: This test verifies the correct behavior - amount==0 + payload>0 routes to GAS_AND_PAYLOAD
-            // The payload validation is commented out in send_tx_with_gas_route (matching EVM V0)
-            const gasAmount = calculateSolAmount(2.5, solPrice);
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
+      const accounts = {
+        config: configPda,
+        vault: vaultPda,
+        feeVault: feeVaultPda,
+        userTokenAccount: null,
+        gatewayTokenAccount: null,
+        user: user1.publicKey,
+        priceUpdate: mockPriceFeed,
+        rateLimitConfig: rateLimitConfigPda,
+        tokenRateLimit: nativeSolTokenRateLimitPda,
+        tokenProgram: spl.TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      };
 
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: PublicKey.default,
-                amount: new anchor.BN(0),
-                payload: serializePayload(createPayload(99)), // Non-empty payload
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("sig"),
-            };
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(gasAmount))
+        .accountsPartial(accounts)
+        .signers([user1])
+        .rpc();
+      await program.methods
+        .sendUniversalTx(req, withProtocolFee(gasAmount))
+        .accountsPartial(accounts)
+        .signers([user1])
+        .rpc();
 
-            // Should succeed and route to GAS_AND_PAYLOAD (fetchTxType logic)
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: vaultPda, // Correct: use vaultPda as dummy for native SOL
-                    gatewayTokenAccount: vaultPda, // Correct: use vaultPda as dummy for native SOL
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            // Verify transaction succeeded (vault balance increased)
-            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
-        });
+      const feeVaultAfter = await provider.connection.getBalance(feeVaultPda);
+      expect(feeVaultAfter - feeVaultBefore).to.equal(2 * DEFAULT_PROTOCOL_FEE_LAMPORTS);
     });
 
-    describe("GAS_AND_PAYLOAD Route", () => {
-        it("Should deposit gas with payload", async () => {
-            const gasAmount = calculateSolAmount(2.5, solPrice);
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: PublicKey.default,
-                amount: new anchor.BN(0),
-                payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("gas_payload_sig"),
-            };
-
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
-        });
-
-        it("Should allow payload-only execution (gas_amount == 0)", async () => {
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: PublicKey.default,
-                amount: new anchor.BN(0),
-                payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("payload_only"),
-            };
-
-            // Should succeed with 0 native amount
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(0))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-        });
+    it("Should reject unauthorized setProtocolFee", async () => {
+      try {
+        await program.methods
+          .setProtocolFee(new anchor.BN(123_456))
+          .accountsPartial({
+            config: configPda,
+            feeVault: feeVaultPda,
+            admin: user1.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Unauthorized setProtocolFee should have failed");
+      } catch (error: any) {
+        expect(error).to.exist;
+        const errorCode =
+          error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("Unauthorized");
+      }
     });
 
-    describe("FUNDS Route - Native SOL", () => {
-        it("Should bridge native SOL funds", async () => {
-            const fundsAmount = 0.5 * LAMPORTS_PER_SOL;
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+    it("Should reject when native amount is below protocol fee", async () => {
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("insufficient_protocol_fee"),
+      };
 
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)), // Must be zero for FUNDS
-                token: PublicKey.default,
-                amount: new anchor.BN(fundsAmount),
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("funds_sig"),
-            };
-
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(fundsAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            expect(finalVaultBalance - initialVaultBalance).to.equal(fundsAmount);
-        });
-
-        it("Should bridge native SOL funds to explicit recipient", async () => {
-            const fundsAmount = 0.75 * LAMPORTS_PER_SOL;
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 1)), // Non-zero recipient now allowed
-                token: PublicKey.default,
-                amount: new anchor.BN(fundsAmount),
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("funds_nonzero_recipient"),
-            };
-
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(fundsAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: vaultPda,
-                    gatewayTokenAccount: vaultPda,
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            expect(finalVaultBalance - initialVaultBalance).to.equal(fundsAmount);
-        });
-
-        it("Should reject FUNDS when native amount does not match bridge amount", async () => {
-            const fundsAmount = 0.5 * LAMPORTS_PER_SOL;
-            const wrongNativeAmount = fundsAmount - 1234;
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: PublicKey.default,
-                amount: new anchor.BN(fundsAmount),
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("invalid_native_amount"),
-            };
-
-            try {
-                await program.methods
-                    .sendUniversalTx(req, new anchor.BN(wrongNativeAmount))
-                    .accounts({
-                        config: configPda,
-                        vault: vaultPda,
-                        userTokenAccount: vaultPda,
-                        gatewayTokenAccount: vaultPda,
-                        user: user1.publicKey,
-                        priceUpdate: mockPriceFeed,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: nativeSolTokenRateLimitPda,
-                        tokenProgram: spl.TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([user1])
-                    .rpc();
-                expect.fail("Should reject FUNDS when native amount mismatches");
-            } catch (error: any) {
-                expect(error).to.exist;
-                const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
-                expect(errorCode).to.equal("InvalidAmount");
-            }
-        });
+      try {
+        await program.methods
+          .sendUniversalTx(req, new anchor.BN(DEFAULT_PROTOCOL_FEE_LAMPORTS - 1))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should reject when native amount is below protocol fee");
+      } catch (error: any) {
+        expect(error).to.exist;
+        const errorCode =
+          error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InsufficientProtocolFee");
+      }
     });
 
-    describe("FUNDS Route - SPL Token", () => {
-        it("Should bridge SPL token funds", async () => {
-            // Create user token account and mint tokens using mock token's methods
-            const userTokenAccount = await mockUSDT.createTokenAccount(user1.publicKey);
-            const gatewayTokenAccount = await mockUSDT.createTokenAccount(vaultPda, true);
+    it("Should reject GAS route when oracle confidence exceeds threshold (InvalidPrice)", async () => {
+      // Set a very tight confidence threshold (1 lamport) so the real mock feed's
+      // confidence value exceeds it, triggering InvalidPrice on the next deposit.
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+      const configBefore = await program.account.config.fetch(configPda);
+      const prevThreshold = configBefore.pythConfidenceThreshold;
+      const restoreThreshold = prevThreshold.gt(new anchor.BN(0))
+        ? prevThreshold
+        : new anchor.BN(1_000_000);
 
-            // Mint tokens using mock token's mintTo method (uses correct mint authority)
-            await mockUSDT.mintTo(userTokenAccount, 1000);
-            const tokenAmount = new anchor.BN(1000 * 10 ** mockUSDT.config.decimals);
+      // Set a very tight threshold (1 raw unit) so the mock feed's confidence exceeds it.
+      await program.methods
+        .setPythConfidenceThreshold(new anchor.BN(1))
+        .accountsPartial({ admin: admin.publicKey, config: configPda })
+        .signers([admin])
+        .rpc();
 
-            const initialGatewayBalance = await mockUSDT.getBalance(gatewayTokenAccount);
-            const usdtTokenRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
+      const gasAmount = calculateSolAmount(2.5, solPrice);
+      const req = {
+        recipient: Array.from(Buffer.alloc(20, 0)),
+        token: PublicKey.default,
+        amount: new anchor.BN(0),
+        payload: Buffer.from([]),
+        revertRecipient: user1.publicKey,
+        signatureData: Buffer.from("confidence_threshold_test"),
+      };
 
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: mockUSDT.mint.publicKey,
-                amount: tokenAmount,
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("spl_funds_sig"),
-            };
-
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(0)) // No native SOL for SPL funds
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: userTokenAccount,
-                    gatewayTokenAccount: gatewayTokenAccount,
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: usdtTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            const finalGatewayBalance = await mockUSDT.getBalance(gatewayTokenAccount);
-            const balanceIncrease = (finalGatewayBalance - initialGatewayBalance) * 10 ** mockUSDT.config.decimals;
-            expect(balanceIncrease).to.equal(tokenAmount.toNumber());
-        });
-
-        it("Should reject FUNDS SPL when native SOL is provided", async () => {
-            const userTokenAccount = await mockUSDT.createTokenAccount(user1.publicKey);
-            const gatewayTokenAccount = await mockUSDT.createTokenAccount(vaultPda, true);
-
-            await mockUSDT.mintTo(userTokenAccount, 1000);
-            const tokenAmount = new anchor.BN(1000 * 10 ** mockUSDT.config.decimals);
-            const usdtTokenRateLimitPda = getTokenRateLimitPda(mockUSDT.mint.publicKey);
-            const nativeAmount = calculateSolAmount(1.5, solPrice);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: mockUSDT.mint.publicKey,
-                amount: tokenAmount,
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("spl_native_invalid"),
-            };
-
-            try {
-                await program.methods
-                    .sendUniversalTx(req, new anchor.BN(nativeAmount))
-                    .accounts({
-                        config: configPda,
-                        vault: vaultPda,
-                        userTokenAccount: userTokenAccount,
-                        gatewayTokenAccount: gatewayTokenAccount,
-                        user: user1.publicKey,
-                        priceUpdate: mockPriceFeed,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: usdtTokenRateLimitPda,
-                        tokenProgram: spl.TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([user1])
-                    .rpc();
-                expect.fail("Should reject FUNDS SPL when native SOL is attached");
-            } catch (error: any) {
-                expect(error).to.exist;
-                const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
-                expect(errorCode).to.equal("InvalidAmount");
-            }
-        });
+      try {
+        await program.methods
+          .sendUniversalTx(req, withProtocolFee(gasAmount))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: null,
+            gatewayTokenAccount: null,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: nativeSolTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
+        expect.fail("Should have rejected with InvalidPrice");
+      } catch (error: any) {
+        const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
+        expect(errorCode).to.equal("InvalidPrice");
+      } finally {
+        // Setter rejects 0; fallback keeps restore valid on legacy-zero configs.
+        await program.methods
+          .setPythConfidenceThreshold(restoreThreshold)
+          .accountsPartial({ admin: admin.publicKey, config: configPda })
+          .signers([admin])
+          .rpc();
+      }
     });
 
-    describe("FUNDS_AND_PAYLOAD Route - Native SOL with Batching", () => {
-        it("Should batch gas + funds for native SOL", async () => {
-            // Case 2.2: Batching with native SOL
-            // Split: gasAmount = native_amount - req.amount
-            // Gas must be >= $1 USD (min cap), funds can be any amount
-            // Strategy: Use larger gas amount ($3) and small funds amount to ensure gas >= $1 after split
-            const gasAmountLamports = calculateSolAmount(3.0, solPrice); // $3.00 for gas (well above $1 min cap)
-            const fundsAmountLamports = calculateSolAmount(0.1, solPrice); // $0.10 for funds (very small)
-            const totalAmount = gasAmountLamports + fundsAmountLamports; // Total = gas + funds
+    it("Should support fee-off mode for legacy SPL FUNDS call shape", async () => {
+      const usdtTokenRateLimitPda = getTokenRateLimitPda(
+        mockUSDT.mint.publicKey
+      );
 
-            // Verify: after split, gas_amount = totalAmount - fundsAmount = gasAmountLamports (should be >= $1)
-            const expectedGasAfterSplit = totalAmount - fundsAmountLamports;
-            const expectedGasUsd = (expectedGasAfterSplit / LAMPORTS_PER_SOL) * solPrice;
-            if (expectedGasUsd < 1.0) {
-                throw new Error(`Expected gas after split ${expectedGasUsd.toFixed(4)} USD is below minimum $1 USD cap. Gas: ${gasAmountLamports}, Funds: ${fundsAmountLamports}, Total: ${totalAmount}`);
-            }
+      await setProtocolFee(0);
+      try {
+        const userTokenAccount = await mockUSDT.createTokenAccount(
+          user1.publicKey
+        );
+        const gatewayTokenAccount = await mockUSDT.createTokenAccount(
+          vaultPda,
+          true
+        );
+        await mockUSDT.mintTo(userTokenAccount, 500);
+        const tokenAmount = new anchor.BN(200 * 10 ** mockUSDT.config.decimals);
+        const initialGatewayBalance = await mockUSDT.getBalance(
+          gatewayTokenAccount
+        );
 
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
+        const req = {
+          recipient: Array.from(Buffer.alloc(20, 2)),
+          token: mockUSDT.mint.publicKey,
+          amount: tokenAmount,
+          payload: Buffer.from([]),
+          revertRecipient: user1.publicKey,
+          signatureData: Buffer.from("fee_off_legacy_spl_funds"),
+        };
 
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 1)), // Non-zero allowed for FUNDS_AND_PAYLOAD
-                token: PublicKey.default,
-                amount: new anchor.BN(fundsAmountLamports),
-                payload: serializePayload(createPayload(1)), // Non-empty payload required
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("batched_sig"),
-            };
+        await program.methods
+          .sendUniversalTx(req, new anchor.BN(0))
+          .accountsPartial({
+            config: configPda,
+            vault: vaultPda,
+            feeVault: feeVaultPda,
+            userTokenAccount: userTokenAccount,
+            gatewayTokenAccount: gatewayTokenAccount,
+            user: user1.publicKey,
+            priceUpdate: mockPriceFeed,
+            rateLimitConfig: rateLimitConfigPda,
+            tokenRateLimit: usdtTokenRateLimitPda,
+            tokenProgram: spl.TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user1])
+          .rpc();
 
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(totalAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            // Should receive both gas and funds
-            expect(finalVaultBalance - initialVaultBalance).to.equal(totalAmount);
-        });
-
-        it("Should reject FUNDS_AND_PAYLOAD native when native amount is insufficient", async () => {
-            const fundsAmount = calculateSolAmount(0.75, solPrice);
-            const insufficientNative = fundsAmount - 50_000; // native < funds
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 1)),
-                token: PublicKey.default,
-                amount: new anchor.BN(fundsAmount),
-                payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("insufficient_native_sig"),
-            };
-
-            try {
-                await program.methods
-                    .sendUniversalTx(req, new anchor.BN(insufficientNative))
-                    .accounts({
-                        config: configPda,
-                        vault: vaultPda,
-                        userTokenAccount: vaultPda,
-                        gatewayTokenAccount: vaultPda,
-                        user: user1.publicKey,
-                        priceUpdate: mockPriceFeed,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: nativeSolTokenRateLimitPda,
-                        tokenProgram: spl.TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([user1])
-                    .rpc();
-                expect.fail("Should reject when native gas is below bridge amount");
-            } catch (error: any) {
-                expect(error).to.exist;
-                const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
-                expect(errorCode).to.equal("InvalidAmount");
-            }
-        });
+        const finalGatewayBalance = await mockUSDT.getBalance(
+          gatewayTokenAccount
+        );
+        const balanceIncrease =
+          (finalGatewayBalance - initialGatewayBalance) *
+          10 ** mockUSDT.config.decimals;
+        expect(balanceIncrease).to.equal(tokenAmount.toNumber());
+      } finally {
+        await setProtocolFee(DEFAULT_PROTOCOL_FEE_LAMPORTS);
+      }
     });
+  });
 
-    describe("FUNDS_AND_PAYLOAD Route - SPL Token", () => {
-        it("Should bridge SPL funds with payload without batching (Case 2.1)", async () => {
-            // Case 2.1: No Batching (native_amount == 0): user already has UEA with gas on Push Chain
-            // User can directly move req.amount for req.token to Push Chain (SPL token only for Case 2.1)
-            // Use USDC to avoid rate limit conflicts with USDT used in previous tests
-            const userTokenAccount = await mockUSDC.createTokenAccount(user1.publicKey);
-            const gatewayTokenAccount = await mockUSDC.createTokenAccount(vaultPda, true);
+  after(async () => {
+    // Ensure contract is unpaused after all tests
+    try {
+      const config = await program.account.config.fetch(configPda);
+      if (config.paused) {
+        await program.methods
+          .unpause()
+          .accountsPartial({ pauser: pauser.publicKey, config: configPda })
+          .signers([pauser])
+          .rpc();
+      }
+    } catch (error) {
+      // Ignore errors
+    }
 
-            // Mint tokens using mock token's mintTo method
-            await mockUSDC.mintTo(userTokenAccount, 500);
-            const tokenAmount = new anchor.BN(500 * 10 ** mockUSDC.config.decimals);
+    // Disable rate limits to prevent interference with other tests
+    try {
+      await setProtocolFee(0);
 
-            const initialGatewayBalance = await mockUSDC.getBalance(gatewayTokenAccount);
-            const usdcTokenRateLimitPda = getTokenRateLimitPda(mockUSDC.mint.publicKey);
+      // Disable epoch duration
+      await program.methods
+        .updateEpochDuration(new anchor.BN(0))
+        .accountsPartial({
+          admin: admin.publicKey,
+          config: configPda,
+          rateLimitConfig: rateLimitConfigPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
 
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 1)), // Non-zero allowed for FUNDS_AND_PAYLOAD
-                token: mockUSDC.mint.publicKey,
-                amount: tokenAmount,
-                payload: serializePayload(createPayload(1)), // Must have payload for FUNDS_AND_PAYLOAD
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("spl_no_batch_sig"),
-            };
-
-            // native_amount == 0: user already has UEA with gas
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(0))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: userTokenAccount,
-                    gatewayTokenAccount: gatewayTokenAccount,
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: usdcTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            // Should only receive SPL tokens, no native SOL
-            const finalGatewayBalance = await mockUSDC.getBalance(gatewayTokenAccount);
-            const balanceIncrease = (finalGatewayBalance - initialGatewayBalance) * 10 ** mockUSDC.config.decimals;
-            expect(balanceIncrease).to.equal(tokenAmount.toNumber());
-        });
-
-        it("Should batch native gas + SPL funds (Case 2.3)", async () => {
-            // Setup SPL token accounts using mock token's methods
-            const userTokenAccount = await mockUSDC.createTokenAccount(user1.publicKey);
-            const gatewayTokenAccount = await mockUSDC.createTokenAccount(vaultPda, true);
-
-            // Mint tokens using mock token's mintTo method
-            await mockUSDC.mintTo(userTokenAccount, 500);
-            const tokenAmount = new anchor.BN(500 * 10 ** mockUSDC.config.decimals);
-
-            // Case 2.3: Batching with SPL + native gas
-            // Gas amount must be >= $1 USD (min cap) and <= $10 USD (max cap)
-            // native_amount is sent as gas, req.amount is SPL bridge amount
-            const gasAmount = calculateSolAmount(2.5, solPrice); // $2.50 for gas (within $1-$10 cap)
-
-            // Verify gas amount is >= $1 USD
-            const gasUsd = (gasAmount / LAMPORTS_PER_SOL) * solPrice;
-            if (gasUsd < 1.0) {
-                throw new Error(`Gas amount ${gasUsd} USD is below minimum $1 USD cap`);
-            }
-            const initialVaultBalance = await provider.connection.getBalance(vaultPda);
-            const initialGatewayBalance = await mockUSDC.getBalance(gatewayTokenAccount);
-            const usdcTokenRateLimitPda = getTokenRateLimitPda(mockUSDC.mint.publicKey);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 1)),
-                token: mockUSDC.mint.publicKey,
-                amount: tokenAmount,
-                payload: serializePayload(createPayload(1)), // Non-empty payload required
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("spl_batched_sig"),
-            };
-
-            await program.methods
-                .sendUniversalTx(req, new anchor.BN(gasAmount))
-                .accounts({
-                    config: configPda,
-                    vault: vaultPda,
-                    userTokenAccount: userTokenAccount,
-                    gatewayTokenAccount: gatewayTokenAccount,
-                    user: user1.publicKey,
-                    priceUpdate: mockPriceFeed,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: usdcTokenRateLimitPda,
-                    tokenProgram: spl.TOKEN_PROGRAM_ID,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([user1])
-                .rpc();
-
-            const finalVaultBalance = await provider.connection.getBalance(vaultPda);
-            expect(finalVaultBalance - initialVaultBalance).to.equal(gasAmount);
-
-            const finalGatewayBalance = await mockUSDC.getBalance(gatewayTokenAccount);
-            const balanceIncrease = (finalGatewayBalance - initialGatewayBalance) * 10 ** mockUSDC.config.decimals;
-            expect(balanceIncrease).to.equal(tokenAmount.toNumber());
-        });
-
-        it("Should reject FUNDS_AND_PAYLOAD SPL when token rate limit PDA mismatches", async () => {
-            const userTokenAccount = await mockUSDC.createTokenAccount(user1.publicKey);
-            const gatewayTokenAccount = await mockUSDC.createTokenAccount(vaultPda, true);
-
-            await mockUSDC.mintTo(userTokenAccount, 500);
-            const tokenAmount = new anchor.BN(500 * 10 ** mockUSDC.config.decimals);
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default); // intentionally wrong
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 1)),
-                token: mockUSDC.mint.publicKey,
-                amount: tokenAmount,
-                payload: serializePayload(createPayload(1)),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("spl_bad_rate_limit"),
-            };
-
-            try {
-                await program.methods
-                    .sendUniversalTx(req, new anchor.BN(0))
-                    .accounts({
-                        config: configPda,
-                        vault: vaultPda,
-                        userTokenAccount: userTokenAccount,
-                        gatewayTokenAccount: gatewayTokenAccount,
-                        user: user1.publicKey,
-                        priceUpdate: mockPriceFeed,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: nativeSolTokenRateLimitPda,
-                        tokenProgram: spl.TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([user1])
-                    .rpc();
-                expect.fail("Should reject FUNDS_AND_PAYLOAD SPL when token rate limit PDA is invalid");
-            } catch (error: any) {
-                expect(error).to.exist;
-                const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
-                expect(errorCode).to.equal("InvalidToken");
-            }
-        });
-    });
-
-    describe("Error Cases", () => {
-        it("Should reject when paused", async () => {
-            await program.methods
-                .pause()
-                .accounts({ pauser: pauser.publicKey, config: configPda })
-                .signers([pauser])
-                .rpc();
-
-            const gasAmount = calculateSolAmount(2.5, solPrice);
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: PublicKey.default,
-                amount: new anchor.BN(0),
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("sig"),
-            };
-
-            try {
-                await program.methods
-                    .sendUniversalTx(req, new anchor.BN(gasAmount))
-                    .accounts({
-                        config: configPda,
-                        vault: vaultPda,
-                        userTokenAccount: vaultPda, // Dummy account for native SOL routes
-                        gatewayTokenAccount: vaultPda, // Dummy account for native SOL routes
-                        user: user1.publicKey,
-                        priceUpdate: mockPriceFeed,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: nativeSolTokenRateLimitPda,
-                        tokenProgram: spl.TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([user1])
-                    .rpc();
-                expect.fail("Should reject when paused");
-            } catch (error: any) {
-                expect(error).to.exist;
-                expect(error.error?.errorCode?.code || error.code).to.equal("Paused");
-            }
-
-            await program.methods
-                .unpause()
-                .accounts({ pauser: pauser.publicKey, config: configPda })
-                .signers([pauser])
-                .rpc();
-        });
-
-        it("Should reject invalid parameter combinations (no gas or funds)", async () => {
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-
-            const req = {
-                recipient: Array.from(Buffer.alloc(20, 0)),
-                token: PublicKey.default,
-                amount: new anchor.BN(0),
-                payload: Buffer.from([]),
-                revertInstruction: createRevertInstruction(user1.publicKey),
-                signatureData: Buffer.from("sig"),
-            };
-
-            try {
-                await program.methods
-                    .sendUniversalTx(req, new anchor.BN(0))
-                    .accounts({
-                        config: configPda,
-                        vault: vaultPda,
-                        userTokenAccount: vaultPda,
-                        gatewayTokenAccount: vaultPda,
-                        user: user1.publicKey,
-                        priceUpdate: mockPriceFeed,
-                        rateLimitConfig: rateLimitConfigPda,
-                        tokenRateLimit: nativeSolTokenRateLimitPda,
-                        tokenProgram: spl.TOKEN_PROGRAM_ID,
-                        systemProgram: SystemProgram.programId,
-                    })
-                    .signers([user1])
-                    .rpc();
-                expect.fail("Should reject parameter set without gas or funds");
-            } catch (error: any) {
-                expect(error).to.exist;
-                const errorCode = error.error?.errorCode?.code || error.error?.errorCode || error.code;
-                expect(errorCode).to.equal("InvalidInput");
-            }
-        });
-    });
-
-    after(async () => {
-        // Ensure contract is unpaused after all tests
-        try {
-            const config = await program.account.config.fetch(configPda);
-            if (config.paused) {
-                await program.methods
-                    .unpause()
-                    .accounts({ pauser: pauser.publicKey, config: configPda })
-                    .signers([pauser])
-                    .rpc();
-            }
-        } catch (error) {
-            // Ignore errors
-        }
-
-        // Disable rate limits to prevent interference with other tests
-        try {
-            // Disable epoch duration
-            await program.methods
-                .updateEpochDuration(new anchor.BN(0))
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-
-            // Set very large thresholds to effectively disable
-            const veryLargeThreshold = new anchor.BN("1000000000000000000000");
-            const nativeSolTokenRateLimitPda = getTokenRateLimitPda(PublicKey.default);
-            await program.methods
-                .setTokenRateLimit(veryLargeThreshold)
-                .accounts({
-                    admin: admin.publicKey,
-                    config: configPda,
-                    rateLimitConfig: rateLimitConfigPda,
-                    tokenRateLimit: nativeSolTokenRateLimitPda,
-                    tokenMint: PublicKey.default,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        } catch (error) {
-            // Ignore errors
-        }
-    });
+      // Set very large thresholds to effectively disable
+      const veryLargeThreshold = new anchor.BN("1000000000000000000000");
+      const nativeSolTokenRateLimitPda = getTokenRateLimitPda(
+        PublicKey.default
+      );
+      await program.methods
+        .setTokenRateLimit(veryLargeThreshold)
+        .accountsPartial({
+          admin: admin.publicKey,
+          config: configPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+          tokenMint: PublicKey.default,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+    } catch (error) {
+      // Ignore errors
+    }
+  });
 });

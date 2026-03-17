@@ -223,28 +223,10 @@ contract GatewayGlobalRateLimitTest is BaseTest {
     }
 
     function testZeroEpochDurationReverts() public {
-        // Setup: Set token threshold but set epoch duration to 0
-        address[] memory tokens = new address[](1);
-        uint256[] memory thresholds = new uint256[](1);
-
-        tokens[0] = address(tokenA);
-        thresholds[0] = TOKEN_A_THRESHOLD;
-
-        vm.startPrank(admin);
-
-        gateway.setTokenLimitThresholds(tokens, thresholds);
-
+        // Setting epoch duration to 0 should revert to prevent division-by-zero
+        vm.prank(admin);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.updateEpochDuration(0);
-
-        vm.stopPrank();
-
-        vm.startPrank(user1);
-
-        // Payload not needed for this test
-        vm.expectRevert(Errors.InvalidData.selector);
-        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 10 ether, user1));
-
-        vm.stopPrank();
     }
 
     function testExceedingThresholdReverts() public {
@@ -995,8 +977,7 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         gateway.unpause();
     }
 
-    function testUpdateEpochDurationWhenPaused() public {
-        // Get current epoch duration
+    function testUpdateEpochDurationRevertsWhenPaused() public {
         uint256 oldDuration = gateway.epochDurationSec();
         uint256 newDuration = oldDuration * 2;
 
@@ -1004,17 +985,10 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         vm.prank(pauser);
         gateway.pause();
 
-        // Admin should be able to update epoch duration while paused
+        // Should revert when paused (whenNotPaused modifier)
         vm.prank(admin);
-        gateway.updateEpochDuration(newDuration);
-
-        // Verify epoch duration was updated
-        assertEq(gateway.epochDurationSec(), newDuration, "Epoch duration not updated when paused");
-
-        // Non-admin should still not be able to update epoch duration
-        vm.prank(user1);
         vm.expectRevert();
-        gateway.updateEpochDuration(oldDuration);
+        gateway.updateEpochDuration(newDuration);
 
         // Unpause the contract
         vm.prank(pauser);
@@ -1129,41 +1103,13 @@ contract GatewayGlobalRateLimitTest is BaseTest {
     }
 
     function testZeroEpochDuration() public {
-        // Setup: Set token threshold
-        address[] memory tokens = new address[](1);
-        uint256[] memory thresholds = new uint256[](1);
-
-        tokens[0] = address(tokenA);
-        thresholds[0] = TOKEN_A_THRESHOLD;
-
+        // Setting epoch duration to 0 should revert at the setter level
         vm.prank(admin);
-        gateway.setTokenLimitThresholds(tokens, thresholds);
-
-        // Set epoch duration to 0
-        vm.prank(admin);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.updateEpochDuration(0);
 
-        // Try to send funds
-        vm.startPrank(user1);
-
-        // Create revert instructions
-        address revertRecipient = user1;
-
-        // Expect revert with InvalidData
-        vm.expectRevert(Errors.InvalidData.selector);
-        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether, user1));
-
-        // Set epoch duration back to a valid value
-        vm.stopPrank();
-        vm.prank(admin);
-        gateway.updateEpochDuration(EPOCH_DURATION);
-
-        // Now sending funds should work
-        vm.startPrank(user1);
-
-        gateway.sendUniversalTx{ value: 0 }(_buildFundsTxRequest(address(tokenA), 1 ether, user1));
-
-        vm.stopPrank();
+        // Epoch duration should remain unchanged
+        assertEq(gateway.epochDurationSec(), EPOCH_DURATION, "Epoch duration should be unchanged");
     }
 
     function testToggleThresholdToZero() public {
@@ -1671,24 +1617,10 @@ contract GatewayGlobalRateLimitTest is BaseTest {
         assertEq(remaining, 0, "Remaining amount for zero threshold should be 0");
     }
 
-    function testCurrentTokenUsageWithZeroEpochDuration() public {
-        // Setup: Set token threshold
-        address[] memory tokens = new address[](1);
-        uint256[] memory thresholds = new uint256[](1);
-
-        tokens[0] = address(tokenA);
-        thresholds[0] = TOKEN_A_THRESHOLD;
-
+    function testCurrentTokenUsageWithZeroEpochDurationReverts() public {
+        // Setting epoch duration to 0 should revert at the setter level
         vm.prank(admin);
-        gateway.setTokenLimitThresholds(tokens, thresholds);
-
-        // Set epoch duration to 0
-        vm.prank(admin);
+        vm.expectRevert(Errors.InvalidInput.selector);
         gateway.updateEpochDuration(0);
-
-        // Check token usage with zero epoch duration
-        (uint256 used, uint256 remaining) = gateway.currentTokenUsage(address(tokenA));
-        assertEq(used, 0, "Used amount with zero epoch duration should be 0");
-        assertEq(remaining, 0, "Remaining amount with zero epoch duration should be 0");
     }
 }
