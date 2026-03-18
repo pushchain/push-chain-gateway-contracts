@@ -71,6 +71,10 @@ npm run test:execute                               # convenience script
 - [Runbook](contracts/svm-gateway/docs/RUNBOOK.md)
 - [Integration Guide](contracts/svm-gateway/INTEGRATION_GUIDE.md)
 
+### Cross-Chain
+
+- [Gateway Differential Analysis — EVM vs SVM](Gateway_DIFF_ANALYSIS.md)
+
 ### Deployed Addresses
 
 - [Ethereum Sepolia](contracts/evm-gateway/docs/addresses/sepolia.md)
