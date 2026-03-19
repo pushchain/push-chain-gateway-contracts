@@ -556,6 +556,149 @@ describe("Universal Gateway - CEA to UEA Tests", () => {
       );
     });
 
+    it("should emit GasAndPayload when amount=0 but payload is non-empty", async () => {
+      const pushAccount = generateSender();
+      // No CEA funding needed — amount=0 means no vault→CEA and no CEA→vault transfer
+
+      const txId = generateTxId();
+      const universalTxId = generateUniversalTxId();
+      const withdrawDiscr = computeDiscriminator("global:send_universal_tx_to_uea");
+      const { gasFee } = await calculateSolExecuteFees(provider.connection);
+
+      const ceaPayload = Buffer.from("deadbeef", "hex");
+      const payloadBuf = Buffer.concat([
+        (() => { const b = Buffer.alloc(4); b.writeUInt32LE(ceaPayload.length); return b; })(),
+        ceaPayload,
+      ]);
+      const revertRecipient = anchor.web3.Keypair.generate().publicKey;
+
+      const withdrawArgs = Buffer.concat([
+        Buffer.alloc(32, 0),        // token = Pubkey::default()
+        Buffer.alloc(8, 0),         // amount = 0
+        payloadBuf,                 // non-empty payload
+        revertRecipient.toBuffer(), // revert_recipient
+      ]);
+      const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
+
+      const sig = await signTssMessage({
+        instruction: TssInstruction.Execute,
+        amount: BigInt(0),
+        chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+        additional: buildExecuteAdditionalData(
+          new Uint8Array(universalTxId),
+          new Uint8Array(txId),
+          gatewayProgram.programId,
+          new Uint8Array(pushAccount),
+          [],
+          withdrawIxData,
+          gasFee,
+        ),
+      });
+
+      const tx = await finalizeUniversalTx({
+        instructionId: 2,
+        subTxId: txId,
+        universalTxId,
+        amount: new anchor.BN(0),
+        pushAccount,
+        writableFlags: accountsToWritableFlagsOnly([]),
+        ixData: withdrawIxData,
+        gasFee: new anchor.BN(Number(gasFee)),
+        sig,
+        caller: admin.publicKey,
+        destinationProgram: gatewayProgram.programId,
+        rateLimitConfig: rateLimitConfigPda,
+        tokenRateLimit: nativeSolTokenRateLimitPda,
+      })
+        .signers([admin])
+        .rpc();
+
+      let txDetails = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        txDetails = await provider.connection.getTransaction(tx, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        });
+        if (txDetails) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      expect(txDetails, "getTransaction returned null after retries").to.exist;
+
+      const eventCoder = new anchor.BorshEventCoder(gatewayProgram.idl);
+      const events = (txDetails.meta?.logMessages ?? [])
+        .filter((log) => log.includes("Program data:"))
+        .map((log) => {
+          try { return eventCoder.decode(log.split("Program data: ")[1]); } catch { return null; }
+        })
+        .filter((e) => e !== null);
+
+      const universalTxEvent = events.find((e) => e.name === "universalTx");
+      expect(universalTxEvent, "UniversalTx event not found").to.exist;
+      expect(
+        universalTxEvent.data.txType.gasAndPayload !== undefined,
+        "txType should be GasAndPayload"
+      ).to.be.true;
+      expect(universalTxEvent.data.amount.toString()).to.equal("0");
+      expect(universalTxEvent.data.fromCea, "from_cea should be true").to.be.true;
+      expect(Buffer.from(universalTxEvent.data.payload).toString("hex")).to.equal(
+        ceaPayload.toString("hex")
+      );
+    });
+
+    it("rejects CEA → UEA self-call when both amount=0 and payload empty", async () => {
+      const pushAccount = generateSender();
+      const txId = generateTxId();
+      const universalTxId = generateUniversalTxId();
+      const withdrawDiscr = computeDiscriminator("global:send_universal_tx_to_uea");
+      const { gasFee } = await calculateSolExecuteFees(provider.connection);
+
+      const withdrawArgs = Buffer.concat([
+        Buffer.alloc(32, 0),                                      // token = Pubkey::default()
+        Buffer.alloc(8, 0),                                       // amount = 0
+        Buffer.from([0, 0, 0, 0]),                                // empty payload
+        anchor.web3.Keypair.generate().publicKey.toBuffer(),      // valid revert_recipient
+      ]);
+      const withdrawIxData = Buffer.concat([withdrawDiscr, withdrawArgs]);
+
+      const sig = await signTssMessage({
+        instruction: TssInstruction.Execute,
+        amount: BigInt(0),
+        chainId: (await gatewayProgram.account.tssPda.fetch(tssPda)).chainId,
+        additional: buildExecuteAdditionalData(
+          new Uint8Array(universalTxId),
+          new Uint8Array(txId),
+          gatewayProgram.programId,
+          new Uint8Array(pushAccount),
+          [],
+          withdrawIxData,
+          gasFee,
+        ),
+      });
+
+      try {
+        await finalizeUniversalTx({
+          instructionId: 2,
+          subTxId: txId,
+          universalTxId,
+          amount: new anchor.BN(0),
+          pushAccount,
+          writableFlags: accountsToWritableFlagsOnly([]),
+          ixData: withdrawIxData,
+          gasFee: new anchor.BN(Number(gasFee)),
+          sig,
+          caller: admin.publicKey,
+          destinationProgram: gatewayProgram.programId,
+          rateLimitConfig: rateLimitConfigPda,
+          tokenRateLimit: nativeSolTokenRateLimitPda,
+        })
+          .signers([admin])
+          .rpc();
+        expect.fail("Should have thrown InvalidInput for zero amount and empty payload");
+      } catch (err: any) {
+        expect(err.toString()).to.include("InvalidInput");
+      }
+    });
+
     it("rejects CEA → UEA self-call with zero revert_recipient", async () => {
       const pushAccount = generateSender();
       const cea = getCeaAuthorityPda(pushAccount);

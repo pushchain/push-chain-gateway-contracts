@@ -75,11 +75,17 @@ Args (Borsh):
 ```rust
 {
   token: Pubkey,    // Pubkey::default() for SOL, mint for SPL
-  amount: u64,      // must be > 0
-  payload: Vec<u8>, // empty = Funds, non-empty = FundsAndPayload
+  amount: u64,      // can be 0 only when payload is non-empty
+  payload: Vec<u8>, // empty/non-empty controls tx_type with amount
   revert_recipient: Pubkey, // must be non-zero
 }
 ```
+
+Valid combinations:
+- `amount > 0, payload empty` → `Funds`
+- `amount > 0, payload non-empty` → `FundsAndPayload`
+- `amount = 0, payload non-empty` → `GasAndPayload` (payload-only CEA route)
+- `amount = 0, payload empty` → rejected with `InvalidInput`
 
 The recipient UEA address comes from the `push_account` parameter, not from `ix_data`.
 This path emits:

@@ -546,7 +546,13 @@ This single entrypoint handles both withdraw (instruction_id=1) and execute (ins
 - `instruction_id = 2`
 - `destination_program`: gateway program ID
 - `ix_data`: `send_universal_tx_to_uea` discriminator + Borsh args (`token`, `amount`, `payload`, `revert_recipient`)
+- `amount`/`payload` combinations:
+  - `amount > 0, payload empty` → `Funds`
+  - `amount > 0, payload non-empty` → `FundsAndPayload`
+  - `amount = 0, payload non-empty` → `GasAndPayload`
+  - `amount = 0, payload empty` → rejected (`InvalidInput`)
 - `revert_recipient` in args must be non-zero (`Pubkey::default()` is rejected)
+- When `amount = 0`, no CEA→vault transfer and no rate-limit consumption happen on this inner route
 - Emits `UniversalTx` with `from_cea: true` and `UniversalTxFinalized`
 - Semantic split:
   - `UniversalTx.amount` / `UniversalTx.payload` come from inner decoded args
@@ -694,7 +700,7 @@ gas_fee = executed_sub_tx_rent + cea_ata_rent_if_created + compute_buffer
 - `MessageHashMismatch`: TSS message construction incorrect (check field order)
 - `ConstraintSeeds`: PDA derivation incorrect (check seeds)
 - `InvalidAccount`: Accounts don't match (check order/flags)
-- `InsufficientBalance`: Vault doesn't have enough funds
+- `InsufficientBalance`: Vault/CEA doesn't have enough funds
 - `Paused`: Gateway is paused (check config)
 
 **Retry logic**:
