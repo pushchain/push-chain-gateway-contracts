@@ -11,15 +11,14 @@
 | UniversalGatewayV0 Impl 1 (with `moveFunds_temp`, superseded) | `0x173FA31277f64628931678070cf85e7248489A11` |
 | UniversalGatewayV0 Impl 2 (current, clean) | `0xfae94DE08Fd934b039e8194B04927d2351619634` |
 
-## Vault System
+## Vault System (Current - with new Gateway)
 
 | Contract | Address |
 | -------- | ------- |
-| Vault Proxy | `0xe8D77b8BC708aeA8E3735f686DcD33004a7Cd294` |
-| Vault ProxyAdmin | `0xb262FC902cd6941beCf7e34396800021de7e297F` |
-| Vault Implementation 1 (superseded) | `0x2917e434fA9AB956f5e6ac288C90b9D70Ec9137F` |
-| Vault Implementation 2 (current, adds `setCEAFactory`) | `0x5f008313BBc513fb7E44256AE3212b06342EBD36` |
-| CEAFactory | `0x8b9c9FfEc0507cf1BE9FCf3d91C8E1e98105D451` |
+| Vault Proxy | `0xD019Eb12D0d6eF8D299661f22B4B7d262eD4b965` |
+| Vault ProxyAdmin | `0x0c9b4741b9D8744D777d915a20c2C952f1f5aBc3` |
+| Vault Implementation (current) | `0x493F3a9Be4841445Db6Cb87FcBe45377f4E82e8C` |
+| CEAFactory | `0x8ED594A83301FEc545fC6c19fc12cF7111777029` |
 
 ## External / Token Addresses
 

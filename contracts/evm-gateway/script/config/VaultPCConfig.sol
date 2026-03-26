@@ -18,14 +18,13 @@ abstract contract VaultPCConfig {
     function getConfig() internal view returns (Config memory) {
         uint256 id = block.chainid;
 
-        // TODO: Replace with actual Push Chain chain ID
-        if (id == 0) return _pushChainTestnet();
+        if (id == 42101) return _pushChainTestnet();
 
         revert("VaultPCConfig: unsupported chain");
     }
 
     // =====================================================================
-    //  Push Chain Testnet (Chain ID: TBD)
+    //  Push Chain Testnet (Chain ID: 42101)
     // =====================================================================
 
     function _pushChainTestnet() private pure returns (Config memory) {
