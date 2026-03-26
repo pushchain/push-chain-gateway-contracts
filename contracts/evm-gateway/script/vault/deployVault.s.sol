@@ -6,6 +6,7 @@ import { console } from "forge-std/console.sol";
 import { Vault } from "../../src/Vault.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import { VaultConfig } from "../config/VaultConfig.sol";
 
 /**
  * @title DeployVault
@@ -20,35 +21,22 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
  * forge script script/vault/DeployVault.s.sol:DeployVault \
  *   --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
  */
-contract DeployVault is Script {
+contract DeployVault is Script, VaultConfig {
     // ========================================
     //        EIP-1967 PROXY CONSTANTS
     // ========================================
-    bytes32 internal constant _ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+    bytes32 internal constant _ADMIN_SLOT =
+        0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
 
-    // ========================================
-    //     CONFIGURATION PARAMETERS
-    // ========================================
-    // **TODO: UPDATE THESE BEFORE DEPLOYMENT**
-
-    // Deployer will be ProxyAdmin owner
-    address constant DEPLOYER = 0xe520d4A985A2356Fa615935a822Ce4eFAcA24aB6;
-
-    // Role addresses (set to msg.sender by default, transfer later if needed)
+    // Role addresses (set to msg.sender by default, transfer later)
     address admin;
     address pauser;
     address tss;
 
-    // Gateway address (can deploy Vault first, then set gateway later via setGateway())
-    // Set to address(0) to deploy Vault before Gateway
-    address constant GATEWAY_ADDRESS = 0x4DCab975cDe839632db6695e2e936A29ce3e325E;
-
-    // CEAFactory address (REQUIRED - must be deployed first)
-    address constant CEA_FACTORY_ADDRESS = 0xE86655567d3682c0f141d0F924b9946999DC3381;
-
     // ========================================
     //         DEPLOYMENT STATE
     // ========================================
+    Config cfg;
     address public vaultImplementation;
     address public vaultProxy;
     uint256 public deployChainId;
@@ -57,6 +45,7 @@ contract DeployVault is Script {
     //         MAIN DEPLOYMENT
     // ========================================
     function run() external {
+        cfg = getConfig();
         deployChainId = block.chainid;
 
         console.log("========================================");
@@ -99,34 +88,34 @@ contract DeployVault is Script {
         console.log("");
 
         // Critical validation: CEAFactory must be deployed
-        if (CEA_FACTORY_ADDRESS == address(0)) {
-            console.log("ERROR: CEA_FACTORY_ADDRESS is not set!");
-            console.log("Please deploy CEAFactory first and update CEA_FACTORY_ADDRESS in this script.");
-            revert("CEA_FACTORY_ADDRESS not set");
+        if (cfg.ceaFactory == address(0)) {
+            console.log("ERROR: ceaFactory is not set in config!");
+            console.log("Please deploy CEAFactory first and update VaultConfig.");
+            revert("ceaFactory not set in config");
         }
 
         // Verify CEAFactory has code
         uint256 ceaFactoryCodeSize;
-        address ceaFactoryAddr = CEA_FACTORY_ADDRESS;
+        address ceaFactoryAddr = cfg.ceaFactory;
         assembly {
             ceaFactoryCodeSize := extcodesize(ceaFactoryAddr)
         }
-        require(ceaFactoryCodeSize > 0, "CEAFactory contract not found at CEA_FACTORY_ADDRESS");
+        require(ceaFactoryCodeSize > 0, "CEAFactory contract not found at config address");
 
         // Gateway validation (optional - can be set later)
-        if (GATEWAY_ADDRESS != address(0)) {
+        if (cfg.gateway != address(0)) {
             uint256 gatewayCodeSize;
-            address gatewayAddr = GATEWAY_ADDRESS;
+            address gatewayAddr = cfg.gateway;
             assembly {
                 gatewayCodeSize := extcodesize(gatewayAddr)
             }
-            require(gatewayCodeSize > 0, "Gateway contract not found at GATEWAY_ADDRESS");
-            console.log("OK: Gateway found at:", GATEWAY_ADDRESS);
+            require(gatewayCodeSize > 0, "Gateway contract not found at config address");
+            console.log("OK: Gateway found at:", cfg.gateway);
         } else {
             console.log("INFO: Gateway not set - will need to call setGateway() after deployment");
         }
 
-        console.log("OK: CEAFactory found at:", CEA_FACTORY_ADDRESS);
+        console.log("OK: CEAFactory found at:", cfg.ceaFactory);
         console.log("OK: All validation checks passed");
         console.log("");
     }
@@ -164,15 +153,16 @@ contract DeployVault is Script {
         // Encode initialization call
         bytes memory initData = abi.encodeWithSelector(
             Vault.initialize.selector,
-            admin, // admin
-            pauser, // pauser
-            tss, // tss
-            GATEWAY_ADDRESS, // gateway (can be address(0))
-            CEA_FACTORY_ADDRESS // ceaFactory
+            admin,
+            pauser,
+            tss,
+            cfg.gateway,
+            cfg.ceaFactory
         );
 
         // Deploy proxy with implementation and initialization
-        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(vaultImplementation, DEPLOYER, initData);
+        TransparentUpgradeableProxy proxy =
+            new TransparentUpgradeableProxy(vaultImplementation, cfg.deployer, initData);
 
         vaultProxy = address(proxy);
         console.log("Proxy deployed at:", vaultProxy);
@@ -192,8 +182,8 @@ contract DeployVault is Script {
         Vault vault = Vault(vaultProxy);
 
         // Verify initialization parameters
-        require(address(vault.gateway()) == GATEWAY_ADDRESS, "Gateway address mismatch");
-        require(address(vault.CEAFactory()) == CEA_FACTORY_ADDRESS, "CEAFactory address mismatch");
+        require(address(vault.gateway()) == cfg.gateway, "Gateway address mismatch");
+        require(address(vault.CEAFactory()) == cfg.ceaFactory, "CEAFactory address mismatch");
         require(vault.TSS_ADDRESS() == tss, "TSS address mismatch");
 
         // Verify roles
@@ -220,8 +210,8 @@ contract DeployVault is Script {
         console.log("  Proxy Admin:           ", _getProxyAdmin());
         console.log("");
         console.log("Configuration:");
-        console.log("  Gateway:               ", GATEWAY_ADDRESS);
-        console.log("  CEAFactory:            ", CEA_FACTORY_ADDRESS);
+        console.log("  Gateway:               ", cfg.gateway);
+        console.log("  CEAFactory:            ", cfg.ceaFactory);
         console.log("  Admin:                 ", admin);
         console.log("  Pauser:                ", pauser);
         console.log("  TSS:                   ", tss);
@@ -231,7 +221,7 @@ contract DeployVault is Script {
         console.log("========================================");
         console.log("");
         console.log("NEXT STEPS:");
-        if (GATEWAY_ADDRESS == address(0)) {
+        if (cfg.gateway == address(0)) {
             console.log("1. Deploy UniversalGateway with VAULT_ADDRESS=%s", vaultProxy);
             console.log("2. Call vault.setGateway(<gateway_proxy_address>)");
         } else {

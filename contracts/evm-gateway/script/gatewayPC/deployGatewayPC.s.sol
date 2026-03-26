@@ -6,6 +6,7 @@ import { console } from "forge-std/console.sol";
 import { UniversalGatewayPC } from "../../src/UniversalGatewayPC.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import { GatewayPCConfig } from "../config/GatewayPCConfig.sol";
 
 /**
  * @title DeployGatewayPC
@@ -20,33 +21,21 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
  * forge script script/gatewayPC/DeployGatewayPC.s.sol:DeployGatewayPC \
  *   --rpc-url $PUSH_CHAIN_RPC_URL --private-key $PRIVATE_KEY --broadcast
  */
-contract DeployGatewayPC is Script {
+contract DeployGatewayPC is Script, GatewayPCConfig {
     // ========================================
     //        EIP-1967 PROXY CONSTANTS
     // ========================================
-    bytes32 internal constant _ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+    bytes32 internal constant _ADMIN_SLOT =
+        0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
 
-    // ========================================
-    //     CONFIGURATION PARAMETERS
-    // ========================================
-    // **TODO: UPDATE THESE BEFORE DEPLOYMENT**
-
-    // Deployer will be ProxyAdmin owner
-    address constant DEPLOYER = 0xe520d4A985A2356Fa615935a822Ce4eFAcA24aB6;
-
-    // Role addresses (set to msg.sender by default, transfer later if needed)
+    // Role addresses (set to msg.sender by default, transfer later)
     address admin;
     address pauser;
-
-    // UniversalCore address (REQUIRED - Push Chain core contract)
-    address constant UNIVERSAL_CORE = address(0); // TODO: Set UniversalCore address
-
-    // VaultPC address (REQUIRED - must be deployed first)
-    address constant VAULT_PC = address(0); // TODO: Set VaultPC address
 
     // ========================================
     //         DEPLOYMENT STATE
     // ========================================
+    Config cfg;
     address public gatewayPCImplementation;
     address public gatewayPCProxy;
     uint256 public deployChainId;
@@ -55,6 +44,7 @@ contract DeployGatewayPC is Script {
     //         MAIN DEPLOYMENT
     // ========================================
     function run() external {
+        cfg = getConfig();
         deployChainId = block.chainid;
 
         console.log("========================================");
@@ -97,37 +87,37 @@ contract DeployGatewayPC is Script {
         console.log("");
 
         // Critical validation: UniversalCore must be set
-        if (UNIVERSAL_CORE == address(0)) {
-            console.log("ERROR: UNIVERSAL_CORE is not set!");
-            console.log("Please set UNIVERSAL_CORE address in this script.");
-            revert("UNIVERSAL_CORE not set");
+        if (cfg.universalCore == address(0)) {
+            console.log("ERROR: universalCore is not set in config!");
+            console.log("Please set universalCore address in GatewayPCConfig.");
+            revert("universalCore not set in config");
         }
 
         // Critical validation: VaultPC must be deployed
-        if (VAULT_PC == address(0)) {
-            console.log("ERROR: VAULT_PC is not set!");
-            console.log("Please deploy VaultPC first and update VAULT_PC in this script.");
-            revert("VAULT_PC not set");
+        if (cfg.vaultPC == address(0)) {
+            console.log("ERROR: vaultPC is not set in config!");
+            console.log("Please deploy VaultPC first and update GatewayPCConfig.");
+            revert("vaultPC not set in config");
         }
 
         // Verify UniversalCore has code
         uint256 universalCoreCodeSize;
-        address universalCoreAddr = UNIVERSAL_CORE;
+        address universalCoreAddr = cfg.universalCore;
         assembly {
             universalCoreCodeSize := extcodesize(universalCoreAddr)
         }
-        require(universalCoreCodeSize > 0, "UniversalCore contract not found at UNIVERSAL_CORE");
+        require(universalCoreCodeSize > 0, "UniversalCore contract not found at config address");
 
         // Verify VaultPC has code
         uint256 vaultPCCodeSize;
-        address vaultPCAddr = VAULT_PC;
+        address vaultPCAddr = cfg.vaultPC;
         assembly {
             vaultPCCodeSize := extcodesize(vaultPCAddr)
         }
-        require(vaultPCCodeSize > 0, "VaultPC contract not found at VAULT_PC");
+        require(vaultPCCodeSize > 0, "VaultPC contract not found at config address");
 
-        console.log("OK: UniversalCore found at:", UNIVERSAL_CORE);
-        console.log("OK: VaultPC found at:", VAULT_PC);
+        console.log("OK: UniversalCore found at:", cfg.universalCore);
+        console.log("OK: VaultPC found at:", cfg.vaultPC);
         console.log("OK: All validation checks passed");
         console.log("");
     }
@@ -163,18 +153,15 @@ contract DeployGatewayPC is Script {
         // Encode initialization call
         bytes memory initData = abi.encodeWithSelector(
             UniversalGatewayPC.initialize.selector,
-            admin,          // admin
-            pauser,         // pauser
-            UNIVERSAL_CORE, // universalCore
-            VAULT_PC        // vaultPC
+            admin,
+            pauser,
+            cfg.universalCore,
+            cfg.vaultPC
         );
 
         // Deploy proxy with implementation and initialization
-        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
-            gatewayPCImplementation,
-            DEPLOYER,
-            initData
-        );
+        TransparentUpgradeableProxy proxy =
+            new TransparentUpgradeableProxy(gatewayPCImplementation, cfg.deployer, initData);
 
         gatewayPCProxy = address(proxy);
         console.log("Proxy deployed at:", gatewayPCProxy);
@@ -194,8 +181,8 @@ contract DeployGatewayPC is Script {
         UniversalGatewayPC gatewayPC = UniversalGatewayPC(gatewayPCProxy);
 
         // Verify initialization parameters
-        require(gatewayPC.UNIVERSAL_CORE() == UNIVERSAL_CORE, "UniversalCore address mismatch");
-        require(address(gatewayPC.VAULT_PC()) == VAULT_PC, "VaultPC address mismatch");
+        require(gatewayPC.UNIVERSAL_CORE() == cfg.universalCore, "UniversalCore address mismatch");
+        require(address(gatewayPC.VAULT_PC()) == cfg.vaultPC, "VaultPC address mismatch");
 
         // Verify roles
         require(gatewayPC.hasRole(gatewayPC.DEFAULT_ADMIN_ROLE(), admin), "Admin role not set");
@@ -223,8 +210,8 @@ contract DeployGatewayPC is Script {
         console.log("  Proxy Admin:             ", _getProxyAdmin());
         console.log("");
         console.log("Configuration:");
-        console.log("  UniversalCore:           ", UNIVERSAL_CORE);
-        console.log("  VaultPC:                 ", VAULT_PC);
+        console.log("  UniversalCore:           ", cfg.universalCore);
+        console.log("  VaultPC:                 ", cfg.vaultPC);
         console.log("  Admin:                   ", admin);
         console.log("  Pauser:                  ", pauser);
         console.log("");

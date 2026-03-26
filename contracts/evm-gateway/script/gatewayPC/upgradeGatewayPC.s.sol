@@ -6,6 +6,7 @@ import { console } from "forge-std/console.sol";
 import { UniversalGatewayPC } from "../../src/UniversalGatewayPC.sol";
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import { GatewayPCConfig } from "../config/GatewayPCConfig.sol";
 
 /**
  * @title UpgradeGatewayPC
@@ -16,24 +17,19 @@ import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/tran
  * forge script script/gatewayPC/UpgradeGatewayPC.s.sol:UpgradeGatewayPC \
  *   --rpc-url $PUSH_CHAIN_RPC_URL --private-key $PRIVATE_KEY --broadcast
  */
-contract UpgradeGatewayPC is Script {
+contract UpgradeGatewayPC is Script, GatewayPCConfig {
     // ========================================
     //        EIP-1967 PROXY CONSTANTS
     // ========================================
-    bytes32 internal constant _ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
-    bytes32 internal constant _IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-
-    // ========================================
-    //     CONFIGURATION PARAMETERS
-    // ========================================
-    // **TODO: UPDATE THESE BEFORE UPGRADE**
-
-    // Existing proxy address (from previous deployment)
-    address constant GATEWAY_PC_PROXY = address(0); // TODO: Set to existing GatewayPC proxy address
+    bytes32 internal constant _ADMIN_SLOT =
+        0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+    bytes32 internal constant _IMPLEMENTATION_SLOT =
+        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     // ========================================
     //         UPGRADE STATE
     // ========================================
+    Config cfg;
     address public oldImplementation;
     address public newImplementation;
     address public proxyAdmin;
@@ -43,6 +39,7 @@ contract UpgradeGatewayPC is Script {
     //         MAIN UPGRADE
     // ========================================
     function run() external {
+        cfg = getConfig();
         upgradeChainId = block.chainid;
 
         console.log("========================================");
@@ -85,15 +82,15 @@ contract UpgradeGatewayPC is Script {
         console.log("");
 
         // Validate proxy address
-        require(GATEWAY_PC_PROXY != address(0), "GATEWAY_PC_PROXY not set");
+        require(cfg.gatewayPCProxy != address(0), "gatewayPCProxy not set in config");
 
         // Verify proxy has code
         uint256 proxyCodeSize;
-        address proxyAddr = GATEWAY_PC_PROXY;
+        address proxyAddr = cfg.gatewayPCProxy;
         assembly {
             proxyCodeSize := extcodesize(proxyAddr)
         }
-        require(proxyCodeSize > 0, "GatewayPC proxy not found at GATEWAY_PC_PROXY");
+        require(proxyCodeSize > 0, "GatewayPC proxy not found at config address");
 
         // Verify msg.sender is ProxyAdmin owner
         address proxyAdminAddr = _getProxyAdmin();
@@ -102,7 +99,7 @@ contract UpgradeGatewayPC is Script {
 
         require(msg.sender == owner, "Caller is not ProxyAdmin owner");
 
-        console.log("OK: Proxy found at:", GATEWAY_PC_PROXY);
+        console.log("OK: Proxy found at:", cfg.gatewayPCProxy);
         console.log("OK: ProxyAdmin:", proxyAdminAddr);
         console.log("OK: ProxyAdmin owner:", owner);
         console.log("OK: Caller authorized for upgrade");
@@ -113,7 +110,6 @@ contract UpgradeGatewayPC is Script {
         console.log("--- Recording Old Implementation ---");
 
         proxyAdmin = _getProxyAdmin();
-        ProxyAdmin admin = ProxyAdmin(proxyAdmin);
         oldImplementation = _getImplementation();
 
         console.log("Old Implementation:", oldImplementation);
@@ -139,7 +135,9 @@ contract UpgradeGatewayPC is Script {
         ProxyAdmin admin = ProxyAdmin(proxyAdmin);
 
         // Upgrade the proxy to new implementation
-        admin.upgradeAndCall(ITransparentUpgradeableProxy(GATEWAY_PC_PROXY), newImplementation, "");
+        admin.upgradeAndCall(
+            ITransparentUpgradeableProxy(cfg.gatewayPCProxy), newImplementation, ""
+        );
 
         console.log("Upgrade executed");
         console.log("");
@@ -151,14 +149,13 @@ contract UpgradeGatewayPC is Script {
     function _verifyUpgrade() internal view {
         console.log("--- Upgrade Verification ---");
 
-        ProxyAdmin admin = ProxyAdmin(proxyAdmin);
         address currentImplementation = _getImplementation();
 
         require(currentImplementation == newImplementation, "Implementation not updated");
         require(currentImplementation != oldImplementation, "Implementation unchanged");
 
         // Verify proxy still works (call a view function)
-        UniversalGatewayPC gatewayPC = UniversalGatewayPC(GATEWAY_PC_PROXY);
+        UniversalGatewayPC gatewayPC = UniversalGatewayPC(cfg.gatewayPCProxy);
         address universalCore = gatewayPC.UNIVERSAL_CORE();
         address vaultPC = address(gatewayPC.VAULT_PC());
         uint256 currentNonce = gatewayPC.nonce();
@@ -182,7 +179,7 @@ contract UpgradeGatewayPC is Script {
         console.log("Chain ID:", upgradeChainId);
         console.log("Upgrader:", msg.sender);
         console.log("");
-        console.log("GatewayPC Proxy:      ", GATEWAY_PC_PROXY);
+        console.log("GatewayPC Proxy:      ", cfg.gatewayPCProxy);
         console.log("Proxy Admin:          ", proxyAdmin);
         console.log("");
         console.log("Old Implementation:   ", oldImplementation);
@@ -204,12 +201,12 @@ contract UpgradeGatewayPC is Script {
     //         HELPERS
     // ========================================
     function _getProxyAdmin() internal view returns (address proxyAdminAddr) {
-        bytes32 raw = vm.load(GATEWAY_PC_PROXY, _ADMIN_SLOT);
+        bytes32 raw = vm.load(cfg.gatewayPCProxy, _ADMIN_SLOT);
         proxyAdminAddr = address(uint160(uint256(raw)));
     }
 
     function _getImplementation() internal view returns (address implementation) {
-        bytes32 raw = vm.load(GATEWAY_PC_PROXY, _IMPLEMENTATION_SLOT);
+        bytes32 raw = vm.load(cfg.gatewayPCProxy, _IMPLEMENTATION_SLOT);
         implementation = address(uint160(uint256(raw)));
     }
 }

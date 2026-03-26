@@ -6,6 +6,7 @@ import { console } from "forge-std/console.sol";
 import { UniversalGateway } from "../../src/UniversalGateway.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import { GatewayConfig } from "../config/GatewayConfig.sol";
 
 /**
  * @title DeployGateway
@@ -16,44 +17,29 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
  * forge script script/gateway/DeployGateway.s.sol:DeployGateway \
  *   --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
  */
-contract DeployGateway is Script {
+contract DeployGateway is Script, GatewayConfig {
     // ========================================
     //        EIP-1967 PROXY CONSTANTS
     // ========================================
-    bytes32 internal constant _ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+    bytes32 internal constant _ADMIN_SLOT =
+        0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
 
     // ========================================
     //     CONFIGURATION PARAMETERS
     // ========================================
-    // **TODO: UPDATE THESE BEFORE DEPLOYMENT**
-
-    // Deployer will be ProxyAdmin owner
-    address constant DEPLOYER = 0xe520d4A985A2356Fa615935a822Ce4eFAcA24aB6;
-
-    // Role addresses (set to msg.sender by default, transfer later if needed)
-    address admin;
-    address tss;
-
-    // Vault address (deploy Vault first, then set this)
-    address constant VAULT_ADDRESS = address(0); // TODO: Set after deploying Vault
 
     // Gateway USD caps (18 decimals: 1e18 = $1 USD)
-    uint256 constant MIN_CAP_USD = 1e18;      // $1 USD minimum
-    uint256 constant MAX_CAP_USD = 100e18;    // $100 USD maximum
+    uint256 constant MIN_CAP_USD = 1e18; // $1 USD minimum
+    uint256 constant MAX_CAP_USD = 100e18; // $100 USD maximum
 
-    // Uniswap V3 addresses
-    address constant UNISWAP_V3_FACTORY = 0x0227628f3F023bb0B980b67D528571c95c6DaC1c; // Sepolia
-    address constant UNISWAP_V3_ROUTER = 0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E;  // Sepolia
-
-    // Token addresses
-    address constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14; // Sepolia WETH
-
-    // Chainlink price feeds
-    address constant ETH_USD_FEED = 0x694AA1769357215DE4FAC081bf1f309aDC325306; // Sepolia ETH/USD
+    // Role addresses (set to msg.sender by default, transfer later)
+    address admin;
+    address tss;
 
     // ========================================
     //         DEPLOYMENT STATE
     // ========================================
+    Config cfg;
     address public gatewayImplementation;
     address public gatewayProxy;
     uint256 public deployChainId;
@@ -62,6 +48,7 @@ contract DeployGateway is Script {
     //         MAIN DEPLOYMENT
     // ========================================
     function run() external {
+        cfg = getConfig();
         deployChainId = block.chainid;
 
         console.log("========================================");
@@ -107,29 +94,29 @@ contract DeployGateway is Script {
         console.log("");
 
         // Critical validation: Vault must be deployed first
-        if (VAULT_ADDRESS == address(0)) {
-            console.log("ERROR: VAULT_ADDRESS is not set!");
-            console.log("Please deploy Vault first and update VAULT_ADDRESS in this script.");
-            revert("VAULT_ADDRESS not set");
+        if (cfg.vault == address(0)) {
+            console.log("ERROR: vault is not set in config!");
+            console.log("Please deploy Vault first and update GatewayConfig.");
+            revert("vault not set in config");
         }
 
         // Verify Vault has code
         uint256 vaultCodeSize;
-        address vaultAddr = VAULT_ADDRESS;
+        address vaultAddr = cfg.vault;
         assembly {
             vaultCodeSize := extcodesize(vaultAddr)
         }
-        require(vaultCodeSize > 0, "Vault contract not found at VAULT_ADDRESS");
+        require(vaultCodeSize > 0, "Vault contract not found at config vault address");
 
         // Validate USD caps
         require(MIN_CAP_USD > 0, "MIN_CAP_USD must be > 0");
         require(MAX_CAP_USD > MIN_CAP_USD, "MAX_CAP_USD must be > MIN_CAP_USD");
 
         // Validate addresses
-        require(UNISWAP_V3_FACTORY != address(0), "UNISWAP_V3_FACTORY is zero");
-        require(UNISWAP_V3_ROUTER != address(0), "UNISWAP_V3_ROUTER is zero");
-        require(WETH != address(0), "WETH is zero");
-        require(ETH_USD_FEED != address(0), "ETH_USD_FEED is zero");
+        require(cfg.uniswapV3Factory != address(0), "uniswapV3Factory is zero in config");
+        require(cfg.uniswapV3Router != address(0), "uniswapV3Router is zero in config");
+        require(cfg.weth != address(0), "weth is zero in config");
+        require(cfg.ethUsdFeed != address(0), "ethUsdFeed is zero in config");
 
         console.log("OK: All validation checks passed");
         console.log("");
@@ -166,23 +153,20 @@ contract DeployGateway is Script {
         // Encode initialization call
         bytes memory initData = abi.encodeWithSelector(
             UniversalGateway.initialize.selector,
-            admin,                  // admin
-            tss,                    // tss
-            VAULT_ADDRESS,          // vault
-            MIN_CAP_USD,            // minCapUsd
-            MAX_CAP_USD,            // maxCapUsd
-            UNISWAP_V3_FACTORY,     // uniswapFactory
-            UNISWAP_V3_ROUTER,      // uniswapRouter
-            WETH,                   // weth
-            ETH_USD_FEED            // ethUsdFeed
+            admin,
+            tss,
+            cfg.vault,
+            MIN_CAP_USD,
+            MAX_CAP_USD,
+            cfg.uniswapV3Factory,
+            cfg.uniswapV3Router,
+            cfg.weth,
+            cfg.ethUsdFeed
         );
 
         // Deploy proxy with implementation and initialization
-        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
-            gatewayImplementation,
-            DEPLOYER,
-            initData
-        );
+        TransparentUpgradeableProxy proxy =
+            new TransparentUpgradeableProxy(gatewayImplementation, cfg.deployer, initData);
 
         gatewayProxy = address(proxy);
         console.log("Proxy deployed at:", gatewayProxy);
@@ -220,12 +204,12 @@ contract DeployGateway is Script {
         UniversalGateway gateway = UniversalGateway(payable(gatewayProxy));
 
         // Verify initialization parameters
-        require(gateway.VAULT() == VAULT_ADDRESS, "Vault address mismatch");
+        require(gateway.VAULT() == cfg.vault, "Vault address mismatch");
         require(gateway.TSS_ADDRESS() == tss, "TSS address mismatch");
         require(gateway.MIN_CAP_UNIVERSAL_TX_USD() == MIN_CAP_USD, "Min cap mismatch");
         require(gateway.MAX_CAP_UNIVERSAL_TX_USD() == MAX_CAP_USD, "Max cap mismatch");
-        require(gateway.WETH() == WETH, "WETH mismatch");
-        require(address(gateway.ethUsdFeed()) == ETH_USD_FEED, "ETH/USD feed mismatch");
+        require(gateway.WETH() == cfg.weth, "WETH mismatch");
+        require(address(gateway.ethUsdFeed()) == cfg.ethUsdFeed, "ETH/USD feed mismatch");
 
         // Verify roles
         require(gateway.hasRole(gateway.DEFAULT_ADMIN_ROLE(), admin), "Admin role not set");
@@ -250,13 +234,13 @@ contract DeployGateway is Script {
         console.log("  Proxy Admin:           ", _getProxyAdmin());
         console.log("");
         console.log("Configuration:");
-        console.log("  Vault:          ", VAULT_ADDRESS);
+        console.log("  Vault:          ", cfg.vault);
         console.log("  Admin:          ", admin);
         console.log("  TSS:            ", tss);
         console.log("  Min USD Cap:     $", MIN_CAP_USD / 1e18);
         console.log("  Max USD Cap:     $", MAX_CAP_USD / 1e18);
-        console.log("  WETH:           ", WETH);
-        console.log("  ETH/USD Feed:   ", ETH_USD_FEED);
+        console.log("  WETH:           ", cfg.weth);
+        console.log("  ETH/USD Feed:   ", cfg.ethUsdFeed);
         console.log("");
         console.log("========================================");
         console.log("Gateway Address: %s", gatewayProxy);
